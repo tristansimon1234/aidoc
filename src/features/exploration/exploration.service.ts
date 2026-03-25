@@ -29,6 +29,9 @@ export interface RunDeps {
     status?: 'completed' | 'blocked' | 'skipped'
   }) => Promise<{ id: string }>
   countSteps: (runId: string) => Promise<number>
+  findStepsByRunId: (runId: string) => Promise<
+    { action: string | null; url: string | null; observation: string | null }[]
+  >
 }
 
 export interface ExploreOptions {
@@ -51,6 +54,7 @@ export async function exploreRun(
   await deps.updateRunStatus(runId, 'running')
   emit({ type: 'status', message: 'Launching browser...' })
 
+  const isResuming = run.browserbaseSessionId !== null
   const session = await launchBrowser(run.browserbaseSessionId ?? undefined)
 
   try {
@@ -59,16 +63,23 @@ export async function exploreRun(
       await deps.setBrowserbaseSessionId(runId, sessionId)
     }
 
-    // Send live browser view URL to frontend
     const debugUrl = session.browserbaseDebugURL
     if (debugUrl) {
       emit({ type: 'live', liveUrl: debugUrl, message: 'Live browser view available' })
     }
 
-    if (!run.browserbaseSessionId) {
+    if (!isResuming) {
       emit({ type: 'status', message: `Navigating to ${run.startUrl}` })
       await explorationBrowser.navigateTo(session, run.startUrl)
     }
+
+    // Build context from existing steps (for resume)
+    const existingSteps = await deps.findStepsByRunId(runId)
+    const previousStepsBlock = existingSteps.length > 0
+      ? `\n\n## What You Already Explored (${existingSteps.length} steps)
+${existingSteps.map((s, i) => `${i + 1}. [${s.url ?? 'unknown'}] ${s.action ?? 'action'}`).join('\n')}
+\nContinue from where you left off. Do NOT repeat these steps.`
+      : ''
 
     const contextBlock = options?.additionalContext
       ? `\n\n## Additional Context from User\n${options.additionalContext}`
@@ -79,32 +90,31 @@ export async function exploreRun(
       : ''
 
     const tocBlock = options?.tableOfContents
-      ? `\n\n## Already Documented Pages\n${options.tableOfContents}\nDo NOT duplicate content covered in these pages. Reference them when relevant.`
+      ? `\n\n## Already Documented Pages\n${options.tableOfContents}\nDo NOT duplicate content covered in these pages.`
       : ''
 
-    const isResume = run.browserbaseSessionId !== null
-    const resumeBlock = isResume
-      ? '\n\nYou are RESUMING a previous exploration. The browser is already open where you left off. Continue from here.'
-      : ''
-
-    const instruction = `You are a documentation agent. Explore this web application feature thoroughly.
+    const instruction = `You are a documentation agent. Your job is to thoroughly explore a web application feature so we can generate product documentation from your exploration.
 
 Feature: ${run.featureName}
 Goal: ${run.goal}
 Start URL: ${run.startUrl}
-${projectBlock}${tocBlock}${resumeBlock}${contextBlock}
+${isResuming ? '\nYou are RESUMING a previous exploration. The browser is still open where you left off.' : ''}${previousStepsBlock}${projectBlock}${tocBlock}${contextBlock}
 
 Instructions:
-- Navigate through the feature, clicking buttons, opening menus, filling forms with test data
-- Document every screen and interaction you encounter
-- If you hit a login wall or auth gate you cannot pass, stop and clearly explain what's needed
-- Explore at least 5-10 meaningful interactions before finishing
-- When you've explored enough to write comprehensive documentation, finish
-- Be thorough but efficient`
+- Click through every section, button, menu, and interactive element you find
+- Fill forms with realistic test data when needed
+- Scroll to see all content on each page
+- Visit all linked pages within the feature
+- If you hit a login/auth wall, STOP and explain what credentials are needed
+- When you have thoroughly explored ALL aspects of the feature, call done
+- Do NOT stop early — explore every screen and sub-section
+- Be systematic: go through navigation items one by one
 
-    emit({ type: 'status', message: 'Agent is exploring...' })
+IMPORTANT: Only call "done" when you have genuinely explored everything relevant. A thorough exploration typically involves 15-40 meaningful actions.`
 
-    let stepOffset = await deps.countSteps(runId)
+    emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
+
+    const stepOffset = await deps.countSteps(runId)
     let stepCounter = 0
 
     const agent = session.agent({
@@ -116,13 +126,12 @@ Instructions:
 
     const result = await agent.execute({
       instruction,
-      maxSteps: 25,
+      maxSteps: 50,
       callbacks: {
         onStepFinish: async (event) => {
           const toolCalls = event.toolCalls ?? []
           const toolResults = event.toolResults ?? []
 
-          // Build a map of tool call results by toolCallId
           const resultMap = new Map<string, unknown>()
           for (const tr of toolResults) {
             const trObj = tr as Record<string, unknown>
@@ -130,7 +139,6 @@ Instructions:
             if (callId) resultMap.set(callId, trObj.result)
           }
 
-          // Also extract the agent's reasoning text from the response
           const agentText = event.text ?? ''
 
           for (const tool of toolCalls) {
@@ -142,14 +150,13 @@ Instructions:
 
             if (toolName === 'think') continue
 
-            // Build a human-readable description
             const description = buildToolDescription(toolName, args, toolResult)
 
             const record: AgentActionRecord = {
               type: toolName,
               action: description,
               pageUrl: (args?.url as string | undefined) ?? null,
-              reasoning: agentText.slice(0, 500) || null,
+              reasoning: agentText.slice(0, 2000) || null,
             }
 
             const screenshotPath = await explorationBrowser.captureScreenshot(
@@ -181,7 +188,6 @@ Instructions:
       },
     })
 
-    // Track token usage
     if (result.usage) {
       await deps.incrementTokenUsage(
         runId,
@@ -189,7 +195,6 @@ Instructions:
       )
     }
 
-    // Determine outcome
     const msg = result.message.toLowerCase()
     const isBlocked = !result.completed && (
       msg.includes('login') ||
@@ -206,15 +211,12 @@ Instructions:
     if (isBlocked) {
       await deps.updateRunStatus(runId, 'blocked')
       emit({ type: 'blocked', message: result.message })
-      return
-    }
-
-    if (result.completed) {
+    } else if (result.completed) {
       await deps.updateRunStatus(runId, 'completed')
       emit({ type: 'done', completed: true, message: result.message })
     } else {
       await deps.updateRunStatus(runId, 'blocked')
-      emit({ type: 'blocked', message: result.message })
+      emit({ type: 'blocked', message: result.message || 'Agent stopped — you can continue the exploration' })
     }
   } catch (err) {
     console.error(`Exploration failed for run ${runId}:`, err)
@@ -231,7 +233,6 @@ function buildToolDescription(
   args: Record<string, unknown> | undefined,
   toolResult: Record<string, unknown> | undefined,
 ): string {
-  // Try to find any meaningful text from args
   const tryFields = (fields: string[]): string | null => {
     if (!args) return null
     for (const f of fields) {
@@ -263,16 +264,14 @@ function buildToolDescription(
     case 'wait':
       return `Wait ${args?.ms ?? args?.timeout ?? ''}ms`
     case 'done': {
-      const msg = tryFields(['message', 'reason', 'summary'])
+      const doneMsg = tryFields(['message', 'reason', 'summary'])
         ?? (typeof toolResult === 'object' && toolResult ? (toolResult.message as string | undefined) : null)
         ?? 'Task complete'
-      return `Done: ${msg}`
+      return `Done: ${doneMsg}`
     }
     default: {
-      // Last resort: try all known field names, or stringify args
       const desc = tryFields(['instruction', 'action', 'text', 'description', 'url', 'message'])
       if (desc) return desc
-      // If args exist but we couldn't find a good field, show the args keys
       if (args && Object.keys(args).length > 0) {
         const firstVal = Object.values(args).find((v) => typeof v === 'string' && v.length > 0)
         if (typeof firstVal === 'string') return firstVal

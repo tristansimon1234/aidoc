@@ -8,7 +8,7 @@ import {
   MarkdownRenderer,
   EmptyState,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type StepEventDTO } from '../../../shared/api/client.js'
+import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO } from '../../../shared/api/client.js'
 
 interface PageContext {
   project: ProjectDTO
@@ -27,6 +27,7 @@ export function PageView(): React.ReactElement {
   const context = useOutletContext<PageContext>()
   const [page, setPage] = useState<DocPageDTO | null>(null)
   const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
+  const [latestRun, setLatestRun] = useState<RunDTO | null>(null)
   const [loading, setLoading] = useState(true)
   const [exploring, setExploring] = useState(false)
   const [generating, setGenerating] = useState(false)
@@ -38,10 +39,14 @@ export function PageView(): React.ReactElement {
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
     try {
-      const pageData = await api.pages.get(projectId, pageId)
+      const [pageData, docData, runData] = await Promise.all([
+        api.pages.get(projectId, pageId),
+        api.pages.doc(projectId, pageId).catch(() => null),
+        api.pages.latestRun(projectId, pageId),
+      ])
       setPage(pageData)
-      const docData = await api.pages.doc(projectId, pageId).catch(() => null)
       setDoc(docData)
+      setLatestRun(runData)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -56,42 +61,24 @@ export function PageView(): React.ReactElement {
     setLiveSteps([])
     setLiveUrl(null)
     setExploring(false)
+    setStatusMessage(null)
     void fetchData()
   }, [fetchData])
 
-  const handleExplore = async (): Promise<void> => {
-    if (!projectId || !pageId || !page) return
+  const runExploration = async (runId: string): Promise<void> => {
     setExploring(true)
     setError(null)
     setLiveSteps([])
     setLiveUrl(null)
-    setStatusMessage('Creating exploration run...')
+    setStatusMessage('Launching browser...')
 
     try {
-      // Create a run linked to this page
-      const startUrl = page.startUrl ?? context.project.baseUrl
-      const run = await api.runs.create({
-        featureName: page.title,
-        startUrl,
-        goal: page.goal ?? `Document the "${page.title}" feature`,
-        docPageId: pageId,
-      })
-
-      // Update page status
-      await api.pages.update(projectId, pageId, { status: 'exploring' })
-
-      // Stream exploration
-      setStatusMessage('Launching browser...')
       await api.runs.exploreStream(
-        run.id,
+        runId,
         (event: StepEventDTO) => {
           switch (event.type) {
-            case 'live':
-              setLiveUrl(event.liveUrl ?? null)
-              break
-            case 'status':
-              setStatusMessage(event.message ?? null)
-              break
+            case 'live': setLiveUrl(event.liveUrl ?? null); break
+            case 'status': setStatusMessage(event.message ?? null); break
             case 'step':
               if (event.step) {
                 setLiveSteps((prev) => [...prev, {
@@ -102,52 +89,65 @@ export function PageView(): React.ReactElement {
                 setStatusMessage(event.message ?? null)
               }
               break
-            case 'done':
-              setStatusMessage(event.message ?? 'Exploration complete')
-              break
-            case 'blocked':
-              setStatusMessage(event.message ?? 'Agent needs help')
-              break
-            case 'error':
-              setStatusMessage(event.message ?? 'Error')
-              break
+            case 'done': setStatusMessage(event.message ?? 'Exploration complete'); break
+            case 'blocked': setStatusMessage(event.message ?? 'Agent needs help'); break
+            case 'error': setStatusMessage(event.message ?? 'Error'); break
           }
         },
       )
 
-      // Stream ended — check what happened
+      // Stream ended — generate doc from whatever we have
       setLiveUrl(null)
-      const updatedRun = await api.runs.get(run.id)
+      const updatedRun = await api.runs.get(runId)
 
-      // Generate doc from whatever we have (completed, blocked, or failed)
       if (updatedRun.status !== 'pending' && updatedRun.status !== 'running') {
-        setStatusMessage('Generating documentation from exploration data...')
+        setStatusMessage('Generating documentation...')
         setGenerating(true)
 
         try {
-          await api.runs.generateDoc(run.id)
-          await api.pages.update(projectId, pageId, { status: 'published' })
+          await api.runs.generateDoc(runId)
+          await api.pages.update(projectId!, pageId!, { status: 'published' })
         } catch {
-          // Doc generation failed — still show what we have
+          // partial doc or no doc — ok
         }
 
         if (updatedRun.status === 'blocked') {
-          setStatusMessage('Exploration was blocked — partial documentation generated.')
+          setStatusMessage('Exploration paused — you can continue anytime')
         } else if (updatedRun.status === 'failed') {
-          setStatusMessage('Exploration failed — partial documentation generated from available data.')
+          setStatusMessage('Exploration stopped — partial doc generated')
+        } else {
+          setStatusMessage(null)
         }
       }
 
-      // Refresh
       await fetchData()
       await context.refetchPages()
-      if (updatedRun.status === 'completed') setStatusMessage(null)
     } catch (err) {
       setError((err as Error).message)
     } finally {
       setExploring(false)
       setGenerating(false)
     }
+  }
+
+  const handleNewExploration = async (): Promise<void> => {
+    if (!projectId || !pageId || !page) return
+    const startUrl = page.startUrl ?? context.project.baseUrl
+    const run = await api.runs.create({
+      featureName: page.title,
+      startUrl,
+      goal: page.goal ?? `Document the "${page.title}" feature`,
+      docPageId: pageId,
+    })
+    await api.pages.update(projectId, pageId, { status: 'exploring' })
+    await runExploration(run.id)
+  }
+
+  const handleContinueExploration = async (): Promise<void> => {
+    if (!latestRun || !projectId || !pageId) return
+    // Reset the run to a continuable state
+    await api.pages.update(projectId, pageId, { status: 'exploring' })
+    await runExploration(latestRun.id)
   }
 
   if (loading) return <Spinner size="lg" />
@@ -158,6 +158,10 @@ export function PageView(): React.ReactElement {
     exploring: 'running',
     published: 'completed',
   }
+
+  const canContinue = latestRun &&
+    (latestRun.status === 'blocked' || latestRun.status === 'failed') &&
+    !exploring && !generating
 
   return (
     <div>
@@ -177,12 +181,9 @@ export function PageView(): React.ReactElement {
       {/* Status message */}
       {statusMessage && !exploring && !generating && (
         <p style={{
-          color: 'var(--color-accent-amber)',
-          fontSize: 'var(--text-sm)',
-          margin: 'var(--space-md) 0',
-          padding: 'var(--space-sm) var(--space-md)',
-          backgroundColor: 'rgba(245,166,35,0.1)',
-          borderRadius: 'var(--radius-md)',
+          color: 'var(--color-accent-amber)', fontSize: 'var(--text-sm)',
+          margin: 'var(--space-md) 0', padding: 'var(--space-sm) var(--space-md)',
+          backgroundColor: 'rgba(245,166,35,0.1)', borderRadius: 'var(--radius-md)',
           border: '1px solid rgba(245,166,35,0.2)',
         }}>
           {statusMessage}
@@ -191,9 +192,17 @@ export function PageView(): React.ReactElement {
 
       {/* Action buttons */}
       {!exploring && !generating && (
-        <div style={{ display: 'flex', gap: 'var(--space-sm)', margin: 'var(--space-lg) 0' }}>
-          <Button onClick={() => void handleExplore()}>
-            {doc ? 'Re-explore & Update' : 'Explore & Document'}
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', margin: 'var(--space-lg) 0', flexWrap: 'wrap' }}>
+          {canContinue && (
+            <Button onClick={() => void handleContinueExploration()}>
+              Continue Exploration
+            </Button>
+          )}
+          <Button
+            variant={canContinue ? 'secondary' : 'primary'}
+            onClick={() => void handleNewExploration()}
+          >
+            {doc ? 'Re-explore from scratch' : canContinue ? 'Start fresh' : 'Explore & Document'}
           </Button>
         </div>
       )}
@@ -210,16 +219,13 @@ export function PageView(): React.ReactElement {
 
           {liveUrl && (
             <div style={{
-              marginBottom: 'var(--space-md)',
-              borderRadius: 'var(--radius-lg)',
-              overflow: 'hidden',
-              border: '1px solid var(--color-border-default)',
+              marginBottom: 'var(--space-md)', borderRadius: 'var(--radius-lg)',
+              overflow: 'hidden', border: '1px solid var(--color-border-default)',
             }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
                 padding: 'var(--space-xs) var(--space-md)',
-                backgroundColor: 'var(--color-bg-surface)',
-                borderBottom: '1px solid var(--color-border-subtle)',
+                backgroundColor: 'var(--color-bg-surface)', borderBottom: '1px solid var(--color-border-subtle)',
               }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: 'var(--radius-full)', backgroundColor: 'var(--color-accent-green)', animation: 'pulse 2s infinite' }} />
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Live browser</span>

@@ -136,6 +136,8 @@ export const api = {
       request(`/projects/${projectId}/pages/${pageId}`, { method: 'DELETE' }),
     doc: (projectId: string, pageId: string): Promise<GeneratedDocDTO> =>
       request(`/projects/${projectId}/pages/${pageId}/doc`),
+    latestRun: (projectId: string, pageId: string): Promise<RunDTO | null> =>
+      request<RunDTO>(`/projects/${projectId}/pages/${pageId}/run`).catch(() => null),
     autoGenerate: (projectId: string): Promise<DocPageDTO[]> =>
       request(`/projects/${projectId}/pages/auto-generate`, { method: 'POST' }),
   },

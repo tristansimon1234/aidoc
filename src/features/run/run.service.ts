@@ -16,6 +16,7 @@ function buildRunDeps(): RunDeps {
     setBrowserbaseSessionId: runRepo.setBrowserbaseSessionId,
     createRunStep: runRepo.createRunStep,
     countSteps: runRepo.countStepsByRunId,
+    findStepsByRunId: runRepo.findStepsByRunId,
   }
 }
 
@@ -78,6 +79,10 @@ export async function getRun(id: string): Promise<Run> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')
   return run
+}
+
+export async function getLatestRunByPageId(pageId: string): Promise<Run | null> {
+  return runRepo.findLatestRunByPageId(pageId)
 }
 
 export async function listRuns(): Promise<Run[]> {

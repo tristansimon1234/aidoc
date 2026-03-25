@@ -5,6 +5,7 @@ import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { CreatePageSchema, UpdatePageSchema, ReorderSchema } from './page.schema.js'
 import * as pageService from './page.service.js'
 import { findDocByPageId } from '../documentation/documentation.repository.js'
+import { getLatestRunByPageId } from '../run/run.service.js'
 
 export const pageRouter = Router({ mergeParams: true })
 
@@ -94,6 +95,24 @@ pageRouter.get('/:pageId/doc', (req: Request, res: Response, next: NextFunction)
         return
       }
       res.status(200).json(doc)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Get the latest run for a page (for continue/resume)
+pageRouter.get('/:pageId/run', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = PageParams.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const run = await getLatestRunByPageId(params.data.pageId)
+      if (!run) {
+        res.status(404).json({ error: 'No run found', code: 'RUN_NOT_FOUND' })
+        return
+      }
+      res.status(200).json(run)
     } catch (err) {
       next(err)
     }
