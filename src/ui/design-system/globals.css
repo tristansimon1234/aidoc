@@ -94,3 +94,8 @@ code, pre {
 ::selection {
   background: rgba(77, 156, 255, 0.25);
 }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

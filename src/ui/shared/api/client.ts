@@ -80,8 +80,9 @@ export interface QuestionDTO {
 }
 
 export interface StepEventDTO {
-  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'close'
+  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'close' | 'live'
   step?: { type: string; action: string | null; pageUrl: string | null; reasoning: string | null }
+  liveUrl?: string
   stepIndex?: number
   message?: string
   completed?: boolean

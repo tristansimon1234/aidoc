@@ -57,6 +57,12 @@ export async function exploreRun(
       await deps.setBrowserbaseSessionId(runId, sessionId)
     }
 
+    // Send live browser view URL to frontend
+    const debugUrl = session.browserbaseDebugURL
+    if (debugUrl) {
+      emit({ type: 'live', liveUrl: debugUrl, message: 'Live browser view available' })
+    }
+
     if (!run.browserbaseSessionId) {
       emit({ type: 'status', message: `Navigating to ${run.startUrl}` })
       await explorationBrowser.navigateTo(session, run.startUrl)

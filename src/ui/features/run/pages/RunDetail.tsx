@@ -31,6 +31,7 @@ export function RunDetail(): React.ReactElement {
   const [phase, setPhase] = useState<Phase>('loading')
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [liveSteps, setLiveSteps] = useState<LiveStep[]>([])
+  const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [userInput, setUserInput] = useState('')
   const startedRef = useRef(false)
 
@@ -81,12 +82,16 @@ export function RunDetail(): React.ReactElement {
     setPhase('exploring')
     setStatusMessage('Launching browser...')
     setLiveSteps([])
+    setLiveUrl(null)
 
     try {
       await api.runs.exploreStream(
         id,
         (event: StepEventDTO) => {
           switch (event.type) {
+            case 'live':
+              setLiveUrl(event.liveUrl ?? null)
+              break
             case 'status':
               setStatusMessage(event.message ?? null)
               break
@@ -117,7 +122,8 @@ export function RunDetail(): React.ReactElement {
         context,
       )
 
-      // Stream ended — fetch final state
+      // Stream ended — hide live view, fetch final state
+      setLiveUrl(null)
       const runData = await fetchData()
       if (!runData) return
 
@@ -193,6 +199,52 @@ export function RunDetail(): React.ReactElement {
               {statusMessage}
             </span>
           </div>
+
+          {/* Live browser view */}
+          {liveUrl && (
+            <div style={{
+              marginBottom: 'var(--space-md)',
+              borderRadius: 'var(--radius-lg)',
+              overflow: 'hidden',
+              border: '1px solid var(--color-border-default)',
+              backgroundColor: 'var(--color-bg-base)',
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-sm)',
+                padding: 'var(--space-xs) var(--space-md)',
+                backgroundColor: 'var(--color-bg-surface)',
+                borderBottom: '1px solid var(--color-border-subtle)',
+              }}>
+                <span style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: 'var(--radius-full)',
+                  backgroundColor: 'var(--color-accent-green)',
+                  animation: 'pulse 2s infinite',
+                }} />
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-text-muted)',
+                }}>
+                  Live browser view
+                </span>
+              </div>
+              <iframe
+                src={liveUrl}
+                title="Live browser"
+                style={{
+                  width: '100%',
+                  height: '500px',
+                  border: 'none',
+                  display: 'block',
+                }}
+              />
+            </div>
+          )}
+
           {liveSteps.length > 0 && (
             <div style={{
               display: 'flex',
