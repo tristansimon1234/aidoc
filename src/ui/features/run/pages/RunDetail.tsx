@@ -6,19 +6,17 @@ import { api, type RunDTO, type RunStepDTO, type GeneratedDocDTO } from '../../.
 import { StepTimeline } from '../components/StepTimeline.js'
 import styles from './RunDetail.module.css'
 
-const POLL_INTERVAL = 3000
-
 export function RunDetail(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
   const [run, setRun] = useState<RunDTO | null>(null)
   const [steps, setSteps] = useState<RunStepDTO[]>([])
   const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
   const [loading, setLoading] = useState(true)
-  const [starting, setStarting] = useState(false)
+  const [exploring, setExploring] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const startedRef = useRef(false)
+  const abortRef = useRef(false)
 
-  const fetchData = useCallback(async () => {
+  const fetchRunData = useCallback(async () => {
     if (!id) return
     try {
       const [runData, stepsData] = await Promise.all([
@@ -39,40 +37,47 @@ export function RunDetail(): React.ReactElement {
     }
   }, [id])
 
-  // Initial fetch
+  // Initial data fetch
   useEffect(() => {
-    void fetchData()
-  }, [fetchData])
+    void fetchRunData()
+  }, [fetchRunData])
 
-  // Auto-start pending runs (once)
+  // Auto-start exploration loop when run is pending/running
   useEffect(() => {
-    if (!run || run.status !== 'pending' || startedRef.current || !id) return
-    startedRef.current = true
-    setStarting(true)
+    if (!run || !id) return
+    if (run.status !== 'pending' && run.status !== 'running') return
+    if (exploring) return
 
-    api.runs.start(id)
-      .then((updated) => {
-        setRun(updated)
-        setStarting(false)
-        void fetchData()
-      })
-      .catch((err: Error) => {
-        setError(err.message)
-        setStarting(false)
-        void fetchData()
-      })
-  }, [run, id, fetchData])
+    abortRef.current = false
+    setExploring(true)
 
-  // Poll while running
-  useEffect(() => {
-    if (!run || (run.status !== 'running' && !starting)) return
+    const runStepLoop = async (): Promise<void> => {
+      while (!abortRef.current) {
+        try {
+          const result = await api.runs.step(id)
 
-    const interval = setInterval(() => {
-      void fetchData()
-    }, POLL_INTERVAL)
+          // Refresh data after each step
+          await fetchRunData()
 
-    return () => clearInterval(interval)
-  }, [run, starting, fetchData])
+          if (result.done) {
+            setExploring(false)
+            return
+          }
+        } catch (err) {
+          setError((err as Error).message)
+          setExploring(false)
+          await fetchRunData()
+          return
+        }
+      }
+    }
+
+    void runStepLoop()
+
+    return () => {
+      abortRef.current = true
+    }
+  }, [run?.status, id, exploring, fetchRunData])
 
   if (loading) {
     return (
@@ -108,12 +113,12 @@ export function RunDetail(): React.ReactElement {
         </div>
       </div>
 
-      {(starting || run.status === 'running') && (
+      {exploring && (
         <div className={styles.section}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
             <Spinner size="sm" />
             <span style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>
-              Exploring {run.startUrl}...
+              Exploring {run.startUrl}... (step {steps.length + 1})
             </span>
           </div>
         </div>

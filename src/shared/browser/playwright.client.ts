@@ -3,7 +3,7 @@ import { env } from '../config/env.js'
 
 export type StagehandSession = Stagehand
 
-export async function launchBrowser(): Promise<StagehandSession> {
+export async function launchBrowser(existingSessionId?: string): Promise<StagehandSession> {
   const stagehand = new Stagehand({
     env: 'BROWSERBASE',
     apiKey: env.BROWSERBASE_API_KEY,
@@ -12,10 +12,18 @@ export async function launchBrowser(): Promise<StagehandSession> {
       modelName: 'anthropic/claude-sonnet-4-20250514',
       apiKey: env.ANTHROPIC_API_KEY,
     },
+    ...(existingSessionId ? { browserbaseSessionID: existingSessionId } : {}),
+    keepAlive: true,
+    disablePino: true,
+    verbose: 0,
   })
 
   await stagehand.init()
   return stagehand
+}
+
+export function getSessionId(session: StagehandSession): string | undefined {
+  return session.browserbaseSessionID
 }
 
 export async function closeBrowser(session: StagehandSession): Promise<void> {

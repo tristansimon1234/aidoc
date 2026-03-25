@@ -9,6 +9,7 @@ interface RunRow {
   goal: string
   status: string
   token_usage: number
+  browserbase_session_id: string | null
   created_at: string
   updated_at: string
 }
@@ -34,6 +35,7 @@ function mapToRun(row: RunRow): Run {
     goal: row.goal,
     status: row.status as RunStatus,
     tokenUsage: row.token_usage,
+    browserbaseSessionId: row.browserbase_session_id,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -97,6 +99,14 @@ export async function updateRunStatus(id: string, status: RunStatus): Promise<Ru
     .single()
   if (error) throw new DatabaseError(error.message)
   return mapToRun(data as RunRow)
+}
+
+export async function setBrowserbaseSessionId(id: string, sessionId: string): Promise<void> {
+  const { error } = await supabase
+    .from('runs')
+    .update({ browserbase_session_id: sessionId, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw new DatabaseError(error.message)
 }
 
 export async function incrementTokenUsage(id: string, tokens: number): Promise<void> {

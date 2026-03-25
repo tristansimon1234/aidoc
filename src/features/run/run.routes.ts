@@ -30,13 +30,14 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
-runRouter.post('/:id/start', (req: Request, res: Response, next: NextFunction) => {
+// Execute ONE exploration step and return the result
+runRouter.post('/:id/step', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const run = await runService.startRun(params.data.id)
-      res.status(200).json(run)
+      const result = await runService.runNextStep(params.data.id)
+      res.status(200).json(result)
     } catch (err) {
       next(err)
     }

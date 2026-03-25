@@ -7,6 +7,7 @@ export interface Run {
   goal: string
   status: RunStatus
   tokenUsage: number
+  browserbaseSessionId: string | null
   createdAt: Date
   updatedAt: Date
 }

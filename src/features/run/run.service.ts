@@ -1,7 +1,7 @@
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 import type { Run, RunStep, CreateRunInput } from './run.types.js'
 import * as runRepo from './run.repository.js'
-import { executeRun, type RunDeps } from '../exploration/exploration.service.js'
+import { executeOneStep, type RunDeps, type StepResult } from '../exploration/exploration.service.js'
 import * as questionRepo from '../../features/questions/questions.repository.js'
 
 function buildRunDeps(): RunDeps {
@@ -9,7 +9,9 @@ function buildRunDeps(): RunDeps {
     findRunById: runRepo.findRunById,
     updateRunStatus: runRepo.updateRunStatus,
     incrementTokenUsage: runRepo.incrementTokenUsage,
+    setBrowserbaseSessionId: runRepo.setBrowserbaseSessionId,
     createRunStep: runRepo.createRunStep,
+    findStepsByRunId: runRepo.findStepsByRunId,
     findQuestionsByRunId: (runId) =>
       questionRepo.findQuestionsByRunId(runId).then((qs) =>
         qs.map((q) => ({ question: q.question, answer: q.answer })),
@@ -22,20 +24,13 @@ export async function createRun(input: CreateRunInput): Promise<Run> {
   return runRepo.createRun(input)
 }
 
-export async function startRun(id: string): Promise<Run> {
+export async function runNextStep(id: string): Promise<StepResult> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')
-  if (run.status !== 'pending' && run.status !== 'blocked') {
-    throw new NotFoundError('Run is not in a startable state')
+  if (run.status !== 'pending' && run.status !== 'running') {
+    throw new NotFoundError('Run is not in a runnable state')
   }
-
-  // This runs synchronously within the request — Vercel keeps
-  // the function alive for up to maxDuration (300s)
-  await executeRun(id, buildRunDeps())
-
-  const updated = await runRepo.findRunById(id)
-  if (!updated) throw new NotFoundError('Run')
-  return updated
+  return executeOneStep(id, buildRunDeps())
 }
 
 export async function getRun(id: string): Promise<Run> {
