@@ -67,8 +67,9 @@ export async function exploreWithEvents(
 export async function generateDoc(id: string): Promise<GeneratedDoc> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')
-  if (run.status !== 'completed') {
-    throw new NotFoundError('Run must be completed before generating documentation')
+  // Allow doc generation from any terminal state — even partial explorations have value
+  if (run.status === 'pending' || run.status === 'running') {
+    throw new NotFoundError('Run is still in progress')
   }
   return generateAndSaveDoc(id, buildDocDeps())
 }

@@ -115,31 +115,33 @@ export function PageView(): React.ReactElement {
         },
       )
 
-      // Stream ended — check if exploration actually completed
+      // Stream ended — check what happened
       setLiveUrl(null)
       const updatedRun = await api.runs.get(run.id)
 
-      if (updatedRun.status === 'completed') {
-        // Generate documentation
-        setStatusMessage('Generating documentation...')
+      // Generate doc from whatever we have (completed, blocked, or failed)
+      if (updatedRun.status !== 'pending' && updatedRun.status !== 'running') {
+        setStatusMessage('Generating documentation from exploration data...')
         setGenerating(true)
 
         try {
           await api.runs.generateDoc(run.id)
           await api.pages.update(projectId, pageId, { status: 'published' })
-        } catch (genErr) {
-          setError(`Doc generation failed: ${(genErr as Error).message}`)
+        } catch {
+          // Doc generation failed — still show what we have
         }
-      } else if (updatedRun.status === 'blocked') {
-        setStatusMessage('Agent was blocked. Check the run for details.')
-      } else if (updatedRun.status === 'failed') {
-        setError('Exploration failed. Try again.')
+
+        if (updatedRun.status === 'blocked') {
+          setStatusMessage('Exploration was blocked — partial documentation generated.')
+        } else if (updatedRun.status === 'failed') {
+          setStatusMessage('Exploration failed — partial documentation generated from available data.')
+        }
       }
 
       // Refresh
       await fetchData()
       await context.refetchPages()
-      setStatusMessage(null)
+      if (updatedRun.status === 'completed') setStatusMessage(null)
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -172,14 +174,27 @@ export function PageView(): React.ReactElement {
 
       {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
 
+      {/* Status message */}
+      {statusMessage && !exploring && !generating && (
+        <p style={{
+          color: 'var(--color-accent-amber)',
+          fontSize: 'var(--text-sm)',
+          margin: 'var(--space-md) 0',
+          padding: 'var(--space-sm) var(--space-md)',
+          backgroundColor: 'rgba(245,166,35,0.1)',
+          borderRadius: 'var(--radius-md)',
+          border: '1px solid rgba(245,166,35,0.2)',
+        }}>
+          {statusMessage}
+        </p>
+      )}
+
       {/* Action buttons */}
       {!exploring && !generating && (
         <div style={{ display: 'flex', gap: 'var(--space-sm)', margin: 'var(--space-lg) 0' }}>
-          {(page.status === 'draft' || page.status === 'published') && (
-            <Button onClick={() => void handleExplore()}>
-              {page.status === 'published' ? 'Re-explore' : 'Explore & Document'}
-            </Button>
-          )}
+          <Button onClick={() => void handleExplore()}>
+            {doc ? 'Re-explore & Update' : 'Explore & Document'}
+          </Button>
         </div>
       )}
 
