@@ -89,11 +89,15 @@ export const api = {
     get: (id: string): Promise<RunDTO> => request(`/runs/${id}`),
     create: (body: { featureName: string; startUrl: string; goal: string }): Promise<RunDTO> =>
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
-    explore: (id: string): Promise<ExplorationResultDTO> =>
-      request(`/runs/${id}/explore`, { method: 'POST' }),
+    explore: (id: string, context?: string): Promise<ExplorationResultDTO> =>
+      request(`/runs/${id}/explore`, {
+        method: 'POST',
+        body: JSON.stringify(context ? { context } : {}),
+      }),
     generateDoc: (id: string): Promise<GeneratedDocDTO> =>
       request(`/runs/${id}/generate-doc`, { method: 'POST' }),
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),
+    questions: (id: string): Promise<QuestionDTO[]> => request(`/runs/${id}/questions`),
     doc: (id: string): Promise<GeneratedDocDTO> => request(`/runs/${id}/doc`),
   },
   questions: {

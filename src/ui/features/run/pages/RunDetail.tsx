@@ -1,31 +1,43 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { type ChangeEvent, useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
-import { Button, Badge, Spinner, StatusIndicator, CodeBlock, EmptyState } from '../../../design-system/components/index.js'
-import { api, type RunDTO, type RunStepDTO, type GeneratedDocDTO } from '../../../shared/api/client.js'
+import {
+  Button,
+  Badge,
+  Spinner,
+  StatusIndicator,
+  CodeBlock,
+  EmptyState,
+  Field,
+} from '../../../design-system/components/index.js'
+import { api, type RunDTO, type RunStepDTO, type GeneratedDocDTO, type QuestionDTO } from '../../../shared/api/client.js'
 import { StepTimeline } from '../components/StepTimeline.js'
 import styles from './RunDetail.module.css'
 
-type Phase = 'loading' | 'idle' | 'exploring' | 'generating' | 'done' | 'blocked' | 'error'
+type Phase = 'loading' | 'idle' | 'exploring' | 'generating' | 'done' | 'blocked' | 'failed'
 
 export function RunDetail(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
   const [run, setRun] = useState<RunDTO | null>(null)
   const [steps, setSteps] = useState<RunStepDTO[]>([])
+  const [questions, setQuestions] = useState<QuestionDTO[]>([])
   const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
   const [phase, setPhase] = useState<Phase>('loading')
   const [message, setMessage] = useState<string | null>(null)
+  const [userInput, setUserInput] = useState('')
   const startedRef = useRef(false)
 
   const fetchData = useCallback(async () => {
-    if (!id) return
+    if (!id) return null
     try {
-      const [runData, stepsData] = await Promise.all([
+      const [runData, stepsData, questionsData] = await Promise.all([
         api.runs.get(id),
         api.runs.steps(id),
+        api.runs.questions(id),
       ])
       setRun(runData)
       setSteps(stepsData)
+      setQuestions(questionsData)
 
       if (runData.status === 'completed') {
         const docData = await api.runs.doc(id).catch(() => null)
@@ -35,7 +47,7 @@ export function RunDetail(): React.ReactElement {
       return runData
     } catch (err) {
       setMessage((err as Error).message)
-      setPhase('error')
+      setPhase('failed')
       return null
     }
   }, [id])
@@ -46,83 +58,80 @@ export function RunDetail(): React.ReactElement {
       if (!runData) return
       if (runData.status === 'completed') setPhase('done')
       else if (runData.status === 'blocked') setPhase('blocked')
-      else if (runData.status === 'failed') setPhase('error')
+      else if (runData.status === 'failed') setPhase('failed')
       else setPhase('idle')
     })
   }, [fetchData])
 
-  // Auto-start exploration for pending runs
+  // Auto-start for pending runs
   useEffect(() => {
     if (!id || !run || phase !== 'idle' || run.status !== 'pending' || startedRef.current) return
     startedRef.current = true
+    void launchExploration()
+    // eslint-disable-next-line
+  }, [id, run, phase])
 
-    const doExplore = async (): Promise<void> => {
-      setPhase('exploring')
-      setMessage('Launching browser and exploring...')
+  const launchExploration = async (context?: string): Promise<void> => {
+    if (!id) return
+    setPhase('exploring')
+    setMessage('Launching browser and exploring...')
 
-      try {
-        const result = await api.runs.explore(id)
+    try {
+      const result = await api.runs.explore(id, context)
+      await fetchData()
 
-        // Refresh data
+      if (result.needsQuestion) {
+        setPhase('blocked')
+        setMessage(result.question)
+      } else if (result.completed) {
+        // Auto-generate doc
+        setPhase('generating')
+        setMessage('Generating SOP documentation...')
+        try {
+          const docResult = await api.runs.generateDoc(id)
+          setDoc(docResult)
+        } catch {
+          // ok, user can retry later
+        }
         await fetchData()
-
-        if (result.needsQuestion) {
-          setPhase('blocked')
-          setMessage(result.question)
-          return
-        }
-
-        if (result.completed) {
-          // Auto-generate documentation
-          setPhase('generating')
-          setMessage('Generating SOP documentation...')
-
-          try {
-            const docResult = await api.runs.generateDoc(id)
-            setDoc(docResult)
-          } catch {
-            // Doc generation failed but exploration succeeded
-          }
-
-          await fetchData()
-          setPhase('done')
-          setMessage('Exploration complete. Documentation generated.')
-        } else {
-          setPhase('error')
-          setMessage(result.message || 'Exploration ended without completing.')
-          await fetchData()
-        }
-      } catch (err) {
-        setPhase('error')
-        setMessage((err as Error).message)
+        setPhase('done')
+        setMessage('Exploration and documentation complete.')
+      } else {
+        setPhase('failed')
+        setMessage(result.message || 'Exploration ended without completing.')
         await fetchData()
       }
+    } catch (err) {
+      setPhase('failed')
+      setMessage((err as Error).message)
+      await fetchData()
     }
+  }
 
-    void doExplore()
-  }, [id, run, phase, fetchData])
+  const handleResume = (): void => {
+    const context = userInput.trim()
+    if (!context) return
+    setUserInput('')
+    void launchExploration(context)
+  }
+
+  const handleRetry = (): void => {
+    void launchExploration()
+  }
 
   if (phase === 'loading') {
-    return (
-      <Shell>
-        <Spinner size="lg" />
-      </Shell>
-    )
+    return <Shell><Spinner size="lg" /></Shell>
   }
 
   if (!run) {
-    return (
-      <Shell>
-        <EmptyState title="Run not found" />
-      </Shell>
-    )
+    return <Shell><EmptyState title="Run not found" /></Shell>
   }
+
+  const latestQuestion = questions.filter((q) => !q.answer).at(-1)
 
   return (
     <Shell>
-      <Link to="/" className={styles.back}>
-        &larr; runs
-      </Link>
+      <Link to="/" className={styles.back}>&larr; runs</Link>
 
       <div className={styles.header}>
         <div className={styles.titleRow}>
@@ -136,7 +145,7 @@ export function RunDetail(): React.ReactElement {
         </div>
       </div>
 
-      {/* Exploring state */}
+      {/* Exploring */}
       {phase === 'exploring' && (
         <div className={styles.section}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
@@ -148,7 +157,7 @@ export function RunDetail(): React.ReactElement {
         </div>
       )}
 
-      {/* Generating doc state */}
+      {/* Generating doc */}
       {phase === 'generating' && (
         <div className={styles.section}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
@@ -160,46 +169,69 @@ export function RunDetail(): React.ReactElement {
         </div>
       )}
 
-      {/* Blocked state */}
-      {phase === 'blocked' && message && (
+      {/* Blocked — show question and input for user to help */}
+      {phase === 'blocked' && (
         <div className={styles.section}>
-          <EmptyState title="Blocked" description={message} />
+          <div style={{
+            padding: 'var(--space-lg)',
+            backgroundColor: 'var(--color-bg-elevated)',
+            border: '1px solid #4A2D10',
+            borderRadius: 'var(--radius-lg)',
+          }}>
+            <p style={{ color: 'var(--color-accent-amber)', fontSize: 'var(--text-md)', fontWeight: 500, margin: '0 0 var(--space-sm)' }}>
+              Agent needs help
+            </p>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-md)' }}>
+              {latestQuestion?.question ?? message}
+            </p>
+            <Field
+              label="your_response"
+              multiline
+              placeholder="e.g. Use test@example.com / password123, or: Skip the login and go to /dashboard"
+              value={userInput}
+              onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setUserInput(e.target.value)}
+              rows={3}
+            />
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-md)' }}>
+              <Button onClick={handleResume} disabled={!userInput.trim()}>
+                Resume Exploration
+              </Button>
+              <Button variant="ghost" onClick={handleRetry}>
+                Retry Without Context
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Error state */}
-      {phase === 'error' && message && (
+      {/* Failed — show error and retry button */}
+      {phase === 'failed' && (
         <div className={styles.section}>
-          <EmptyState title="Error" description={message} />
+          <EmptyState
+            title="Exploration failed"
+            description={message ?? 'Something went wrong.'}
+            action={<Button onClick={handleRetry}>Retry</Button>}
+          />
         </div>
       )}
 
-      {/* Done message */}
-      {phase === 'done' && message && (
-        <div className={styles.section}>
-          <p style={{ color: 'var(--color-accent-green)', fontSize: 'var(--text-sm)' }}>
-            {message}
-          </p>
-        </div>
-      )}
-
-      {/* Generate doc button if exploration done but no doc yet */}
-      {run.status === 'completed' && !doc && phase === 'done' && (
+      {/* Done */}
+      {phase === 'done' && !doc && (
         <div className={styles.section}>
           <Button onClick={() => {
             if (!id) return
             setPhase('generating')
             setMessage('Generating SOP documentation...')
             api.runs.generateDoc(id)
-              .then((d) => { setDoc(d); setPhase('done'); setMessage('Documentation generated.') })
-              .catch((err: Error) => { setPhase('error'); setMessage(err.message) })
+              .then((d) => { setDoc(d); setPhase('done') })
+              .catch((err: Error) => { setPhase('failed'); setMessage(err.message) })
           }}>
             Generate Documentation
           </Button>
         </div>
       )}
 
-      {/* Steps timeline */}
+      {/* Steps */}
       {steps.length > 0 && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Steps ({steps.length})</h2>
@@ -207,7 +239,7 @@ export function RunDetail(): React.ReactElement {
         </section>
       )}
 
-      {/* Generated doc */}
+      {/* Doc */}
       {doc?.markdownContent && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Generated Documentation</h2>

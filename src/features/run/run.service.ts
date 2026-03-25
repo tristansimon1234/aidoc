@@ -31,20 +31,24 @@ export async function createRun(input: CreateRunInput): Promise<Run> {
   return runRepo.createRun(input)
 }
 
-export async function explore(id: string): Promise<ExplorationResult> {
+export async function explore(id: string, additionalContext?: string): Promise<ExplorationResult> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')
-  if (run.status !== 'pending' && run.status !== 'blocked') {
-    throw new NotFoundError('Run is not in a startable state')
+
+  // Allow explore from pending, blocked, or failed states
+  if (run.status !== 'pending' && run.status !== 'blocked' && run.status !== 'failed') {
+    throw new NotFoundError('Run is not in an explorable state')
   }
 
-  const result = await exploreRun(id, buildRunDeps())
+  const result = await exploreRun(id, buildRunDeps(), {
+    additionalContext,
+  })
 
-  // If exploration completed, ask a question if needed
+  // If blocked, save the question for the user
   if (result.needsQuestion && result.question) {
     await questionRepo.createQuestion({
       runId: id,
-      stepId: '', // no specific step
+      stepId: '',
       question: result.question,
     })
   }
@@ -72,4 +76,9 @@ export async function getRunSteps(runId: string): Promise<RunStep[]> {
   const run = await runRepo.findRunById(runId)
   if (!run) throw new NotFoundError('Run')
   return runRepo.findStepsByRunId(runId)
+}
+
+export async function getQuestions(runId: string): Promise<{ id: string; question: string; answer: string | null }[]> {
+  const questions = await questionRepo.findQuestionsByRunId(runId)
+  return questions.map((q) => ({ id: q.id, question: q.question, answer: q.answer }))
 }

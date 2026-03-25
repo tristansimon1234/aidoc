@@ -31,25 +31,61 @@ export interface RunDeps {
   countSteps: (runId: string) => Promise<number>
 }
 
-export async function exploreRun(runId: string, deps: RunDeps): Promise<ExplorationResult> {
+export interface ExploreOptions {
+  additionalContext?: string
+}
+
+export async function exploreRun(
+  runId: string,
+  deps: RunDeps,
+  options?: ExploreOptions,
+): Promise<ExplorationResult> {
   const run = await deps.findRunById(runId)
   if (!run) throw new Error(`Run ${runId} not found`)
 
   await deps.updateRunStatus(runId, 'running')
 
+  // Reconnect to existing session if available, otherwise create new
   const session = await launchBrowser(run.browserbaseSessionId ?? undefined)
 
   try {
-    // Save session ID
+    // Save session ID on first launch
     const sessionId = getSessionId(session)
     if (sessionId && !run.browserbaseSessionId) {
       await deps.setBrowserbaseSessionId(runId, sessionId)
     }
 
-    // Navigate to start URL
-    await explorationBrowser.navigateTo(session, run.startUrl)
+    // Only navigate on first exploration (no existing session)
+    if (!run.browserbaseSessionId) {
+      await explorationBrowser.navigateTo(session, run.startUrl)
+    }
 
-    // Use Stagehand agent — it handles the entire exploration loop
+    // Build the instruction
+    const contextBlock = options?.additionalContext
+      ? `\n\n## Additional Context from User\n${options.additionalContext}`
+      : ''
+
+    const isResume = run.browserbaseSessionId !== null
+    const resumeBlock = isResume
+      ? '\n\nYou are RESUMING a previous exploration. The browser is already open where you left off. Continue from here.'
+      : ''
+
+    const instruction = `You are a documentation agent. Explore this web application feature thoroughly.
+
+Feature: ${run.featureName}
+Goal: ${run.goal}
+Start URL: ${run.startUrl}
+${resumeBlock}${contextBlock}
+
+Instructions:
+- Navigate through the feature, clicking buttons, opening menus, filling forms with test data
+- Document every screen and interaction you encounter
+- If you hit a login wall or auth gate you cannot pass, stop and clearly explain what's needed
+- Explore at least 5-10 meaningful interactions before finishing
+- When you've explored enough to write comprehensive documentation, finish
+- Be thorough but efficient`
+
+    // Use Stagehand agent
     const agent = session.agent({
       model: {
         modelName: 'anthropic/claude-sonnet-4-20250514',
@@ -58,24 +94,11 @@ export async function exploreRun(runId: string, deps: RunDeps): Promise<Explorat
     })
 
     const result = await agent.execute({
-      instruction: `You are a documentation agent. Explore this web application feature thoroughly.
-
-Feature: ${run.featureName}
-Goal: ${run.goal}
-Start URL: ${run.startUrl}
-
-Instructions:
-- Navigate through the feature, clicking buttons, opening menus, filling forms with test data
-- Document every screen and interaction you encounter
-- If you hit a login page, stop and report what credentials are needed
-- Explore at least 5-10 meaningful interactions before finishing
-- When you've explored enough to write comprehensive documentation, finish
-
-Be thorough but efficient.`,
+      instruction,
       maxSteps: 30,
     })
 
-    // Save actions as steps in DB
+    // Save actions as steps
     const stepOffset = await deps.countSteps(runId)
     const actions: AgentActionRecord[] = []
 
@@ -91,9 +114,12 @@ Be thorough but efficient.`,
       }
       actions.push(record)
 
-      // Save meaningful actions as steps
       if (action.type !== 'think') {
-        const screenshotPath = await explorationBrowser.captureScreenshot(session, runId, stepOffset + i)
+        const screenshotPath = await explorationBrowser.captureScreenshot(
+          session,
+          runId,
+          stepOffset + i,
+        )
         await deps.createRunStep({
           runId,
           stepIndex: stepOffset + i,
@@ -114,11 +140,19 @@ Be thorough but efficient.`,
       )
     }
 
-    // Check if blocked (login, auth, etc.)
-    const isBlocked = !result.completed && result.message.toLowerCase().includes('login')
-      || result.message.toLowerCase().includes('credential')
-      || result.message.toLowerCase().includes('password')
-      || result.message.toLowerCase().includes('sign in')
+    // Determine outcome
+    const msg = result.message.toLowerCase()
+    const isBlocked = !result.completed && (
+      msg.includes('login') ||
+      msg.includes('credential') ||
+      msg.includes('password') ||
+      msg.includes('sign in') ||
+      msg.includes('authenticat') ||
+      msg.includes('cannot') ||
+      msg.includes('unable') ||
+      msg.includes('blocked') ||
+      msg.includes('access denied')
+    )
 
     if (isBlocked) {
       await deps.updateRunStatus(runId, 'blocked')
@@ -127,22 +161,24 @@ Be thorough but efficient.`,
         message: result.message,
         actions,
         needsQuestion: true,
-        question: `The agent was blocked: ${result.message}. What should it do?`,
+        question: result.message,
       }
     }
 
     if (result.completed) {
       await deps.updateRunStatus(runId, 'completed')
     } else {
-      await deps.updateRunStatus(runId, 'failed')
+      // Not blocked, not completed — partial exploration
+      // Keep as running so user can retry
+      await deps.updateRunStatus(runId, 'blocked')
     }
 
     return {
       completed: result.completed,
       message: result.message,
       actions,
-      needsQuestion: false,
-      question: null,
+      needsQuestion: !result.completed,
+      question: !result.completed ? `Agent stopped: "${result.message}". Want to provide more guidance?` : null,
     }
   } catch (err) {
     console.error(`Exploration failed for run ${runId}:`, err)

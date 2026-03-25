@@ -30,13 +30,15 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
-// Launch Stagehand agent exploration — runs synchronously, returns result
+// Launch or resume exploration
+// Body: { context?: string } — optional additional context from user
 runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const result = await runService.explore(params.data.id)
+      const body = req.body as { context?: string }
+      const result = await runService.explore(params.data.id, body.context)
       res.status(200).json(result)
     } catch (err) {
       next(err)
@@ -44,7 +46,7 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
   })()
 })
 
-// Generate SOP documentation from exploration data
+// Generate SOP doc from exploration data
 runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
@@ -78,6 +80,19 @@ runRouter.get('/:id/steps', (req: Request, res: Response, next: NextFunction) =>
       if (!params.success) throw new ValidationError(params.error.flatten())
       const steps = await runService.getRunSteps(params.data.id)
       res.status(200).json(steps)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+runRouter.get('/:id/questions', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const questions = await runService.getQuestions(params.data.id)
+      res.status(200).json(questions)
     } catch (err) {
       next(err)
     }
