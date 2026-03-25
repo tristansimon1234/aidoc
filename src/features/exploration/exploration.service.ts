@@ -132,7 +132,7 @@ Instructions:
               url: record.pageUrl ?? run.startUrl,
               title: toolName,
               action: record.action ?? toolName,
-              observation: record.reasoning?.slice(0, 500) ?? '',
+              observation: record.reasoning?.slice(0, 2000) ?? '',
               screenshotPath,
             })
 

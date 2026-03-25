@@ -9,7 +9,7 @@ const DocJsonSchema = z.object({
   totalSteps: z.number(),
   keyPages: z.array(z.string()),
   userActions: z.array(z.string()),
-  blockers: z.array(z.string()),
+  screenshots: z.number().optional(),
 })
 
 export interface GenerationResult {
@@ -21,13 +21,14 @@ export interface GenerationResult {
 export async function generateDocumentation(context: {
   featureName: string
   goal: string
+  startUrl: string
   steps: StepSummary[]
 }): Promise<GenerationResult> {
   const prompt = buildDocumentationPrompt(context)
 
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
-    max_tokens: 4096,
+    max_tokens: 8192,
     messages: [{ role: 'user', content: prompt }],
   })
 
@@ -40,12 +41,17 @@ export async function generateDocumentation(context: {
   const markdown = parts[0]?.trim() ?? ''
   const jsonStr = parts[1]?.trim() ?? '{}'
 
-  const parsed = JSON.parse(jsonStr) as unknown
-  const json = DocJsonSchema.parse(parsed)
+  let json: Record<string, unknown>
+  try {
+    const parsed = JSON.parse(jsonStr) as unknown
+    json = DocJsonSchema.parse(parsed) as unknown as Record<string, unknown>
+  } catch {
+    json = { featureName: context.featureName, totalSteps: context.steps.length, keyPages: [], userActions: [] }
+  }
 
   return {
     markdown,
-    json: json as unknown as Record<string, unknown>,
+    json,
     usage: {
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,

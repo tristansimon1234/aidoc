@@ -1,44 +1,74 @@
 import type { StepSummary } from '../../features/exploration/exploration.types.js'
 
-function formatStepHistory(steps: StepSummary[]): string {
+function formatStepsWithScreenshots(steps: StepSummary[]): string {
   if (steps.length === 0) return 'No steps recorded.'
   return steps
-    .map((s, i) => `Step ${i + 1}: [${s.url}] Action: ${s.action} → Result: ${s.observation}`)
-    .join('\n')
+    .map((s, i) => {
+      let entry = `Step ${i + 1}: [${s.url}]\n  Action: ${s.action}`
+      if (s.observation) entry += `\n  Details: ${s.observation}`
+      if (s.screenshotUrl) entry += `\n  Screenshot: ${s.screenshotUrl}`
+      return entry
+    })
+    .join('\n\n')
 }
 
 export function buildDocumentationPrompt(context: {
   featureName: string
   goal: string
+  startUrl: string
   steps: StepSummary[]
 }): string {
-  return `You are a technical documentation writer. Generate a structured SOP (Standard Operating Procedure) document based on the following exploration data.
+  const screenshotSteps = context.steps.filter((s) => s.screenshotUrl)
 
-## Feature
+  return `You are a product documentation writer. Generate a clear, user-friendly product guide that helps real users understand and use this feature.
+
+## Product
 Name: "${context.featureName}"
+URL: ${context.startUrl}
 Goal: "${context.goal}"
 
-## Exploration Steps
-${formatStepHistory(context.steps)}
+## Exploration Data
+${formatStepsWithScreenshots(context.steps)}
 
-## Output Format
-Generate a comprehensive SOP document in Markdown format with these sections:
+## Available Screenshots
+${screenshotSteps.length > 0
+  ? screenshotSteps.map((s, i) => `Screenshot ${i + 1}: ${s.screenshotUrl}\n  Context: ${s.action}`).join('\n')
+  : 'No screenshots available.'}
 
-1. **Overview** — Brief description of the feature
-2. **Prerequisites** — What the user needs before starting
-3. **Step-by-Step Instructions** — Detailed walkthrough with numbered steps
-4. **Expected Results** — What the user should see at each step
-5. **Troubleshooting** — Common issues and solutions
-6. **Architecture Notes** — Simple feature architecture summary
+## Your Task
+Write a **user-facing product guide** in Markdown. This is NOT an internal SOP — it's documentation that end users will read to understand how to use the product.
 
-Also generate a JSON summary with this structure:
+### Requirements:
+1. Write in clear, friendly language (not corporate/technical jargon)
+2. Include screenshots inline using Markdown image syntax: ![description](url)
+3. Place screenshots at the relevant step — every major screen should have one
+4. Focus on WHAT THE USER SEES and WHAT THEY SHOULD DO
+5. Be specific: use actual button names, labels, and text from the app
+
+### Document Structure:
+1. **Introduction** — What this feature/product is and who it's for (2-3 sentences)
+2. **Getting Started** — How to access the feature, any prerequisites
+3. **Walkthrough** — Step-by-step guide with screenshots at each key step. Use numbered steps. For each step:
+   - What the user sees on screen
+   - What they should click/do
+   - Include a screenshot if available
+4. **Key Features** — Highlight important features discovered during exploration
+5. **FAQ / Tips** — Common questions based on what was observed
+
+### Formatting Rules:
+- Use ## for sections, ### for subsections
+- Use numbered lists for sequential steps
+- Use bullet points for non-sequential info
+- Include ALL relevant screenshots inline (don't just list them at the end)
+- Use **bold** for UI element names (buttons, links, menu items)
+- Keep paragraphs short (2-3 sentences max)
+
+After the markdown, add a line containing "---JSON---", then a JSON summary:
 {
   "featureName": "string",
   "totalSteps": number,
   "keyPages": ["url1", "url2"],
   "userActions": ["action1", "action2"],
-  "blockers": ["blocker1"]
-}
-
-Respond with the Markdown document first, then a line containing "---JSON---", then the JSON summary.`
+  "screenshots": number
+}`
 }

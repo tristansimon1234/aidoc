@@ -14,3 +14,11 @@ export async function uploadToStorage(
   if (error) throw new DatabaseError(`Storage upload failed: ${error.message}`)
   return path
 }
+
+export async function getSignedUrl(bucket: string, path: string): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(path, 60 * 60 * 24 * 7) // 7 days
+  if (error) return null
+  return data.signedUrl
+}

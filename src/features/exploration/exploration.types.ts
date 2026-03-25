@@ -2,6 +2,7 @@ export interface StepSummary {
   url: string
   action: string
   observation: string
+  screenshotUrl: string | null
 }
 
 export interface ExplorationResult {
