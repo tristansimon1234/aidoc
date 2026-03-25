@@ -6,7 +6,7 @@ import {
   Badge,
   Spinner,
   StatusIndicator,
-  CodeBlock,
+  MarkdownRenderer,
   EmptyState,
   Field,
 } from '../../../design-system/components/index.js'
@@ -326,7 +326,7 @@ export function RunDetail(): React.ReactElement {
       {doc?.markdownContent && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Generated Documentation</h2>
-          <CodeBlock code={doc.markdownContent} language="markdown" />
+          <MarkdownRenderer content={doc.markdownContent} />
         </section>
       )}
 
