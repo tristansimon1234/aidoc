@@ -6,6 +6,17 @@ import * as runService from './run.service.js'
 
 export const runRouter = Router()
 
+runRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const runs = await runService.listRuns()
+      res.status(200).json(runs)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
