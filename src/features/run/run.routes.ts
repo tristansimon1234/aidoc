@@ -22,8 +22,21 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsed = CreateRunSchema.safeParse(req.body)
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
-      const run = await runService.createAndStartRun(parsed.data)
+      const run = await runService.createRun(parsed.data)
       res.status(201).json(run)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+runRouter.post('/:id/start', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const run = await runService.startRun(params.data.id)
+      res.status(200).json(run)
     } catch (err) {
       next(err)
     }

@@ -81,6 +81,8 @@ export const api = {
     get: (id: string): Promise<RunDTO> => request(`/runs/${id}`),
     create: (body: { featureName: string; startUrl: string; goal: string }): Promise<RunDTO> =>
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
+    start: (id: string): Promise<RunDTO> =>
+      request(`/runs/${id}/start`, { method: 'POST' }),
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),
     doc: (id: string): Promise<GeneratedDocDTO> => request(`/runs/${id}/doc`),
   },

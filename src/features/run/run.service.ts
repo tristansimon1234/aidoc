@@ -18,16 +18,24 @@ function buildRunDeps(): RunDeps {
   }
 }
 
-export async function createAndStartRun(input: CreateRunInput): Promise<Run> {
-  const run = await runRepo.createRun(input)
+export async function createRun(input: CreateRunInput): Promise<Run> {
+  return runRepo.createRun(input)
+}
 
-  // Fire-and-forget: launch exploration in background
-  // The run status updates happen inside executeRun
-  executeRun(run.id, buildRunDeps()).catch((err) => {
-    console.error(`Background run ${run.id} failed:`, err)
-  })
+export async function startRun(id: string): Promise<Run> {
+  const run = await runRepo.findRunById(id)
+  if (!run) throw new NotFoundError('Run')
+  if (run.status !== 'pending' && run.status !== 'blocked') {
+    throw new NotFoundError('Run is not in a startable state')
+  }
 
-  return run
+  // This runs synchronously within the request — Vercel keeps
+  // the function alive for up to maxDuration (300s)
+  await executeRun(id, buildRunDeps())
+
+  const updated = await runRepo.findRunById(id)
+  if (!updated) throw new NotFoundError('Run')
+  return updated
 }
 
 export async function getRun(id: string): Promise<Run> {
