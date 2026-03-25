@@ -15,6 +15,8 @@ export async function launchBrowser(existingSessionId?: string): Promise<Stageha
     ...(existingSessionId ? { browserbaseSessionID: existingSessionId } : {}),
     keepAlive: true,
     disablePino: true,
+    experimental: true,
+    disableAPI: true,
     verbose: 0,
   })
 
