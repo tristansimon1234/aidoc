@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { useParams, useNavigate, Outlet, Link } from 'react-router-dom'
+import { useParams, useNavigate, Outlet, useLocation, Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Spinner, EmptyState } from '../../../design-system/components/index.js'
 import { api, type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
@@ -9,6 +9,7 @@ import styles from './ProjectDetail.module.css'
 export function ProjectDetail(): React.ReactElement {
   const { projectId, pageId } = useParams<{ projectId: string; pageId?: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const [project, setProject] = useState<ProjectDTO | null>(null)
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
@@ -32,12 +33,15 @@ export function ProjectDetail(): React.ReactElement {
   useEffect(() => { void fetchData() }, [fetchData])
 
   if (loading) {
-    return <Shell><Spinner size="lg" /></Shell>
+    return <Shell fullWidth><Spinner size="lg" /></Shell>
   }
 
   if (!project) {
-    return <Shell><EmptyState title="Project not found" /></Shell>
+    return <Shell fullWidth><EmptyState title="Project not found" /></Shell>
   }
+
+  // Check if we're on a child route (pages/new or pages/:pageId)
+  const isOnChildRoute = location.pathname !== `/projects/${projectId}`
 
   return (
     <Shell
@@ -60,11 +64,13 @@ export function ProjectDetail(): React.ReactElement {
               +
             </Button>
           </div>
-          <PageTree pages={pages} projectId={projectId!} activePageId={pageId} />
+          <div className={styles.pageList}>
+            <PageTree pages={pages} projectId={projectId!} activePageId={pageId} />
+          </div>
         </aside>
 
-        <div className={pageId ? styles.content : styles.emptyContent}>
-          {pageId ? (
+        <div className={isOnChildRoute ? styles.content : styles.emptyContent}>
+          {isOnChildRoute ? (
             <Outlet context={{ project, pages, refetchPages: fetchData }} />
           ) : (
             <EmptyState
