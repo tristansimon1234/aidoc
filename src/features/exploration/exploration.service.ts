@@ -76,7 +76,7 @@ export async function executeOneStep(runId: string, deps: RunDeps): Promise<Step
     }))
 
     // Get current page context
-    const { url, title, observedActions } = await explorationBrowser.getPageContext(session)
+    const { url, title, pageContent } = await explorationBrowser.getPageContext(session)
 
     // Get questions
     const questions = await deps.findQuestionsByRunId(runId)
@@ -90,7 +90,7 @@ export async function executeOneStep(runId: string, deps: RunDeps): Promise<Step
       goal: run.goal,
       featureName: run.featureName,
       stepHistory,
-      currentStep: { url, title, observedActions },
+      currentStep: { url, title, pageContent },
       questionHistory,
     })
 
@@ -110,7 +110,7 @@ export async function executeOneStep(runId: string, deps: RunDeps): Promise<Step
         url,
         title,
         action: decision.instruction,
-        observation: observedActions.slice(0, 500),
+        observation: pageContent.slice(0, 500),
         screenshotPath,
       })
 

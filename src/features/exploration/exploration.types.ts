@@ -7,7 +7,7 @@ export interface StepSummary {
 export interface StepData {
   url: string
   title: string
-  observedActions: string
+  pageContent: string
 }
 
 export interface Question {

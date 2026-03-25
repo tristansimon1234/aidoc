@@ -18,8 +18,8 @@ User's goal: "${context.goal}"
 - URL: ${context.currentStep.url}
 - Title: ${context.currentStep.title}
 
-## Available Actions on Page
-${context.currentStep.observedActions || 'No actions observed yet.'}
+## Page Content
+${context.currentStep.pageContent || 'Page is empty or still loading.'}
 
 ## Step History
 ${formatStepHistory(context.stepHistory)}

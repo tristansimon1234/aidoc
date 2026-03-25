@@ -3,8 +3,3 @@ export interface PageSnapshot {
   title: string
   screenshot: Buffer
 }
-
-export interface ObservedAction {
-  description: string
-  selector: string
-}
