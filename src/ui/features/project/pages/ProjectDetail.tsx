@@ -13,6 +13,7 @@ export function ProjectDetail(): React.ReactElement {
   const [project, setProject] = useState<ProjectDTO | null>(null)
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
+  const [generating, setGenerating] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -32,6 +33,19 @@ export function ProjectDetail(): React.ReactElement {
 
   useEffect(() => { void fetchData() }, [fetchData])
 
+  const handleAutoGenerate = async (): Promise<void> => {
+    if (!projectId) return
+    setGenerating(true)
+    try {
+      await api.pages.autoGenerate(projectId)
+      await fetchData()
+    } catch (err) {
+      console.error('Auto-generate failed:', err)
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   if (loading) {
     return <Shell fullWidth><Spinner size="lg" /></Shell>
   }
@@ -40,7 +54,6 @@ export function ProjectDetail(): React.ReactElement {
     return <Shell fullWidth><EmptyState title="Project not found" /></Shell>
   }
 
-  // Check if we're on a child route (pages/new or pages/:pageId)
   const isOnChildRoute = location.pathname !== `/projects/${projectId}`
 
   return (
@@ -65,7 +78,13 @@ export function ProjectDetail(): React.ReactElement {
             </Button>
           </div>
           <div className={styles.pageList}>
-            <PageTree pages={pages} projectId={projectId!} activePageId={pageId} />
+            {pages.length > 0 ? (
+              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} />
+            ) : (
+              <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', padding: 'var(--space-sm)' }}>
+                No pages yet
+              </p>
+            )}
           </div>
         </aside>
 
@@ -74,12 +93,30 @@ export function ProjectDetail(): React.ReactElement {
             <Outlet context={{ project, pages, refetchPages: fetchData }} />
           ) : (
             <EmptyState
-              title="Select a page"
-              description="Choose a page from the sidebar or create a new one."
+              title={pages.length === 0 ? 'Get started' : 'Select a page'}
+              description={
+                pages.length === 0
+                  ? 'Let the AI scan your site and create a documentation structure automatically.'
+                  : 'Choose a page from the sidebar to view or edit its documentation.'
+              }
               action={
-                <Button onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
-                  New Page
-                </Button>
+                pages.length === 0 ? (
+                  <div style={{ display: 'flex', gap: 'var(--space-sm)', flexDirection: 'column', alignItems: 'center' }}>
+                    <Button
+                      onClick={() => void handleAutoGenerate()}
+                      disabled={generating}
+                    >
+                      {generating ? 'Scanning site...' : 'Auto-generate structure'}
+                    </Button>
+                    <Button variant="ghost" onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
+                      Or create pages manually
+                    </Button>
+                  </div>
+                ) : (
+                  <Button onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
+                    New Page
+                  </Button>
+                )
               }
             />
           )}

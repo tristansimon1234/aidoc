@@ -134,6 +134,10 @@ export const api = {
       request(`/projects/${projectId}/pages/${pageId}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (projectId: string, pageId: string): Promise<void> =>
       request(`/projects/${projectId}/pages/${pageId}`, { method: 'DELETE' }),
+    doc: (projectId: string, pageId: string): Promise<GeneratedDocDTO> =>
+      request(`/projects/${projectId}/pages/${pageId}/doc`),
+    autoGenerate: (projectId: string): Promise<DocPageDTO[]> =>
+      request(`/projects/${projectId}/pages/auto-generate`, { method: 'POST' }),
   },
   runs: {
     list: (): Promise<RunDTO[]> => request('/runs'),

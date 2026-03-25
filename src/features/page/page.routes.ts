@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { CreatePageSchema, UpdatePageSchema, ReorderSchema } from './page.schema.js'
 import * as pageService from './page.service.js'
+import { findDocByPageId } from '../documentation/documentation.repository.js'
 
 export const pageRouter = Router({ mergeParams: true })
 
@@ -41,6 +42,20 @@ pageRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
+// Auto-generate documentation structure — agent scans site and creates pages
+pageRouter.post('/auto-generate', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParam.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const pages = await pageService.autoGenerateStructure(params.data.projectId)
+      res.status(201).json(pages)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 pageRouter.put('/reorder', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
@@ -61,6 +76,24 @@ pageRouter.get('/:pageId', (req: Request, res: Response, next: NextFunction) => 
       if (!params.success) throw new ValidationError(params.error.flatten())
       const page = await pageService.getPage(params.data.pageId)
       res.status(200).json(page)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Get the generated doc for a page
+pageRouter.get('/:pageId/doc', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = PageParams.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const doc = await findDocByPageId(params.data.pageId)
+      if (!doc) {
+        res.status(404).json({ error: 'No documentation generated yet', code: 'DOC_NOT_FOUND' })
+        return
+      }
+      res.status(200).json(doc)
     } catch (err) {
       next(err)
     }

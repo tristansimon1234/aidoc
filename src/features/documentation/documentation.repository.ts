@@ -5,6 +5,7 @@ import type { GeneratedDoc } from './documentation.types.js'
 interface DocRow {
   id: string
   run_id: string
+  doc_page_id: string | null
   markdown_content: string | null
   json_content: Record<string, unknown> | null
   created_at: string
@@ -33,8 +34,22 @@ export async function findDocByRunId(runId: string): Promise<GeneratedDoc | null
   return data ? mapToDoc(data as DocRow) : null
 }
 
+export async function findDocByPageId(pageId: string): Promise<GeneratedDoc | null> {
+  const { data, error } = await supabase
+    .from('generated_docs')
+    .select('*')
+    .eq('doc_page_id', pageId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .single()
+  if (error && error.code === 'PGRST116') return null
+  if (error) throw new DatabaseError(error.message)
+  return data ? mapToDoc(data as DocRow) : null
+}
+
 export async function upsertDoc(input: {
   runId: string
+  docPageId?: string
   markdownContent: string
   jsonContent: Record<string, unknown>
 }): Promise<GeneratedDoc> {
@@ -43,6 +58,7 @@ export async function upsertDoc(input: {
     .upsert(
       {
         run_id: input.runId,
+        doc_page_id: input.docPageId ?? null,
         markdown_content: input.markdownContent,
         json_content: input.jsonContent,
         updated_at: new Date().toISOString(),
