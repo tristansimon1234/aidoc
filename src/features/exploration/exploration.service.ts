@@ -103,19 +103,22 @@ Instructions:
       maxSteps: 30,
       callbacks: {
         onStepFinish: async (event) => {
-          // Each "step" from the AI SDK is one LLM call which may produce multiple tool calls
           const toolCalls = event.toolCalls ?? []
 
           for (const tool of toolCalls) {
             const toolObj = tool as Record<string, unknown>
             const toolName = (toolObj.toolName ?? 'unknown') as string
             const args = toolObj.args as Record<string, unknown> | undefined
+            const result = toolObj.result as Record<string, unknown> | undefined
 
             if (toolName === 'think') continue
 
+            // Build a human-readable description from the tool args
+            const description = buildToolDescription(toolName, args, result)
+
             const record: AgentActionRecord = {
               type: toolName,
-              action: (args?.instruction ?? args?.action ?? args?.url ?? toolName) as string | null,
+              action: description,
               pageUrl: (args?.url as string | undefined) ?? null,
               reasoning: (args?.reasoning as string | undefined) ?? null,
             }
@@ -191,5 +194,42 @@ Instructions:
     throw err
   } finally {
     await closeBrowser(session)
+  }
+}
+
+function buildToolDescription(
+  toolName: string,
+  args: Record<string, unknown> | undefined,
+  result: Record<string, unknown> | undefined,
+): string {
+  if (!args) return toolName
+
+  switch (toolName) {
+    case 'act':
+      return (args.instruction as string | undefined) ?? (args.action as string | undefined) ?? 'Performing action'
+    case 'goto':
+      return `Navigate to ${args.url as string | undefined ?? 'page'}`
+    case 'extract':
+      return `Extract: ${(args.instruction as string | undefined) ?? 'page content'}`
+    case 'scroll':
+      return `Scroll ${(args.direction as string | undefined) ?? 'down'}`
+    case 'screenshot':
+      return 'Capture screenshot'
+    case 'fillForm':
+      return `Fill form: ${(args.instruction as string | undefined) ?? 'form fields'}`
+    case 'ariaTree':
+      return 'Analyze page structure'
+    case 'keys':
+      return `Press keys: ${(args.keys as string | undefined) ?? ''}`
+    case 'navback':
+      return 'Navigate back'
+    case 'wait':
+      return `Wait ${(args.ms as number | undefined) ?? ''}ms`
+    case 'done': {
+      const msg = (result?.message as string | undefined) ?? (args.message as string | undefined) ?? 'Task complete'
+      return `Done: ${msg}`
+    }
+    default:
+      return (args.instruction as string | undefined) ?? (args.action as string | undefined) ?? toolName
   }
 }
