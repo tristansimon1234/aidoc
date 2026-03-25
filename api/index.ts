@@ -2,6 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import type { Request, Response } from 'express'
 import { authMiddleware } from '../src/shared/middleware/auth.middleware.js'
+import { projectRouter } from '../src/features/project/project.routes.js'
+import { pageRouter } from '../src/features/page/page.routes.js'
 import { runRouter } from '../src/features/run/run.routes.js'
 import { questionsRouter } from '../src/features/questions/questions.routes.js'
 import { documentationRouter } from '../src/features/documentation/documentation.routes.js'
@@ -18,6 +20,8 @@ app.get('/api/health', (_req: Request, res: Response) => {
 })
 
 // Protected routes
+app.use('/api/projects', authMiddleware, projectRouter)
+app.use('/api/projects/:projectId/pages', authMiddleware, pageRouter)
 app.use('/api/runs', authMiddleware, runRouter)
 app.use('/api/runs', authMiddleware, questionsRouter)
 app.use('/api/runs', authMiddleware, documentationRouter)

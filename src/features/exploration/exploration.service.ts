@@ -33,6 +33,8 @@ export interface RunDeps {
 
 export interface ExploreOptions {
   additionalContext?: string
+  projectContext?: string
+  tableOfContents?: string
   onEvent?: (event: StepEvent) => void
 }
 
@@ -72,6 +74,14 @@ export async function exploreRun(
       ? `\n\n## Additional Context from User\n${options.additionalContext}`
       : ''
 
+    const projectBlock = options?.projectContext
+      ? `\n\n## Product Context\n${options.projectContext}`
+      : ''
+
+    const tocBlock = options?.tableOfContents
+      ? `\n\n## Already Documented Pages\n${options.tableOfContents}\nDo NOT duplicate content covered in these pages. Reference them when relevant.`
+      : ''
+
     const isResume = run.browserbaseSessionId !== null
     const resumeBlock = isResume
       ? '\n\nYou are RESUMING a previous exploration. The browser is already open where you left off. Continue from here.'
@@ -82,7 +92,7 @@ export async function exploreRun(
 Feature: ${run.featureName}
 Goal: ${run.goal}
 Start URL: ${run.startUrl}
-${resumeBlock}${contextBlock}
+${projectBlock}${tocBlock}${resumeBlock}${contextBlock}
 
 Instructions:
 - Navigate through the feature, clicking buttons, opening menus, filling forms with test data

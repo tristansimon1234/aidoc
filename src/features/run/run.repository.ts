@@ -10,6 +10,7 @@ interface RunRow {
   status: string
   token_usage: number
   browserbase_session_id: string | null
+  doc_page_id: string | null
   created_at: string
   updated_at: string
 }
@@ -36,6 +37,7 @@ function mapToRun(row: RunRow): Run {
     status: row.status as RunStatus,
     tokenUsage: row.token_usage,
     browserbaseSessionId: row.browserbase_session_id,
+    docPageId: row.doc_page_id,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -60,6 +62,7 @@ export async function createRun(input: {
   featureName: string
   startUrl: string
   goal: string
+  docPageId?: string
 }): Promise<Run> {
   const { data, error } = await supabase
     .from('runs')
@@ -67,6 +70,7 @@ export async function createRun(input: {
       feature_name: input.featureName,
       start_url: input.startUrl,
       goal: input.goal,
+      doc_page_id: input.docPageId ?? null,
     })
     .select('*')
     .single()

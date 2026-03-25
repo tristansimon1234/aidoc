@@ -18,8 +18,18 @@ export function buildDocumentationPrompt(context: {
   startUrl: string
   steps: StepSummary[]
   questions?: { question: string; answer: string | null }[]
+  projectContext?: string
+  tableOfContents?: string
 }): string {
   const screenshotSteps = context.steps.filter((s) => s.screenshotUrl)
+
+  const projectBlock = context.projectContext
+    ? `\n## Product Context\n${context.projectContext}\n`
+    : ''
+
+  const tocBlock = context.tableOfContents
+    ? `\n## Other Pages in This Documentation\n${context.tableOfContents}\nWhen referencing content covered by other pages, use links. Do NOT duplicate content.\n`
+    : ''
 
   const blockersSection = context.questions && context.questions.length > 0
     ? `\n## Blockers Encountered During Exploration
@@ -32,7 +42,7 @@ ${context.questions.map((q) => `- Issue: ${q.question}${q.answer ? `\n  Resoluti
 Name: "${context.featureName}"
 URL: ${context.startUrl}
 Goal: "${context.goal}"
-
+${projectBlock}${tocBlock}
 ## Exploration Data
 ${formatStepsWithScreenshots(context.steps)}
 

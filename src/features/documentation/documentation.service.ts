@@ -21,6 +21,11 @@ export interface DocDeps {
   incrementTokenUsage: (id: string, tokens: number) => Promise<void>
 }
 
+export interface DocGenerationOptions {
+  projectContext?: string
+  tableOfContents?: string
+}
+
 export async function getDocByRunId(runId: string): Promise<GeneratedDoc> {
   const doc = await docRepo.findDocByRunId(runId)
   if (!doc) throw new NotFoundError('Document')
@@ -30,6 +35,7 @@ export async function getDocByRunId(runId: string): Promise<GeneratedDoc> {
 export async function generateAndSaveDoc(
   runId: string,
   deps: DocDeps,
+  options?: DocGenerationOptions,
 ): Promise<GeneratedDoc> {
   const run = await deps.findRunById(runId)
   if (!run) throw new NotFoundError('Run')
@@ -37,7 +43,6 @@ export async function generateAndSaveDoc(
   const steps = await deps.findStepsByRunId(runId)
   const questions = await deps.findQuestionsByRunId(runId)
 
-  // Resolve screenshot URLs in parallel
   const stepSummaries: StepSummary[] = await Promise.all(
     steps.map(async (s) => {
       let screenshotUrl: string | null = null
@@ -59,6 +64,8 @@ export async function generateAndSaveDoc(
     startUrl: run.startUrl,
     steps: stepSummaries,
     questions: questions.map((q) => ({ question: q.question, answer: q.answer })),
+    projectContext: options?.projectContext,
+    tableOfContents: options?.tableOfContents,
   })
 
   await deps.incrementTokenUsage(runId, result.usage.inputTokens + result.usage.outputTokens)

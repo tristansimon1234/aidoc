@@ -88,7 +88,53 @@ export interface StepEventDTO {
   completed?: boolean
 }
 
+export interface ProjectDTO {
+  id: string
+  userId: string
+  name: string
+  baseUrl: string
+  description: string | null
+  context: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DocPageDTO {
+  id: string
+  projectId: string
+  parentId: string | null
+  title: string
+  slug: string
+  startUrl: string | null
+  goal: string | null
+  status: 'draft' | 'exploring' | 'published'
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  children?: DocPageDTO[]
+}
+
 export const api = {
+  projects: {
+    list: (): Promise<ProjectDTO[]> => request('/projects'),
+    get: (id: string): Promise<ProjectDTO> => request(`/projects/${id}`),
+    create: (body: { name: string; baseUrl: string; description?: string; context?: string }): Promise<ProjectDTO> =>
+      request('/projects', { method: 'POST', body: JSON.stringify(body) }),
+    update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>
+      request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (id: string): Promise<void> => request(`/projects/${id}`, { method: 'DELETE' }),
+  },
+  pages: {
+    list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
+    get: (projectId: string, pageId: string): Promise<DocPageDTO> =>
+      request(`/projects/${projectId}/pages/${pageId}`),
+    create: (projectId: string, body: { title: string; slug: string; parentId?: string; startUrl?: string; goal?: string }): Promise<DocPageDTO> =>
+      request(`/projects/${projectId}/pages`, { method: 'POST', body: JSON.stringify(body) }),
+    update: (projectId: string, pageId: string, body: Record<string, unknown>): Promise<DocPageDTO> =>
+      request(`/projects/${projectId}/pages/${pageId}`, { method: 'PUT', body: JSON.stringify(body) }),
+    delete: (projectId: string, pageId: string): Promise<void> =>
+      request(`/projects/${projectId}/pages/${pageId}`, { method: 'DELETE' }),
+  },
   runs: {
     list: (): Promise<RunDTO[]> => request('/runs'),
     get: (id: string): Promise<RunDTO> => request(`/runs/${id}`),

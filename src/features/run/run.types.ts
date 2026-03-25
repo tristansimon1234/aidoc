@@ -8,6 +8,7 @@ export interface Run {
   status: RunStatus
   tokenUsage: number
   browserbaseSessionId: string | null
+  docPageId: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -29,4 +30,5 @@ export interface CreateRunInput {
   featureName: string
   startUrl: string
   goal: string
+  docPageId?: string
 }
