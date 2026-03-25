@@ -9,7 +9,7 @@ export async function launchBrowser(existingSessionId?: string): Promise<Stageha
     apiKey: env.BROWSERBASE_API_KEY,
     projectId: env.BROWSERBASE_PROJECT_ID,
     model: {
-      modelName: 'anthropic/claude-sonnet-4-20250514',
+      modelName: 'anthropic/claude-haiku-4-5-20251001',
       apiKey: env.ANTHROPIC_API_KEY,
     },
     ...(existingSessionId ? { browserbaseSessionID: existingSessionId } : {}),

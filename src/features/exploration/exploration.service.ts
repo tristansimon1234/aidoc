@@ -109,14 +109,14 @@ Instructions:
 
     const agent = session.agent({
       model: {
-        modelName: 'anthropic/claude-sonnet-4-20250514',
+        modelName: 'anthropic/claude-haiku-4-5-20251001',
         apiKey: process.env.ANTHROPIC_API_KEY,
       },
     })
 
     const result = await agent.execute({
       instruction,
-      maxSteps: 100,
+      maxSteps: 25,
       callbacks: {
         onStepFinish: async (event) => {
           const toolCalls = event.toolCalls ?? []
