@@ -43,6 +43,11 @@
   margin: 0 auto;
 }
 
+.mainFull {
+  flex: 1;
+  width: 100%;
+}
+
 @media (max-width: 768px) {
   .main {
     padding: var(--space-md);

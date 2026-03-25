@@ -41,6 +41,7 @@ export function ProjectDetail(): React.ReactElement {
 
   return (
     <Shell
+      fullWidth
       actions={
         <Link to="/">
           <Button size="sm" variant="ghost">&larr; Projects</Button>

@@ -5,9 +5,10 @@ import styles from './Shell.module.css'
 interface ShellProps {
   children: ReactNode
   actions?: ReactNode
+  fullWidth?: boolean
 }
 
-export function Shell({ children, actions }: ShellProps): React.ReactElement {
+export function Shell({ children, actions, fullWidth = false }: ShellProps): React.ReactElement {
   return (
     <div className={styles.shell}>
       <header className={styles.topbar}>
@@ -16,7 +17,7 @@ export function Shell({ children, actions }: ShellProps): React.ReactElement {
         </Link>
         {actions && <nav className={styles.nav}>{actions}</nav>}
       </header>
-      <main className={styles.main}>{children}</main>
+      <main className={fullWidth ? styles.mainFull : styles.main}>{children}</main>
     </div>
   )
 }
