@@ -7,7 +7,7 @@ export interface StepSummary {
 export interface StepData {
   url: string
   title: string
-  visibleElements: string
+  observedActions: string
 }
 
 export interface Question {
@@ -24,7 +24,8 @@ export interface RunContext {
 }
 
 export type AgentDecision =
-  | { action: 'continue'; nextAction: string }
+  | { action: 'navigate'; instruction: string }
+  | { action: 'act'; instruction: string }
   | { action: 'ask'; question: string }
   | { action: 'blocked'; reason: string }
   | { action: 'finish'; summary: string }

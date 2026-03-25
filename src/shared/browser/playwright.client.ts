@@ -1,20 +1,23 @@
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import { Stagehand } from '@browserbasehq/stagehand'
+import { env } from '../config/env.js'
 
-export interface BrowserSession {
-  browser: Browser
-  context: BrowserContext
-  page: Page
-}
+export type StagehandSession = Stagehand
 
-export async function launchBrowser(): Promise<BrowserSession> {
-  const browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 720 },
+export async function launchBrowser(): Promise<StagehandSession> {
+  const stagehand = new Stagehand({
+    env: 'BROWSERBASE',
+    apiKey: env.BROWSERBASE_API_KEY,
+    projectId: env.BROWSERBASE_PROJECT_ID,
+    model: {
+      modelName: 'anthropic/claude-sonnet-4-20250514',
+      apiKey: env.ANTHROPIC_API_KEY,
+    },
   })
-  const page = await context.newPage()
-  return { browser, context, page }
+
+  await stagehand.init()
+  return stagehand
 }
 
-export async function closeBrowser(session: BrowserSession): Promise<void> {
-  await session.browser.close()
+export async function closeBrowser(session: StagehandSession): Promise<void> {
+  await session.close()
 }

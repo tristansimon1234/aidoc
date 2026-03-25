@@ -1,5 +1,8 @@
-import type { Page } from 'playwright'
-import { launchBrowser, closeBrowser } from '../../shared/browser/playwright.client.js'
+import {
+  launchBrowser,
+  closeBrowser,
+  type StagehandSession,
+} from '../../shared/browser/playwright.client.js'
 import * as explorationBrowser from './exploration.browser.js'
 import { getNextDecision } from './exploration.agent.js'
 import type { StepSummary, Question } from './exploration.types.js'
@@ -36,15 +39,13 @@ export async function executeRun(runId: string, deps: RunDeps): Promise<void> {
   const session = await launchBrowser()
 
   try {
-    await explorationBrowser.navigateTo(session.page, run.startUrl)
+    await explorationBrowser.navigateTo(session, run.startUrl)
 
     const stepHistory: StepSummary[] = []
     let stepIndex = 0
 
     while (stepIndex < MAX_STEPS) {
-      const visibleElements = await explorationBrowser.getVisibleElements(session.page)
-      const url = session.page.url()
-      const title = await session.page.title()
+      const { url, title, observedActions } = await explorationBrowser.getPageContext(session)
 
       const questions = await deps.findQuestionsByRunId(runId)
       const questionHistory: Question[] = questions.map((q) => ({
@@ -56,36 +57,38 @@ export async function executeRun(runId: string, deps: RunDeps): Promise<void> {
         goal: run.goal,
         featureName: run.featureName,
         stepHistory,
-        currentStep: { url, title, visibleElements },
+        currentStep: { url, title, observedActions },
         questionHistory,
       })
 
       await deps.incrementTokenUsage(runId, usage.inputTokens + usage.outputTokens)
 
-      if (decision.action === 'continue') {
+      if (decision.action === 'act' || decision.action === 'navigate') {
         const screenshotPath = await explorationBrowser.captureAndUploadScreenshot(
-          session.page,
+          session,
           runId,
           stepIndex,
         )
+
+        const instruction = decision.instruction
 
         await deps.createRunStep({
           runId,
           stepIndex,
           url,
           title,
-          action: decision.nextAction,
-          observation: visibleElements.slice(0, 200),
+          action: instruction,
+          observation: observedActions.slice(0, 200),
           screenshotPath,
         })
 
         stepHistory.push({
           url,
-          action: decision.nextAction,
-          observation: visibleElements.slice(0, 200),
+          action: instruction,
+          observation: observedActions.slice(0, 200),
         })
 
-        await executeAction(session.page, decision.nextAction)
+        await executeDecision(session, decision)
         stepIndex++
       } else if (decision.action === 'ask') {
         const lastStep = await deps.createRunStep({
@@ -144,22 +147,13 @@ export async function executeRun(runId: string, deps: RunDeps): Promise<void> {
   }
 }
 
-async function executeAction(page: Page, action: string): Promise<void> {
-  const clickMatch = action.match(/^click\s+(.+)$/i)
-  if (clickMatch?.[1]) {
-    await explorationBrowser.clickElement(page, clickMatch[1])
-    return
-  }
-
-  const fillMatch = action.match(/^fill\s+(.+?)\s+with\s+"(.+)"$/i)
-  if (fillMatch?.[1] && fillMatch[2]) {
-    await explorationBrowser.fillInput(page, fillMatch[1], fillMatch[2])
-    return
-  }
-
-  const navMatch = action.match(/^navigate\s+(.+)$/i)
-  if (navMatch?.[1]) {
-    await explorationBrowser.navigateTo(page, navMatch[1])
-    return
+async function executeDecision(
+  session: StagehandSession,
+  decision: { action: 'act'; instruction: string } | { action: 'navigate'; instruction: string },
+): Promise<void> {
+  if (decision.action === 'navigate') {
+    await explorationBrowser.navigateTo(session, decision.instruction)
+  } else {
+    await explorationBrowser.performAction(session, decision.instruction)
   }
 }

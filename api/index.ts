@@ -1,4 +1,5 @@
 import express from 'express'
+import cors from 'cors'
 import type { Request, Response } from 'express'
 import { runRouter } from '../src/features/run/run.routes.js'
 import { questionsRouter } from '../src/features/questions/questions.routes.js'
@@ -7,6 +8,7 @@ import { errorHandler } from '../src/shared/middleware/error.middleware.js'
 
 const app = express()
 
+app.use(cors())
 app.use(express.json())
 
 app.use('/api/runs', runRouter)

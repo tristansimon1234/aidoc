@@ -4,31 +4,12 @@ import { buildExplorationStepPrompt } from '../../shared/ai/prompt.builder.js'
 import type { AnthropicUsage } from '../../shared/ai/anthropic.types.js'
 import type { RunContext, AgentDecision } from './exploration.types.js'
 
-const ContinueDecisionSchema = z.object({
-  action: z.literal('continue'),
-  nextAction: z.string(),
-})
-
-const AskDecisionSchema = z.object({
-  action: z.literal('ask'),
-  question: z.string(),
-})
-
-const BlockedDecisionSchema = z.object({
-  action: z.literal('blocked'),
-  reason: z.string(),
-})
-
-const FinishDecisionSchema = z.object({
-  action: z.literal('finish'),
-  summary: z.string(),
-})
-
 const AgentDecisionSchema = z.union([
-  ContinueDecisionSchema,
-  AskDecisionSchema,
-  BlockedDecisionSchema,
-  FinishDecisionSchema,
+  z.object({ action: z.literal('navigate'), instruction: z.string() }),
+  z.object({ action: z.literal('act'), instruction: z.string() }),
+  z.object({ action: z.literal('ask'), question: z.string() }),
+  z.object({ action: z.literal('blocked'), reason: z.string() }),
+  z.object({ action: z.literal('finish'), summary: z.string() }),
 ])
 
 export interface AgentResult {
