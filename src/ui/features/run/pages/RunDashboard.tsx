@@ -6,15 +6,24 @@ import { api } from '../../../shared/api/client.js'
 import { RunCard } from '../components/RunCard.js'
 import styles from './RunDashboard.module.css'
 
-export function RunDashboard(): React.ReactElement {
+interface RunDashboardProps {
+  onSignOut: () => Promise<void>
+}
+
+export function RunDashboard({ onSignOut }: RunDashboardProps): React.ReactElement {
   const { data: runs, loading, error } = useAsync(() => api.runs.list())
 
   return (
     <Shell
       actions={
-        <Link to="/runs/new">
-          <Button size="sm">New Run</Button>
-        </Link>
+        <>
+          <Link to="/runs/new">
+            <Button size="sm">New Run</Button>
+          </Link>
+          <Button size="sm" variant="ghost" onClick={() => void onSignOut()}>
+            Sign Out
+          </Button>
+        </>
       }
     >
       <div className={styles.header}>

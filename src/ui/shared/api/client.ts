@@ -1,10 +1,29 @@
+import { supabase } from './supabase.js'
+
 const API_BASE = '/api'
 
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const { data } = await supabase.auth.getSession()
+  const token = data.session?.access_token
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers = await getAuthHeaders()
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...options,
   })
+
+  if (res.status === 401) {
+    // Session expired — sign out and reload
+    await supabase.auth.signOut()
+    window.location.href = '/login'
+    throw new Error('Session expired')
+  }
 
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null

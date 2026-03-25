@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import { authMiddleware } from './shared/middleware/auth.middleware.js'
 import { runRouter } from './features/run/run.routes.js'
 import { questionsRouter } from './features/questions/questions.routes.js'
 import { documentationRouter } from './features/documentation/documentation.routes.js'
@@ -9,6 +10,7 @@ export const app = express()
 
 app.use(cors())
 app.use(express.json())
+app.use(authMiddleware)
 
 // Routes
 app.use('/runs', runRouter)

@@ -15,7 +15,7 @@ export interface RunDeps {
     goal: string
     featureName: string
   } | null>
-  updateRunStatus: (id: string, status: string) => Promise<unknown>
+  updateRunStatus: (id: string, status: 'pending' | 'running' | 'blocked' | 'completed' | 'failed') => Promise<unknown>
   incrementTokenUsage: (id: string, tokens: number) => Promise<void>
   createRunStep: (input: {
     runId: string
@@ -25,7 +25,7 @@ export interface RunDeps {
     action?: string
     observation?: string
     screenshotPath?: string
-    status?: string
+    status?: 'completed' | 'blocked' | 'skipped'
   }) => Promise<{ id: string }>
   findQuestionsByRunId: (runId: string) => Promise<{ question: string; answer: string | null }[]>
   createQuestion: (input: { runId: string; stepId: string; question: string }) => Promise<unknown>
