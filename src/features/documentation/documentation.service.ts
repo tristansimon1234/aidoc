@@ -11,6 +11,7 @@ export interface DocDeps {
     goal: string
     startUrl: string
     tokenUsage: number
+    docPageId: string | null
   } | null>
   findStepsByRunId: (runId: string) => Promise<
     { url: string | null; action: string | null; observation: string | null; screenshotPath: string | null }[]
@@ -72,6 +73,7 @@ export async function generateAndSaveDoc(
 
   return docRepo.upsertDoc({
     runId,
+    docPageId: run.docPageId ?? undefined,
     markdownContent: result.markdown,
     jsonContent: result.json,
   })

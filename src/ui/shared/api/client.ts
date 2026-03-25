@@ -142,7 +142,7 @@ export const api = {
   runs: {
     list: (): Promise<RunDTO[]> => request('/runs'),
     get: (id: string): Promise<RunDTO> => request(`/runs/${id}`),
-    create: (body: { featureName: string; startUrl: string; goal: string }): Promise<RunDTO> =>
+    create: (body: { featureName: string; startUrl: string; goal: string; docPageId?: string }): Promise<RunDTO> =>
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
     exploreStream: async (
       id: string,

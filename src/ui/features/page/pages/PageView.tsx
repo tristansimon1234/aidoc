@@ -74,6 +74,7 @@ export function PageView(): React.ReactElement {
         featureName: page.title,
         startUrl,
         goal: page.goal ?? `Document the "${page.title}" feature`,
+        docPageId: pageId,
       })
 
       // Update page status
@@ -114,19 +115,26 @@ export function PageView(): React.ReactElement {
         },
       )
 
-      // Exploration done — generate doc
+      // Stream ended — check if exploration actually completed
       setLiveUrl(null)
-      setStatusMessage('Generating documentation...')
-      setGenerating(true)
+      const updatedRun = await api.runs.get(run.id)
 
-      try {
-        await api.runs.generateDoc(run.id)
-      } catch {
-        // ok
+      if (updatedRun.status === 'completed') {
+        // Generate documentation
+        setStatusMessage('Generating documentation...')
+        setGenerating(true)
+
+        try {
+          await api.runs.generateDoc(run.id)
+          await api.pages.update(projectId, pageId, { status: 'published' })
+        } catch (genErr) {
+          setError(`Doc generation failed: ${(genErr as Error).message}`)
+        }
+      } else if (updatedRun.status === 'blocked') {
+        setStatusMessage('Agent was blocked. Check the run for details.')
+      } else if (updatedRun.status === 'failed') {
+        setError('Exploration failed. Try again.')
       }
-
-      // Update page status to published
-      await api.pages.update(projectId, pageId, { status: 'published' })
 
       // Refresh
       await fetchData()
