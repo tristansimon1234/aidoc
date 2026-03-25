@@ -1,5 +1,5 @@
 import type { Page } from 'playwright'
-import { supabase } from '../../shared/db/supabase.client.js'
+import { uploadToStorage } from '../../shared/db/storage.repository.js'
 import type { PageSnapshot } from '../../shared/browser/browser.types.js'
 
 export async function navigateTo(page: Page, url: string): Promise<void> {
@@ -33,9 +33,10 @@ export async function getVisibleElements(page: Page): Promise<string> {
       const tag = el.tagName.toLowerCase()
       const text = (el as HTMLElement).innerText?.trim().slice(0, 50) ?? ''
       const id = el.id ? `#${el.id}` : ''
-      const cls = el.className && typeof el.className === 'string'
-        ? `.${el.className.split(' ').slice(0, 2).join('.')}`
-        : ''
+      const cls =
+        el.className && typeof el.className === 'string'
+          ? `.${el.className.split(' ').slice(0, 2).join('.')}`
+          : ''
       elements.push(`<${tag}${id}${cls}> ${text}`)
     })
     return elements.slice(0, 30).join('\n')
@@ -49,13 +50,5 @@ export async function captureAndUploadScreenshot(
 ): Promise<string> {
   const screenshot = await page.screenshot({ type: 'png' })
   const path = `runs/${runId}/step-${stepIndex}.png`
-  const { error } = await supabase.storage.from('artifacts').upload(path, screenshot, {
-    contentType: 'image/png',
-    upsert: true,
-  })
-  if (error) {
-    console.error('Screenshot upload failed:', error.message)
-    return ''
-  }
-  return path
+  return uploadToStorage('artifacts', path, screenshot, 'image/png')
 }

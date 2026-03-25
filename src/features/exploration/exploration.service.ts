@@ -1,15 +1,36 @@
+import type { Page } from 'playwright'
 import { launchBrowser, closeBrowser } from '../../shared/browser/playwright.client.js'
-import * as runRepo from '../run/run.repository.js'
-import * as questionRepo from '../questions/questions.repository.js'
 import * as explorationBrowser from './exploration.browser.js'
 import { getNextDecision } from './exploration.agent.js'
 import type { StepSummary, Question } from './exploration.types.js'
 
 const MAX_STEPS = 50
 
-export async function executeRun(runId: string): Promise<void> {
-  await runRepo.updateRunStatus(runId, 'running')
-  const run = await runRepo.findRunById(runId)
+export interface RunDeps {
+  findRunById: (id: string) => Promise<{
+    startUrl: string
+    goal: string
+    featureName: string
+  } | null>
+  updateRunStatus: (id: string, status: string) => Promise<unknown>
+  incrementTokenUsage: (id: string, tokens: number) => Promise<void>
+  createRunStep: (input: {
+    runId: string
+    stepIndex: number
+    url?: string
+    title?: string
+    action?: string
+    observation?: string
+    screenshotPath?: string
+    status?: string
+  }) => Promise<{ id: string }>
+  findQuestionsByRunId: (runId: string) => Promise<{ question: string; answer: string | null }[]>
+  createQuestion: (input: { runId: string; stepId: string; question: string }) => Promise<unknown>
+}
+
+export async function executeRun(runId: string, deps: RunDeps): Promise<void> {
+  await deps.updateRunStatus(runId, 'running')
+  const run = await deps.findRunById(runId)
   if (!run) throw new Error(`Run ${runId} not found`)
 
   const session = await launchBrowser()
@@ -25,7 +46,7 @@ export async function executeRun(runId: string): Promise<void> {
       const url = session.page.url()
       const title = await session.page.title()
 
-      const questions = await questionRepo.findQuestionsByRunId(runId)
+      const questions = await deps.findQuestionsByRunId(runId)
       const questionHistory: Question[] = questions.map((q) => ({
         question: q.question,
         answer: q.answer,
@@ -39,7 +60,7 @@ export async function executeRun(runId: string): Promise<void> {
         questionHistory,
       })
 
-      await runRepo.incrementTokenUsage(runId, usage.inputTokens + usage.outputTokens)
+      await deps.incrementTokenUsage(runId, usage.inputTokens + usage.outputTokens)
 
       if (decision.action === 'continue') {
         const screenshotPath = await explorationBrowser.captureAndUploadScreenshot(
@@ -48,7 +69,7 @@ export async function executeRun(runId: string): Promise<void> {
           stepIndex,
         )
 
-        await runRepo.createRunStep({
+        await deps.createRunStep({
           runId,
           stepIndex,
           url,
@@ -67,7 +88,7 @@ export async function executeRun(runId: string): Promise<void> {
         await executeAction(session.page, decision.nextAction)
         stepIndex++
       } else if (decision.action === 'ask') {
-        const lastStep = await runRepo.createRunStep({
+        const lastStep = await deps.createRunStep({
           runId,
           stepIndex,
           url,
@@ -77,16 +98,16 @@ export async function executeRun(runId: string): Promise<void> {
           status: 'blocked',
         })
 
-        await questionRepo.createQuestion({
+        await deps.createQuestion({
           runId,
           stepId: lastStep.id,
           question: decision.question,
         })
 
-        await runRepo.updateRunStatus(runId, 'blocked')
+        await deps.updateRunStatus(runId, 'blocked')
         return
       } else if (decision.action === 'blocked') {
-        await runRepo.createRunStep({
+        await deps.createRunStep({
           runId,
           stepIndex,
           url,
@@ -96,10 +117,10 @@ export async function executeRun(runId: string): Promise<void> {
           status: 'blocked',
         })
 
-        await runRepo.updateRunStatus(runId, 'blocked')
+        await deps.updateRunStatus(runId, 'blocked')
         return
       } else if (decision.action === 'finish') {
-        await runRepo.createRunStep({
+        await deps.createRunStep({
           runId,
           stepIndex,
           url,
@@ -108,22 +129,22 @@ export async function executeRun(runId: string): Promise<void> {
           observation: decision.summary,
         })
 
-        await runRepo.updateRunStatus(runId, 'completed')
+        await deps.updateRunStatus(runId, 'completed')
         return
       }
     }
 
-    await runRepo.updateRunStatus(runId, 'completed')
+    await deps.updateRunStatus(runId, 'completed')
   } catch (err) {
     console.error(`Run ${runId} failed:`, err)
-    await runRepo.updateRunStatus(runId, 'failed')
+    await deps.updateRunStatus(runId, 'failed')
     throw err
   } finally {
     await closeBrowser(session)
   }
 }
 
-async function executeAction(page: import('playwright').Page, action: string): Promise<void> {
+async function executeAction(page: Page, action: string): Promise<void> {
   const clickMatch = action.match(/^click\s+(.+)$/i)
   if (clickMatch?.[1]) {
     await explorationBrowser.clickElement(page, clickMatch[1])

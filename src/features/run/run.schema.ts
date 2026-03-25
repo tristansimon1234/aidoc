@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { UuidParamSchema } from '../../shared/validation/schemas.js'
 
 export const CreateRunSchema = z.object({
   featureName: z.string().min(1, 'Feature name is required'),
@@ -8,6 +9,4 @@ export const CreateRunSchema = z.object({
 
 export type CreateRunInput = z.infer<typeof CreateRunSchema>
 
-export const RunIdParamSchema = z.object({
-  id: z.string().uuid('Must be a valid UUID'),
-})
+export const RunIdParamSchema = UuidParamSchema

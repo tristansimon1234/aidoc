@@ -1,27 +1,41 @@
-import React from 'react'
-import { tokens } from '../tokens.js'
+import type { ReactNode, HTMLAttributes } from 'react'
+import styles from './Card.module.css'
 
-interface CardProps {
-  children: React.ReactNode
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  children: ReactNode
   elevated?: boolean
-  onClick?: () => void
 }
 
-export function Card({ children, elevated = false, onClick }: CardProps): React.ReactElement {
+export function Card({
+  children,
+  elevated = false,
+  onClick,
+  className,
+  ...rest
+}: CardProps): React.ReactElement {
+  const cls = [
+    styles.card,
+    elevated && styles.elevated,
+    onClick && styles.clickable,
+    className,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
     <div
+      className={cls}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      style={{
-        backgroundColor: elevated ? tokens.colors.bg.elevated : tokens.colors.bg.surface,
-        border: `1px solid ${tokens.colors.border.subtle}`,
-        borderRadius: tokens.radius.lg,
-        padding: tokens.spacing.lg,
-        boxShadow: elevated ? tokens.shadow.md : tokens.shadow.sm,
-        cursor: onClick ? 'pointer' : 'default',
-        transition: 'box-shadow 0.15s ease, border-color 0.15s ease',
-      }}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') onClick(e as unknown as React.MouseEvent<HTMLDivElement>)
+            }
+          : undefined
+      }
+      {...rest}
     >
       {children}
     </div>
