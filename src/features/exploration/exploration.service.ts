@@ -106,7 +106,7 @@ Instructions:
 
     const result = await agent.execute({
       instruction,
-      maxSteps: 30,
+      maxSteps: 100,
       callbacks: {
         onStepFinish: async (event) => {
           const toolCalls = event.toolCalls ?? []
