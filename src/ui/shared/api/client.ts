@@ -118,7 +118,7 @@ export const api = {
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),
     get: (id: string): Promise<ProjectDTO> => request(`/projects/${id}`),
-    create: (body: { name: string; baseUrl: string; description?: string; context?: string }): Promise<ProjectDTO> =>
+    create: (body: { name: string; baseUrl: string; description?: string; context?: string; credentials?: { label: string; username: string; password: string }[] }): Promise<ProjectDTO> =>
       request('/projects', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>
       request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

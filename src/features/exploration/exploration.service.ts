@@ -38,6 +38,7 @@ export interface ExploreOptions {
   additionalContext?: string
   projectContext?: string
   tableOfContents?: string
+  credentials?: { label: string; username: string; password: string }[]
   onEvent?: (event: StepEvent) => void
 }
 
@@ -93,12 +94,26 @@ ${existingSteps.map((s, i) => `${i + 1}. [${s.url ?? 'unknown'}] ${s.action ?? '
       ? `\n\n## Already Documented Pages\n${options.tableOfContents}\nDo NOT duplicate content covered in these pages.`
       : ''
 
+    const creds = options?.credentials ?? []
+    const credentialsBlock = creds.length > 0
+      ? `\n\n## Test Credentials Available
+${creds.map((c) => `- ${c.label}: username=%${c.label}_username%, password=%${c.label}_password%`).join('\n')}
+Use these credentials to log in when you encounter a login page. The values are injected via variables — just use the %variable% syntax in form fields.`
+      : ''
+
+    // Build Stagehand variables from credentials
+    const variables: Record<string, { value: string; description: string }> = {}
+    for (const c of creds) {
+      variables[`${c.label}_username`] = { value: c.username, description: `Username for ${c.label}` }
+      variables[`${c.label}_password`] = { value: c.password, description: `Password for ${c.label}` }
+    }
+
     const instruction = `You are a documentation agent. Your job is to thoroughly explore a web application feature so we can generate product documentation from your exploration.
 
 Feature: ${run.featureName}
 Goal: ${run.goal}
 Start URL: ${run.startUrl}
-${isResuming ? '\nYou are RESUMING a previous exploration. The browser is still open where you left off.' : ''}${previousStepsBlock}${projectBlock}${tocBlock}${contextBlock}
+${isResuming ? '\nYou are RESUMING a previous exploration. The browser is still open where you left off.' : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}
 
 Instructions:
 - Click through every section, button, menu, and interactive element you find
@@ -127,6 +142,7 @@ IMPORTANT: Only call "done" when you have genuinely explored everything relevant
     const result = await agent.execute({
       instruction,
       maxSteps: 50,
+      ...(Object.keys(variables).length > 0 ? { variables } : {}),
       callbacks: {
         onStepFinish: async (event) => {
           const toolCalls = event.toolCalls ?? []

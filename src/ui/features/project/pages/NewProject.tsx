@@ -5,19 +5,40 @@ import { Button, Field } from '../../../design-system/components/index.js'
 import { api } from '../../../shared/api/client.js'
 import styles from './NewProject.module.css'
 
+interface Credential {
+  label: string
+  username: string
+  password: string
+}
+
 export function NewProject(): React.ReactElement {
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [description, setDescription] = useState('')
   const [context, setContext] = useState('')
+  const [credentials, setCredentials] = useState<Credential[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const addCredential = (): void => {
+    setCredentials([...credentials, { label: '', username: '', password: '' }])
+  }
+
+  const updateCredential = (index: number, field: keyof Credential, value: string): void => {
+    setCredentials(credentials.map((c, i) => i === index ? { ...c, [field]: value } : c))
+  }
+
+  const removeCredential = (index: number): void => {
+    setCredentials(credentials.filter((_, i) => i !== index))
+  }
 
   const handleSubmit = (e: React.FormEvent): void => {
     e.preventDefault()
     setSubmitting(true)
     setError(null)
+
+    const validCreds = credentials.filter((c) => c.label && c.username && c.password)
 
     api.projects
       .create({
@@ -25,6 +46,7 @@ export function NewProject(): React.ReactElement {
         baseUrl,
         description: description || undefined,
         context: context || undefined,
+        credentials: validCreds.length > 0 ? validCreds : undefined,
       })
       .then((p) => navigate(`/projects/${p.id}`))
       .catch((err: Error) => {
@@ -69,11 +91,68 @@ export function NewProject(): React.ReactElement {
           <Field
             label="product_context"
             multiline
-            placeholder="Detailed context: what the product does, who it's for, key features, terminology. This context will be injected into every AI exploration and doc generation."
+            placeholder="Detailed context: what the product does, who it's for, key features, terminology."
             value={context}
             onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext(e.target.value)}
-            rows={5}
+            rows={4}
           />
+
+          {/* Credentials section */}
+          <div style={{
+            padding: 'var(--space-md)',
+            backgroundColor: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: credentials.length > 0 ? 'var(--space-md)' : 0 }}>
+              <div>
+                <p style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>
+                  Test Credentials
+                </p>
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
+                  The agent will use these to log in during exploration
+                </p>
+              </div>
+              <Button size="sm" variant="ghost" type="button" onClick={addCredential}>
+                + Add
+              </Button>
+            </div>
+
+            {credentials.map((cred, i) => (
+              <div key={i} style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 1fr auto',
+                gap: 'var(--space-sm)',
+                marginBottom: 'var(--space-sm)',
+                alignItems: 'end',
+              }}>
+                <Field
+                  label="label"
+                  type="text"
+                  placeholder="e.g. admin"
+                  value={cred.label}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'label', e.target.value)}
+                />
+                <Field
+                  label="username"
+                  type="text"
+                  placeholder="user@example.com"
+                  value={cred.username}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'username', e.target.value)}
+                />
+                <Field
+                  label="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={cred.password}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'password', e.target.value)}
+                />
+                <Button size="sm" variant="ghost" type="button" onClick={() => removeCredential(i)}>
+                  x
+                </Button>
+              </div>
+            ))}
+          </div>
 
           {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)' }}>{error}</p>}
 

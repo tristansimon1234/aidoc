@@ -1,3 +1,9 @@
+export interface ProjectCredential {
+  label: string
+  username: string
+  password: string
+}
+
 export interface Project {
   id: string
   userId: string
@@ -5,6 +11,7 @@ export interface Project {
   baseUrl: string
   description: string | null
   context: string | null
+  credentials: ProjectCredential[] | null
   createdAt: Date
   updatedAt: Date
 }
@@ -14,6 +21,7 @@ export interface CreateProjectInput {
   baseUrl: string
   description?: string
   context?: string
+  credentials?: ProjectCredential[]
 }
 
 export interface UpdateProjectInput {
@@ -21,4 +29,5 @@ export interface UpdateProjectInput {
   baseUrl?: string
   description?: string
   context?: string
+  credentials?: ProjectCredential[]
 }

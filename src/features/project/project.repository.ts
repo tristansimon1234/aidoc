@@ -1,6 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
-import type { Project, CreateProjectInput, UpdateProjectInput } from './project.types.js'
+import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential } from './project.types.js'
 
 interface ProjectRow {
   id: string
@@ -9,6 +9,7 @@ interface ProjectRow {
   base_url: string
   description: string | null
   context: string | null
+  credentials: ProjectCredential[] | null
   created_at: string
   updated_at: string
 }
@@ -21,6 +22,7 @@ function mapToProject(row: ProjectRow): Project {
     baseUrl: row.base_url,
     description: row.description,
     context: row.context,
+    credentials: row.credentials,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -35,6 +37,7 @@ export async function createProject(userId: string, input: CreateProjectInput): 
       base_url: input.baseUrl,
       description: input.description ?? null,
       context: input.context ?? null,
+      credentials: input.credentials ?? null,
     })
     .select('*')
     .single()
@@ -65,6 +68,7 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   if (input.baseUrl !== undefined) updates.base_url = input.baseUrl
   if (input.description !== undefined) updates.description = input.description
   if (input.context !== undefined) updates.context = input.context
+  if (input.credentials !== undefined) updates.credentials = input.credentials
 
   const { data, error } = await supabase
     .from('projects')
