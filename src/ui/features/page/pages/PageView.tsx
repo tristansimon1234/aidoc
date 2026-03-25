@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useOutletContext } from 'react-router-dom'
+import { useParams, useOutletContext, useNavigate } from 'react-router-dom'
 import {
   Button,
   Badge,
@@ -265,11 +265,162 @@ export function PageView(): React.ReactElement {
         </div>
       )}
 
+      {/* Self-assessment + actionable suggestions */}
+      {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && !exploring && !generating && (
+        <SuggestionsPanel
+          assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment}
+          projectId={projectId!}
+          onPageCreated={async () => {
+            await fetchData()
+            await context.refetchPages()
+          }}
+        />
+      )}
+
       {!doc?.markdownContent && !exploring && !generating && page.status === 'draft' && (
         <EmptyState
           title="No documentation yet"
           description="Click 'Explore & Document' to let the AI agent document this feature."
         />
+      )}
+    </div>
+  )
+}
+
+function hasSelfAssessment(json: Record<string, unknown>): boolean {
+  return json.selfAssessment != null && typeof json.selfAssessment === 'object'
+}
+
+// --- Self-Assessment + Suggestions Panel ---
+
+interface SelfAssessment {
+  overallCompleteness: number
+  gaps: { area: string; reason: string; severity: string }[]
+  nextSteps: { suggestion: string; reason: string; priority: string }[]
+}
+
+function getCompletenessColor(pct: number): string {
+  if (pct >= 70) return 'var(--color-accent-green)'
+  if (pct >= 40) return 'var(--color-accent-amber)'
+  return 'var(--color-accent-red)'
+}
+
+function SuggestionsPanel({
+  assessment,
+  projectId,
+  onPageCreated,
+}: {
+  assessment: SelfAssessment
+  projectId: string
+  onPageCreated: () => Promise<void>
+}): React.ReactElement {
+  const [creatingIndex, setCreatingIndex] = useState<number | null>(null)
+  const navigate = useNavigate()
+
+  const handleCreatePage = async (ns: { suggestion: string; reason: string }, index: number): Promise<void> => {
+    setCreatingIndex(index)
+    try {
+      const slug = ns.suggestion.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
+      const newPage = await api.pages.create(projectId, {
+        title: ns.suggestion,
+        slug: slug || `page-${Date.now()}`,
+        goal: ns.reason,
+      })
+      await onPageCreated()
+      navigate(`/projects/${projectId}/pages/${newPage.id}`)
+    } catch {
+      // ignore
+    } finally {
+      setCreatingIndex(null)
+    }
+  }
+
+  const color = getCompletenessColor(assessment.overallCompleteness)
+
+  return (
+    <div style={{ marginTop: 'var(--space-xl)' }}>
+      {/* Completeness bar */}
+      <div style={{
+        padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
+        border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+        marginBottom: 'var(--space-md)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>Documentation Completeness</span>
+          <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, fontFamily: 'var(--font-mono)', color }}>{assessment.overallCompleteness}%</span>
+        </div>
+        <div style={{ height: '6px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${assessment.overallCompleteness}%`, backgroundColor: color, borderRadius: 'var(--radius-full)', transition: 'width 0.5s ease' }} />
+        </div>
+      </div>
+
+      {/* Gaps */}
+      {assessment.gaps.length > 0 && (
+        <div style={{
+          padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
+          border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+          marginBottom: 'var(--space-md)',
+        }}>
+          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 500, marginBottom: 'var(--space-sm)', color: 'var(--color-accent-amber)' }}>
+            Gaps ({assessment.gaps.length})
+          </h3>
+          {assessment.gaps.map((gap, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)', marginBottom: 'var(--space-xs)' }}>
+              <span style={{
+                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', padding: '1px 6px',
+                borderRadius: 'var(--radius-sm)', flexShrink: 0,
+                backgroundColor: gap.severity === 'major' ? 'rgba(255,77,77,0.15)' : 'rgba(245,166,35,0.15)',
+                color: gap.severity === 'major' ? 'var(--color-accent-red)' : 'var(--color-accent-amber)',
+              }}>
+                {gap.severity}
+              </span>
+              <div>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)' }}>{gap.area}</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginLeft: 'var(--space-sm)' }}>{gap.reason}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Suggested next pages — actionable */}
+      {assessment.nextSteps.length > 0 && (
+        <div style={{
+          padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
+          border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+        }}>
+          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 500, marginBottom: 'var(--space-md)', color: 'var(--color-accent-blue)' }}>
+            Suggested Next Pages
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {assessment.nextSteps.map((ns, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
+                padding: 'var(--space-sm) var(--space-md)',
+                backgroundColor: 'var(--color-bg-elevated)',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border-subtle)',
+              }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)', margin: 0, fontWeight: 500 }}>
+                    {ns.suggestion}
+                  </p>
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
+                    {ns.reason}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={creatingIndex === i}
+                  onClick={() => void handleCreatePage(ns, i)}
+                >
+                  {creatingIndex === i ? '...' : 'Create Page'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )

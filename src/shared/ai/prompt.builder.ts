@@ -108,8 +108,10 @@ After the markdown, add a line containing "---JSON---", then a JSON object:
       { "area": "Name of the area/section", "reason": "Why it's missing", "severity": "major"|"minor" }
     ],
     "nextSteps": [
-      { "suggestion": "What to do", "reason": "Why it matters", "priority": "high"|"medium"|"low" }
+      { "suggestion": "Page Title (e.g. 'Settings Panel', 'User Dashboard')", "reason": "What this page would document and why it matters", "priority": "high"|"medium"|"low" }
     ]
+
+IMPORTANT for nextSteps: each suggestion should be a concrete PAGE TITLE that could be created as a new documentation page. Not vague actions like "test mobile view" but specific features like "Mobile Responsive View" or "Admin Dashboard".
   }
 }`
 }
