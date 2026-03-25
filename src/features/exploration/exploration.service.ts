@@ -110,23 +110,36 @@ Instructions:
       callbacks: {
         onStepFinish: async (event) => {
           const toolCalls = event.toolCalls ?? []
+          const toolResults = event.toolResults ?? []
+
+          // Build a map of tool call results by toolCallId
+          const resultMap = new Map<string, unknown>()
+          for (const tr of toolResults) {
+            const trObj = tr as Record<string, unknown>
+            const callId = (trObj.toolCallId ?? '') as string
+            if (callId) resultMap.set(callId, trObj.result)
+          }
+
+          // Also extract the agent's reasoning text from the response
+          const agentText = event.text ?? ''
 
           for (const tool of toolCalls) {
             const toolObj = tool as Record<string, unknown>
             const toolName = (toolObj.toolName ?? 'unknown') as string
+            const toolCallId = (toolObj.toolCallId ?? '') as string
             const args = toolObj.args as Record<string, unknown> | undefined
-            const result = toolObj.result as Record<string, unknown> | undefined
+            const toolResult = resultMap.get(toolCallId) as Record<string, unknown> | undefined
 
             if (toolName === 'think') continue
 
-            // Build a human-readable description from the tool args
-            const description = buildToolDescription(toolName, args, result)
+            // Build a human-readable description
+            const description = buildToolDescription(toolName, args, toolResult)
 
             const record: AgentActionRecord = {
               type: toolName,
               action: description,
               pageUrl: (args?.url as string | undefined) ?? null,
-              reasoning: (args?.reasoning as string | undefined) ?? null,
+              reasoning: agentText.slice(0, 500) || null,
             }
 
             const screenshotPath = await explorationBrowser.captureScreenshot(
@@ -206,36 +219,55 @@ Instructions:
 function buildToolDescription(
   toolName: string,
   args: Record<string, unknown> | undefined,
-  result: Record<string, unknown> | undefined,
+  toolResult: Record<string, unknown> | undefined,
 ): string {
-  if (!args) return toolName
+  // Try to find any meaningful text from args
+  const tryFields = (fields: string[]): string | null => {
+    if (!args) return null
+    for (const f of fields) {
+      const val = args[f]
+      if (typeof val === 'string' && val.length > 0) return val
+    }
+    return null
+  }
 
   switch (toolName) {
     case 'act':
-      return (args.instruction as string | undefined) ?? (args.action as string | undefined) ?? 'Performing action'
+      return tryFields(['instruction', 'action', 'text', 'description']) ?? 'Performing action'
     case 'goto':
-      return `Navigate to ${args.url as string | undefined ?? 'page'}`
+      return `Navigate to ${tryFields(['url']) ?? 'page'}`
     case 'extract':
-      return `Extract: ${(args.instruction as string | undefined) ?? 'page content'}`
+      return `Extract: ${tryFields(['instruction', 'description']) ?? 'page content'}`
     case 'scroll':
-      return `Scroll ${(args.direction as string | undefined) ?? 'down'}`
+      return `Scroll ${tryFields(['direction']) ?? 'down'}`
     case 'screenshot':
       return 'Capture screenshot'
     case 'fillForm':
-      return `Fill form: ${(args.instruction as string | undefined) ?? 'form fields'}`
+      return `Fill form: ${tryFields(['instruction', 'description']) ?? 'form fields'}`
     case 'ariaTree':
       return 'Analyze page structure'
     case 'keys':
-      return `Press keys: ${(args.keys as string | undefined) ?? ''}`
+      return `Press keys: ${tryFields(['keys', 'key', 'text']) ?? ''}`
     case 'navback':
       return 'Navigate back'
     case 'wait':
-      return `Wait ${(args.ms as number | undefined) ?? ''}ms`
+      return `Wait ${args?.ms ?? args?.timeout ?? ''}ms`
     case 'done': {
-      const msg = (result?.message as string | undefined) ?? (args.message as string | undefined) ?? 'Task complete'
+      const msg = tryFields(['message', 'reason', 'summary'])
+        ?? (typeof toolResult === 'object' && toolResult ? (toolResult.message as string | undefined) : null)
+        ?? 'Task complete'
       return `Done: ${msg}`
     }
-    default:
-      return (args.instruction as string | undefined) ?? (args.action as string | undefined) ?? toolName
+    default: {
+      // Last resort: try all known field names, or stringify args
+      const desc = tryFields(['instruction', 'action', 'text', 'description', 'url', 'message'])
+      if (desc) return desc
+      // If args exist but we couldn't find a good field, show the args keys
+      if (args && Object.keys(args).length > 0) {
+        const firstVal = Object.values(args).find((v) => typeof v === 'string' && v.length > 0)
+        if (typeof firstVal === 'string') return firstVal
+      }
+      return toolName
+    }
   }
 }
