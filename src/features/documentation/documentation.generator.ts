@@ -22,11 +22,20 @@ const NextStepSchema = z.object({
   priority: z.enum(['high', 'medium', 'low']),
 })
 
+const StructuralSuggestionSchema = z.object({
+  type: z.enum(['move', 'merge', 'split', 'rename', 'new']),
+  targetSlug: z.string().optional(),
+  details: z.string(),
+  suggestedTitle: z.string().optional(),
+  suggestedParentSlug: z.string().optional(),
+})
+
 const SelfAssessmentSchema = z.object({
   overallCompleteness: z.number().min(0).max(100),
   stepAssessments: z.array(StepAssessmentSchema),
   gaps: z.array(GapSchema),
   nextSteps: z.array(NextStepSchema),
+  structuralSuggestions: z.array(StructuralSuggestionSchema).optional(),
 })
 
 const DocJsonSchema = z.object({

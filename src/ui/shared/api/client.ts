@@ -107,6 +107,7 @@ export interface DocPageDTO {
   slug: string
   startUrl: string | null
   goal: string | null
+  content: string | null
   status: 'draft' | 'exploring' | 'published'
   sortOrder: number
   createdAt: string

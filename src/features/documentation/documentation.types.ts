@@ -27,11 +27,20 @@ export interface DocNextStep {
   priority: 'high' | 'medium' | 'low'
 }
 
+export interface StructuralSuggestion {
+  type: 'move' | 'merge' | 'split' | 'rename' | 'new'
+  targetSlug?: string
+  details: string
+  suggestedTitle?: string
+  suggestedParentSlug?: string
+}
+
 export interface DocSelfAssessment {
   overallCompleteness: number
   stepAssessments: DocStepAssessment[]
   gaps: DocGap[]
   nextSteps: DocNextStep[]
+  structuralSuggestions?: StructuralSuggestion[]
 }
 
 export interface DocJsonSummary {

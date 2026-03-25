@@ -72,7 +72,17 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
   if (run.status === 'pending' || run.status === 'running') {
     throw new NotFoundError('Run is still in progress')
   }
-  return generateAndSaveDoc(id, buildDocDeps())
+  const doc = await generateAndSaveDoc(id, buildDocDeps())
+
+  // Copy generated markdown to the doc page's editable content
+  if (run.docPageId && doc.markdownContent) {
+    const { updatePageContent } = await import('../page/page.repository.js')
+    await updatePageContent(run.docPageId, doc.markdownContent).catch((err) =>
+      console.error('Failed to copy doc to page content:', err),
+    )
+  }
+
+  return doc
 }
 
 export async function getRun(id: string): Promise<Run> {

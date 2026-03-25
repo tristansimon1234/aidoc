@@ -79,7 +79,7 @@ export function ProjectDetail(): React.ReactElement {
           </div>
           <div className={styles.pageList}>
             {pages.length > 0 ? (
-              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} />
+              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
             ) : (
               <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', padding: 'var(--space-sm)' }}>
                 No pages yet

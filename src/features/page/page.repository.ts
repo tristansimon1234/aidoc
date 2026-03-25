@@ -10,6 +10,7 @@ interface PageRow {
   slug: string
   start_url: string | null
   goal: string | null
+  content: string | null
   status: string
   sort_order: number
   created_at: string
@@ -25,6 +26,7 @@ function mapToPage(row: PageRow): DocPage {
     slug: row.slug,
     startUrl: row.start_url,
     goal: row.goal,
+    content: row.content,
     status: row.status as DocPage['status'],
     sortOrder: row.sort_order,
     createdAt: new Date(row.created_at),
@@ -76,6 +78,7 @@ export async function updatePage(id: string, input: UpdatePageInput): Promise<Do
   if (input.parentId !== undefined) updates.parent_id = input.parentId
   if (input.sortOrder !== undefined) updates.sort_order = input.sortOrder
   if (input.status !== undefined) updates.status = input.status
+  if (input.content !== undefined) updates.content = input.content
 
   const { data, error } = await supabase
     .from('doc_pages')
@@ -104,6 +107,14 @@ export async function reorderPages(items: ReorderItem[]): Promise<void> {
       .eq('id', item.id)
     if (error) throw new DatabaseError(error.message)
   }
+}
+
+export async function updatePageContent(id: string, content: string): Promise<void> {
+  const { error } = await supabase
+    .from('doc_pages')
+    .update({ content, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw new DatabaseError(error.message)
 }
 
 export function buildTree(pages: DocPage[]): DocPageTreeNode[] {

@@ -35,6 +35,9 @@ export function PageView(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [editContent, setEditContent] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
@@ -141,6 +144,32 @@ export function PageView(): React.ReactElement {
     })
     await api.pages.update(projectId, pageId, { status: 'exploring' })
     await runExploration(run.id)
+  }
+
+  const handleStartEdit = (): void => {
+    const currentContent = (page as DocPageDTO & { content?: string | null })?.content
+      ?? doc?.markdownContent ?? ''
+    setEditContent(currentContent)
+    setEditing(true)
+  }
+
+  const handleSaveEdit = async (): Promise<void> => {
+    if (!projectId || !pageId) return
+    setSaving(true)
+    try {
+      await api.pages.update(projectId, pageId, { content: editContent })
+      setEditing(false)
+      await fetchData()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleCancelEdit = (): void => {
+    setEditing(false)
+    setEditContent('')
   }
 
   const handleContinueExploration = async (): Promise<void> => {
@@ -258,12 +287,54 @@ export function PageView(): React.ReactElement {
 
       {error && <EmptyState title="Error" description={error} />}
 
-      {/* Generated doc */}
-      {doc?.markdownContent && (
-        <div style={{ marginTop: 'var(--space-lg)' }}>
-          <MarkdownRenderer content={doc.markdownContent} />
-        </div>
-      )}
+      {/* Content: edit mode or view mode */}
+      {(() => {
+        const displayContent = (page as DocPageDTO & { content?: string | null })?.content ?? doc?.markdownContent
+        if (!displayContent && !editing) return null
+
+        return (
+          <div style={{ marginTop: 'var(--space-lg)' }}>
+            {/* Edit/View toggle */}
+            {!exploring && !generating && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-sm)' }}>
+                {editing ? (
+                  <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                    <Button size="sm" onClick={() => void handleSaveEdit()} disabled={saving}>
+                      {saving ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={handleCancelEdit}>Cancel</Button>
+                  </div>
+                ) : (
+                  <Button size="sm" variant="secondary" onClick={handleStartEdit}>Edit</Button>
+                )}
+              </div>
+            )}
+
+            {editing ? (
+              <textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                style={{
+                  width: '100%',
+                  minHeight: '500px',
+                  padding: 'var(--space-md)',
+                  backgroundColor: 'var(--color-bg-elevated)',
+                  color: 'var(--color-text-primary)',
+                  border: '1px solid var(--color-border-default)',
+                  borderRadius: 'var(--radius-md)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 'var(--text-sm)',
+                  lineHeight: '1.6',
+                  resize: 'vertical',
+                  outline: 'none',
+                }}
+              />
+            ) : (
+              <MarkdownRenderer content={displayContent ?? ''} />
+            )}
+          </div>
+        )
+      })()}
 
       {/* Self-assessment + actionable suggestions */}
       {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && !exploring && !generating && (

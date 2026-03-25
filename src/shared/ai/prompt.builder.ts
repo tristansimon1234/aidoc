@@ -20,6 +20,7 @@ export function buildDocumentationPrompt(context: {
   questions?: { question: string; answer: string | null }[]
   projectContext?: string
   tableOfContents?: string
+  existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
 }): string {
   const screenshotSteps = context.steps.filter((s) => s.screenshotUrl)
 
@@ -29,6 +30,10 @@ export function buildDocumentationPrompt(context: {
 
   const tocBlock = context.tableOfContents
     ? `\n## Other Pages in This Documentation\n${context.tableOfContents}\nWhen referencing content covered by other pages, use links. Do NOT duplicate content.\n`
+    : ''
+
+  const pageSummariesBlock = context.existingPageSummaries && context.existingPageSummaries.length > 0
+    ? `\n## Existing Page Content (summaries)\n${context.existingPageSummaries.map((p) => `- **${p.title}** (/${p.slug}): ${p.contentPreview}`).join('\n')}\n`
     : ''
 
   const blockersSection = context.questions && context.questions.length > 0
@@ -42,7 +47,7 @@ ${context.questions.map((q) => `- Issue: ${q.question}${q.answer ? `\n  Resoluti
 Name: "${context.featureName}"
 URL: ${context.startUrl}
 Goal: "${context.goal}"
-${projectBlock}${tocBlock}
+${projectBlock}${tocBlock}${pageSummariesBlock}
 ## Exploration Data
 ${formatStepsWithScreenshots(context.steps)}
 
@@ -112,6 +117,18 @@ After the markdown, add a line containing "---JSON---", then a JSON object:
     ]
 
 IMPORTANT for nextSteps: each suggestion should be a concrete PAGE TITLE that could be created as a new documentation page. Not vague actions like "test mobile view" but specific features like "Mobile Responsive View" or "Admin Dashboard".
+
+    "structuralSuggestions": [
+      { "type": "move"|"merge"|"split"|"rename"|"new", "targetSlug": "existing-page-slug", "details": "explanation", "suggestedTitle": "for rename/new", "suggestedParentSlug": "for move" }
+    ]
+
+For structuralSuggestions, analyze the overall documentation structure and suggest improvements:
+- "move": a page should be nested under a different parent
+- "merge": two pages cover overlapping content and should be combined
+- "split": a page is too long and should be split into sub-pages
+- "rename": a page title doesn't accurately describe its content
+- "new": a new page should be created (similar to nextSteps but with structural context)
+Only suggest structural changes if they genuinely improve the documentation quality.
   }
 }`
 }

@@ -8,6 +8,7 @@ export interface DocPage {
   slug: string
   startUrl: string | null
   goal: string | null
+  content: string | null
   status: PageStatus
   sortOrder: number
   createdAt: Date
@@ -36,6 +37,7 @@ export interface UpdatePageInput {
   parentId?: string | null
   sortOrder?: number
   status?: PageStatus
+  content?: string
 }
 
 export interface ReorderItem {

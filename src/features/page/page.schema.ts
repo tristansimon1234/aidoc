@@ -18,6 +18,7 @@ export const UpdatePageSchema = z.object({
   parentId: z.string().uuid().nullable().optional(),
   sortOrder: z.number().int().optional(),
   status: z.enum(['draft', 'exploring', 'published']).optional(),
+  content: z.string().optional(),
 })
 
 export const ReorderSchema = z.array(z.object({
