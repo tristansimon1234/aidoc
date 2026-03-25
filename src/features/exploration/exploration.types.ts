@@ -18,3 +18,11 @@ export interface AgentActionRecord {
   pageUrl: string | null
   reasoning: string | null
 }
+
+export interface StepEvent {
+  type: 'step' | 'status' | 'done' | 'error' | 'blocked'
+  step?: AgentActionRecord
+  stepIndex?: number
+  message?: string
+  completed?: boolean
+}

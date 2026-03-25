@@ -10,11 +10,17 @@ import {
   EmptyState,
   Field,
 } from '../../../design-system/components/index.js'
-import { api, type RunDTO, type RunStepDTO, type GeneratedDocDTO, type QuestionDTO } from '../../../shared/api/client.js'
+import { api, type RunDTO, type RunStepDTO, type GeneratedDocDTO, type QuestionDTO, type StepEventDTO } from '../../../shared/api/client.js'
 import { StepTimeline } from '../components/StepTimeline.js'
 import styles from './RunDetail.module.css'
 
 type Phase = 'loading' | 'idle' | 'exploring' | 'generating' | 'done' | 'blocked' | 'failed'
+
+interface LiveStep {
+  type: string
+  action: string
+  stepIndex: number
+}
 
 export function RunDetail(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
@@ -23,7 +29,8 @@ export function RunDetail(): React.ReactElement {
   const [questions, setQuestions] = useState<QuestionDTO[]>([])
   const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
   const [phase, setPhase] = useState<Phase>('loading')
-  const [message, setMessage] = useState<string | null>(null)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+  const [liveSteps, setLiveSteps] = useState<LiveStep[]>([])
   const [userInput, setUserInput] = useState('')
   const startedRef = useRef(false)
 
@@ -43,16 +50,14 @@ export function RunDetail(): React.ReactElement {
         const docData = await api.runs.doc(id).catch(() => null)
         if (docData) setDoc(docData)
       }
-
       return runData
     } catch (err) {
-      setMessage((err as Error).message)
+      setStatusMessage((err as Error).message)
       setPhase('failed')
       return null
     }
   }, [id])
 
-  // Initial fetch
   useEffect(() => {
     fetchData().then((runData) => {
       if (!runData) return
@@ -63,7 +68,7 @@ export function RunDetail(): React.ReactElement {
     })
   }, [fetchData])
 
-  // Auto-start for pending runs
+  // Auto-start pending runs
   useEffect(() => {
     if (!id || !run || phase !== 'idle' || run.status !== 'pending' || startedRef.current) return
     startedRef.current = true
@@ -74,45 +79,79 @@ export function RunDetail(): React.ReactElement {
   const launchExploration = async (context?: string): Promise<void> => {
     if (!id) return
     setPhase('exploring')
-    setMessage('Launching browser and exploring...')
+    setStatusMessage('Launching browser...')
+    setLiveSteps([])
 
     try {
-      const result = await api.runs.explore(id, context)
-      await fetchData()
+      await api.runs.exploreStream(
+        id,
+        (event: StepEventDTO) => {
+          switch (event.type) {
+            case 'status':
+              setStatusMessage(event.message ?? null)
+              break
+            case 'step':
+              if (event.step) {
+                setLiveSteps((prev) => [
+                  ...prev,
+                  {
+                    type: event.step!.type,
+                    action: event.step!.action ?? event.step!.type,
+                    stepIndex: event.stepIndex ?? prev.length,
+                  },
+                ])
+                setStatusMessage(event.message ?? null)
+              }
+              break
+            case 'done':
+              setStatusMessage(event.message ?? 'Exploration complete')
+              break
+            case 'blocked':
+              setStatusMessage(event.message ?? 'Agent needs help')
+              break
+            case 'error':
+              setStatusMessage(event.message ?? 'Something went wrong')
+              break
+          }
+        },
+        context,
+      )
 
-      if (result.needsQuestion) {
-        setPhase('blocked')
-        setMessage(result.question)
-      } else if (result.completed) {
-        // Auto-generate doc
+      // Stream ended — fetch final state
+      const runData = await fetchData()
+      if (!runData) return
+
+      if (runData.status === 'completed') {
         setPhase('generating')
-        setMessage('Generating SOP documentation...')
+        setStatusMessage('Generating SOP documentation...')
         try {
           const docResult = await api.runs.generateDoc(id)
           setDoc(docResult)
         } catch {
-          // ok, user can retry later
+          // doc gen failed, user can retry
         }
         await fetchData()
         setPhase('done')
-        setMessage('Exploration and documentation complete.')
-      } else {
+        setStatusMessage('Done')
+      } else if (runData.status === 'blocked') {
+        setPhase('blocked')
+      } else if (runData.status === 'failed') {
         setPhase('failed')
-        setMessage(result.message || 'Exploration ended without completing.')
-        await fetchData()
+      } else {
+        setPhase('done')
       }
     } catch (err) {
       setPhase('failed')
-      setMessage((err as Error).message)
+      setStatusMessage((err as Error).message)
       await fetchData()
     }
   }
 
   const handleResume = (): void => {
-    const context = userInput.trim()
-    if (!context) return
+    const ctx = userInput.trim()
+    if (!ctx) return
     setUserInput('')
-    void launchExploration(context)
+    void launchExploration(ctx)
   }
 
   const handleRetry = (): void => {
@@ -145,15 +184,59 @@ export function RunDetail(): React.ReactElement {
         </div>
       </div>
 
-      {/* Exploring */}
+      {/* Live exploration feed */}
       {phase === 'exploring' && (
         <div className={styles.section}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
             <Spinner size="sm" />
             <span style={{ color: 'var(--color-accent-blue)', fontSize: 'var(--text-sm)' }}>
-              {message}
+              {statusMessage}
             </span>
           </div>
+          {liveSteps.length > 0 && (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '2px',
+              backgroundColor: 'var(--color-bg-surface)',
+              border: '1px solid var(--color-border-subtle)',
+              borderRadius: 'var(--radius-lg)',
+              overflow: 'hidden',
+              maxHeight: '300px',
+              overflowY: 'auto',
+            }}>
+              {liveSteps.map((ls, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--space-md)',
+                    padding: 'var(--space-sm) var(--space-md)',
+                    backgroundColor: 'var(--color-bg-surface)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 'var(--text-sm)',
+                  }}
+                >
+                  <span style={{ color: 'var(--color-text-muted)', minWidth: '24px' }}>
+                    {ls.stepIndex + 1}
+                  </span>
+                  <span style={{
+                    color: 'var(--color-accent-blue)',
+                    backgroundColor: 'var(--color-bg-elevated)',
+                    padding: '1px 6px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 'var(--text-xs)',
+                  }}>
+                    {ls.type}
+                  </span>
+                  <span style={{ color: 'var(--color-text-primary)' }}>
+                    {ls.action}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -163,13 +246,13 @@ export function RunDetail(): React.ReactElement {
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
             <Spinner size="sm" />
             <span style={{ color: 'var(--color-accent-green)', fontSize: 'var(--text-sm)' }}>
-              {message}
+              {statusMessage}
             </span>
           </div>
         </div>
       )}
 
-      {/* Blocked — show question and input for user to help */}
+      {/* Blocked */}
       {phase === 'blocked' && (
         <div className={styles.section}>
           <div style={{
@@ -182,7 +265,7 @@ export function RunDetail(): React.ReactElement {
               Agent needs help
             </p>
             <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', margin: '0 0 var(--space-md)' }}>
-              {latestQuestion?.question ?? message}
+              {latestQuestion?.question ?? statusMessage}
             </p>
             <Field
               label="your_response"
@@ -204,34 +287,34 @@ export function RunDetail(): React.ReactElement {
         </div>
       )}
 
-      {/* Failed — show error and retry button */}
+      {/* Failed */}
       {phase === 'failed' && (
         <div className={styles.section}>
           <EmptyState
             title="Exploration failed"
-            description={message ?? 'Something went wrong.'}
+            description={statusMessage ?? 'Something went wrong.'}
             action={<Button onClick={handleRetry}>Retry</Button>}
           />
         </div>
       )}
 
-      {/* Done */}
-      {phase === 'done' && !doc && (
+      {/* Done — generate doc button if no doc yet */}
+      {phase === 'done' && !doc && run.status === 'completed' && (
         <div className={styles.section}>
           <Button onClick={() => {
             if (!id) return
             setPhase('generating')
-            setMessage('Generating SOP documentation...')
+            setStatusMessage('Generating SOP documentation...')
             api.runs.generateDoc(id)
               .then((d) => { setDoc(d); setPhase('done') })
-              .catch((err: Error) => { setPhase('failed'); setMessage(err.message) })
+              .catch((err: Error) => { setPhase('failed'); setStatusMessage(err.message) })
           }}>
             Generate Documentation
           </Button>
         </div>
       )}
 
-      {/* Steps */}
+      {/* Steps from DB */}
       {steps.length > 0 && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Steps ({steps.length})</h2>

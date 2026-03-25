@@ -11,6 +11,11 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   }
 }
 
+async function getAuthToken(): Promise<string> {
+  const { data } = await supabase.auth.getSession()
+  return data.session?.access_token ?? ''
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = await getAuthHeaders()
   const res = await fetch(`${API_BASE}${path}`, {
@@ -19,7 +24,6 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   })
 
   if (res.status === 401) {
-    // Session expired — sign out and reload
     await supabase.auth.signOut()
     window.location.href = '/login'
     throw new Error('Session expired')
@@ -75,12 +79,12 @@ export interface QuestionDTO {
   createdAt: string
 }
 
-export interface ExplorationResultDTO {
-  completed: boolean
-  message: string
-  actions: Record<string, unknown>[]
-  needsQuestion: boolean
-  question: string | null
+export interface StepEventDTO {
+  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'close'
+  step?: { type: string; action: string | null; pageUrl: string | null; reasoning: string | null }
+  stepIndex?: number
+  message?: string
+  completed?: boolean
 }
 
 export const api = {
@@ -89,11 +93,50 @@ export const api = {
     get: (id: string): Promise<RunDTO> => request(`/runs/${id}`),
     create: (body: { featureName: string; startUrl: string; goal: string }): Promise<RunDTO> =>
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
-    explore: (id: string, context?: string): Promise<ExplorationResultDTO> =>
-      request(`/runs/${id}/explore`, {
-        method: 'POST',
-        body: JSON.stringify(context ? { context } : {}),
-      }),
+    exploreStream: async (
+      id: string,
+      onEvent: (event: StepEventDTO) => void,
+      context?: string,
+    ): Promise<void> => {
+      const token = await getAuthToken()
+      const params = new URLSearchParams()
+      if (context) params.set('context', context)
+
+      const res = await fetch(
+        `${API_BASE}/runs/${id}/explore${params.toString() ? `?${params}` : ''}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      )
+
+      if (!res.ok || !res.body) {
+        throw new Error(`Explore failed: ${res.status}`)
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6)) as StepEventDTO
+              onEvent(event)
+            } catch {
+              // ignore parse errors
+            }
+          }
+        }
+      }
+    },
     generateDoc: (id: string): Promise<GeneratedDocDTO> =>
       request(`/runs/${id}/generate-doc`, { method: 'POST' }),
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),

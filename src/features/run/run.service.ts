@@ -2,7 +2,7 @@ import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 import type { Run, RunStep, CreateRunInput } from './run.types.js'
 import * as runRepo from './run.repository.js'
 import { exploreRun, type RunDeps } from '../exploration/exploration.service.js'
-import type { ExplorationResult } from '../exploration/exploration.types.js'
+import type { StepEvent } from '../exploration/exploration.types.js'
 import * as questionRepo from '../../features/questions/questions.repository.js'
 import { generateAndSaveDoc } from '../documentation/documentation.service.js'
 import type { DocDeps } from '../documentation/documentation.service.js'
@@ -31,29 +31,33 @@ export async function createRun(input: CreateRunInput): Promise<Run> {
   return runRepo.createRun(input)
 }
 
-export async function explore(id: string, additionalContext?: string): Promise<ExplorationResult> {
+export async function exploreWithEvents(
+  id: string,
+  onEvent: (event: StepEvent) => void,
+  additionalContext?: string,
+): Promise<void> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')
 
-  // Allow explore from pending, blocked, or failed states
   if (run.status !== 'pending' && run.status !== 'blocked' && run.status !== 'failed') {
     throw new NotFoundError('Run is not in an explorable state')
   }
 
-  const result = await exploreRun(id, buildRunDeps(), {
+  await exploreRun(id, buildRunDeps(), {
     additionalContext,
+    onEvent: (event) => {
+      onEvent(event)
+
+      // Save question to DB when blocked
+      if (event.type === 'blocked' && event.message) {
+        questionRepo.createQuestion({
+          runId: id,
+          stepId: '',
+          question: event.message,
+        }).catch((err) => console.error('Failed to save question:', err))
+      }
+    },
   })
-
-  // If blocked, save the question for the user
-  if (result.needsQuestion && result.question) {
-    await questionRepo.createQuestion({
-      runId: id,
-      stepId: '',
-      question: result.question,
-    })
-  }
-
-  return result
 }
 
 export async function generateDoc(id: string): Promise<GeneratedDoc> {

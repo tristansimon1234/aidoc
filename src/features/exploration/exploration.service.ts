@@ -4,7 +4,7 @@ import {
   getSessionId,
 } from '../../shared/browser/playwright.client.js'
 import * as explorationBrowser from './exploration.browser.js'
-import type { ExplorationResult, AgentActionRecord } from './exploration.types.js'
+import type { AgentActionRecord, StepEvent } from './exploration.types.js'
 
 export interface RunData {
   startUrl: string
@@ -33,34 +33,35 @@ export interface RunDeps {
 
 export interface ExploreOptions {
   additionalContext?: string
+  onEvent?: (event: StepEvent) => void
 }
 
 export async function exploreRun(
   runId: string,
   deps: RunDeps,
   options?: ExploreOptions,
-): Promise<ExplorationResult> {
+): Promise<void> {
   const run = await deps.findRunById(runId)
   if (!run) throw new Error(`Run ${runId} not found`)
 
-  await deps.updateRunStatus(runId, 'running')
+  const emit = options?.onEvent ?? (() => {})
 
-  // Reconnect to existing session if available, otherwise create new
+  await deps.updateRunStatus(runId, 'running')
+  emit({ type: 'status', message: 'Launching browser...' })
+
   const session = await launchBrowser(run.browserbaseSessionId ?? undefined)
 
   try {
-    // Save session ID on first launch
     const sessionId = getSessionId(session)
     if (sessionId && !run.browserbaseSessionId) {
       await deps.setBrowserbaseSessionId(runId, sessionId)
     }
 
-    // Only navigate on first exploration (no existing session)
     if (!run.browserbaseSessionId) {
+      emit({ type: 'status', message: `Navigating to ${run.startUrl}` })
       await explorationBrowser.navigateTo(session, run.startUrl)
     }
 
-    // Build the instruction
     const contextBlock = options?.additionalContext
       ? `\n\n## Additional Context from User\n${options.additionalContext}`
       : ''
@@ -85,7 +86,11 @@ Instructions:
 - When you've explored enough to write comprehensive documentation, finish
 - Be thorough but efficient`
 
-    // Use Stagehand agent
+    emit({ type: 'status', message: 'Agent is exploring...' })
+
+    let stepOffset = await deps.countSteps(runId)
+    let stepCounter = 0
+
     const agent = session.agent({
       model: {
         modelName: 'anthropic/claude-sonnet-4-20250514',
@@ -96,41 +101,53 @@ Instructions:
     const result = await agent.execute({
       instruction,
       maxSteps: 30,
+      callbacks: {
+        onStepFinish: async (event) => {
+          // Each "step" from the AI SDK is one LLM call which may produce multiple tool calls
+          const toolCalls = event.toolCalls ?? []
+
+          for (const tool of toolCalls) {
+            const toolObj = tool as Record<string, unknown>
+            const toolName = (toolObj.toolName ?? 'unknown') as string
+            const args = toolObj.args as Record<string, unknown> | undefined
+
+            if (toolName === 'think') continue
+
+            const record: AgentActionRecord = {
+              type: toolName,
+              action: (args?.instruction ?? args?.action ?? args?.url ?? toolName) as string | null,
+              pageUrl: (args?.url as string | undefined) ?? null,
+              reasoning: (args?.reasoning as string | undefined) ?? null,
+            }
+
+            const screenshotPath = await explorationBrowser.captureScreenshot(
+              session,
+              runId,
+              stepOffset + stepCounter,
+            )
+
+            await deps.createRunStep({
+              runId,
+              stepIndex: stepOffset + stepCounter,
+              url: record.pageUrl ?? run.startUrl,
+              title: toolName,
+              action: record.action ?? toolName,
+              observation: record.reasoning?.slice(0, 500) ?? '',
+              screenshotPath,
+            })
+
+            emit({
+              type: 'step',
+              step: record,
+              stepIndex: stepCounter,
+              message: record.action ?? toolName,
+            })
+
+            stepCounter++
+          }
+        },
+      },
     })
-
-    // Save actions as steps
-    const stepOffset = await deps.countSteps(runId)
-    const actions: AgentActionRecord[] = []
-
-    for (let i = 0; i < result.actions.length; i++) {
-      const action = result.actions[i]
-      if (!action) continue
-
-      const record: AgentActionRecord = {
-        type: action.type,
-        action: action.action ?? action.instruction ?? null,
-        pageUrl: action.pageUrl ?? null,
-        reasoning: action.reasoning ?? null,
-      }
-      actions.push(record)
-
-      if (action.type !== 'think') {
-        const screenshotPath = await explorationBrowser.captureScreenshot(
-          session,
-          runId,
-          stepOffset + i,
-        )
-        await deps.createRunStep({
-          runId,
-          stepIndex: stepOffset + i,
-          url: action.pageUrl ?? run.startUrl,
-          title: action.type,
-          action: record.action ?? action.type,
-          observation: record.reasoning?.slice(0, 500) ?? '',
-          screenshotPath,
-        })
-      }
-    }
 
     // Track token usage
     if (result.usage) {
@@ -156,33 +173,21 @@ Instructions:
 
     if (isBlocked) {
       await deps.updateRunStatus(runId, 'blocked')
-      return {
-        completed: false,
-        message: result.message,
-        actions,
-        needsQuestion: true,
-        question: result.message,
-      }
+      emit({ type: 'blocked', message: result.message })
+      return
     }
 
     if (result.completed) {
       await deps.updateRunStatus(runId, 'completed')
+      emit({ type: 'done', completed: true, message: result.message })
     } else {
-      // Not blocked, not completed — partial exploration
-      // Keep as running so user can retry
       await deps.updateRunStatus(runId, 'blocked')
-    }
-
-    return {
-      completed: result.completed,
-      message: result.message,
-      actions,
-      needsQuestion: !result.completed,
-      question: !result.completed ? `Agent stopped: "${result.message}". Want to provide more guidance?` : null,
+      emit({ type: 'blocked', message: result.message })
     }
   } catch (err) {
     console.error(`Exploration failed for run ${runId}:`, err)
     await deps.updateRunStatus(runId, 'failed')
+    emit({ type: 'error', message: (err as Error).message })
     throw err
   } finally {
     await closeBrowser(session)
