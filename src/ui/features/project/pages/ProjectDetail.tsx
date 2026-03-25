@@ -76,6 +76,14 @@ export function ProjectDetail(): React.ReactElement {
             >
               +
             </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => navigate(`/projects/${projectId}/settings`)}
+              title="Project settings"
+            >
+              &#9881;
+            </Button>
           </div>
           <div className={styles.pageList}>
             {pages.length > 0 ? (

@@ -7,6 +7,7 @@ import { NewProject } from './features/project/pages/NewProject.js'
 import { ProjectDetail } from './features/project/pages/ProjectDetail.js'
 import { NewPage } from './features/page/pages/NewPage.js'
 import { PageView } from './features/page/pages/PageView.js'
+import { ProjectSettings } from './features/project/pages/ProjectSettings.js'
 
 export function App(): React.ReactElement {
   const { user, loading, signIn, signUp, signOut } = useAuth()
@@ -32,6 +33,7 @@ export function App(): React.ReactElement {
           <Route path="pages/new" element={<NewPage />} />
           <Route path="pages/:pageId" element={<PageView />} />
         </Route>
+        <Route path="/projects/:projectId/settings" element={<ProjectSettings />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

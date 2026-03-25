@@ -139,11 +139,21 @@ IMPORTANT: Only call "done" when you have genuinely explored everything relevant
       },
     })
 
-    const result = await agent.execute({
-      instruction,
-      maxSteps: 50,
-      ...(Object.keys(variables).length > 0 ? { variables } : {}),
-      callbacks: {
+    // Timeout after 4 minutes to prevent infinite loops
+    const abortController = new AbortController()
+    const timeout = setTimeout(() => {
+      abortController.abort()
+      emit({ type: 'status', message: 'Exploration timed out (4 min limit)' })
+    }, 4 * 60 * 1000)
+
+    let result: Awaited<ReturnType<typeof agent.execute>>
+    try {
+      result = await agent.execute({
+        instruction,
+        maxSteps: 50,
+        signal: abortController.signal,
+        ...(Object.keys(variables).length > 0 ? { variables } : {}),
+        callbacks: {
         onStepFinish: async (event) => {
           const toolCalls = event.toolCalls ?? []
           const toolResults = event.toolResults ?? []
@@ -203,6 +213,19 @@ IMPORTANT: Only call "done" when you have genuinely explored everything relevant
         },
       },
     })
+    } catch (agentErr) {
+      // Agent was aborted or errored — still process what we have
+      clearTimeout(timeout)
+      const isAbort = (agentErr as Error).name === 'AbortError' ||
+        (agentErr as Error).message?.includes('abort')
+      if (!isAbort) throw agentErr
+
+      await deps.updateRunStatus(runId, 'blocked')
+      emit({ type: 'blocked', message: 'Exploration timed out — partial results saved' })
+      return
+    } finally {
+      clearTimeout(timeout)
+    }
 
     if (result.usage) {
       await deps.incrementTokenUsage(
