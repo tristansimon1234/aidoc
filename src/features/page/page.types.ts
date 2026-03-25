@@ -9,6 +9,7 @@ export interface DocPage {
   startUrl: string | null
   goal: string | null
   content: string | null
+  customPrompt: string | null
   status: PageStatus
   sortOrder: number
   createdAt: Date
@@ -38,6 +39,7 @@ export interface UpdatePageInput {
   sortOrder?: number
   status?: PageStatus
   content?: string
+  customPrompt?: string
 }
 
 export interface ReorderItem {

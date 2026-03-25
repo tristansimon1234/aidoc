@@ -19,6 +19,7 @@ export const UpdatePageSchema = z.object({
   sortOrder: z.number().int().optional(),
   status: z.enum(['draft', 'exploring', 'published']).optional(),
   content: z.string().optional(),
+  customPrompt: z.string().optional(),
 })
 
 export const ReorderSchema = z.array(z.object({

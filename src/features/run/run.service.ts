@@ -48,8 +48,17 @@ export async function exploreWithEvents(
     throw new NotFoundError('Run is not in an explorable state')
   }
 
+  // Fetch custom prompt from the page if linked
+  let customPrompt: string | undefined
+  if (run.docPageId) {
+    const { findPageById } = await import('../page/page.repository.js')
+    const page = await findPageById(run.docPageId)
+    if (page?.customPrompt) customPrompt = page.customPrompt
+  }
+
   await exploreRun(id, buildRunDeps(), {
     additionalContext,
+    customPrompt,
     onEvent: (event) => {
       onEvent(event)
 

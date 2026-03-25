@@ -39,6 +39,7 @@ export interface ExploreOptions {
   projectContext?: string
   tableOfContents?: string
   credentials?: { label: string; username: string; password: string }[]
+  customPrompt?: string
   onEvent?: (event: StepEvent) => void
 }
 
@@ -108,24 +109,34 @@ Use these credentials to log in when you encounter a login page. The values are 
       variables[`${c.label}_password`] = { value: c.password, description: `Password for ${c.label}` }
     }
 
+    const customPromptBlock = options?.customPrompt
+      ? `\n\n## Custom Instructions from User\n${options.customPrompt}`
+      : ''
+
     const instruction = `You are a documentation agent. Your job is to thoroughly explore a web application feature so we can generate product documentation from your exploration.
 
 Feature: ${run.featureName}
 Goal: ${run.goal}
 Start URL: ${run.startUrl}
-${isResuming ? '\nYou are RESUMING a previous exploration. The browser is still open where you left off.' : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}
+${isResuming ? '\nYou are RESUMING a previous exploration. The browser is still open where you left off.' : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}${customPromptBlock}
 
 Instructions:
 - Click through every section, button, menu, and interactive element you find
 - Fill forms with realistic test data when needed
 - Scroll to see all content on each page
 - Visit all linked pages within the feature
-- If you hit a login/auth wall, STOP and explain what credentials are needed
-- When you have thoroughly explored ALL aspects of the feature, call done
-- Do NOT stop early — explore every screen and sub-section
 - Be systematic: go through navigation items one by one
 
-IMPORTANT: Only call "done" when you have genuinely explored everything relevant. A thorough exploration typically involves 15-40 meaningful actions.`
+CRITICAL RULES FOR STOPPING:
+- If you encounter a login page or auth wall and do NOT have credentials, call done IMMEDIATELY. Do not retry. Explain what access is needed.
+- If an action fails (button doesn't work, page errors, element not found), try ONE alternative. If that also fails, move on to the next thing. Do NOT retry the same action more than twice.
+- If the page looks empty, broken, or returns an error code, call done and explain what happened.
+- If you've explored all visible sections and pages, call done. Don't navigate in circles.
+
+When to call done:
+- You have explored all main sections and sub-sections
+- You've captured the key user flows and interactions
+- OR you are blocked and cannot proceed further`
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
 
@@ -139,21 +150,11 @@ IMPORTANT: Only call "done" when you have genuinely explored everything relevant
       },
     })
 
-    // Timeout after 4 minutes to prevent infinite loops
-    const abortController = new AbortController()
-    const timeout = setTimeout(() => {
-      abortController.abort()
-      emit({ type: 'status', message: 'Exploration timed out (4 min limit)' })
-    }, 4 * 60 * 1000)
-
-    let result: Awaited<ReturnType<typeof agent.execute>>
-    try {
-      result = await agent.execute({
-        instruction,
-        maxSteps: 50,
-        signal: abortController.signal,
-        ...(Object.keys(variables).length > 0 ? { variables } : {}),
-        callbacks: {
+    const result = await agent.execute({
+      instruction,
+      maxSteps: 50,
+      ...(Object.keys(variables).length > 0 ? { variables } : {}),
+      callbacks: {
         onStepFinish: async (event) => {
           const toolCalls = event.toolCalls ?? []
           const toolResults = event.toolResults ?? []
@@ -213,19 +214,6 @@ IMPORTANT: Only call "done" when you have genuinely explored everything relevant
         },
       },
     })
-    } catch (agentErr) {
-      // Agent was aborted or errored — still process what we have
-      clearTimeout(timeout)
-      const isAbort = (agentErr as Error).name === 'AbortError' ||
-        (agentErr as Error).message?.includes('abort')
-      if (!isAbort) throw agentErr
-
-      await deps.updateRunStatus(runId, 'blocked')
-      emit({ type: 'blocked', message: 'Exploration timed out — partial results saved' })
-      return
-    } finally {
-      clearTimeout(timeout)
-    }
 
     if (result.usage) {
       await deps.incrementTokenUsage(

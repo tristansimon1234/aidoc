@@ -108,6 +108,7 @@ export interface DocPageDTO {
   startUrl: string | null
   goal: string | null
   content: string | null
+  customPrompt: string | null
   status: 'draft' | 'exploring' | 'published'
   sortOrder: number
   createdAt: string

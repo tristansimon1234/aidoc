@@ -11,6 +11,7 @@ interface PageRow {
   start_url: string | null
   goal: string | null
   content: string | null
+  custom_prompt: string | null
   status: string
   sort_order: number
   created_at: string
@@ -27,6 +28,7 @@ function mapToPage(row: PageRow): DocPage {
     startUrl: row.start_url,
     goal: row.goal,
     content: row.content,
+    customPrompt: row.custom_prompt,
     status: row.status as DocPage['status'],
     sortOrder: row.sort_order,
     createdAt: new Date(row.created_at),
@@ -79,6 +81,7 @@ export async function updatePage(id: string, input: UpdatePageInput): Promise<Do
   if (input.sortOrder !== undefined) updates.sort_order = input.sortOrder
   if (input.status !== undefined) updates.status = input.status
   if (input.content !== undefined) updates.content = input.content
+  if (input.customPrompt !== undefined) updates.custom_prompt = input.customPrompt
 
   const { data, error } = await supabase
     .from('doc_pages')

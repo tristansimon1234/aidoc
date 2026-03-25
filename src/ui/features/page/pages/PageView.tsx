@@ -68,7 +68,7 @@ export function PageView(): React.ReactElement {
     void fetchData()
   }, [fetchData])
 
-  const runExploration = async (runId: string): Promise<void> => {
+  const runExploration = async (runId: string, customPrompt?: string): Promise<void> => {
     setExploring(true)
     setError(null)
     setLiveSteps([])
@@ -97,6 +97,7 @@ export function PageView(): React.ReactElement {
             case 'error': setStatusMessage(event.message ?? 'Error'); break
           }
         },
+        customPrompt,
       )
 
       // Stream ended — generate doc from whatever we have
@@ -143,7 +144,8 @@ export function PageView(): React.ReactElement {
       docPageId: pageId,
     })
     await api.pages.update(projectId, pageId, { status: 'exploring' })
-    await runExploration(run.id)
+    const customPrompt = (page as DocPageDTO & { customPrompt?: string | null }).customPrompt ?? undefined
+    await runExploration(run.id, customPrompt)
   }
 
   const handleStartEdit = (): void => {
@@ -219,9 +221,40 @@ export function PageView(): React.ReactElement {
         </p>
       )}
 
+      {/* Custom prompt for exploration */}
+      {!exploring && !generating && (
+        <div style={{ margin: 'var(--space-md) 0' }}>
+          <details style={{ cursor: 'pointer' }}>
+            <summary style={{
+              fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+              color: 'var(--color-text-muted)', marginBottom: 'var(--space-sm)',
+            }}>
+              Exploration instructions (optional)
+            </summary>
+            <textarea
+              value={(page as DocPageDTO & { customPrompt?: string | null }).customPrompt ?? ''}
+              onChange={(e) => {
+                if (!projectId || !pageId) return
+                void api.pages.update(projectId, pageId, { customPrompt: e.target.value })
+                // Update local state
+                setPage({ ...page!, customPrompt: e.target.value } as DocPageDTO)
+              }}
+              placeholder="e.g. Focus on the pricing section. Skip the blog. Use the admin credentials to log in."
+              style={{
+                width: '100%', minHeight: '60px', padding: 'var(--space-sm)',
+                backgroundColor: 'var(--color-bg-elevated)', color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-md)',
+                fontFamily: 'var(--font-sans)', fontSize: 'var(--text-sm)',
+                resize: 'vertical', outline: 'none',
+              }}
+            />
+          </details>
+        </div>
+      )}
+
       {/* Action buttons */}
       {!exploring && !generating && (
-        <div style={{ display: 'flex', gap: 'var(--space-sm)', margin: 'var(--space-lg) 0', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', margin: 'var(--space-sm) 0 var(--space-lg)', flexWrap: 'wrap' }}>
           {canContinue && (
             <Button onClick={() => void handleContinueExploration()}>
               Continue Exploration
