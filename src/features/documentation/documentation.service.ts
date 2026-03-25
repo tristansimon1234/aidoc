@@ -15,6 +15,9 @@ export interface DocDeps {
   findStepsByRunId: (runId: string) => Promise<
     { url: string | null; action: string | null; observation: string | null; screenshotPath: string | null }[]
   >
+  findQuestionsByRunId: (runId: string) => Promise<
+    { question: string; answer: string | null }[]
+  >
   incrementTokenUsage: (id: string, tokens: number) => Promise<void>
 }
 
@@ -32,6 +35,7 @@ export async function generateAndSaveDoc(
   if (!run) throw new NotFoundError('Run')
 
   const steps = await deps.findStepsByRunId(runId)
+  const questions = await deps.findQuestionsByRunId(runId)
 
   // Resolve screenshot URLs in parallel
   const stepSummaries: StepSummary[] = await Promise.all(
@@ -54,6 +58,7 @@ export async function generateAndSaveDoc(
     goal: run.goal,
     startUrl: run.startUrl,
     steps: stepSummaries,
+    questions: questions.map((q) => ({ question: q.question, answer: q.answer })),
   })
 
   await deps.incrementTokenUsage(runId, result.usage.inputTokens + result.usage.outputTokens)

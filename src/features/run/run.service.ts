@@ -23,6 +23,10 @@ function buildDocDeps(): DocDeps {
   return {
     findRunById: runRepo.findRunById,
     findStepsByRunId: runRepo.findStepsByRunId,
+    findQuestionsByRunId: (runId) =>
+      questionRepo.findQuestionsByRunId(runId).then((qs) =>
+        qs.map((q) => ({ question: q.question, answer: q.answer })),
+      ),
     incrementTokenUsage: runRepo.incrementTokenUsage,
   }
 }

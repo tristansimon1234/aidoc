@@ -4,12 +4,38 @@ import { buildDocumentationPrompt } from '../../shared/ai/prompt.builder.js'
 import type { AnthropicUsage } from '../../shared/ai/anthropic.types.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
+const StepAssessmentSchema = z.object({
+  stepIndex: z.number(),
+  confidence: z.enum(['high', 'medium', 'low']),
+  note: z.string().nullable(),
+})
+
+const GapSchema = z.object({
+  area: z.string(),
+  reason: z.string(),
+  severity: z.enum(['major', 'minor']),
+})
+
+const NextStepSchema = z.object({
+  suggestion: z.string(),
+  reason: z.string(),
+  priority: z.enum(['high', 'medium', 'low']),
+})
+
+const SelfAssessmentSchema = z.object({
+  overallCompleteness: z.number().min(0).max(100),
+  stepAssessments: z.array(StepAssessmentSchema),
+  gaps: z.array(GapSchema),
+  nextSteps: z.array(NextStepSchema),
+})
+
 const DocJsonSchema = z.object({
   featureName: z.string(),
   totalSteps: z.number(),
   keyPages: z.array(z.string()),
   userActions: z.array(z.string()),
   screenshots: z.number().optional(),
+  selfAssessment: SelfAssessmentSchema,
 })
 
 export interface GenerationResult {
@@ -23,6 +49,7 @@ export async function generateDocumentation(context: {
   goal: string
   startUrl: string
   steps: StepSummary[]
+  questions?: { question: string; answer: string | null }[]
 }): Promise<GenerationResult> {
   const prompt = buildDocumentationPrompt(context)
 
@@ -46,7 +73,19 @@ export async function generateDocumentation(context: {
     const parsed = JSON.parse(jsonStr) as unknown
     json = DocJsonSchema.parse(parsed) as unknown as Record<string, unknown>
   } catch {
-    json = { featureName: context.featureName, totalSteps: context.steps.length, keyPages: [], userActions: [] }
+    json = {
+      featureName: context.featureName,
+      totalSteps: context.steps.length,
+      keyPages: [],
+      userActions: [],
+      screenshots: 0,
+      selfAssessment: {
+        overallCompleteness: 0,
+        stepAssessments: [],
+        gaps: [{ area: 'Entire documentation', reason: 'Self-assessment could not be parsed', severity: 'major' }],
+        nextSteps: [],
+      },
+    }
   }
 
   return {

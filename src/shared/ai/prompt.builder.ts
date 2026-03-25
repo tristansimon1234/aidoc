@@ -17,8 +17,14 @@ export function buildDocumentationPrompt(context: {
   goal: string
   startUrl: string
   steps: StepSummary[]
+  questions?: { question: string; answer: string | null }[]
 }): string {
   const screenshotSteps = context.steps.filter((s) => s.screenshotUrl)
+
+  const blockersSection = context.questions && context.questions.length > 0
+    ? `\n## Blockers Encountered During Exploration
+${context.questions.map((q) => `- Issue: ${q.question}${q.answer ? `\n  Resolution: ${q.answer}` : ' (unresolved)'}`).join('\n')}\n`
+    : ''
 
   return `You are a product documentation writer. Generate a clear, user-friendly product guide that helps real users understand and use this feature.
 
@@ -34,7 +40,7 @@ ${formatStepsWithScreenshots(context.steps)}
 ${screenshotSteps.length > 0
   ? screenshotSteps.map((s, i) => `Screenshot ${i + 1}: ${s.screenshotUrl}\n  Context: ${s.action}`).join('\n')
   : 'No screenshots available.'}
-
+${blockersSection}
 ## Your Task
 Write a **user-facing product guide** in Markdown. This is NOT an internal SOP — it's documentation that end users will read to understand how to use the product.
 
@@ -54,6 +60,16 @@ Write a **user-facing product guide** in Markdown. This is NOT an internal SOP �
    - Include a screenshot if available
 4. **Key Features** — Highlight important features discovered during exploration
 5. **FAQ / Tips** — Common questions based on what was observed
+6. **Known Gaps & Notes** — Be honest about what you could NOT fully document:
+   - Steps where the page was loading or content was unclear
+   - Sections you noticed but didn't explore (and why)
+   - Areas blocked by auth, login, or access restrictions
+   - Anything that felt incomplete or uncertain
+7. **Next Steps** — Suggest specific actions to improve this documentation:
+   - What additional exploration would help
+   - What credentials or access would be needed
+   - What views (mobile, admin, etc.) should be documented
+   - Any follow-up tasks
 
 ### Formatting Rules:
 - Use ## for sections, ### for subsections
@@ -63,12 +79,27 @@ Write a **user-facing product guide** in Markdown. This is NOT an internal SOP �
 - Use **bold** for UI element names (buttons, links, menu items)
 - Keep paragraphs short (2-3 sentences max)
 
-After the markdown, add a line containing "---JSON---", then a JSON summary:
+### Self-Assessment (CRITICAL):
+Be brutally honest. A completeness score of 40% with clear gaps is infinitely more useful than 90% that hides problems.
+
+After the markdown, add a line containing "---JSON---", then a JSON object:
 {
   "featureName": "string",
   "totalSteps": number,
   "keyPages": ["url1", "url2"],
   "userActions": ["action1", "action2"],
-  "screenshots": number
+  "screenshots": number,
+  "selfAssessment": {
+    "overallCompleteness": <0-100, your honest estimate of how complete this doc is>,
+    "stepAssessments": [
+      { "stepIndex": 1, "confidence": "high"|"medium"|"low", "note": "string or null" }
+    ],
+    "gaps": [
+      { "area": "Name of the area/section", "reason": "Why it's missing", "severity": "major"|"minor" }
+    ],
+    "nextSteps": [
+      { "suggestion": "What to do", "reason": "Why it matters", "priority": "high"|"medium"|"low" }
+    ]
+  }
 }`
 }

@@ -329,6 +329,135 @@ export function RunDetail(): React.ReactElement {
           <CodeBlock code={doc.markdownContent} language="markdown" />
         </section>
       )}
+
+      {/* Self-Assessment Panel */}
+      {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
+        <SelfAssessmentPanel assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessmentData} />
+      )}
     </Shell>
+  )
+}
+
+function hasSelfAssessment(json: Record<string, unknown>): boolean {
+  return json.selfAssessment != null && typeof json.selfAssessment === 'object'
+}
+
+// --- Self-Assessment Panel ---
+
+interface SelfAssessmentData {
+  overallCompleteness: number
+  gaps: { area: string; reason: string; severity: string }[]
+  nextSteps: { suggestion: string; reason: string; priority: string }[]
+}
+
+function getCompletenessColor(pct: number): string {
+  if (pct >= 70) return 'var(--color-accent-green)'
+  if (pct >= 40) return 'var(--color-accent-amber)'
+  return 'var(--color-accent-red)'
+}
+
+function getPriorityColor(priority: string): string {
+  if (priority === 'high') return 'var(--color-accent-red)'
+  if (priority === 'medium') return 'var(--color-accent-amber)'
+  return 'var(--color-text-muted)'
+}
+
+function SelfAssessmentPanel({ assessment }: { assessment: SelfAssessmentData }): React.ReactElement {
+  const color = getCompletenessColor(assessment.overallCompleteness)
+
+  return (
+    <section style={{ marginBottom: 'var(--space-xl)' }}>
+      <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 500, marginBottom: 'var(--space-md)' }}>
+        Documentation Assessment
+      </h2>
+
+      {/* Completeness bar */}
+      <div style={{
+        padding: 'var(--space-md)',
+        backgroundColor: 'var(--color-bg-surface)',
+        border: '1px solid var(--color-border-subtle)',
+        borderRadius: 'var(--radius-lg)',
+        marginBottom: 'var(--space-md)',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>Completeness</span>
+          <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, fontFamily: 'var(--font-mono)', color }}>{assessment.overallCompleteness}%</span>
+        </div>
+        <div style={{ height: '6px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${assessment.overallCompleteness}%`, backgroundColor: color, borderRadius: 'var(--radius-full)', transition: 'width 0.5s ease' }} />
+        </div>
+      </div>
+
+      {/* Gaps */}
+      {assessment.gaps.length > 0 && (
+        <div style={{
+          padding: 'var(--space-md)',
+          backgroundColor: 'var(--color-bg-surface)',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+          marginBottom: 'var(--space-md)',
+        }}>
+          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 500, marginBottom: 'var(--space-sm)', color: 'var(--color-accent-amber)' }}>
+            Gaps ({assessment.gaps.length})
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {assessment.gaps.map((gap, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)' }}>
+                <span style={{
+                  fontSize: 'var(--text-xs)',
+                  fontFamily: 'var(--font-mono)',
+                  padding: '1px 6px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: gap.severity === 'major' ? 'rgba(255,77,77,0.15)' : 'rgba(245,166,35,0.15)',
+                  color: gap.severity === 'major' ? 'var(--color-accent-red)' : 'var(--color-accent-amber)',
+                  flexShrink: 0,
+                }}>
+                  {gap.severity}
+                </span>
+                <div>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)', margin: 0 }}>{gap.area}</p>
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>{gap.reason}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Next Steps */}
+      {assessment.nextSteps.length > 0 && (
+        <div style={{
+          padding: 'var(--space-md)',
+          backgroundColor: 'var(--color-bg-surface)',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+        }}>
+          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 500, marginBottom: 'var(--space-sm)', color: 'var(--color-accent-blue)' }}>
+            Next Steps ({assessment.nextSteps.length})
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            {assessment.nextSteps.map((ns, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)' }}>
+                <span style={{
+                  fontSize: 'var(--text-xs)',
+                  fontFamily: 'var(--font-mono)',
+                  padding: '1px 6px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'var(--color-bg-elevated)',
+                  color: getPriorityColor(ns.priority),
+                  flexShrink: 0,
+                }}>
+                  {ns.priority}
+                </span>
+                <div>
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)', margin: 0 }}>{ns.suggestion}</p>
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>{ns.reason}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   )
 }
