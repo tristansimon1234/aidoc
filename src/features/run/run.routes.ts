@@ -30,14 +30,28 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
-// Execute ONE exploration step and return the result
-runRouter.post('/:id/step', (req: Request, res: Response, next: NextFunction) => {
+// Launch Stagehand agent exploration — runs synchronously, returns result
+runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const result = await runService.runNextStep(params.data.id)
+      const result = await runService.explore(params.data.id)
       res.status(200).json(result)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Generate SOP documentation from exploration data
+runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const doc = await runService.generateDoc(params.data.id)
+      res.status(200).json(doc)
     } catch (err) {
       next(err)
     }

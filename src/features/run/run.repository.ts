@@ -122,6 +122,15 @@ export async function incrementTokenUsage(id: string, tokens: number): Promise<v
   if (error) throw new DatabaseError(error.message)
 }
 
+export async function countStepsByRunId(runId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('run_steps')
+    .select('*', { count: 'exact', head: true })
+    .eq('run_id', runId)
+  if (error) throw new DatabaseError(error.message)
+  return count ?? 0
+}
+
 export async function findStepsByRunId(runId: string): Promise<RunStep[]> {
   const { data, error } = await supabase
     .from('run_steps')

@@ -75,11 +75,12 @@ export interface QuestionDTO {
   createdAt: string
 }
 
-export interface StepResultDTO {
-  done: boolean
-  status: 'running' | 'blocked' | 'completed' | 'failed'
-  decision: Record<string, unknown> | null
-  stepIndex: number
+export interface ExplorationResultDTO {
+  completed: boolean
+  message: string
+  actions: Record<string, unknown>[]
+  needsQuestion: boolean
+  question: string | null
 }
 
 export const api = {
@@ -88,8 +89,10 @@ export const api = {
     get: (id: string): Promise<RunDTO> => request(`/runs/${id}`),
     create: (body: { featureName: string; startUrl: string; goal: string }): Promise<RunDTO> =>
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
-    step: (id: string): Promise<StepResultDTO> =>
-      request(`/runs/${id}/step`, { method: 'POST' }),
+    explore: (id: string): Promise<ExplorationResultDTO> =>
+      request(`/runs/${id}/explore`, { method: 'POST' }),
+    generateDoc: (id: string): Promise<GeneratedDocDTO> =>
+      request(`/runs/${id}/generate-doc`, { method: 'POST' }),
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),
     doc: (id: string): Promise<GeneratedDocDTO> => request(`/runs/${id}/doc`),
   },

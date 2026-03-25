@@ -1,22 +1,23 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
-import { Badge, Spinner, StatusIndicator, CodeBlock, EmptyState } from '../../../design-system/components/index.js'
+import { Button, Badge, Spinner, StatusIndicator, CodeBlock, EmptyState } from '../../../design-system/components/index.js'
 import { api, type RunDTO, type RunStepDTO, type GeneratedDocDTO } from '../../../shared/api/client.js'
 import { StepTimeline } from '../components/StepTimeline.js'
 import styles from './RunDetail.module.css'
+
+type Phase = 'loading' | 'idle' | 'exploring' | 'generating' | 'done' | 'blocked' | 'error'
 
 export function RunDetail(): React.ReactElement {
   const { id } = useParams<{ id: string }>()
   const [run, setRun] = useState<RunDTO | null>(null)
   const [steps, setSteps] = useState<RunStepDTO[]>([])
   const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [exploring, setExploring] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const abortRef = useRef(false)
+  const [phase, setPhase] = useState<Phase>('loading')
+  const [message, setMessage] = useState<string | null>(null)
+  const startedRef = useRef(false)
 
-  const fetchRunData = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     if (!id) return
     try {
       const [runData, stepsData] = await Promise.all([
@@ -28,58 +29,80 @@ export function RunDetail(): React.ReactElement {
 
       if (runData.status === 'completed') {
         const docData = await api.runs.doc(id).catch(() => null)
-        setDoc(docData)
+        if (docData) setDoc(docData)
       }
+
+      return runData
     } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setLoading(false)
+      setMessage((err as Error).message)
+      setPhase('error')
+      return null
     }
   }, [id])
 
-  // Initial data fetch
+  // Initial fetch
   useEffect(() => {
-    void fetchRunData()
-  }, [fetchRunData])
+    fetchData().then((runData) => {
+      if (!runData) return
+      if (runData.status === 'completed') setPhase('done')
+      else if (runData.status === 'blocked') setPhase('blocked')
+      else if (runData.status === 'failed') setPhase('error')
+      else setPhase('idle')
+    })
+  }, [fetchData])
 
-  // Auto-start exploration loop when run is pending/running
+  // Auto-start exploration for pending runs
   useEffect(() => {
-    if (!run || !id) return
-    if (run.status !== 'pending' && run.status !== 'running') return
-    if (exploring) return
+    if (!id || !run || phase !== 'idle' || run.status !== 'pending' || startedRef.current) return
+    startedRef.current = true
 
-    abortRef.current = false
-    setExploring(true)
+    const doExplore = async (): Promise<void> => {
+      setPhase('exploring')
+      setMessage('Launching browser and exploring...')
 
-    const runStepLoop = async (): Promise<void> => {
-      while (!abortRef.current) {
-        try {
-          const result = await api.runs.step(id)
+      try {
+        const result = await api.runs.explore(id)
 
-          // Refresh data after each step
-          await fetchRunData()
+        // Refresh data
+        await fetchData()
 
-          if (result.done) {
-            setExploring(false)
-            return
-          }
-        } catch (err) {
-          setError((err as Error).message)
-          setExploring(false)
-          await fetchRunData()
+        if (result.needsQuestion) {
+          setPhase('blocked')
+          setMessage(result.question)
           return
         }
+
+        if (result.completed) {
+          // Auto-generate documentation
+          setPhase('generating')
+          setMessage('Generating SOP documentation...')
+
+          try {
+            const docResult = await api.runs.generateDoc(id)
+            setDoc(docResult)
+          } catch {
+            // Doc generation failed but exploration succeeded
+          }
+
+          await fetchData()
+          setPhase('done')
+          setMessage('Exploration complete. Documentation generated.')
+        } else {
+          setPhase('error')
+          setMessage(result.message || 'Exploration ended without completing.')
+          await fetchData()
+        }
+      } catch (err) {
+        setPhase('error')
+        setMessage((err as Error).message)
+        await fetchData()
       }
     }
 
-    void runStepLoop()
+    void doExplore()
+  }, [id, run, phase, fetchData])
 
-    return () => {
-      abortRef.current = true
-    }
-  }, [run?.status, id, exploring, fetchRunData])
-
-  if (loading) {
+  if (phase === 'loading') {
     return (
       <Shell>
         <Spinner size="lg" />
@@ -90,7 +113,7 @@ export function RunDetail(): React.ReactElement {
   if (!run) {
     return (
       <Shell>
-        <EmptyState title="Run not found" description={error ?? undefined} />
+        <EmptyState title="Run not found" />
       </Shell>
     )
   }
@@ -113,30 +136,78 @@ export function RunDetail(): React.ReactElement {
         </div>
       </div>
 
-      {exploring && (
+      {/* Exploring state */}
+      {phase === 'exploring' && (
         <div className={styles.section}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
             <Spinner size="sm" />
-            <span style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)' }}>
-              Exploring {run.startUrl}... (step {steps.length + 1})
+            <span style={{ color: 'var(--color-accent-blue)', fontSize: 'var(--text-sm)' }}>
+              {message}
             </span>
           </div>
         </div>
       )}
 
-      {error && (
+      {/* Generating doc state */}
+      {phase === 'generating' && (
         <div className={styles.section}>
-          <EmptyState title="Error" description={error} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+            <Spinner size="sm" />
+            <span style={{ color: 'var(--color-accent-green)', fontSize: 'var(--text-sm)' }}>
+              {message}
+            </span>
+          </div>
         </div>
       )}
 
+      {/* Blocked state */}
+      {phase === 'blocked' && message && (
+        <div className={styles.section}>
+          <EmptyState title="Blocked" description={message} />
+        </div>
+      )}
+
+      {/* Error state */}
+      {phase === 'error' && message && (
+        <div className={styles.section}>
+          <EmptyState title="Error" description={message} />
+        </div>
+      )}
+
+      {/* Done message */}
+      {phase === 'done' && message && (
+        <div className={styles.section}>
+          <p style={{ color: 'var(--color-accent-green)', fontSize: 'var(--text-sm)' }}>
+            {message}
+          </p>
+        </div>
+      )}
+
+      {/* Generate doc button if exploration done but no doc yet */}
+      {run.status === 'completed' && !doc && phase === 'done' && (
+        <div className={styles.section}>
+          <Button onClick={() => {
+            if (!id) return
+            setPhase('generating')
+            setMessage('Generating SOP documentation...')
+            api.runs.generateDoc(id)
+              .then((d) => { setDoc(d); setPhase('done'); setMessage('Documentation generated.') })
+              .catch((err: Error) => { setPhase('error'); setMessage(err.message) })
+          }}>
+            Generate Documentation
+          </Button>
+        </div>
+      )}
+
+      {/* Steps timeline */}
       {steps.length > 0 && (
         <section className={styles.section}>
-          <h2 className={styles.sectionTitle}>Steps</h2>
+          <h2 className={styles.sectionTitle}>Steps ({steps.length})</h2>
           <StepTimeline steps={steps} />
         </section>
       )}
 
+      {/* Generated doc */}
       {doc?.markdownContent && (
         <section className={styles.section}>
           <h2 className={styles.sectionTitle}>Generated Documentation</h2>
