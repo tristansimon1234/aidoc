@@ -56,7 +56,7 @@ export async function exploreWithEvents(
       if (event.type === 'blocked' && event.message) {
         questionRepo.createQuestion({
           runId: id,
-          stepId: '',
+          stepId: null,
           question: event.message,
         }).catch((err) => console.error('Failed to save question:', err))
       }

@@ -43,14 +43,14 @@ export async function findQuestionById(id: string): Promise<RunQuestion | null> 
 
 export async function createQuestion(input: {
   runId: string
-  stepId: string
+  stepId?: string | null
   question: string
 }): Promise<RunQuestion> {
   const { data, error } = await supabase
     .from('run_questions')
     .insert({
       run_id: input.runId,
-      step_id: input.stepId,
+      step_id: input.stepId || null,
       question: input.question,
     })
     .select('*')
