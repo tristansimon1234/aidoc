@@ -105,8 +105,17 @@ export async function exploreWithEvents(
     awareness = await getProjectAwareness(run.docPageId)
   }
 
+  // Merge answered questions into the context for resume
+  const answeredQuestions = await questionRepo.findQuestionsByRunId(id)
+  const answeredContext = answeredQuestions
+    .filter((q) => q.answer)
+    .map((q) => `Previously blocked: ${q.question}\nUser's response: ${q.answer}`)
+    .join('\n\n')
+
+  const fullContext = [additionalContext, answeredContext].filter(Boolean).join('\n\n') || undefined
+
   await exploreRun(id, buildRunDeps(), {
-    additionalContext,
+    additionalContext: fullContext,
     projectContext: awareness.projectContext,
     tableOfContents: awareness.tableOfContents,
     credentials: awareness.credentials,
@@ -114,6 +123,13 @@ export async function exploreWithEvents(
     onEvent: (event) => {
       onEvent(event)
 
+      // Persist the structured summary
+      if (event.type === 'summary' && event.summary) {
+        runRepo.updateRunSummary(id, event.summary as unknown as Record<string, unknown>)
+          .catch((err) => console.error('Failed to save run summary:', err))
+      }
+
+      // Save blocker as question for the user to answer
       if (event.type === 'blocked' && event.message) {
         questionRepo.createQuestion({
           runId: id,

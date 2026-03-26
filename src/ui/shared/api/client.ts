@@ -44,6 +44,11 @@ export interface RunDTO {
   goal: string
   status: 'pending' | 'running' | 'blocked' | 'completed' | 'failed'
   tokenUsage: number
+  summaryJson: {
+    sections: { url: string; label: string; status: string; stepCount: number }[]
+    blockers: { type: string; description: string; section: string; actionLabel: string }[]
+    agentMessage: string
+  } | null
   createdAt: string
   updatedAt: string
 }

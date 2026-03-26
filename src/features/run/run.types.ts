@@ -9,6 +9,7 @@ export interface Run {
   tokenUsage: number
   browserbaseSessionId: string | null
   docPageId: string | null
+  summaryJson: Record<string, unknown> | null
   createdAt: Date
   updatedAt: Date
 }

@@ -9,6 +9,7 @@ import {
   EmptyState,
 } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO } from '../../../shared/api/client.js'
+import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
 
 interface PageContext {
   project: ProjectDTO
@@ -172,13 +173,6 @@ export function PageView(): React.ReactElement {
     await api.pages.update(projectId, pageId, { content: markdown })
   }
 
-  const handleContinueExploration = async (): Promise<void> => {
-    if (!latestRun || !projectId || !pageId) return
-    // Reset the run to a continuable state
-    await api.pages.update(projectId, pageId, { status: 'exploring' })
-    await runExploration(latestRun.id)
-  }
-
   if (loading) return <Spinner size="lg" />
   if (!page) return <EmptyState title="Page not found" />
 
@@ -269,29 +263,35 @@ export function PageView(): React.ReactElement {
         </div>
       )}
 
-      {/* Status message */}
-      {statusMessage && !exploring && !generating && (
-        <p style={{
-          color: 'var(--color-accent-amber)', fontSize: 'var(--text-sm)',
-          margin: 'var(--space-md) 0', padding: 'var(--space-sm) var(--space-md)',
-          backgroundColor: 'rgba(245,166,35,0.1)', borderRadius: 'var(--radius-md)',
-          border: '1px solid rgba(245,166,35,0.2)',
-        }}>
-          {statusMessage}
-        </p>
+      {/* Exploration Assistant — replaces status message + action buttons */}
+      {!exploring && !generating && latestRun?.summaryJson && (
+        <ExplorationAssistant
+          run={latestRun}
+          onContinue={async (context) => {
+            if (!latestRun || !projectId || !pageId) return
+            await api.pages.update(projectId, pageId, { status: 'exploring' })
+            await runExploration(latestRun.id, context)
+          }}
+          onSkipAndGenerate={async () => {
+            if (!latestRun) return
+            try {
+              const generatedDoc = await api.runs.generateDoc(latestRun.id)
+              setDoc(generatedDoc)
+              if (projectId && pageId) await api.pages.update(projectId, pageId, { status: 'published' })
+              await fetchData()
+              await context.refetchPages()
+            } catch (err) {
+              setError((err as Error).message)
+            }
+          }}
+          onReExplore={() => handleNewExploration()}
+        />
       )}
 
-      {/* Action buttons */}
-      {!exploring && !generating && (
+      {/* Action buttons — only when no summary exists */}
+      {!exploring && !generating && !latestRun?.summaryJson && (
         <div style={{ display: 'flex', gap: 'var(--space-sm)', margin: 'var(--space-sm) 0 var(--space-lg)', flexWrap: 'wrap' }}>
-          {canContinue && (
-            <Button onClick={() => void handleContinueExploration()}>
-              Continue Exploration
-            </Button>
-          )}
-          <Button
-            variant={canContinue ? 'secondary' : 'primary'}
-            onClick={() => void handleNewExploration()}
+          <Button onClick={() => void handleNewExploration()}
           >
             {doc ? 'Re-explore from scratch' : canContinue ? 'Start fresh' : 'Explore & Document'}
           </Button>

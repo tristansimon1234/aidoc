@@ -4,7 +4,7 @@ import {
   getSessionId,
 } from '../../shared/browser/playwright.client.js'
 import * as explorationBrowser from './exploration.browser.js'
-import type { AgentActionRecord, StepEvent } from './exploration.types.js'
+import type { AgentActionRecord, StepEvent, ExplorationSummary, ExplorationBlocker } from './exploration.types.js'
 
 export interface RunData {
   startUrl: string
@@ -235,20 +235,14 @@ When to call done:
       )
     }
 
-    const msg = result.message.toLowerCase()
-    const isBlocked = !result.completed && (
-      msg.includes('login') ||
-      msg.includes('credential') ||
-      msg.includes('password') ||
-      msg.includes('sign in') ||
-      msg.includes('authenticat') ||
-      msg.includes('cannot') ||
-      msg.includes('unable') ||
-      msg.includes('blocked') ||
-      msg.includes('access denied')
-    )
+    // Build structured summary from steps + agent message
+    const allSteps = await deps.findStepsByRunId(runId)
+    const summary = buildExplorationSummary(allSteps, result.message, result.completed)
 
-    if (isBlocked) {
+    // Emit summary event (persisted by run.service)
+    emit({ type: 'summary', summary })
+
+    if (!result.completed && summary.blockers.length > 0) {
       await deps.updateRunStatus(runId, 'blocked')
       emit({ type: 'blocked', message: result.message })
     } else if (result.completed) {
@@ -268,6 +262,69 @@ When to call done:
     // Resume works via step context + navigating back to startUrl
     await closeBrowser(session)
   }
+}
+
+function buildExplorationSummary(
+  steps: { action: string | null; url: string | null; observation: string | null }[],
+  agentMessage: string,
+  completed: boolean,
+): ExplorationSummary {
+  // Group steps by URL path to identify sections
+  const urlMap = new Map<string, number>()
+  for (const s of steps) {
+    const url = s.url ?? 'unknown'
+    try {
+      const path = new URL(url).pathname
+      urlMap.set(path, (urlMap.get(path) ?? 0) + 1)
+    } catch {
+      urlMap.set(url, (urlMap.get(url) ?? 0) + 1)
+    }
+  }
+
+  const sections = Array.from(urlMap.entries()).map(([url, count]) => ({
+    url,
+    label: url === '/' ? 'Homepage' : url.replace(/^\//, '').replace(/-/g, ' ').replace(/\//g, ' > '),
+    status: completed ? 'documented' as const : 'partial' as const,
+    stepCount: count,
+  }))
+
+  // Classify blockers from agent message
+  const blockers: ExplorationBlocker[] = []
+  const msg = agentMessage.toLowerCase()
+
+  if (!completed) {
+    if (msg.includes('login') || msg.includes('credential') || msg.includes('password') || msg.includes('sign in') || msg.includes('authenticat')) {
+      blockers.push({
+        type: 'credentials',
+        description: agentMessage,
+        section: 'Authentication',
+        actionLabel: 'Provide login credentials',
+      })
+    } else if (msg.includes('403') || msg.includes('forbidden') || msg.includes('access denied') || msg.includes('permission')) {
+      blockers.push({
+        type: 'access',
+        description: agentMessage,
+        section: 'Access restricted',
+        actionLabel: 'Provide access details',
+      })
+    } else if (msg.includes('error') || msg.includes('500') || msg.includes('broken') || msg.includes('crash')) {
+      blockers.push({
+        type: 'error',
+        description: agentMessage,
+        section: 'Error encountered',
+        actionLabel: 'Report issue',
+      })
+    } else if (agentMessage.trim()) {
+      blockers.push({
+        type: 'other',
+        description: agentMessage,
+        section: 'Exploration',
+        actionLabel: 'Provide guidance',
+      })
+    }
+  }
+
+  return { sections, blockers, agentMessage }
 }
 
 function buildToolDescription(
