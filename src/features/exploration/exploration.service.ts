@@ -251,26 +251,22 @@ When to call done:
     if (isBlocked) {
       await deps.updateRunStatus(runId, 'blocked')
       emit({ type: 'blocked', message: result.message })
-      // DON'T close browser — user may want to continue from here
-      return
     } else if (result.completed) {
       await deps.updateRunStatus(runId, 'completed')
       emit({ type: 'done', completed: true, message: result.message })
-      // Close browser — exploration is done
-      await closeBrowser(session)
-      return
     } else {
       await deps.updateRunStatus(runId, 'blocked')
       emit({ type: 'blocked', message: result.message || 'Agent stopped — you can continue the exploration' })
-      // DON'T close browser — keep session alive for resume
-      return
     }
   } catch (err) {
     console.error(`Exploration failed for run ${runId}:`, err)
     await deps.updateRunStatus(runId, 'failed')
     emit({ type: 'error', message: (err as Error).message })
-    // Don't close browser on error either — might be recoverable
     throw err
+  } finally {
+    // Always close browser to avoid Browserbase billing
+    // Resume works via step context + navigating back to startUrl
+    await closeBrowser(session)
   }
 }
 
