@@ -25,6 +25,7 @@ export interface DocDeps {
 export interface DocGenerationOptions {
   projectContext?: string
   tableOfContents?: string
+  existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
 }
 
 export async function getDocByRunId(runId: string): Promise<GeneratedDoc> {
@@ -67,6 +68,7 @@ export async function generateAndSaveDoc(
     questions: questions.map((q) => ({ question: q.question, answer: q.answer })),
     projectContext: options?.projectContext,
     tableOfContents: options?.tableOfContents,
+    existingPageSummaries: options?.existingPageSummaries,
   })
 
   await deps.incrementTokenUsage(runId, result.usage.inputTokens + result.usage.outputTokens)

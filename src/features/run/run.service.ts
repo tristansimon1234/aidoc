@@ -32,6 +32,51 @@ function buildDocDeps(): DocDeps {
   }
 }
 
+// Fetch project context + page siblings for cross-page awareness
+async function getProjectAwareness(docPageId: string): Promise<{
+  projectContext: string | undefined
+  tableOfContents: string | undefined
+  credentials: { label: string; username: string; password: string }[] | undefined
+  customPrompt: string | undefined
+  existingPageSummaries: { title: string; slug: string; contentPreview: string }[] | undefined
+}> {
+  const { findPageById, findPagesByProjectId } = await import('../page/page.repository.js')
+  const { findProjectById } = await import('../project/project.repository.js')
+
+  const page = await findPageById(docPageId)
+  if (!page) return { projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: undefined, existingPageSummaries: undefined }
+
+  const project = await findProjectById(page.projectId)
+  if (!project) return { projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: page.customPrompt ?? undefined, existingPageSummaries: undefined }
+
+  // Build table of contents from sibling pages
+  const allPages = await findPagesByProjectId(page.projectId)
+  const toc = allPages
+    .filter((p) => p.id !== docPageId)
+    .map((p) => {
+      const indent = p.parentId ? '  ' : ''
+      return `${indent}- ${p.title} [${p.status}] — /${p.slug}`
+    })
+    .join('\n')
+
+  // Build page content summaries
+  const summaries = allPages
+    .filter((p) => p.id !== docPageId && p.content)
+    .map((p) => ({
+      title: p.title,
+      slug: p.slug,
+      contentPreview: (p.content ?? '').slice(0, 200).replace(/\n/g, ' '),
+    }))
+
+  return {
+    projectContext: project.context ?? undefined,
+    tableOfContents: toc || undefined,
+    credentials: project.credentials ?? undefined,
+    customPrompt: page.customPrompt ?? undefined,
+    existingPageSummaries: summaries.length > 0 ? summaries : undefined,
+  }
+}
+
 export async function createRun(input: CreateRunInput): Promise<Run> {
   return runRepo.createRun(input)
 }
@@ -48,21 +93,27 @@ export async function exploreWithEvents(
     throw new NotFoundError('Run is not in an explorable state')
   }
 
-  // Fetch custom prompt from the page if linked
-  let customPrompt: string | undefined
+  // Fetch full project awareness if linked to a page
+  let awareness: Awaited<ReturnType<typeof getProjectAwareness>> = {
+    projectContext: undefined,
+    tableOfContents: undefined,
+    credentials: undefined,
+    customPrompt: undefined,
+    existingPageSummaries: undefined,
+  }
   if (run.docPageId) {
-    const { findPageById } = await import('../page/page.repository.js')
-    const page = await findPageById(run.docPageId)
-    if (page?.customPrompt) customPrompt = page.customPrompt
+    awareness = await getProjectAwareness(run.docPageId)
   }
 
   await exploreRun(id, buildRunDeps(), {
     additionalContext,
-    customPrompt,
+    projectContext: awareness.projectContext,
+    tableOfContents: awareness.tableOfContents,
+    credentials: awareness.credentials,
+    customPrompt: awareness.customPrompt,
     onEvent: (event) => {
       onEvent(event)
 
-      // Save question to DB when blocked
       if (event.type === 'blocked' && event.message) {
         questionRepo.createQuestion({
           runId: id,
@@ -77,13 +128,23 @@ export async function exploreWithEvents(
 export async function generateDoc(id: string): Promise<GeneratedDoc> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')
-  // Allow doc generation from any terminal state — even partial explorations have value
   if (run.status === 'pending' || run.status === 'running') {
     throw new NotFoundError('Run is still in progress')
   }
-  const doc = await generateAndSaveDoc(id, buildDocDeps())
 
-  // Copy generated markdown to the doc page's editable content
+  // Fetch project awareness for cross-page context in doc generation
+  let docOptions: { projectContext?: string; tableOfContents?: string; existingPageSummaries?: { title: string; slug: string; contentPreview: string }[] } | undefined
+  if (run.docPageId) {
+    const awareness = await getProjectAwareness(run.docPageId)
+    docOptions = {
+      projectContext: awareness.projectContext,
+      tableOfContents: awareness.tableOfContents,
+      existingPageSummaries: awareness.existingPageSummaries,
+    }
+  }
+
+  const doc = await generateAndSaveDoc(id, buildDocDeps(), docOptions)
+
   if (run.docPageId && doc.markdownContent) {
     const { updatePageContent } = await import('../page/page.repository.js')
     await updatePageContent(run.docPageId, doc.markdownContent).catch((err) =>

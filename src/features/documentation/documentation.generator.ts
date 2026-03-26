@@ -61,6 +61,7 @@ export async function generateDocumentation(context: {
   projectContext?: string
   tableOfContents?: string
   questions?: { question: string; answer: string | null }[]
+  existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
 }): Promise<GenerationResult> {
   const prompt = buildDocumentationPrompt(context)
 
