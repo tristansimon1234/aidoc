@@ -196,7 +196,7 @@ When to call done:
               type: toolName,
               action: description,
               pageUrl: (args?.url as string | undefined) ?? null,
-              reasoning: agentText.slice(0, 2000) || null,
+              reasoning: agentText.slice(0, 8000) || null,
             }
 
             const screenshotPath = await explorationBrowser.captureScreenshot(
@@ -209,9 +209,9 @@ When to call done:
               runId,
               stepIndex: stepOffset + stepCounter,
               url: record.pageUrl ?? run.startUrl,
-              title: toolName,
+              title: description,
               action: record.action ?? toolName,
-              observation: record.reasoning?.slice(0, 2000) ?? '',
+              observation: record.reasoning?.slice(0, 8000) ?? '',
               screenshotPath,
             })
 

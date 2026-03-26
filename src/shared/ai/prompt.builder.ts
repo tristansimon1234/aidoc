@@ -1,15 +1,41 @@
 import type { StepSummary } from '../../features/exploration/exploration.types.js'
 
-function formatStepsWithScreenshots(steps: StepSummary[]): string {
+function formatStepsRich(steps: StepSummary[]): string {
   if (steps.length === 0) return 'No steps recorded.'
+
+  // Tag step importance
+  const importantTools = new Set(['act', 'goto', 'fillForm', 'done'])
+  const supportTools = new Set(['scroll', 'screenshot', 'ariaTree', 'wait', 'keys'])
+
   return steps
     .map((s, i) => {
-      let entry = `Step ${i + 1}: [${s.url}]\n  Action: ${s.action}`
-      if (s.observation) entry += `\n  Details: ${s.observation}`
-      if (s.screenshotUrl) entry += `\n  Screenshot: ${s.screenshotUrl}`
+      const toolType = s.action.split(' ')[0]?.toLowerCase() ?? ''
+      const importance = importantTools.has(toolType) ? 'KEY' : supportTools.has(toolType) ? 'supporting' : 'KEY'
+
+      let entry = `### Step ${i + 1} [${importance}]`
+      entry += `\n- URL: ${s.url}`
+      entry += `\n- Action: ${s.action}`
+      if (s.observation) entry += `\n- Agent reasoning: ${s.observation.slice(0, 500)}`
+      if (s.screenshotUrl) entry += `\n- Screenshot: ![Step ${i + 1}](${s.screenshotUrl})`
       return entry
     })
     .join('\n\n')
+}
+
+function countByImportance(steps: StepSummary[]): { key: number; supporting: number; withScreenshots: number } {
+  const importantTools = new Set(['act', 'goto', 'fillForm', 'done'])
+  let key = 0
+  let supporting = 0
+  let withScreenshots = 0
+
+  for (const s of steps) {
+    const toolType = s.action.split(' ')[0]?.toLowerCase() ?? ''
+    if (importantTools.has(toolType)) key++
+    else supporting++
+    if (s.screenshotUrl) withScreenshots++
+  }
+
+  return { key, supporting, withScreenshots }
 }
 
 export function buildDocumentationPrompt(context: {
@@ -21,15 +47,16 @@ export function buildDocumentationPrompt(context: {
   projectContext?: string
   tableOfContents?: string
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
+  runStatus?: string
 }): string {
-  const screenshotSteps = context.steps.filter((s) => s.screenshotUrl)
+  const counts = countByImportance(context.steps)
 
   const projectBlock = context.projectContext
     ? `\n## Product Context\n${context.projectContext}\n`
     : ''
 
   const tocBlock = context.tableOfContents
-    ? `\n## Other Pages in This Documentation\n${context.tableOfContents}\nWhen referencing content covered by other pages, use links. Do NOT duplicate content.\n`
+    ? `\n## Other Pages in This Documentation\n${context.tableOfContents}\nWhen referencing content covered by other pages, use markdown links like [Page Title](/slug). Do NOT duplicate content.\n`
     : ''
 
   const pageSummariesBlock = context.existingPageSummaries && context.existingPageSummaries.length > 0
@@ -37,67 +64,84 @@ export function buildDocumentationPrompt(context: {
     : ''
 
   const blockersSection = context.questions && context.questions.length > 0
-    ? `\n## Blockers Encountered During Exploration
-${context.questions.map((q) => `- Issue: ${q.question}${q.answer ? `\n  Resolution: ${q.answer}` : ' (unresolved)'}`).join('\n')}\n`
+    ? `\n## Blockers Encountered During Exploration\n${context.questions.map((q) => `- Issue: ${q.question}${q.answer ? `\n  Resolution: ${q.answer}` : ' (unresolved)'}`).join('\n')}\n`
     : ''
 
-  return `You are a product documentation writer. Generate a clear, user-friendly product guide that helps real users understand and use this feature.
+  const statusBlock = `\n## Exploration Status
+- Run status: ${context.runStatus ?? 'unknown'}
+- Total steps: ${context.steps.length} (${counts.key} key actions, ${counts.supporting} supporting)
+- Screenshots captured: ${counts.withScreenshots}
+${context.runStatus === 'blocked' ? '- ⚠️ Exploration was INCOMPLETE — document what was found but clearly flag gaps' : ''}
+${context.runStatus === 'failed' ? '- ⚠️ Exploration FAILED — generate best-effort doc from available data' : ''}
+`
+
+  return `You are an expert product documentation writer. Your job is to transform raw exploration data into a clear, professional, user-friendly guide.
 
 ## Product
 Name: "${context.featureName}"
 URL: ${context.startUrl}
 Goal: "${context.goal}"
-${projectBlock}${tocBlock}${pageSummariesBlock}
+${projectBlock}${tocBlock}${pageSummariesBlock}${statusBlock}
 ## Exploration Data
-${formatStepsWithScreenshots(context.steps)}
 
-## Available Screenshots
-${screenshotSteps.length > 0
-  ? screenshotSteps.map((s, i) => `Screenshot ${i + 1}: ${s.screenshotUrl}\n  Context: ${s.action}`).join('\n')
-  : 'No screenshots available.'}
+The following steps were captured by an AI agent exploring the web application. Steps marked [KEY] are important user actions. Steps marked [supporting] are navigation/setup actions.
+
+${formatStepsRich(context.steps)}
 ${blockersSection}
 ## Your Task
-Write a **user-facing product guide** in Markdown. This is NOT an internal SOP — it's documentation that end users will read to understand how to use the product.
 
-### Requirements:
-1. Write in clear, friendly language (not corporate/technical jargon)
-2. Include screenshots inline using Markdown image syntax: ![description](url)
-3. Place screenshots at the relevant step — every major screen should have one
-4. Focus on WHAT THE USER SEES and WHAT THEY SHOULD DO
-5. Be specific: use actual button names, labels, and text from the app
+Write a **user-facing product guide** — the kind of documentation you'd find in a help center or product wiki. NOT an internal SOP.
 
-### Document Structure:
-1. **Introduction** — What this feature/product is and who it's for (2-3 sentences)
-2. **Getting Started** — How to access the feature, any prerequisites
-3. **Walkthrough** — Step-by-step guide with screenshots at each key step. Use numbered steps. For each step:
-   - What the user sees on screen
-   - What they should click/do
-   - Include a screenshot if available
-4. **Key Features** — Highlight important features discovered during exploration
-5. **FAQ / Tips** — Common questions based on what was observed
-6. **Known Gaps & Notes** — Be honest about what you could NOT fully document:
-   - Steps where the page was loading or content was unclear
-   - Sections you noticed but didn't explore (and why)
-   - Areas blocked by auth, login, or access restrictions
-   - Anything that felt incomplete or uncertain
-7. **Next Steps** — Suggest specific actions to improve this documentation:
-   - What additional exploration would help
-   - What credentials or access would be needed
-   - What views (mobile, admin, etc.) should be documented
-   - Any follow-up tasks
+### Writing Style
+- Write as if you're explaining to a smart colleague who's never used the product
+- Use clear, direct language — no jargon, no filler
+- Be specific: use the ACTUAL button names, labels, and text visible in the screenshots
+- If something is unclear from the exploration data, say so honestly
+- Write in the SAME LANGUAGE as the content found on the website
 
-### Formatting Rules:
-- Use ## for sections, ### for subsections
-- Use numbered lists for sequential steps
-- Use bullet points for non-sequential info
-- Include ALL relevant screenshots inline (don't just list them at the end)
-- Use **bold** for UI element names (buttons, links, menu items)
-- Keep paragraphs short (2-3 sentences max)
+### Document Structure
 
-### Self-Assessment (CRITICAL):
-Be brutally honest. A completeness score of 40% with clear gaps is infinitely more useful than 90% that hides problems.
+**1. Introduction** (2-3 sentences)
+What is this feature and who is it for?
 
-After the markdown, add a line containing "---JSON---", then a JSON object:
+**2. Getting Started**
+How to access this feature, any prerequisites
+
+**3. Walkthrough** (main section — this should be the longest)
+Group the exploration steps into **logical user flows**. Don't list every single step linearly. Instead:
+- Identify 2-5 user flows (e.g. "Creating an account", "Browsing the catalog", "Making a purchase")
+- For each flow, write numbered steps with:
+  - What the user sees on screen
+  - What they should click/do
+  - A screenshot if available (use the inline image syntax)
+- **IMPORTANT**: Embed screenshots inline at the relevant step using: ![description](url)
+- Skip exploratory dead-ends — focus on the happy path
+- If a flow is incomplete (exploration stopped midway), say so
+
+**4. Key Features**
+Highlight 3-5 notable features discovered during exploration
+
+**5. FAQ / Tips**
+2-3 practical tips based on what was observed
+
+**6. Known Gaps & Notes**
+Be honest:
+- What couldn't be fully documented and why
+- Steps where content was unclear
+- Areas that need re-exploration
+
+**7. Suggested Next Steps**
+What should be explored next to improve this documentation
+
+### Screenshot Rules
+- Place screenshots at the step they belong to — NOT grouped at the end
+- Use: ![Descriptive caption](screenshot_url)
+- Every KEY step with a screenshot should include it
+- Don't describe what's in a screenshot if the image speaks for itself
+
+### Self-Assessment JSON
+
+After the markdown, add "---JSON---" then:
 {
   "featureName": "string",
   "totalSteps": number,
@@ -105,30 +149,21 @@ After the markdown, add a line containing "---JSON---", then a JSON object:
   "userActions": ["action1", "action2"],
   "screenshots": number,
   "selfAssessment": {
-    "overallCompleteness": <0-100, your honest estimate of how complete this doc is>,
+    "overallCompleteness": <0-100>,
     "stepAssessments": [
       { "stepIndex": 1, "confidence": "high"|"medium"|"low", "note": "string or null" }
     ],
     "gaps": [
-      { "area": "Name of the area/section", "reason": "Why it's missing", "severity": "major"|"minor" }
+      { "area": "string", "reason": "string", "severity": "major"|"minor" }
     ],
     "nextSteps": [
-      { "suggestion": "Page Title (e.g. 'Settings Panel', 'User Dashboard')", "reason": "What this page would document and why it matters", "priority": "high"|"medium"|"low" }
-    ]
-
-IMPORTANT for nextSteps: each suggestion should be a concrete PAGE TITLE that could be created as a new documentation page. Not vague actions like "test mobile view" but specific features like "Mobile Responsive View" or "Admin Dashboard".
-
+      { "suggestion": "Page Title", "reason": "What this page would document", "priority": "high"|"medium"|"low" }
+    ],
     "structuralSuggestions": [
-      { "type": "move"|"merge"|"split"|"rename"|"new", "targetSlug": "existing-page-slug", "details": "explanation", "suggestedTitle": "for rename/new", "suggestedParentSlug": "for move" }
+      { "type": "move"|"merge"|"split"|"rename"|"new", "targetSlug": "slug", "details": "why", "suggestedTitle": "title" }
     ]
-
-For structuralSuggestions, analyze the overall documentation structure and suggest improvements:
-- "move": a page should be nested under a different parent
-- "merge": two pages cover overlapping content and should be combined
-- "split": a page is too long and should be split into sub-pages
-- "rename": a page title doesn't accurately describe its content
-- "new": a new page should be created (similar to nextSteps but with structural context)
-Only suggest structural changes if they genuinely improve the documentation quality.
   }
-}`
+}
+
+Be brutally honest in the self-assessment. A 40% completeness with clear gaps is better than 90% that hides problems.`
 }

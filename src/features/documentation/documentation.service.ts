@@ -10,6 +10,7 @@ export interface DocDeps {
     featureName: string
     goal: string
     startUrl: string
+    status: string
     tokenUsage: number
     docPageId: string | null
   } | null>
@@ -69,6 +70,7 @@ export async function generateAndSaveDoc(
     projectContext: options?.projectContext,
     tableOfContents: options?.tableOfContents,
     existingPageSummaries: options?.existingPageSummaries,
+    runStatus: run.status,
   })
 
   await deps.incrementTokenUsage(runId, result.usage.inputTokens + result.usage.outputTokens)

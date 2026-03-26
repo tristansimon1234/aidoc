@@ -62,12 +62,13 @@ export async function generateDocumentation(context: {
   tableOfContents?: string
   questions?: { question: string; answer: string | null }[]
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
+  runStatus?: string
 }): Promise<GenerationResult> {
   const prompt = buildDocumentationPrompt(context)
 
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
-    max_tokens: 8192,
+    max_tokens: 16384,
     messages: [{ role: 'user', content: prompt }],
   })
 
