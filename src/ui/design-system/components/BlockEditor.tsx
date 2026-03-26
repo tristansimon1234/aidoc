@@ -38,7 +38,8 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
 
   // Load initial content from markdown
   useEffect(() => {
-    if (!editor || !content || content === lastContentRef.current) return
+    if (!editor || !content) return
+    if (content === lastContentRef.current) return
     lastContentRef.current = content
 
     void (async () => {
