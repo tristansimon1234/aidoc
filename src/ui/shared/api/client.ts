@@ -142,6 +142,8 @@ export const api = {
       request<RunDTO>(`/projects/${projectId}/pages/${pageId}/run`).catch(() => null),
     autoGenerate: (projectId: string): Promise<DocPageDTO[]> =>
       request(`/projects/${projectId}/pages/auto-generate`, { method: 'POST' }),
+    reorder: (projectId: string, items: { id: string; parentId: string | null; sortOrder: number }[]): Promise<void> =>
+      request(`/projects/${projectId}/pages/reorder`, { method: 'PUT', body: JSON.stringify(items) }),
   },
   runs: {
     list: (): Promise<RunDTO[]> => request('/runs'),

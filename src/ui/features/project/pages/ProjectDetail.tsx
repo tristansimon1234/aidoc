@@ -69,21 +69,22 @@ export function ProjectDetail(): React.ReactElement {
         <aside className={styles.sidebar}>
           <div className={styles.sidebarHeader}>
             <span className={styles.projectName}>{project.name}</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => navigate(`/projects/${projectId}/pages/new`)}
-            >
-              +
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => navigate(`/projects/${projectId}/settings`)}
-              title="Project settings"
-            >
-              &#9881;
-            </Button>
+            <div className={styles.headerActions}>
+              <button
+                className={styles.headerBtn}
+                onClick={() => navigate(`/projects/${projectId}/settings`)}
+                title="Project settings"
+              >
+                &#9881;
+              </button>
+              <button
+                className={styles.headerBtnPrimary}
+                onClick={() => navigate(`/projects/${projectId}/pages/new`)}
+                title="Add page"
+              >
+                +
+              </button>
+            </div>
           </div>
           <div className={styles.pageList}>
             {pages.length > 0 ? (

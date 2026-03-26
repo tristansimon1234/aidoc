@@ -53,8 +53,11 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
     <div className={styles.page}>
       <div className={styles.card}>
         <h1 className={styles.logo}>aidoc</h1>
+        <p style={{ textAlign: 'center', color: 'var(--color-accent-blue)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', marginBottom: 'var(--space-xs)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          AI-powered product documentation
+        </p>
         <p className={styles.subtitle}>
-          {isSignUp ? 'Create your account' : 'Sign in to your account'}
+          {isSignUp ? 'Create your account' : 'Sign in to continue'}
         </p>
 
         <form className={styles.form} onSubmit={(e) => void handleSubmit(e)}>
