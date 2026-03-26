@@ -39,12 +39,17 @@ export function PageView(): React.ReactElement {
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
     try {
-      const [pageData, docData, runData] = await Promise.all([
+      const [pageData, runData] = await Promise.all([
         api.pages.get(projectId, pageId),
-        api.pages.doc(projectId, pageId).catch(() => null),
         api.pages.latestRun(projectId, pageId),
       ])
       setPage(pageData)
+
+      // Fetch doc — try page-level first, then run-level
+      let docData = await api.pages.doc(projectId, pageId).catch(() => null)
+      if (!docData && runData) {
+        docData = await api.runs.doc(runData.id).catch(() => null)
+      }
       setDoc(docData)
       setLatestRun(runData)
     } catch (err) {
@@ -106,10 +111,11 @@ export function PageView(): React.ReactElement {
         setGenerating(true)
 
         try {
-          await api.runs.generateDoc(runId)
+          const generatedDoc = await api.runs.generateDoc(runId)
+          setDoc(generatedDoc)
           await api.pages.update(projectId!, pageId!, { status: 'published' })
-        } catch {
-          // partial doc or no doc — ok
+        } catch (genErr) {
+          console.error('Doc generation failed:', genErr)
         }
 
         if (updatedRun.status === 'blocked') {
