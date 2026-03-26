@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useOutletContext, useNavigate } from 'react-router-dom'
 import {
   Button,
@@ -145,6 +145,16 @@ export function PageView(): React.ReactElement {
     await runExploration(run.id, customPrompt)
   }
 
+  // Debounced page metadata update (title, goal, startUrl, customPrompt)
+  const pageUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const debouncedPageUpdate = useCallback((updates: Record<string, unknown>) => {
+    if (!projectId || !pageId) return
+    if (pageUpdateTimeoutRef.current) clearTimeout(pageUpdateTimeoutRef.current)
+    pageUpdateTimeoutRef.current = setTimeout(() => {
+      void api.pages.update(projectId, pageId, updates)
+    }, 1000)
+  }, [projectId, pageId])
+
   const handleSaveContent = async (markdown: string): Promise<void> => {
     if (!projectId || !pageId) return
     await api.pages.update(projectId, pageId, { content: markdown })
@@ -172,18 +182,80 @@ export function PageView(): React.ReactElement {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
-        <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, flex: 1 }}>{page.title}</h1>
+      {/* Page header — editable inline */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-xs)' }}>
         <StatusIndicator status={statusMap[page.status] ?? 'pending'} label={page.status} />
+        {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
       </div>
 
-      {page.goal && (
-        <p style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-sm)' }}>
-          {page.goal}
-        </p>
+      {/* Editable page settings */}
+      {!exploring && !generating && (
+        <div style={{
+          padding: 'var(--space-md)',
+          backgroundColor: 'var(--color-bg-surface)',
+          border: '1px solid var(--color-border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+          marginBottom: 'var(--space-md)',
+          display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)',
+        }}>
+          <input
+            type="text"
+            value={page.title}
+            onChange={(e) => {
+              setPage({ ...page, title: e.target.value })
+              void debouncedPageUpdate({ title: e.target.value })
+            }}
+            style={{
+              background: 'none', border: 'none', outline: 'none',
+              fontSize: 'var(--text-xl)', fontWeight: 600,
+              color: 'var(--color-text-primary)', width: '100%',
+              fontFamily: 'var(--font-sans)',
+            }}
+          />
+          <input
+            type="text"
+            value={page.goal ?? ''}
+            onChange={(e) => {
+              setPage({ ...page, goal: e.target.value })
+              void debouncedPageUpdate({ goal: e.target.value })
+            }}
+            placeholder="Goal: what should this page document?"
+            style={{
+              background: 'none', border: 'none', outline: 'none',
+              fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
+              width: '100%', fontFamily: 'var(--font-sans)',
+            }}
+          />
+          <input
+            type="text"
+            value={page.startUrl ?? ''}
+            onChange={(e) => {
+              setPage({ ...page, startUrl: e.target.value })
+              void debouncedPageUpdate({ startUrl: e.target.value })
+            }}
+            placeholder="Start URL for exploration (e.g. /pricing)"
+            style={{
+              background: 'none', border: 'none', outline: 'none',
+              fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+              color: 'var(--color-text-muted)', width: '100%',
+            }}
+          />
+          <textarea
+            value={page.customPrompt ?? ''}
+            onChange={(e) => {
+              setPage({ ...page, customPrompt: e.target.value })
+              void debouncedPageUpdate({ customPrompt: e.target.value })
+            }}
+            placeholder="Exploration instructions: e.g. Focus on pricing. Skip the blog. Use admin credentials."
+            rows={2}
+            style={{
+              background: 'none', border: 'none', outline: 'none', resize: 'vertical',
+              fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
+              width: '100%', fontFamily: 'var(--font-sans)', minHeight: '40px',
+            }}
+          />
+        </div>
       )}
-
-      {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
 
       {/* Status message */}
       {statusMessage && !exploring && !generating && (
@@ -195,37 +267,6 @@ export function PageView(): React.ReactElement {
         }}>
           {statusMessage}
         </p>
-      )}
-
-      {/* Custom prompt for exploration */}
-      {!exploring && !generating && (
-        <div style={{ margin: 'var(--space-md) 0' }}>
-          <details style={{ cursor: 'pointer' }}>
-            <summary style={{
-              fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-              color: 'var(--color-text-muted)', marginBottom: 'var(--space-sm)',
-            }}>
-              Exploration instructions (optional)
-            </summary>
-            <textarea
-              value={(page as DocPageDTO & { customPrompt?: string | null }).customPrompt ?? ''}
-              onChange={(e) => {
-                if (!projectId || !pageId) return
-                void api.pages.update(projectId, pageId, { customPrompt: e.target.value })
-                // Update local state
-                setPage({ ...page!, customPrompt: e.target.value } as DocPageDTO)
-              }}
-              placeholder="e.g. Focus on the pricing section. Skip the blog. Use the admin credentials to log in."
-              style={{
-                width: '100%', minHeight: '60px', padding: 'var(--space-sm)',
-                backgroundColor: 'var(--color-bg-elevated)', color: 'var(--color-text-primary)',
-                border: '1px solid var(--color-border-default)', borderRadius: 'var(--radius-md)',
-                fontFamily: 'var(--font-sans)', fontSize: 'var(--text-sm)',
-                resize: 'vertical', outline: 'none',
-              }}
-            />
-          </details>
-        </div>
       )}
 
       {/* Action buttons */}

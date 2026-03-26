@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { z } from 'zod'
-import { ValidationError } from '../../shared/middleware/error.middleware.js'
+import { ValidationError, AppError } from '../../shared/middleware/error.middleware.js'
 import { CreatePageSchema, UpdatePageSchema, ReorderSchema } from './page.schema.js'
 import * as pageService from './page.service.js'
 import { findDocByPageId } from '../documentation/documentation.repository.js'
@@ -11,6 +11,29 @@ export const pageRouter = Router({ mergeParams: true })
 
 const ProjectIdParam = z.object({ projectId: z.string().uuid() })
 const PageParams = z.object({ projectId: z.string().uuid(), pageId: z.string().uuid() })
+
+// Verify project ownership before any page operation
+async function verifyProjectOwnership(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  try {
+    const userId = (req as Request & { userId: string }).userId
+    const projectId = req.params.projectId as string | undefined
+    if (!projectId || !userId) {
+      next(new AppError('Unauthorized', 'UNAUTHORIZED', 401))
+      return
+    }
+    const { findProjectById } = await import('../project/project.repository.js')
+    const project = await findProjectById(projectId)
+    if (!project || project.userId !== userId) {
+      next(new AppError('Project not found', 'PROJECT_NOT_FOUND', 404))
+      return
+    }
+    next()
+  } catch (err) {
+    next(err)
+  }
+}
+
+pageRouter.use(verifyProjectOwnership)
 
 pageRouter.get('/', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
