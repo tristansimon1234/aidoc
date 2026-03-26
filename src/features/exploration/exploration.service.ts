@@ -70,18 +70,30 @@ export async function exploreRun(
       emit({ type: 'live', liveUrl: debugUrl, message: 'Live browser view available' })
     }
 
-    if (!isResuming) {
-      emit({ type: 'status', message: `Navigating to ${run.startUrl}` })
-      await explorationBrowser.navigateTo(session, run.startUrl)
-    }
+    // Always navigate to startUrl — even on resume, ensure we're on the right page
+    emit({ type: 'status', message: `Navigating to ${run.startUrl}` })
+    await explorationBrowser.navigateTo(session, run.startUrl)
 
     // Build context from existing steps (for resume)
     const existingSteps = await deps.findStepsByRunId(runId)
-    const previousStepsBlock = existingSteps.length > 0
-      ? `\n\n## What You Already Explored (${existingSteps.length} steps)
-${existingSteps.map((s, i) => `${i + 1}. [${s.url ?? 'unknown'}] ${s.action ?? 'action'}`).join('\n')}
-\nContinue from where you left off. Do NOT repeat these steps.`
-      : ''
+    let previousStepsBlock = ''
+    if (existingSteps.length > 0) {
+      // Group steps by URL to show coverage
+      const urlMap = new Map<string, string[]>()
+      for (const s of existingSteps) {
+        const url = s.url ?? 'unknown'
+        if (!urlMap.has(url)) urlMap.set(url, [])
+        urlMap.get(url)!.push(s.action ?? 'action')
+      }
+      const coverage = Array.from(urlMap.entries())
+        .map(([url, actions]) => `- ${url}: ${actions.length} steps (${actions.slice(0, 3).join(', ')}${actions.length > 3 ? '...' : ''})`)
+        .join('\n')
+
+      previousStepsBlock = `\n\n## Pages Already Explored (${existingSteps.length} steps total)
+${coverage}
+
+You are RESUMING. Continue exploring sections you haven't covered yet. Do NOT revisit pages listed above unless necessary.`
+    }
 
     const contextBlock = options?.additionalContext
       ? `\n\n## Additional Context from User\n${options.additionalContext}`
@@ -118,9 +130,10 @@ Use these credentials to log in when you encounter a login page. The values are 
 Feature: ${run.featureName}
 Goal: ${run.goal}
 Start URL: ${run.startUrl}
-${isResuming ? '\nYou are RESUMING a previous exploration. The browser is still open where you left off.' : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}${customPromptBlock}
+${isResuming ? `\nYou are RESUMING a previous exploration. The browser has been navigated to ${run.startUrl}. Focus on sections you haven't explored yet.` : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}${customPromptBlock}
 
 Instructions:
+- You are now on ${run.startUrl} — start exploring from here
 - Click through every section, button, menu, and interactive element you find
 - Fill forms with realistic test data when needed
 - Scroll to see all content on each page
@@ -238,20 +251,26 @@ When to call done:
     if (isBlocked) {
       await deps.updateRunStatus(runId, 'blocked')
       emit({ type: 'blocked', message: result.message })
+      // DON'T close browser — user may want to continue from here
+      return
     } else if (result.completed) {
       await deps.updateRunStatus(runId, 'completed')
       emit({ type: 'done', completed: true, message: result.message })
+      // Close browser — exploration is done
+      await closeBrowser(session)
+      return
     } else {
       await deps.updateRunStatus(runId, 'blocked')
       emit({ type: 'blocked', message: result.message || 'Agent stopped — you can continue the exploration' })
+      // DON'T close browser — keep session alive for resume
+      return
     }
   } catch (err) {
     console.error(`Exploration failed for run ${runId}:`, err)
     await deps.updateRunStatus(runId, 'failed')
     emit({ type: 'error', message: (err as Error).message })
+    // Don't close browser on error either — might be recoverable
     throw err
-  } finally {
-    await closeBrowser(session)
   }
 }
 
