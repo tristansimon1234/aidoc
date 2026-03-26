@@ -15,6 +15,19 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastContentRef = useRef(content)
 
+  // Read theme from document attribute
+  const getTheme = (): 'dark' | 'light' => {
+    if (typeof document === 'undefined') return 'dark'
+    return (document.documentElement.getAttribute('data-theme') as 'dark' | 'light') ?? 'dark'
+  }
+  const [theme, setTheme] = useState<'dark' | 'light'>(getTheme)
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => setTheme(getTheme()))
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [])
+
   const editor = useCreateBlockNote({
     domAttributes: {
       editor: {
@@ -76,7 +89,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
         editor={editor}
         editable={!readOnly}
         onChange={handleChange}
-        theme="dark"
+        theme={theme}
       />
     </div>
   )

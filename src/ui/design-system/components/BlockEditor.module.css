@@ -1,26 +1,38 @@
 .editor {
   min-height: 400px;
-  border-radius: var(--radius-lg);
-  overflow: hidden;
 }
 
-/* Dark theme overrides for BlockNote */
-.editor [data-theming-css-variables-demo],
-.editor .bn-container {
-  --bn-colors-editor-background: var(--color-bg-surface);
-  --bn-colors-editor-text: var(--color-text-primary);
-  --bn-colors-menu-background: var(--color-bg-elevated);
-  --bn-colors-menu-text: var(--color-text-primary);
-  --bn-colors-tooltip-background: var(--color-bg-overlay);
-  --bn-colors-tooltip-text: var(--color-text-primary);
-  --bn-colors-hovered-background: var(--color-bg-overlay);
-  --bn-colors-selected-background: rgba(77, 156, 255, 0.15);
-  --bn-colors-disabled-background: var(--color-bg-elevated);
-  --bn-colors-disabled-text: var(--color-text-muted);
-  --bn-colors-shadow: var(--shadow-md);
-  --bn-colors-border: var(--color-border-default);
-  --bn-colors-side-menu: var(--color-text-muted);
-  --bn-font-family: var(--font-sans);
+/* Match editor background to page background */
+.editor [class*="bn-editor"],
+.editor [class*="bn-container"] {
+  background-color: transparent !important;
+}
+
+/* Tone down heading sizes */
+.editor h1,
+.editor [data-level="1"] {
+  font-size: var(--text-xl) !important;
+  font-weight: 600 !important;
+  margin-top: var(--space-lg) !important;
+}
+
+.editor h2,
+.editor [data-level="2"] {
+  font-size: var(--text-lg) !important;
+  font-weight: 600 !important;
+  margin-top: var(--space-md) !important;
+}
+
+.editor h3,
+.editor [data-level="3"] {
+  font-size: var(--text-md) !important;
+  font-weight: 600 !important;
+  margin-top: var(--space-sm) !important;
+}
+
+.editor p,
+.editor [data-content-type="paragraph"] {
+  font-size: var(--text-base) !important;
 }
 
 .saving {
