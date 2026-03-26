@@ -52,6 +52,12 @@ export function PageView(): React.ReactElement {
       }
       setDoc(docData)
       setLatestRun(runData)
+
+      // If doc exists but page.content is empty, copy it over
+      if (docData?.markdownContent && !pageData.content) {
+        void api.pages.update(projectId, pageId, { content: docData.markdownContent })
+        setPage({ ...pageData, content: docData.markdownContent })
+      }
     } catch (err) {
       setError((err as Error).message)
     } finally {
