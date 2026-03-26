@@ -16,7 +16,7 @@ function formatStepsRich(steps: StepSummary[]): string {
       entry += `\n- URL: ${s.url}`
       entry += `\n- Action: ${s.action}`
       if (s.observation) entry += `\n- Agent reasoning: ${s.observation.slice(0, 500)}`
-      if (s.screenshotUrl) entry += `\n- Screenshot: ![Step ${i + 1}](${s.screenshotUrl})`
+      if (s.screenshotUrl && s.screenshotUrl.startsWith('http')) entry += `\n- Screenshot: ![Step ${i + 1}](${s.screenshotUrl})`
       return entry
     })
     .join('\n\n')
@@ -124,14 +124,7 @@ Highlight 3-5 notable features discovered during exploration
 **5. FAQ / Tips**
 2-3 practical tips based on what was observed
 
-**6. Known Gaps & Notes**
-Be honest:
-- What couldn't be fully documented and why
-- Steps where content was unclear
-- Areas that need re-exploration
-
-**7. Suggested Next Steps**
-What should be explored next to improve this documentation
+Do NOT include "Known Gaps", "Suggested Next Steps", or any meta-commentary about the exploration process in the markdown. That information goes in the JSON self-assessment only. The markdown should read like polished, final documentation.
 
 ### Screenshot Rules
 - Place screenshots at the step they belong to — NOT grouped at the end
