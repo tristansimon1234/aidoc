@@ -13,9 +13,9 @@ interface BlockEditorProps {
 export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorProps): React.ReactElement {
   const [saving, setSaving] = useState(false)
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const lastContentRef = useRef(content)
+  const initializedRef = useRef(false)
+  const lastContentRef = useRef('')
 
-  // Read theme from document attribute
   const getTheme = (): 'dark' | 'light' => {
     if (typeof document === 'undefined') return 'dark'
     return (document.documentElement.getAttribute('data-theme') as 'dark' | 'light') ?? 'dark'
@@ -36,10 +36,14 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
     },
   })
 
-  // Load initial content from markdown
+  // Parse markdown into blocks — on mount and when content changes
   useEffect(() => {
     if (!editor || !content) return
-    if (content === lastContentRef.current) return
+
+    // Skip if we already loaded this exact content
+    if (initializedRef.current && content === lastContentRef.current) return
+
+    initializedRef.current = true
     lastContentRef.current = content
 
     void (async () => {
@@ -47,12 +51,11 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
         const blocks = await editor.tryParseMarkdownToBlocks(content)
         editor.replaceBlocks(editor.document, blocks)
       } catch {
-        // If markdown parsing fails, just set as paragraph
+        // markdown parsing failed
       }
     })()
   }, [editor, content])
 
-  // Auto-save with debounce
   const handleChange = useCallback(() => {
     if (readOnly) return
 
@@ -76,7 +79,6 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
     }, 2000)
   }, [editor, onSave, readOnly])
 
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
