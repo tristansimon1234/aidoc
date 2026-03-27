@@ -1,6 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
-import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential } from './project.types.js'
+import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential, DiscoveredContext } from './project.types.js'
 
 interface ProjectRow {
   id: string
@@ -10,6 +10,7 @@ interface ProjectRow {
   description: string | null
   context: string | null
   credentials: ProjectCredential[] | null
+  discovered_context: DiscoveredContext | null
   created_at: string
   updated_at: string
 }
@@ -23,6 +24,7 @@ function mapToProject(row: ProjectRow): Project {
     description: row.description,
     context: row.context,
     credentials: row.credentials,
+    discoveredContext: row.discovered_context,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -78,6 +80,14 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
     .single()
   if (error) throw new DatabaseError(error.message)
   return mapToProject(data as ProjectRow)
+}
+
+export async function updateDiscoveredContext(id: string, context: DiscoveredContext): Promise<void> {
+  const { error } = await supabase
+    .from('projects')
+    .update({ discovered_context: context as unknown as Record<string, unknown>, updated_at: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw new DatabaseError(error.message)
 }
 
 export async function deleteProject(id: string): Promise<void> {

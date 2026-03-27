@@ -1,7 +1,7 @@
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 import * as docRepo from './documentation.repository.js'
 import { generateDocumentation } from './documentation.generator.js'
-import { getSignedUrl } from '../../shared/db/storage.repository.js'
+import { getPublicUrl } from '../../shared/db/storage.repository.js'
 import type { GeneratedDoc } from './documentation.types.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
@@ -46,20 +46,15 @@ export async function generateAndSaveDoc(
   const steps = await deps.findStepsByRunId(runId)
   const questions = await deps.findQuestionsByRunId(runId)
 
-  const stepSummaries: StepSummary[] = await Promise.all(
-    steps.map(async (s) => {
-      let screenshotUrl: string | null = null
-      if (s.screenshotPath) {
-        screenshotUrl = await getSignedUrl('artifacts', s.screenshotPath)
-      }
-      return {
-        url: s.url ?? '',
-        action: s.action ?? '',
-        observation: s.observation ?? '',
-        screenshotUrl,
-      }
-    }),
-  )
+  const stepSummaries: StepSummary[] = steps.map((s) => {
+    const screenshotUrl = s.screenshotPath ? getPublicUrl('artifacts', s.screenshotPath) : null
+    return {
+      url: s.url ?? '',
+      action: s.action ?? '',
+      observation: s.observation ?? '',
+      screenshotUrl,
+    }
+  })
 
   const result = await generateDocumentation({
     featureName: run.featureName,

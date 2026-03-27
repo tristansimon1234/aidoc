@@ -12,8 +12,18 @@ export interface Project {
   description: string | null
   context: string | null
   credentials: ProjectCredential[] | null
+  discoveredContext: DiscoveredContext | null
   createdAt: Date
   updatedAt: Date
+}
+
+export interface DiscoveredContext {
+  lastUpdated: string
+  siteStructure: string[]
+  navigation: string[]
+  terminology: Record<string, string>
+  features: string[]
+  summary: string
 }
 
 export interface CreateProjectInput {

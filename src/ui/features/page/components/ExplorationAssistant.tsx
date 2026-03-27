@@ -40,8 +40,26 @@ export function ExplorationAssistant({
     }
   }
 
-  // No summary yet — show nothing
-  if (!summary) return <></>
+  // No summary — show simple status with re-explore button
+  if (!summary) {
+    return (
+      <div style={{
+        padding: 'var(--space-lg)',
+        backgroundColor: 'var(--color-bg-surface)',
+        border: `1px solid ${isBlocked ? 'var(--color-accent-amber)' : 'var(--color-accent-green)'}`,
+        borderRadius: 'var(--radius-lg)',
+        marginBottom: 'var(--space-lg)',
+      }}>
+        <h3 style={{ fontSize: 'var(--text-md)', fontWeight: 600, margin: '0 0 var(--space-sm)', color: isBlocked ? 'var(--color-accent-amber)' : 'var(--color-accent-green)' }}>
+          {run.status === 'completed' ? 'Exploration complete' : 'Exploration ended'}
+        </h3>
+        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-md)' }}>
+          {run.status === 'completed' ? 'Documentation has been generated.' : 'The exploration stopped. You can re-explore to capture more.'}
+        </p>
+        <Button size="sm" variant="secondary" onClick={() => void onReExplore()}>Re-explore</Button>
+      </div>
+    )
+  }
 
   return (
     <div style={{

@@ -140,15 +140,23 @@ Instructions:
 - Visit all linked pages within the feature
 - Be systematic: go through navigation items one by one
 
+BUDGET: You have a maximum of 50 actions. Plan accordingly:
+- Prioritize the MOST IMPORTANT sections first
+- After ~40 actions, start wrapping up and call done with a summary
+- Better to document 5 sections thoroughly than 10 sections poorly
+- Each screenshot, scroll, and click counts as one action
+
 CRITICAL RULES FOR STOPPING:
 - If you encounter a login page or auth wall and do NOT have credentials, call done IMMEDIATELY. Do not retry. Explain what access is needed.
-- If an action fails (button doesn't work, page errors, element not found), try ONE alternative. If that also fails, move on to the next thing. Do NOT retry the same action more than twice.
-- If the page looks empty, broken, or returns an error code, call done and explain what happened.
-- If you've explored all visible sections and pages, call done. Don't navigate in circles.
+- If an action fails, try ONE alternative. If that also fails, move on. Do NOT retry more than twice.
+- If the page looks empty, broken, or returns an error, call done and explain.
+- If you've explored all visible sections, call done. Don't navigate in circles.
+- When your goal is achieved, call done. Don't keep exploring unnecessarily.
 
 When to call done:
-- You have explored all main sections and sub-sections
+- You have explored all main sections relevant to the goal
 - You've captured the key user flows and interactions
+- You're running low on actions (~40+)
 - OR you are blocked and cannot proceed further`
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
@@ -212,7 +220,7 @@ When to call done:
               title: description,
               action: record.action ?? toolName,
               observation: record.reasoning?.slice(0, 8000) ?? '',
-              screenshotPath,
+              screenshotPath: screenshotPath ?? undefined,
             })
 
             emit({
@@ -238,6 +246,17 @@ When to call done:
     // Build structured summary from steps + agent message
     const allSteps = await deps.findStepsByRunId(runId)
     const summary = buildExplorationSummary(allSteps, result.message, result.completed)
+
+    // Detect step limit hit (not blocked, just ran out of steps)
+    const hitStepLimit = !result.completed && summary.blockers.length === 0
+    if (hitStepLimit) {
+      summary.blockers.push({
+        type: 'other',
+        description: `Reached the 50-step exploration limit. The agent explored ${allSteps.length} actions but hasn't finished documenting all sections.`,
+        section: 'Exploration budget',
+        actionLabel: 'Continue exploring remaining sections',
+      })
+    }
 
     // Emit summary event (persisted by run.service)
     emit({ type: 'summary', summary })

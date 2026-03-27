@@ -15,10 +15,8 @@ export async function uploadToStorage(
   return path
 }
 
-export async function getSignedUrl(bucket: string, path: string): Promise<string | null> {
-  const { data, error } = await supabase.storage
-    .from(bucket)
-    .createSignedUrl(path, 60 * 60 * 24 * 365) // 1 year
-  if (error) return null
-  return data.signedUrl
+export function getPublicUrl(bucket: string, path: string): string | null {
+  if (!path) return null
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+  return data.publicUrl
 }

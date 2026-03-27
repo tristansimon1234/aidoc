@@ -1,4 +1,32 @@
 import type { StepSummary } from '../../features/exploration/exploration.types.js'
+import type { DiscoveredContext } from '../../features/project/project.types.js'
+
+export function buildContextEnrichmentPrompt(
+  existingContext: DiscoveredContext | null,
+  newMarkdown: string,
+  featureName: string,
+): string {
+  return `Analyze this documentation and extract structured knowledge about the product.
+
+## Previously Known
+${existingContext ? JSON.stringify(existingContext, null, 2) : 'Nothing yet — this is the first exploration.'}
+
+## New Documentation for "${featureName}"
+${newMarkdown.slice(0, 3000)}
+
+## Task
+Update the knowledge base with what you learned. Merge with existing knowledge — don't replace it.
+
+Respond with JSON only:
+{
+  "lastUpdated": "${new Date().toISOString()}",
+  "siteStructure": ["/ (homepage)", "/pricing", "/about", ...all known URLs],
+  "navigation": ["Home", "Pricing", "About", ...all nav items found],
+  "terminology": {"term": "definition", ...product-specific terms},
+  "features": ["User authentication", "Pricing plans", ...all features discovered],
+  "summary": "2-3 sentence summary of what is now known about this product"
+}`
+}
 
 function formatStepsRich(steps: StepSummary[]): string {
   if (steps.length === 0) return 'No steps recorded.'
@@ -126,11 +154,13 @@ Highlight 3-5 notable features discovered during exploration
 
 Do NOT include "Known Gaps", "Suggested Next Steps", or any meta-commentary about the exploration process in the markdown. That information goes in the JSON self-assessment only. The markdown should read like polished, final documentation.
 
-### Screenshot Rules
-- Place screenshots at the step they belong to — NOT grouped at the end
+### Screenshot Rules (MANDATORY)
+- EVERY walkthrough step MUST include its screenshot if one is available
+- Place screenshots inline at the step — NOT grouped at the end
 - Use: ![Descriptive caption](screenshot_url)
-- Every KEY step with a screenshot should include it
-- Don't describe what's in a screenshot if the image speaks for itself
+- If a step has no screenshot, describe the screen in vivid visual detail
+- In self-assessment, flag any key step missing a screenshot as a critical gap
+${counts.withScreenshots < counts.key / 2 ? `\n⚠️ WARNING: Only ${counts.withScreenshots} out of ${counts.key} key steps have screenshots. Compensate missing screenshots with detailed visual descriptions of what the user sees on screen.\n` : ''}
 
 ### Self-Assessment JSON
 

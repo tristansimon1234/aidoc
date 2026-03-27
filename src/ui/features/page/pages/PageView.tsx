@@ -263,8 +263,8 @@ export function PageView(): React.ReactElement {
         </div>
       )}
 
-      {/* Exploration Assistant — replaces status message + action buttons */}
-      {!exploring && !generating && latestRun?.summaryJson && (
+      {/* Exploration Assistant — shows after any exploration */}
+      {!exploring && !generating && latestRun && (
         <ExplorationAssistant
           run={latestRun}
           onContinue={async (context) => {
@@ -288,8 +288,8 @@ export function PageView(): React.ReactElement {
         />
       )}
 
-      {/* Action buttons — only when no summary exists */}
-      {!exploring && !generating && !latestRun?.summaryJson && (
+      {/* Action buttons — only for pages that have never been explored */}
+      {!exploring && !generating && !latestRun && (
         <div style={{ display: 'flex', gap: 'var(--space-sm)', margin: 'var(--space-sm) 0 var(--space-lg)', flexWrap: 'wrap' }}>
           <Button onClick={() => void handleNewExploration()}
           >

@@ -68,8 +68,20 @@ async function getProjectAwareness(docPageId: string): Promise<{
       contentPreview: (p.content ?? '').slice(0, 200).replace(/\n/g, ' '),
     }))
 
+  // Combine user context with discovered context
+  let fullProjectContext = project.context ?? ''
+  if (project.discoveredContext?.summary) {
+    fullProjectContext += `\n\n## What the AI has learned about this product\n${project.discoveredContext.summary}`
+    if (project.discoveredContext.features?.length) {
+      fullProjectContext += `\nKnown features: ${project.discoveredContext.features.join(', ')}`
+    }
+    if (project.discoveredContext.navigation?.length) {
+      fullProjectContext += `\nNavigation items: ${project.discoveredContext.navigation.join(', ')}`
+    }
+  }
+
   return {
-    projectContext: project.context ?? undefined,
+    projectContext: fullProjectContext.trim() || undefined,
     tableOfContents: toc || undefined,
     credentials: project.credentials ?? undefined,
     customPrompt: page.customPrompt ?? undefined,
@@ -162,10 +174,42 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
   const doc = await generateAndSaveDoc(id, buildDocDeps(), docOptions)
 
   if (run.docPageId && doc.markdownContent) {
-    const { updatePageContent } = await import('../page/page.repository.js')
+    const { updatePageContent, findPageById } = await import('../page/page.repository.js')
     await updatePageContent(run.docPageId, doc.markdownContent).catch((err) =>
       console.error('Failed to copy doc to page content:', err),
     )
+
+    // Enrich project discovered context
+    try {
+      const page = await findPageById(run.docPageId)
+      if (page) {
+        const { findProjectById, updateDiscoveredContext } = await import('../project/project.repository.js')
+        const project = await findProjectById(page.projectId)
+        if (project) {
+          const { buildContextEnrichmentPrompt } = await import('../../shared/ai/prompt.builder.js')
+          const { anthropic } = await import('../../shared/ai/anthropic.client.js')
+          const prompt = buildContextEnrichmentPrompt(
+            project.discoveredContext,
+            doc.markdownContent,
+            run.featureName,
+          )
+          const response = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 2048,
+            messages: [{ role: 'user', content: prompt }],
+          })
+          const textBlock = response.content.find((b) => b.type === 'text')
+          if (textBlock && textBlock.type === 'text') {
+            let jsonStr = textBlock.text.trim()
+            if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+            const enriched = JSON.parse(jsonStr) as Record<string, unknown>
+            await updateDiscoveredContext(project.id, enriched as unknown as import('../project/project.types.js').DiscoveredContext)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to enrich project context:', err)
+    }
   }
 
   return doc
