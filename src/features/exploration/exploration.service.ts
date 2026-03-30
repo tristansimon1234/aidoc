@@ -240,12 +240,26 @@ When to call done:
               status: stepStatus,
             })
 
-            emit({
-              type: 'step',
-              step: record,
-              stepIndex: stepCounter,
-              message: record.action ?? toolName,
-            })
+            // Stream the agent's thinking, not just tool names
+            // Skip noisy internal tools from the live feed
+            const isInternalTool = toolName === 'ariaTree' || toolName === 'screenshot' || toolName === 'wait'
+
+            if (!isInternalTool) {
+              emit({
+                type: 'step',
+                step: record,
+                stepIndex: stepCounter,
+                message: record.action ?? toolName,
+              })
+            }
+
+            // Stream agent reasoning as a status update (what it's thinking)
+            if (agentText && agentText.length > 10) {
+              const thinkingPreview = agentText.split('\n')[0]?.slice(0, 150) ?? ''
+              if (thinkingPreview) {
+                emit({ type: 'status', message: thinkingPreview })
+              }
+            }
 
             stepCounter++
           }

@@ -327,19 +327,19 @@ export function PageView(): React.ReactElement {
 
           {liveSteps.length > 0 && (
             <div style={{
-              display: 'flex', flexDirection: 'column', gap: '1px',
-              backgroundColor: 'var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+              display: 'flex', flexDirection: 'column', gap: '2px',
+              borderRadius: 'var(--radius-lg)',
               overflow: 'hidden', maxHeight: '250px', overflowY: 'auto',
             }}>
               {liveSteps.map((ls, i) => (
                 <div key={i} style={{
-                  display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
-                  padding: 'var(--space-xs) var(--space-md)',
-                  backgroundColor: 'var(--color-bg-surface)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-sm)',
+                  display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)',
+                  padding: 'var(--space-sm) var(--space-md)',
+                  backgroundColor: 'var(--color-bg-surface)',
+                  fontSize: 'var(--text-sm)',
                 }}>
-                  <span style={{ color: 'var(--color-text-muted)', minWidth: '20px' }}>{ls.stepIndex + 1}</span>
-                  <span style={{ color: 'var(--color-accent-blue)', backgroundColor: 'var(--color-bg-elevated)', padding: '1px 6px', borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)' }}>{ls.type}</span>
-                  <span style={{ color: 'var(--color-text-primary)' }}>{ls.action}</span>
+                  <span style={{ color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', minWidth: '20px', paddingTop: '2px' }}>{ls.stepIndex + 1}</span>
+                  <span style={{ color: 'var(--color-text-primary)', lineHeight: 1.4 }}>{ls.action}</span>
                 </div>
               ))}
             </div>
