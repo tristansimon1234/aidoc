@@ -173,11 +173,10 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
 
   const doc = await generateAndSaveDoc(id, buildDocDeps(), docOptions)
 
+  // FIX 4: page.content is THE source of truth — write synchronously, no silent catch
   if (run.docPageId && doc.markdownContent) {
     const { updatePageContent, findPageById } = await import('../page/page.repository.js')
-    await updatePageContent(run.docPageId, doc.markdownContent).catch((err) =>
-      console.error('Failed to copy doc to page content:', err),
-    )
+    await updatePageContent(run.docPageId, doc.markdownContent)
 
     // Enrich project discovered context
     try {

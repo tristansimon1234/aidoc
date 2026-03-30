@@ -354,7 +354,7 @@ export function PageView(): React.ReactElement {
         <div style={{ marginTop: 'var(--space-lg)' }}>
           <BlockEditor
             key={`${pageId}-${page.content ? 'has-content' : 'empty'}-${doc?.id ?? 'no-doc'}`}
-            content={page.content ?? doc?.markdownContent ?? ''}
+            content={page.content ?? ''}
             onSave={handleSaveContent}
           />
         </div>

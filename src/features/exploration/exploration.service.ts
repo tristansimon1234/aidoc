@@ -189,6 +189,10 @@ When to call done:
 
           const agentText = event.text ?? ''
 
+          // FIX 1: Capture the ACTUAL browser URL (not tool arg URL)
+          const activePage = session.context.activePage()
+          const currentUrl = activePage ? activePage.url() : run.startUrl
+
           for (const tool of toolCalls) {
             const toolObj = tool as Record<string, unknown>
             const toolName = (toolObj.toolName ?? 'unknown') as string
@@ -200,11 +204,20 @@ When to call done:
 
             const description = buildToolDescription(toolName, args, toolResult)
 
+            // FIX 2: Capture tool result (success/failure) alongside reasoning
+            const toolResultStr = toolResult
+              ? JSON.stringify(toolResult).slice(0, 2000)
+              : ''
+            const fullObservation = [
+              agentText.slice(0, 4000),
+              toolResultStr ? `\n[Tool result: ${toolResultStr}]` : '',
+            ].join('')
+
             const record: AgentActionRecord = {
               type: toolName,
               action: description,
-              pageUrl: (args?.url as string | undefined) ?? null,
-              reasoning: agentText.slice(0, 8000) || null,
+              pageUrl: currentUrl,
+              reasoning: fullObservation || null,
             }
 
             const screenshotPath = await explorationBrowser.captureScreenshot(
@@ -216,10 +229,10 @@ When to call done:
             await deps.createRunStep({
               runId,
               stepIndex: stepOffset + stepCounter,
-              url: record.pageUrl ?? run.startUrl,
+              url: currentUrl,
               title: description,
               action: record.action ?? toolName,
-              observation: record.reasoning?.slice(0, 8000) ?? '',
+              observation: fullObservation.slice(0, 8000),
               screenshotPath: screenshotPath ?? undefined,
             })
 
@@ -283,67 +296,103 @@ When to call done:
   }
 }
 
+function extractPathname(url: string): string {
+  try {
+    return new URL(url).pathname
+  } catch {
+    return url
+  }
+}
+
+function pathToLabel(path: string): string {
+  if (path === '/') return 'Homepage'
+  return path
+    .replace(/^\//, '')
+    .split('/')
+    .map((segment) => segment.replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase()))
+    .join(' > ')
+}
+
 function buildExplorationSummary(
   steps: { action: string | null; url: string | null; observation: string | null }[],
   agentMessage: string,
   completed: boolean,
 ): ExplorationSummary {
-  // Group steps by URL path to identify sections
-  const urlMap = new Map<string, number>()
+  // FIX 3: Group by URL pathname with error detection from tool results
+  const sectionMap = new Map<string, {
+    steps: number
+    hasErrors: boolean
+    lastAction: string
+    urls: Set<string>
+  }>()
+
   for (const s of steps) {
-    const url = s.url ?? 'unknown'
-    try {
-      const path = new URL(url).pathname
-      urlMap.set(path, (urlMap.get(path) ?? 0) + 1)
-    } catch {
-      urlMap.set(url, (urlMap.get(url) ?? 0) + 1)
+    const path = extractPathname(s.url ?? '/')
+    const existing = sectionMap.get(path) ?? { steps: 0, hasErrors: false, lastAction: '', urls: new Set() }
+    existing.steps++
+    existing.urls.add(s.url ?? '/')
+    existing.lastAction = s.action ?? ''
+
+    // Detect errors from tool results stored in observation
+    const obs = s.observation ?? ''
+    if (obs.includes('"success":false') || obs.includes('"error"') || obs.includes('failed')) {
+      existing.hasErrors = true
+    }
+
+    sectionMap.set(path, existing)
+  }
+
+  // Build sections with real status based on data
+  const sections = Array.from(sectionMap.entries()).map(([path, data]) => ({
+    url: path,
+    label: pathToLabel(path),
+    status: (data.hasErrors ? 'blocked' : completed ? 'documented' : 'partial') as 'documented' | 'partial' | 'blocked' | 'skipped',
+    stepCount: data.steps,
+  }))
+
+  // Build blockers from: 1) failed sections 2) agent message classification
+  const blockers: ExplorationBlocker[] = []
+
+  // Blockers from sections with errors
+  for (const section of sections) {
+    if (section.status === 'blocked') {
+      blockers.push({
+        type: 'error',
+        description: `Encountered errors while exploring ${section.label}`,
+        section: section.label,
+        actionLabel: `Retry exploring ${section.label}`,
+      })
     }
   }
 
-  const sections = Array.from(urlMap.entries()).map(([url, count]) => ({
-    url,
-    label: url === '/' ? 'Homepage' : url.replace(/^\//, '').replace(/-/g, ' ').replace(/\//g, ' > '),
-    status: completed ? 'documented' as const : 'partial' as const,
-    stepCount: count,
-  }))
-
-  // Classify blockers from agent message
-  const blockers: ExplorationBlocker[] = []
-  const msg = agentMessage.toLowerCase()
-
-  if (!completed) {
+  // Blockers from agent's final message (if not completed)
+  if (!completed && blockers.length === 0) {
+    const msg = agentMessage.toLowerCase()
     if (msg.includes('login') || msg.includes('credential') || msg.includes('password') || msg.includes('sign in') || msg.includes('authenticat')) {
       blockers.push({
         type: 'credentials',
-        description: agentMessage,
+        description: agentMessage.slice(0, 300),
         section: 'Authentication',
         actionLabel: 'Provide login credentials',
       })
-    } else if (msg.includes('403') || msg.includes('forbidden') || msg.includes('access denied') || msg.includes('permission')) {
+    } else if (msg.includes('403') || msg.includes('forbidden') || msg.includes('access denied')) {
       blockers.push({
         type: 'access',
-        description: agentMessage,
+        description: agentMessage.slice(0, 300),
         section: 'Access restricted',
         actionLabel: 'Provide access details',
-      })
-    } else if (msg.includes('error') || msg.includes('500') || msg.includes('broken') || msg.includes('crash')) {
-      blockers.push({
-        type: 'error',
-        description: agentMessage,
-        section: 'Error encountered',
-        actionLabel: 'Report issue',
       })
     } else if (agentMessage.trim()) {
       blockers.push({
         type: 'other',
-        description: agentMessage,
+        description: agentMessage.slice(0, 300),
         section: 'Exploration',
         actionLabel: 'Provide guidance',
       })
     }
   }
 
-  return { sections, blockers, agentMessage }
+  return { sections, blockers, agentMessage: agentMessage.slice(0, 500) }
 }
 
 function buildToolDescription(
