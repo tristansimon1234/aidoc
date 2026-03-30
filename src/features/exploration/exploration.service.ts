@@ -30,7 +30,7 @@ export interface RunDeps {
   }) => Promise<{ id: string }>
   countSteps: (runId: string) => Promise<number>
   findStepsByRunId: (runId: string) => Promise<
-    { action: string | null; url: string | null; observation: string | null }[]
+    { action: string | null; url: string | null; observation: string | null; status: string }[]
   >
 }
 
@@ -226,6 +226,9 @@ When to call done:
               stepOffset + stepCounter,
             )
 
+            // Derive step status from tool result
+            const stepStatus = deriveStepStatus(toolResult)
+
             await deps.createRunStep({
               runId,
               stepIndex: stepOffset + stepCounter,
@@ -234,6 +237,7 @@ When to call done:
               action: record.action ?? toolName,
               observation: fullObservation.slice(0, 8000),
               screenshotPath: screenshotPath ?? undefined,
+              status: stepStatus,
             })
 
             emit({
@@ -296,6 +300,13 @@ When to call done:
   }
 }
 
+function deriveStepStatus(toolResult: Record<string, unknown> | undefined): 'completed' | 'blocked' | 'skipped' {
+  if (!toolResult) return 'completed'
+  if (toolResult.error || toolResult.errorMessage || toolResult.failed === true) return 'blocked'
+  if (typeof toolResult.success === 'boolean' && !toolResult.success) return 'blocked'
+  return 'completed'
+}
+
 function extractPathname(url: string): string {
   try {
     return new URL(url).pathname
@@ -314,7 +325,7 @@ function pathToLabel(path: string): string {
 }
 
 function buildExplorationSummary(
-  steps: { action: string | null; url: string | null; observation: string | null }[],
+  steps: { action: string | null; url: string | null; observation: string | null; status: string }[],
   agentMessage: string,
   completed: boolean,
 ): ExplorationSummary {
@@ -333,9 +344,8 @@ function buildExplorationSummary(
     existing.urls.add(s.url ?? '/')
     existing.lastAction = s.action ?? ''
 
-    // Detect errors from tool results stored in observation
-    const obs = s.observation ?? ''
-    if (obs.includes('"success":false') || obs.includes('"error"') || obs.includes('failed')) {
+    // Detect errors from step status (set by deriveStepStatus from tool results)
+    if (s.status === 'blocked') {
       existing.hasErrors = true
     }
 

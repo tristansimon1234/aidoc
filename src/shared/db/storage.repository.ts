@@ -17,6 +17,10 @@ export async function uploadToStorage(
 
 export function getPublicUrl(bucket: string, path: string): string | null {
   if (!path) return null
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-  return data.publicUrl
+  try {
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path)
+    return data.publicUrl && data.publicUrl.startsWith('http') ? data.publicUrl : null
+  } catch {
+    return null
+  }
 }
