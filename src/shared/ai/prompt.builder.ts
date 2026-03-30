@@ -101,6 +101,12 @@ export function buildDocumentationPrompt(context: {
 - Screenshots captured: ${counts.withScreenshots}
 ${context.runStatus === 'blocked' ? '- ⚠️ Exploration was INCOMPLETE — document what was found but clearly flag gaps' : ''}
 ${context.runStatus === 'failed' ? '- ⚠️ Exploration FAILED — generate best-effort doc from available data' : ''}
+
+IMPORTANT: If the exploration shows that the agent could NOT access certain features (failed login, access denied, errors), do NOT document those features as if they worked. Instead:
+- Only document what was actually successfully explored and seen
+- If a section was blocked, briefly mention it needs separate documentation
+- Do NOT pad the document with speculation about blocked features
+- Keep the document focused and honest — short and accurate is better than long and fabricated
 `
 
   return `You are an expert product documentation writer. Your job is to transform raw exploration data into a clear, professional, user-friendly guide.

@@ -156,9 +156,20 @@ export function ExplorationAssistant({
 
       {/* No blockers — completed successfully */}
       {!hasBlockers && !isBlocked && (
-        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>
-          {summary.agentMessage || 'All sections explored successfully.'}
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', margin: 0 }}>
+            {summary.sections.length} section{summary.sections.length !== 1 ? 's' : ''} explored. Documentation generated.
+          </p>
+          <Button size="sm" variant="secondary" onClick={() => void onReExplore()}>Re-explore</Button>
+        </div>
+      )}
+
+      {/* Completed but with blockers (partial) */}
+      {!hasBlockers && isBlocked && (
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-sm)' }}>
+          <Button size="sm" variant="secondary" onClick={() => void onSkipAndGenerate()}>Generate Doc from Available Data</Button>
+          <Button size="sm" variant="ghost" onClick={() => void onReExplore()}>Re-explore</Button>
+        </div>
       )}
     </div>
   )
