@@ -13,7 +13,6 @@ export function ProjectDetail(): React.ReactElement {
   const [project, setProject] = useState<ProjectDTO | null>(null)
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -32,19 +31,6 @@ export function ProjectDetail(): React.ReactElement {
   }, [projectId])
 
   useEffect(() => { void fetchData() }, [fetchData])
-
-  const handleAutoGenerate = async (): Promise<void> => {
-    if (!projectId) return
-    setGenerating(true)
-    try {
-      await api.pages.autoGenerate(projectId)
-      await fetchData()
-    } catch (err) {
-      console.error('Auto-generate failed:', err)
-    } finally {
-      setGenerating(false)
-    }
-  }
 
   if (loading) {
     return <Shell fullWidth><Spinner size="lg" /></Shell>
@@ -102,30 +88,16 @@ export function ProjectDetail(): React.ReactElement {
             <Outlet context={{ project, pages, refetchPages: fetchData }} />
           ) : (
             <EmptyState
-              title={pages.length === 0 ? 'Get started' : 'Select a page'}
+              title={pages.length === 0 ? 'No pages yet' : 'Select a page'}
               description={
                 pages.length === 0
-                  ? 'Let the AI scan your site and create a documentation structure automatically.'
+                  ? 'Create your first documentation page to get started.'
                   : 'Choose a page from the sidebar to view or edit its documentation.'
               }
               action={
-                pages.length === 0 ? (
-                  <div style={{ display: 'flex', gap: 'var(--space-sm)', flexDirection: 'column', alignItems: 'center' }}>
-                    <Button
-                      onClick={() => void handleAutoGenerate()}
-                      disabled={generating}
-                    >
-                      {generating ? 'Scanning site...' : 'Auto-generate structure'}
-                    </Button>
-                    <Button variant="ghost" onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
-                      Or create pages manually
-                    </Button>
-                  </div>
-                ) : (
-                  <Button onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
-                    New Page
-                  </Button>
-                )
+                <Button onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
+                  New Page
+                </Button>
               }
             />
           )}
