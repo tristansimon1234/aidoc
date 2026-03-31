@@ -235,6 +235,14 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
   return doc
 }
 
+export async function cancelExploration(id: string): Promise<void> {
+  const run = await runRepo.findRunById(id)
+  if (!run) throw new NotFoundError('Run')
+  if (run.status !== 'running') throw new NotFoundError('Run is not running')
+  const { cancelRun } = await import('../exploration/exploration.service.js')
+  cancelRun(id)
+}
+
 export async function getRun(id: string): Promise<Run> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')

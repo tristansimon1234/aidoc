@@ -8,6 +8,13 @@ import * as explorationBrowser from './exploration.browser.js'
 import type { AgentActionRecord, StepEvent, ExplorationSummary, ExplorationBlocker } from './exploration.types.js'
 import type { PageBriefing } from '../page/page.types.js'
 
+// In-memory cancellation signal — same process handles exploration + cancel request
+const cancelledRuns = new Set<string>()
+
+export function cancelRun(runId: string): void {
+  cancelledRuns.add(runId)
+}
+
 export interface RunData {
   startUrl: string
   goal: string
@@ -188,6 +195,12 @@ When to call done:
       ...(Object.keys(variables).length > 0 ? { variables } : {}),
       callbacks: {
         onStepFinish: async (event) => {
+          // Check cancellation signal before processing
+          if (cancelledRuns.has(runId)) {
+            cancelledRuns.delete(runId)
+            throw new Error('Exploration cancelled by user')
+          }
+
           const toolCalls = event.toolCalls ?? []
           const toolResults = event.toolResults ?? []
 
@@ -314,11 +327,17 @@ When to call done:
       emit({ type: 'blocked', message: result.message || 'Agent stopped — you can continue the exploration' })
     }
   } catch (err) {
-    console.error(`Exploration failed for run ${runId}:`, err)
+    const isCancelled = (err as Error).message === 'Exploration cancelled by user'
     await deps.updateRunStatus(runId, 'failed')
-    emit({ type: 'error', message: (err as Error).message })
+    if (isCancelled) {
+      emit({ type: 'cancelled', message: 'Exploration stopped by user' })
+    } else {
+      console.error(`Exploration failed for run ${runId}:`, err)
+      emit({ type: 'error', message: (err as Error).message })
+    }
     throw err
   } finally {
+    cancelledRuns.delete(runId)
     // Always close browser to avoid Browserbase billing
     // Resume works via step context + navigating back to startUrl
     await closeBrowser(session)

@@ -69,6 +69,20 @@ runRouter.get('/:id/explore', (req: Request, res: Response, next: NextFunction) 
   })()
 })
 
+// Cancel a running exploration
+runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      await runService.cancelExploration(params.data.id)
+      res.status(200).json({ cancelled: true })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Generate SOP doc
 runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {

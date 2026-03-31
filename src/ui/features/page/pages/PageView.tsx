@@ -33,6 +33,8 @@ export function PageView(): React.ReactElement {
   const [exploring, setExploring] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [liveSteps, setLiveSteps] = useState<LiveStep[]>([])
+  const abortRef = useRef<AbortController | null>(null)
+  const runIdRef = useRef<string | null>(null)
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -84,6 +86,10 @@ export function PageView(): React.ReactElement {
     setLiveUrl(null)
     setStatusMessage('Launching browser...')
 
+    const controller = new AbortController()
+    abortRef.current = controller
+    runIdRef.current = runId
+
     try {
       await api.runs.exploreStream(
         runId,
@@ -103,13 +109,21 @@ export function PageView(): React.ReactElement {
               break
             case 'done': setStatusMessage(event.message ?? 'Exploration complete'); break
             case 'blocked': setStatusMessage(event.message ?? 'Agent needs help'); break
+            case 'cancelled': setStatusMessage('Exploration stopped'); break
             case 'error': setStatusMessage(event.message ?? 'Error'); break
           }
         },
         customPrompt,
+        controller.signal,
       )
 
-      // Stream ended — generate doc from whatever we have
+      // Stream ended — generate doc from whatever we have (skip if cancelled)
+      if (controller.signal.aborted) {
+        await fetchData()
+        await context.refetchPages()
+        return
+      }
+
       setLiveUrl(null)
       const updatedRun = await api.runs.get(runId)
 
@@ -137,8 +151,13 @@ export function PageView(): React.ReactElement {
       await fetchData()
       await context.refetchPages()
     } catch (err) {
-      setError((err as Error).message)
+      // AbortError is expected when user cancels — not a real error
+      if ((err as Error).name !== 'AbortError') {
+        setError((err as Error).message)
+      }
     } finally {
+      abortRef.current = null
+      runIdRef.current = null
       setExploring(false)
       setGenerating(false)
     }
@@ -156,6 +175,13 @@ export function PageView(): React.ReactElement {
     await api.pages.update(projectId, pageId, { status: 'exploring' })
     const customPrompt = (page as DocPageDTO & { customPrompt?: string | null }).customPrompt ?? undefined
     await runExploration(run.id, customPrompt)
+  }
+
+  const handleCancel = async (): Promise<void> => {
+    if (runIdRef.current) {
+      await api.runs.cancel(runIdRef.current).catch(() => {})
+    }
+    abortRef.current?.abort()
   }
 
   // Debounced page metadata update (title, goal, startUrl, customPrompt)
@@ -296,9 +322,14 @@ export function PageView(): React.ReactElement {
         <div style={{ margin: 'var(--space-lg) 0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
             <Spinner size="sm" />
-            <span style={{ color: generating ? 'var(--color-accent-green)' : 'var(--color-accent-blue)', fontSize: 'var(--text-sm)' }}>
+            <span style={{ color: generating ? 'var(--color-accent-green)' : 'var(--color-accent-blue)', fontSize: 'var(--text-sm)', flex: 1 }}>
               {statusMessage}
             </span>
+            {exploring && !generating && (
+              <Button size="sm" variant="ghost" onClick={() => void handleCancel()}>
+                Stop
+              </Button>
+            )}
           </div>
 
           {liveUrl && (

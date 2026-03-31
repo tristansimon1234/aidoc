@@ -85,7 +85,7 @@ export interface QuestionDTO {
 }
 
 export interface StepEventDTO {
-  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'close' | 'live'
+  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'close' | 'live' | 'cancelled'
   step?: { type: string; action: string | null; pageUrl: string | null; reasoning: string | null }
   liveUrl?: string
   stepIndex?: number
@@ -174,10 +174,13 @@ export const api = {
     get: (id: string): Promise<RunDTO> => request(`/runs/${id}`),
     create: (body: { featureName: string; startUrl: string; goal: string; docPageId?: string }): Promise<RunDTO> =>
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
+    cancel: (id: string): Promise<{ cancelled: boolean }> =>
+      request(`/runs/${id}/cancel`, { method: 'POST' }),
     exploreStream: async (
       id: string,
       onEvent: (event: StepEventDTO) => void,
       context?: string,
+      signal?: AbortSignal,
     ): Promise<void> => {
       const token = await getAuthToken()
       const params = new URLSearchParams()
@@ -187,6 +190,7 @@ export const api = {
         `${API_BASE}/runs/${id}/explore${params.toString() ? `?${params}` : ''}`,
         {
           headers: { Authorization: `Bearer ${token}` },
+          signal,
         },
       )
 
