@@ -1,0 +1,57 @@
+{
+  "name": "aidoc",
+  "version": "1.0.0",
+  "description": "AI Documentation Agent",
+  "type": "module",
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev:server": "node --loader ts-node/esm src/server.ts",
+    "dev:client": "vite",
+    "dev": "vite",
+    "test": "vitest run",
+    "lint": "eslint src/",
+    "format": "prettier --write 'src/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:39589/git/tristansimon1234/aidoc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
+    "@blocknote/core": "^0.47.3",
+    "@blocknote/mantine": "^0.47.3",
+    "@blocknote/react": "^0.47.3",
+    "@browserbasehq/stagehand": "^3.2.0",
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@supabase/ssr": "^0.9.0",
+    "@supabase/supabase-js": "^2.100.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.13.2",
+    "typescript": "5.9.3",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/parser": "^8.57.2",
+    "@vitejs/plugin-react": "^6.0.1",
+    "eslint": "^10.1.0",
+    "prettier": "^3.8.1",
+    "vite": "^8.0.2",
+    "vitest": "^4.1.1"
+  }
+}
