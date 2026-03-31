@@ -93,15 +93,33 @@ export interface StepEventDTO {
   completed?: boolean
 }
 
+export interface ProjectContextDTO {
+  audience: string
+  workflow: string
+  quirks: string
+}
+
 export interface ProjectDTO {
   id: string
   userId: string
   name: string
   baseUrl: string
   description: string | null
-  context: string | null
+  context: ProjectContextDTO | null
   createdAt: string
   updatedAt: string
+}
+
+export interface PageResourceDTO {
+  type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'
+  label: string
+  value: string
+}
+
+export interface PageBriefingDTO {
+  objective: string
+  knowledge: string
+  resources: PageResourceDTO[]
 }
 
 export interface DocPageDTO {
@@ -114,6 +132,7 @@ export interface DocPageDTO {
   goal: string | null
   content: string | null
   customPrompt: string | null
+  briefing: PageBriefingDTO | null
   status: 'draft' | 'exploring' | 'published'
   sortOrder: number
   createdAt: string
@@ -125,7 +144,7 @@ export const api = {
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),
     get: (id: string): Promise<ProjectDTO> => request(`/projects/${id}`),
-    create: (body: { name: string; baseUrl: string; description?: string; context?: string; credentials?: { label: string; username: string; password: string }[] }): Promise<ProjectDTO> =>
+    create: (body: { name: string; baseUrl: string; description?: string; context?: ProjectContextDTO; credentials?: { label: string; username: string; password: string }[] }): Promise<ProjectDTO> =>
       request('/projects', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>
       request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

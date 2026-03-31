@@ -1,6 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
-import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential, DiscoveredContext } from './project.types.js'
+import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential, ProjectContext, DiscoveredContext } from './project.types.js'
 
 interface ProjectRow {
   id: string
@@ -8,7 +8,7 @@ interface ProjectRow {
   name: string
   base_url: string
   description: string | null
-  context: string | null
+  context: ProjectContext | null
   credentials: ProjectCredential[] | null
   discovered_context: DiscoveredContext | null
   created_at: string

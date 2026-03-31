@@ -3,8 +3,10 @@ import {
   closeBrowser,
   getSessionId,
 } from '../../shared/browser/playwright.client.js'
+import { STAGEHAND_MODEL } from '../../shared/ai/anthropic.client.js'
 import * as explorationBrowser from './exploration.browser.js'
 import type { AgentActionRecord, StepEvent, ExplorationSummary, ExplorationBlocker } from './exploration.types.js'
+import type { PageBriefing } from '../page/page.types.js'
 
 export interface RunData {
   startUrl: string
@@ -40,6 +42,7 @@ export interface ExploreOptions {
   tableOfContents?: string
   credentials?: { label: string; username: string; password: string }[]
   customPrompt?: string
+  briefing?: PageBriefing
   onEvent?: (event: StepEvent) => void
 }
 
@@ -121,16 +124,24 @@ Use these credentials to log in when you encounter a login page. The values are 
       variables[`${c.label}_password`] = { value: c.password, description: `Password for ${c.label}` }
     }
 
-    const customPromptBlock = options?.customPrompt
-      ? `\n\n## Custom Instructions from User\n${options.customPrompt}`
-      : ''
+    let briefingBlock = ''
+    if (options?.briefing) {
+      const b = options.briefing
+      if (b.objective) briefingBlock += `\n\n## Page Objective\n${b.objective}`
+      if (b.knowledge) briefingBlock += `\n\n## Domain Knowledge\n${b.knowledge}`
+      if (b.resources.length > 0) {
+        briefingBlock += `\n\n## Resources\n${b.resources.map((r) => `- [${r.type}] ${r.label}: ${r.value}`).join('\n')}`
+      }
+    } else if (options?.customPrompt) {
+      briefingBlock = `\n\n## Custom Instructions from User\n${options.customPrompt}`
+    }
 
     const instruction = `You are a documentation agent. Your job is to thoroughly explore a web application feature so we can generate product documentation from your exploration.
 
 Feature: ${run.featureName}
 Goal: ${run.goal}
 Start URL: ${run.startUrl}
-${isResuming ? `\nYou are RESUMING a previous exploration. The browser has been navigated to ${run.startUrl}. Focus on sections you haven't explored yet.` : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}${customPromptBlock}
+${isResuming ? `\nYou are RESUMING a previous exploration. The browser has been navigated to ${run.startUrl}. Focus on sections you haven't explored yet.` : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}${briefingBlock}
 
 Instructions:
 - You are now on ${run.startUrl} — start exploring from here
@@ -166,7 +177,7 @@ When to call done:
 
     const agent = session.agent({
       model: {
-        modelName: 'anthropic/claude-haiku-4-5-20251001',
+        modelName: STAGEHAND_MODEL,
         apiKey: process.env.ANTHROPIC_API_KEY,
       },
     })

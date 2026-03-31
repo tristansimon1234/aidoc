@@ -8,7 +8,7 @@ import {
   BlockEditor,
   EmptyState,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO } from '../../../shared/api/client.js'
+import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO } from '../../../shared/api/client.js'
 import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
 
 interface PageContext {
@@ -246,18 +246,11 @@ export function PageView(): React.ReactElement {
               color: 'var(--color-text-muted)', width: '100%',
             }}
           />
-          <textarea
-            value={page.customPrompt ?? ''}
-            onChange={(e) => {
-              setPage({ ...page, customPrompt: e.target.value })
-              void debouncedPageUpdate({ customPrompt: e.target.value })
-            }}
-            placeholder="Exploration instructions: e.g. Focus on pricing. Skip the blog. Use admin credentials."
-            rows={2}
-            style={{
-              background: 'none', border: 'none', outline: 'none', resize: 'vertical',
-              fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
-              width: '100%', fontFamily: 'var(--font-sans)', minHeight: '40px',
+          <BriefingEditor
+            briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
+            onChange={(briefing) => {
+              setPage({ ...page, briefing })
+              void debouncedPageUpdate({ briefing })
             }}
           />
         </div>
@@ -378,6 +371,133 @@ export function PageView(): React.ReactElement {
 
 function hasSelfAssessment(json: Record<string, unknown>): boolean {
   return json.selfAssessment != null && typeof json.selfAssessment === 'object'
+}
+
+// --- Briefing Editor ---
+
+const RESOURCE_TYPES: PageResourceDTO['type'][] = ['url', 'credential', 'endpoint', 'file', 'note']
+
+function BriefingEditor({
+  briefing,
+  onChange,
+}: {
+  briefing: PageBriefingDTO
+  onChange: (briefing: PageBriefingDTO) => void
+}): React.ReactElement {
+  const update = (partial: Partial<PageBriefingDTO>): void => {
+    onChange({ ...briefing, ...partial })
+  }
+
+  const addResource = (): void => {
+    update({ resources: [...briefing.resources, { type: 'note', label: '', value: '' }] })
+  }
+
+  const updateResource = (index: number, field: keyof PageResourceDTO, value: string): void => {
+    update({
+      resources: briefing.resources.map((r, i) =>
+        i === index ? { ...r, [field]: value } : r,
+      ),
+    })
+  }
+
+  const removeResource = (index: number): void => {
+    update({ resources: briefing.resources.filter((_, i) => i !== index) })
+  }
+
+  const fieldStyle: React.CSSProperties = {
+    background: 'none', border: 'none', outline: 'none', resize: 'vertical',
+    fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
+    width: '100%', fontFamily: 'var(--font-sans)', minHeight: '36px',
+  }
+
+  const labelStyle: React.CSSProperties = {
+    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+    color: 'var(--color-text-muted)', marginBottom: '2px',
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+      <div>
+        <p style={labelStyle}>objective</p>
+        <textarea
+          value={briefing.objective}
+          onChange={(e) => update({ objective: e.target.value })}
+          placeholder="Que doit documenter cette page ? Quel objectif utilisateur ?"
+          rows={2}
+          style={fieldStyle}
+        />
+      </div>
+      <div>
+        <p style={labelStyle}>knowledge</p>
+        <textarea
+          value={briefing.knowledge}
+          onChange={(e) => update({ knowledge: e.target.value })}
+          placeholder="Comportements non-évidents, règles métier, pièges..."
+          rows={2}
+          style={fieldStyle}
+        />
+      </div>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <p style={labelStyle}>resources</p>
+          <button
+            type="button"
+            onClick={addResource}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            + add
+          </button>
+        </div>
+        {briefing.resources.map((r, i) => (
+          <div key={i} style={{
+            display: 'grid', gridTemplateColumns: 'auto 1fr 2fr auto',
+            gap: 'var(--space-xs)', marginBottom: 'var(--space-xs)', alignItems: 'center',
+          }}>
+            <select
+              value={r.type}
+              onChange={(e) => updateResource(i, 'type', e.target.value)}
+              style={{
+                background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
+                borderRadius: 'var(--radius-sm)', padding: '4px',
+                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+                color: 'var(--color-text-secondary)',
+              }}
+            >
+              {RESOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input
+              type="text"
+              value={r.label}
+              onChange={(e) => updateResource(i, 'label', e.target.value)}
+              placeholder="label"
+              style={{ ...fieldStyle, minHeight: 'unset', padding: '4px 0' }}
+            />
+            <input
+              type="text"
+              value={r.value}
+              onChange={(e) => updateResource(i, 'value', e.target.value)}
+              placeholder="value"
+              style={{ ...fieldStyle, minHeight: 'unset', padding: '4px 0' }}
+            />
+            <button
+              type="button"
+              onClick={() => removeResource(i)}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+              }}
+            >
+              x
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // --- Self-Assessment + Suggestions Panel ---

@@ -11,7 +11,7 @@ AiDoc is an AI-powered documentation tool that automatically explores web applic
 | Runtime | Node.js 20+ / TypeScript 5.9 (strict) |
 | Backend | Express 5 (serverless on Vercel) |
 | Browser | Stagehand 3 (Browserbase cloud) |
-| AI (exploration) | Claude Haiku 4.5 (cheap, via Stagehand) |
+| AI (exploration) | Claude Sonnet 4 (reliable, via Stagehand `STAGEHAND_MODEL`) |
 | AI (doc generation) | Claude Sonnet 4 (quality, direct API) |
 | Database | Supabase (Postgres + Auth + Storage + RLS) |
 | Frontend | React 19 + Vite 8 + React Router 7 |
@@ -22,8 +22,8 @@ AiDoc is an AI-powered documentation tool that automatically explores web applic
 
 ```
 User (Supabase Auth)
-  └─ Project (name, baseUrl, context, credentials[])     ← RLS by user_id
-       └─ DocPage (title, slug, parentId, sortOrder, content, customPrompt, status)
+  └─ Project (name, baseUrl, context{audience,workflow,quirks}, credentials[])  ← RLS by user_id
+       └─ DocPage (title, slug, parentId, sortOrder, content, briefing{objective,knowledge,resources[]}, status)
             └─ Run (featureName, startUrl, goal, status, tokenUsage)
                  ├─ RunStep (action, observation, screenshotPath)
                  ├─ RunQuestion (question, answer)

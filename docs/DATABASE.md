@@ -9,7 +9,7 @@ user_id           uuid NOT NULL              -- auth.uid() via RLS
 name              text NOT NULL
 base_url          text NOT NULL
 description       text
-context           text                       -- product context for AI prompts
+context           jsonb                      -- structured product context {audience, workflow, quirks}
 credentials       jsonb                      -- [{label, username, password}]
 discovered_context jsonb DEFAULT '{}'        -- AI-enriched product knowledge
 created_at        timestamptz DEFAULT now()
@@ -28,7 +28,8 @@ slug              text NOT NULL              -- unique per project
 start_url         text                       -- where agent starts exploring
 goal              text                       -- what the page should document
 content           text                       -- editable markdown (source of truth for display)
-custom_prompt     text                       -- user instructions for the agent
+custom_prompt     text                       -- user instructions for the agent (legacy)
+briefing          jsonb                      -- structured briefing {objective, knowledge, resources[]}
 status            text NOT NULL DEFAULT 'draft'  -- draft | exploring | published
 sort_order        integer NOT NULL DEFAULT 0
 created_at        timestamptz DEFAULT now()
@@ -117,6 +118,8 @@ created_at        timestamptz DEFAULT now()
 | 9 | `20260325000008_add_rls_all_tables.sql` | Enable RLS on all tables with ownership policies |
 | 10 | `20260325000009_add_run_summary.sql` | Add summary_json to runs |
 | 11 | `20260325000010_add_discovered_context.sql` | Add discovered_context to projects |
+| 12 | `20260331000000_structured_project_context.sql` | Convert projects.context from text to jsonb |
+| 13 | `20260331000001_add_page_briefing.sql` | Add briefing jsonb to doc_pages |
 
 ## Relationships
 

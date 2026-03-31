@@ -1,3 +1,9 @@
+export interface ProjectContext {
+  audience: string
+  workflow: string
+  quirks: string
+}
+
 export interface ProjectCredential {
   label: string
   username: string
@@ -10,7 +16,7 @@ export interface Project {
   name: string
   baseUrl: string
   description: string | null
-  context: string | null
+  context: ProjectContext | null
   credentials: ProjectCredential[] | null
   discoveredContext: DiscoveredContext | null
   createdAt: Date
@@ -30,7 +36,7 @@ export interface CreateProjectInput {
   name: string
   baseUrl: string
   description?: string
-  context?: string
+  context?: ProjectContext
   credentials?: ProjectCredential[]
 }
 
@@ -38,6 +44,6 @@ export interface UpdateProjectInput {
   name?: string
   baseUrl?: string
   description?: string
-  context?: string
+  context?: ProjectContext
   credentials?: ProjectCredential[]
 }

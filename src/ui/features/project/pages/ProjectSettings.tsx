@@ -16,8 +16,7 @@ export function ProjectSettings(): React.ReactElement {
   const [project, setProject] = useState<ProjectDTO | null>(null)
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
-  const [description, setDescription] = useState('')
-  const [context, setContext] = useState('')
+  const [context, setContext] = useState({ audience: '', workflow: '', quirks: '' })
   const [credentials, setCredentials] = useState<Credential[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -30,8 +29,7 @@ export function ProjectSettings(): React.ReactElement {
       setProject(p)
       setName(p.name)
       setBaseUrl(p.baseUrl)
-      setDescription(p.description ?? '')
-      setContext(p.context ?? '')
+      setContext(p.context ?? { audience: '', workflow: '', quirks: '' })
       setCredentials((p as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [])
       setLoading(false)
     }).catch(() => setLoading(false))
@@ -60,8 +58,7 @@ export function ProjectSettings(): React.ReactElement {
       await api.projects.update(projectId, {
         name,
         baseUrl,
-        description: description || undefined,
-        context: context || undefined,
+        context: (context.audience || context.workflow || context.quirks) ? context : undefined,
         credentials: validCreds.length > 0 ? validCreds : undefined,
       })
       setSaved(true)
@@ -102,20 +99,30 @@ export function ProjectSettings(): React.ReactElement {
           />
 
           <Field
-            label="description"
+            label="audience"
             multiline
-            value={description}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
+            placeholder="Qui utilise ce produit et pour quoi faire ?"
+            value={context.audience}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, audience: e.target.value })}
             rows={2}
           />
 
           <Field
-            label="product_context"
+            label="workflow"
             multiline
-            placeholder="What the product does, who it's for, key terminology..."
-            value={context}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext(e.target.value)}
-            rows={5}
+            placeholder="Quel est le workflow le plus important ?"
+            value={context.workflow}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, workflow: e.target.value })}
+            rows={2}
+          />
+
+          <Field
+            label="quirks"
+            multiline
+            placeholder="Y a-t-il des termes ou comportements non-évidents ?"
+            value={context.quirks}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, quirks: e.target.value })}
+            rows={2}
           />
 
           {/* Credentials */}

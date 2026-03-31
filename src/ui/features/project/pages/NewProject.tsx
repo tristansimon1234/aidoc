@@ -15,8 +15,7 @@ export function NewProject(): React.ReactElement {
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
-  const [description, setDescription] = useState('')
-  const [context, setContext] = useState('')
+  const [context, setContext] = useState({ audience: '', workflow: '', quirks: '' })
   const [credentials, setCredentials] = useState<Credential[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -44,8 +43,7 @@ export function NewProject(): React.ReactElement {
       .create({
         name,
         baseUrl,
-        description: description || undefined,
-        context: context || undefined,
+        context: (context.audience || context.workflow || context.quirks) ? context : undefined,
         credentials: validCreds.length > 0 ? validCreds : undefined,
       })
       .then((p) => navigate(`/projects/${p.id}`))
@@ -80,21 +78,30 @@ export function NewProject(): React.ReactElement {
           />
 
           <Field
-            label="description"
+            label="audience"
             multiline
-            placeholder="Brief description of your product"
-            value={description}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
+            placeholder="Qui utilise ce produit et pour quoi faire ?"
+            value={context.audience}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, audience: e.target.value })}
             rows={2}
           />
 
           <Field
-            label="product_context"
+            label="workflow"
             multiline
-            placeholder="Detailed context: what the product does, who it's for, key features, terminology."
-            value={context}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext(e.target.value)}
-            rows={4}
+            placeholder="Quel est le workflow le plus important ?"
+            value={context.workflow}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, workflow: e.target.value })}
+            rows={2}
+          />
+
+          <Field
+            label="quirks"
+            multiline
+            placeholder="Y a-t-il des termes ou comportements non-évidents ?"
+            value={context.quirks}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, quirks: e.target.value })}
+            rows={2}
           />
 
           {/* Credentials section */}

@@ -23,7 +23,7 @@ This is NOT a chatbot. It is an autonomous agent with a project-based lifecycle.
 | Runtime | Node.js 20+ / TypeScript 5.9 (strict: true) |
 | Backend | Express 5 (serverless on Vercel) |
 | Browser Automation | Stagehand 3 (Browserbase cloud browsers) |
-| AI (exploration) | Claude Haiku 4.5 (`anthropic/claude-haiku-4-5-20251001`) |
+| AI (exploration) | Claude Sonnet 4 (`anthropic/claude-sonnet-4-20250514` via `STAGEHAND_MODEL`) |
 | AI (doc generation) | Claude Sonnet 4 (`claude-sonnet-4-20250514` via `CLAUDE_MODEL`) |
 | Database | Supabase (Postgres + Auth + Storage + RLS) |
 | Frontend | React 19 + Vite 8 + React Router 7 |
@@ -150,8 +150,9 @@ docs/
 ## AI / Model Rules
 
 ### Two models, two purposes
-- **Stagehand (exploration)**: `anthropic/claude-haiku-4-5-20251001` — cheap, good enough for navigation
+- **Stagehand (exploration)**: `STAGEHAND_MODEL` constant (`anthropic/claude-sonnet-4-20250514`) — reliable navigation for complex UIs
 - **Doc generation**: `CLAUDE_MODEL` constant (`claude-sonnet-4-20250514`) — quality matters here
+- **Context enrichment**: `claude-haiku-4-5-20251001` — cheap, fire-and-forget (in `run.service.ts`)
 
 ### Prompt rules
 - All doc generation prompts live in `shared/ai/prompt.builder.ts`
@@ -161,11 +162,11 @@ docs/
 
 ### Cross-page awareness
 When exploring or generating docs, the AI receives:
-- **Project context** — product description, terminology
+- **Project context** — structured: audience, workflow, quirks (stored as JSONB in `projects.context`)
 - **Table of contents** — all sibling pages with status
 - **Page content summaries** — first 200 chars of each sibling's content
 - **Credentials** — test login credentials as Stagehand variables
-- **Custom prompt** — user's page-specific instructions
+- **Page briefing** — structured per-page context: objective, domain knowledge, typed resources (stored as JSONB in `doc_pages.briefing`)
 
 These are assembled in `run.service.ts` → `getProjectAwareness()` and passed through to exploration and doc generation.
 
@@ -267,7 +268,7 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 ## Known Tech Debt
 
 - [ ] Exploration instruction built inline (should move to prompt.builder.ts)
-- [ ] Stagehand model hardcoded in 2 places (should use env var)
+- [x] ~~Stagehand model hardcoded in 2 places~~ — now uses `STAGEHAND_MODEL` constant
 - [ ] `run.service.ts` imports `questions.repository` directly (cross-feature)
 - [ ] No tests (Vitest configured but unused)
 - [ ] No rate limiting on API endpoints
