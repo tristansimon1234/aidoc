@@ -84,6 +84,34 @@
 }
 ```
 
+## Context Enrichment Prompt
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `buildContextEnrichmentPrompt()`
+
+**When**: Called after each documentation generation
+**Model**: Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — cheap, ~$0.01 per call
+
+**Input**:
+- `existingContext`: current `projects.discovered_context` (or null for first time)
+- `newMarkdown`: the generated documentation
+- `featureName`: the page being documented
+
+**Output**: Structured JSON merged with existing knowledge:
+```json
+{
+  "lastUpdated": "ISO timestamp",
+  "siteStructure": ["/ (homepage)", "/pricing", "/admin"],
+  "navigation": ["Home", "Pricing", "Settings"],
+  "terminology": {"term": "definition"},
+  "features": ["User auth", "Dashboard"],
+  "summary": "2-3 sentence product summary"
+}
+```
+
+**Key instruction**: "Merge with existing knowledge — don't replace it."
+
+**Effect**: Each exploration enriches the project context. Future explorations are more informed about the product.
+
 ## Prompt Improvement Guidelines
 
 When modifying prompts:

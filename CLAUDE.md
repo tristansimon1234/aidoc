@@ -273,7 +273,6 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [ ] No rate limiting on API endpoints
 - [ ] No pagination on list endpoints
 - [ ] Legacy RunDashboard/NewRun pages still exist (pre-project model)
-- [ ] Page routes don't verify project ownership explicitly (relies on project RLS)
 
 ---
 

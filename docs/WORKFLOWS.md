@@ -84,6 +84,30 @@ Login → Projects → Create Project → Auto-generate Pages → Explore Pages 
 
 **Effect**: Claude can reference other pages (`See [Login Guide](/login)`) and avoid duplicating content.
 
+## 5b. Context Learning (Auto-Enrichment)
+
+**When**: After each documentation generation
+**Flow**:
+1. After doc gen, a lightweight Haiku call analyzes the generated markdown
+2. Extracts structured knowledge: site structure, navigation, terminology, features
+3. Merges with existing `projects.discovered_context` (enrichment, not replacement)
+4. Future explorations receive this enriched context in their prompts
+
+**What gets stored in `discovered_context`**:
+```json
+{
+  "lastUpdated": "2026-03-25T...",
+  "siteStructure": ["/", "/pricing", "/admin"],
+  "navigation": ["Home", "Pricing", "Settings"],
+  "terminology": {"KPI": "Key Performance Indicator"},
+  "features": ["User auth", "Dashboard", "Data import"],
+  "summary": "A data analytics platform with..."
+}
+```
+
+**Cost**: ~$0.01 per enrichment (Haiku, small prompt)
+**Effect**: The more you document, the smarter the agent gets about your product.
+
 ## 6. Resume Exploration
 
 **Trigger**: User clicks "Continue Exploration" on a blocked/failed page

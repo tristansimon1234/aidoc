@@ -8,9 +8,11 @@
 4. **No cross-feature service imports** — use dependency injection interfaces.
 5. **Zod validates ALL external input** — API requests, AI responses, env vars.
 6. **One migration file per schema change** — never edit existing migrations.
-7. **No business logic in routes** — routes call services.
+7. **No business logic in routes** — routes validate input, call services, return responses.
 8. **Always close browser in `finally`** — avoid Browserbase billing.
 9. **Track token usage** — increment on every Anthropic call.
+10. **Errors propagate, not silently catch** — data-critical operations must throw. Only supplementary operations (enrichment, analytics) can catch and log.
+11. **Update docs/** — when changing architecture, workflows, schema, or prompts.
 
 ## Adding a New Feature
 

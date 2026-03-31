@@ -11,6 +11,7 @@ base_url          text NOT NULL
 description       text
 context           text                       -- product context for AI prompts
 credentials       jsonb                      -- [{label, username, password}]
+discovered_context jsonb DEFAULT '{}'        -- AI-enriched product knowledge
 created_at        timestamptz DEFAULT now()
 updated_at        timestamptz DEFAULT now()
 ```
@@ -46,6 +47,7 @@ status                   text NOT NULL DEFAULT 'pending'  -- pending | running |
 token_usage              integer DEFAULT 0
 browserbase_session_id   text                -- Browserbase session for resume
 doc_page_id              uuid FK → doc_pages(id) SET NULL
+summary_json             jsonb               -- structured exploration summary (sections, blockers)
 created_at               timestamptz DEFAULT now()
 updated_at               timestamptz DEFAULT now()
 ```
@@ -112,6 +114,9 @@ created_at        timestamptz DEFAULT now()
 | 6 | `20260325000005_add_project_credentials.sql` | Add credentials jsonb to projects |
 | 7 | `20260325000006_add_page_content.sql` | Add editable content to doc_pages |
 | 8 | `20260325000007_add_page_custom_prompt.sql` | Add custom_prompt to doc_pages |
+| 9 | `20260325000008_add_rls_all_tables.sql` | Enable RLS on all tables with ownership policies |
+| 10 | `20260325000009_add_run_summary.sql` | Add summary_json to runs |
+| 11 | `20260325000010_add_discovered_context.sql` | Add discovered_context to projects |
 
 ## Relationships
 
@@ -124,6 +129,22 @@ runs 1:N run_questions (CASCADE)
 runs 1:1 generated_docs (CASCADE)
 runs 1:N artifacts (CASCADE)
 ```
+
+## Row Level Security (RLS)
+
+All tables have RLS enabled. Policies chain through project ownership:
+
+| Table | Policy | Logic |
+|---|---|---|
+| `projects` | Users see own projects | `auth.uid() = user_id` |
+| `doc_pages` | Users access own project pages | `project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())` |
+| `runs` | Users access own runs | Via `doc_page_id → doc_pages → projects.user_id` |
+| `run_steps` | Users access own run steps | Via `run_id → runs → doc_pages → projects.user_id` |
+| `run_questions` | Users access own questions | Via `run_id → runs → doc_pages → projects.user_id` |
+| `generated_docs` | Users access own docs | Via `run_id → runs → doc_pages → projects.user_id` |
+| `artifacts` | Users access own artifacts | Via `run_id → runs → doc_pages → projects.user_id` |
+
+**Note**: The backend uses the Supabase **service key** which bypasses RLS. RLS protects direct client access. Page routes also verify ownership via `verifyProjectOwnership` middleware.
 
 ## Content Storage Strategy
 
