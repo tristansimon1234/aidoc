@@ -121,11 +121,21 @@ async function enrichBriefingWithFileContents(
     briefing.resources.map(async (r) => {
       if (r.type !== 'file' || !r.value) return r
       try {
+        console.log(`[briefing] Downloading file resource: ${r.value}`)
         const { data, error } = await supabase.storage.from('briefing-files').download(r.value)
-        if (error || !data) return r
+        if (error) {
+          console.error(`[briefing] Failed to download ${r.value}:`, error.message)
+          return r
+        }
+        if (!data) {
+          console.error(`[briefing] No data returned for ${r.value}`)
+          return r
+        }
         const text = await data.text()
+        console.log(`[briefing] Loaded ${r.label}: ${text.length} chars`)
         return { ...r, content: text.slice(0, 4000) }
-      } catch {
+      } catch (err) {
+        console.error(`[briefing] Error loading file ${r.value}:`, err)
         return r
       }
     }),

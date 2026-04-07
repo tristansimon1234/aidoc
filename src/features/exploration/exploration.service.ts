@@ -149,6 +149,7 @@ Use these credentials to log in when you encounter a login page. The values are 
         parts.push(`**Reference materials**:\n${resourceBlocks.join('\n\n')}`)
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
+      console.log(`[exploration] Briefing injected: objective=${b.objective ? 'yes' : 'no'}, knowledge=${b.knowledge ? 'yes' : 'no'}, resources=${b.resources.length} (files with content: ${b.resources.filter((r) => (r as PageResourceWithContent).content).length})`)
     } else if (options?.customPrompt) {
       briefingBlock = `\n\n## Custom Instructions from User\n${options.customPrompt}`
     }
