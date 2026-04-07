@@ -63,6 +63,10 @@ export async function exploreRun(
 
   const emit = options?.onEvent ?? (() => {})
 
+  // Safety timeout: must finish before Vercel kills the function (maxDuration: 300s)
+  const SAFETY_TIMEOUT_MS = 300_000
+  const startTime = Date.now()
+
   await deps.updateRunStatus(runId, 'running')
   emit({ type: 'status', message: 'Launching browser...' })
 
@@ -165,39 +169,19 @@ Use these credentials to log in when you encounter a login page. The values are 
       briefingBlock = `\n\n## Custom Instructions from User\n${options.customPrompt}`
     }
 
-    const instruction = `You are a documentation agent. Your job is to thoroughly explore a web application feature so we can generate product documentation from your exploration.
+    const instruction = `Documentation agent — explore a web app to generate product docs.
 
 Feature: ${run.featureName}
 Goal: ${run.goal}
-Start URL: ${run.startUrl}
-${isResuming ? `\nYou are RESUMING a previous exploration. The browser has been navigated to ${run.startUrl}. Focus on sections you haven't explored yet.` : ''}${briefingBlock}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}
+Start: ${run.startUrl}${isResuming ? ' (RESUMING — skip already-covered sections)' : ''}
+${briefingBlock}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}
 
-Instructions:
-- You are now on ${run.startUrl} — start exploring from here
-- Click through every section, button, menu, and interactive element you find
-- Fill forms with realistic test data when needed
-- Scroll to see all content on each page
-- Visit all linked pages within the feature
-- Be systematic: go through navigation items one by one
-
-BUDGET: You have a maximum of 50 actions. Plan accordingly:
-- Prioritize the MOST IMPORTANT sections first
-- After ~40 actions, start wrapping up and call done with a summary
-- Better to document 5 sections thoroughly than 10 sections poorly
-- Each screenshot, scroll, and click counts as one action
-
-CRITICAL RULES FOR STOPPING:
-- If you encounter a login page or auth wall and do NOT have credentials, call done IMMEDIATELY. Do not retry. Explain what access is needed.
-- If an action fails, try ONE alternative. If that also fails, move on. Do NOT retry more than twice.
-- If the page looks empty, broken, or returns an error, call done and explain.
-- If you've explored all visible sections, call done. Don't navigate in circles.
-- When your goal is achieved, call done. Don't keep exploring unnecessarily.
-
-When to call done:
-- You have explored all main sections relevant to the goal
-- You've captured the key user flows and interactions
-- You're running low on actions (~40+)
-- OR you are blocked and cannot proceed further`
+Rules:
+- Explore systematically: navigate sections, click buttons, fill forms with test data
+- Budget: 50 actions max. Prioritize the most important sections. Wrap up at ~40.
+- Login wall without credentials → call done immediately
+- Action fails twice → move on
+- All sections explored → call done`
 
     // Make briefing files available for upload via CDP file chooser interception
     const briefingFiles = (options?.briefing?.resources ?? [])
@@ -267,6 +251,11 @@ When to call done:
           if (cancelledRuns.has(runId)) {
             cancelledRuns.delete(runId)
             throw new Error('Exploration cancelled by user')
+          }
+
+          // Safety timeout — stop before Vercel kills the function
+          if (Date.now() - startTime > SAFETY_TIMEOUT_MS) {
+            throw new Error('Exploration timeout — stopping to save progress')
           }
 
           const toolCalls = event.toolCalls ?? []
@@ -397,9 +386,12 @@ When to call done:
   } catch (err) {
     const msg = (err as Error).message
     const isCancelled = msg === 'Exploration cancelled by user'
+    const isTimeout = msg === 'Exploration timeout — stopping to save progress'
     await deps.updateRunStatus(runId, 'failed')
     if (isCancelled) {
       emit({ type: 'cancelled', message: 'Exploration stopped by user' })
+    } else if (isTimeout) {
+      emit({ type: 'done', completed: false, message: 'Exploration timed out — doc will be generated from steps captured so far.' })
     } else {
       console.error(`Exploration failed for run ${runId}:`, err)
       emit({ type: 'error', message: msg })
