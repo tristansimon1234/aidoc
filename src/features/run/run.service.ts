@@ -131,13 +131,10 @@ async function enrichBriefingWithFileContents(
           console.error(`[briefing] No data returned for ${r.value}`)
           return r
         }
-        const text = await data.text()
-        console.log(`[briefing] Loaded ${r.label}: ${text.length} chars`)
-        // Re-download for raw buffer (Blob was consumed by .text())
-        const { data: rawData } = await supabase.storage.from('briefing-files').download(r.value)
-        const buffer = rawData ? Buffer.from(await rawData.arrayBuffer()) : undefined
+        const buffer = Buffer.from(await data.arrayBuffer())
         const fileName = r.value.split('/').pop() ?? r.label
-        return { ...r, content: text.slice(0, 4000), fileBuffer: buffer, fileName }
+        console.log(`[briefing] Loaded ${r.label}: ${buffer.length} bytes`)
+        return { ...r, fileBuffer: buffer, fileName }
       } catch (err) {
         console.error(`[briefing] Error loading file ${r.value}:`, err)
         return r

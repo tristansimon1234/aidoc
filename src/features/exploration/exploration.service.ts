@@ -138,20 +138,25 @@ Use these credentials to log in when you encounter a login page. The values are 
       if (b.objective) parts.push(`**YOUR OBJECTIVE**: ${b.objective}`)
       if (b.knowledge) parts.push(`**IMPORTANT CONTEXT — read carefully before exploring**:\n${b.knowledge}`)
       if (b.resources.length > 0) {
-        const resourceBlocks = b.resources.map((r) => {
-          const res = r as PageResourceWithContent
-          if (res.type === 'file' && res.content) {
-            const ext = res.value.split('.').pop() ?? ''
-            return `### [file] ${res.label}\n\`\`\`${ext}\n${res.content}\n\`\`\``
-          }
-          return `- [${res.type}] ${res.label}: ${res.value}`
-        })
-        parts.push(`**Reference materials**:\n${resourceBlocks.join('\n\n')}`)
+        // Separate uploadable files (shown as upload instructions) from other resources (shown as context)
+        const uploadable: string[] = []
+        const contextBlocks: string[] = []
 
-        // Tell the agent about uploadable files
-        const uploadableFiles = b.resources.filter((r) => r.type === 'file' && (r as PageResourceWithContent).fileBuffer)
-        if (uploadableFiles.length > 0) {
-          parts.push(`**Files available for upload**: ${uploadableFiles.map((f) => f.label || f.value.split('/').pop()).join(', ')}. When you encounter a file upload input in the application, click it — the file will be provided automatically.`)
+        for (const r of b.resources) {
+          const res = r as PageResourceWithContent
+          if (res.type === 'file' && res.fileBuffer) {
+            // File is for upload only — don't dump content into prompt
+            uploadable.push(res.label || res.value.split('/').pop() || 'file')
+          } else {
+            contextBlocks.push(`- [${res.type}] ${res.label}: ${res.value}`)
+          }
+        }
+
+        if (contextBlocks.length > 0) {
+          parts.push(`**Reference materials**:\n${contextBlocks.join('\n')}`)
+        }
+        if (uploadable.length > 0) {
+          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. When you encounter a file upload input in the application, click it — the file will be provided automatically.`)
         }
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
