@@ -99,6 +99,15 @@ export interface ProjectContextDTO {
   quirks: string
 }
 
+export interface DiscoveredContextDTO {
+  lastUpdated: string
+  siteStructure: string[]
+  navigation: string[]
+  terminology: Record<string, string>
+  features: string[]
+  summary: string
+}
+
 export interface ProjectDTO {
   id: string
   userId: string
@@ -106,6 +115,7 @@ export interface ProjectDTO {
   baseUrl: string
   description: string | null
   context: ProjectContextDTO | null
+  discoveredContext: DiscoveredContextDTO | null
   createdAt: string
   updatedAt: string
 }

@@ -46,4 +46,5 @@ export interface UpdateProjectInput {
   description?: string
   context?: ProjectContext
   credentials?: ProjectCredential[]
+  discoveredContext?: DiscoveredContext
 }

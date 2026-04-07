@@ -71,6 +71,7 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   if (input.description !== undefined) updates.description = input.description
   if (input.context !== undefined) updates.context = input.context
   if (input.credentials !== undefined) updates.credentials = input.credentials
+  if (input.discoveredContext !== undefined) updates.discovered_context = input.discoveredContext
 
   const { data, error } = await supabase
     .from('projects')

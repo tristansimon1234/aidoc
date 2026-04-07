@@ -12,7 +12,7 @@ export function buildContextEnrichmentPrompt(
 ${existingContext ? JSON.stringify(existingContext, null, 2) : 'Nothing yet — this is the first exploration.'}
 
 ## New Documentation for "${featureName}"
-${newMarkdown.slice(0, 3000)}
+${newMarkdown.slice(0, 6000)}
 
 ## Task
 Update the knowledge base with what you learned. Merge with existing knowledge — don't replace it.

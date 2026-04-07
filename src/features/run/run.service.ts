@@ -90,6 +90,15 @@ async function getProjectAwareness(docPageId: string): Promise<{
     if (project.discoveredContext.navigation?.length) {
       fullProjectContext += `\nNavigation items: ${project.discoveredContext.navigation.join(', ')}`
     }
+    if (project.discoveredContext.terminology && Object.keys(project.discoveredContext.terminology).length > 0) {
+      const terms = Object.entries(project.discoveredContext.terminology)
+        .map(([term, def]) => `- **${term}**: ${def}`)
+        .join('\n')
+      fullProjectContext += `\nProduct terminology:\n${terms}`
+    }
+    if (project.discoveredContext.siteStructure?.length) {
+      fullProjectContext += `\nKnown site pages: ${project.discoveredContext.siteStructure.join(', ')}`
+    }
   }
 
   return {
@@ -249,8 +258,13 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
           if (textBlock && textBlock.type === 'text') {
             let jsonStr = textBlock.text.trim()
             if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
-            const enriched = JSON.parse(jsonStr) as Record<string, unknown>
-            await updateDiscoveredContext(project.id, enriched as unknown as import('../project/project.types.js').DiscoveredContext)
+            const { DiscoveredContextSchema } = await import('../project/project.schema.js')
+            const parsed = DiscoveredContextSchema.safeParse(JSON.parse(jsonStr))
+            if (parsed.success) {
+              await updateDiscoveredContext(project.id, parsed.data)
+            } else {
+              console.error('Context enrichment validation failed:', parsed.error.flatten())
+            }
           }
         }
       }
