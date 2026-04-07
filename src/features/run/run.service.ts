@@ -218,8 +218,13 @@ export async function exploreWithEvents(
 export async function generateDoc(id: string): Promise<GeneratedDoc> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')
-  if (run.status === 'pending' || run.status === 'running') {
-    throw new NotFoundError('Run is still in progress')
+  if (run.status === 'pending') {
+    throw new NotFoundError('Run has not started yet')
+  }
+  // If run is stuck as 'running' (e.g. Vercel timeout killed the function),
+  // recover it as 'failed' so we can still generate doc from partial data
+  if (run.status === 'running') {
+    await runRepo.updateRunStatus(id, 'failed')
   }
 
   // Fetch project awareness for cross-page context in doc generation

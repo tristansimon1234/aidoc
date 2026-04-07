@@ -122,7 +122,21 @@ export function PageView(): React.ReactElement {
       setLiveUrl(null)
       const updatedRun = await api.runs.get(runId)
 
-      if (updatedRun.status !== 'pending' && updatedRun.status !== 'running') {
+      // If Vercel killed the function mid-exploration, the run is stuck as 'running'.
+      // Mark it as failed so we can still generate doc from partial data.
+      if (updatedRun.status === 'running' || updatedRun.status === 'pending') {
+        try {
+          await api.pages.update(projectId!, pageId!, { status: 'draft' })
+          await fetchData()
+          await context.refetchPages()
+          setStatusMessage('Exploration timed out — you can retry or generate doc from what was captured')
+          return
+        } catch {
+          // ignore
+        }
+      }
+
+      if (updatedRun.status === 'completed' || updatedRun.status === 'blocked' || updatedRun.status === 'failed') {
         setStatusMessage('Generating documentation...')
         setGenerating(true)
 
