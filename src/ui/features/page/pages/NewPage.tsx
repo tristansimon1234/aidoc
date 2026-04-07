@@ -75,11 +75,12 @@ export function NewPage(): React.ReactElement {
         <Field
           label="goal"
           multiline
-          placeholder="What should this page document?"
+          placeholder="e.g. Document how a new user creates an account, verifies their email, and completes onboarding"
           value={goal}
           onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setGoal(e.target.value)}
           rows={3}
         />
+        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '-12px 0 0' }}>Be specific — the agent uses this to decide what to explore and document.</p>
 
         {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)' }}>{error}</p>}
 

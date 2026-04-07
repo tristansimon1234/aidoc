@@ -291,6 +291,9 @@ export function PageView(): React.ReactElement {
 
           {/* Briefing config */}
           <div className={styles.section}>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-md)', lineHeight: 1.5 }}>
+              Brief the agent before exploring. The more precise your briefing, the better the documentation — and the less you'll need to re-run.
+            </p>
             <input
               type="text"
               value={page.goal ?? ''}
@@ -332,9 +335,17 @@ export function PageView(): React.ReactElement {
           {/* Action button */}
           {!exploring && !generating && (
             <div className={styles.actions}>
-              <Button onClick={() => void handleNewExploration()}>
+              <Button
+                variant={page.briefing?.objective ? undefined : 'secondary'}
+                onClick={() => void handleNewExploration()}
+              >
                 {latestRun ? 'Re-explore' : 'Explore & Document'}
               </Button>
+              {!page.briefing?.objective && (
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                  Add an objective for better results
+                </span>
+              )}
             </div>
           )}
 
@@ -445,6 +456,7 @@ function BriefingEditor({
   onChange: (briefing: PageBriefingDTO) => void
 }): React.ReactElement {
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [showExample, setShowExample] = useState(false)
 
   const update = (partial: Partial<PageBriefingDTO>): void => {
     onChange({ ...briefing, ...partial })
@@ -473,11 +485,11 @@ function BriefingEditor({
 
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
     if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) {
-      setUploadError(`Type non supporté. Formats acceptés : ${ALLOWED_FILE_EXTENSIONS.join(', ')}`)
+      setUploadError(`Unsupported file type. Accepted: ${ALLOWED_FILE_EXTENSIONS.join(', ')}`)
       return
     }
     if (file.size > MAX_FILE_SIZE) {
-      setUploadError('Fichier trop volumineux (max 500KB)')
+      setUploadError('File too large (max 500KB)')
       return
     }
 
@@ -502,32 +514,73 @@ function BriefingEditor({
 
   const labelStyle: React.CSSProperties = {
     fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-    color: 'var(--color-text-muted)', marginBottom: '2px',
+    color: 'var(--color-text-muted)', margin: 0,
+  }
+
+  const helpStyle: React.CSSProperties = {
+    fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+    margin: '2px 0 var(--space-xs)', lineHeight: 1.4,
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
       <div>
-        <p style={labelStyle}>objective</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+          <p style={labelStyle}>objective</p>
+          <button
+            type="button"
+            onClick={() => setShowExample(!showExample)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            {showExample ? 'hide' : 'see example'}
+          </button>
+        </div>
+        <p style={helpStyle}>
+          What should the user learn from this page? Be specific — &quot;Document the checkout flow step by step&quot; works better than &quot;Document checkout&quot;.
+        </p>
+        {showExample && (
+          <div style={{
+            fontSize: 'var(--text-xs)', lineHeight: 1.5,
+            padding: 'var(--space-sm)', marginBottom: 'var(--space-xs)',
+            backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)',
+          }}>
+            <p style={{ color: 'var(--color-accent-red)', margin: '0 0 4px' }}>
+              Bad: &quot;Document pricing&quot;
+            </p>
+            <p style={{ color: 'var(--color-accent-green)', margin: 0 }}>
+              Good: &quot;Document the pricing page: compare plans, show the upgrade flow from free to pro, and explain what happens when the trial expires&quot;
+            </p>
+          </div>
+        )}
         <textarea
           value={briefing.objective}
           onChange={(e) => update({ objective: e.target.value })}
-          placeholder="Que doit documenter cette page ? Quel objectif utilisateur ?"
+          placeholder="e.g. Document how a new user creates an account, verifies their email, and completes onboarding"
           rows={2}
           style={fieldStyle}
         />
       </div>
       <div>
         <p style={labelStyle}>knowledge</p>
+        <p style={helpStyle}>
+          What can&apos;t the agent figure out by looking at the UI? Business rules, edge cases, hidden behaviors.
+        </p>
         <textarea
           value={briefing.knowledge}
           onChange={(e) => update({ knowledge: e.target.value })}
-          placeholder="Comportements non-évidents, règles métier, pièges..."
+          placeholder="e.g. Free trial users can't access the billing page. The 'Export' button only appears after 3 entries are created."
           rows={2}
           style={fieldStyle}
         />
       </div>
       <div>
+        <p style={helpStyle}>
+          Files the agent can upload into the app, or reference links. Add credentials at the project level in Settings.
+        </p>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={labelStyle}>resources</p>
           <button

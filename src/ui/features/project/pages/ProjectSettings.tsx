@@ -102,29 +102,32 @@ export function ProjectSettings(): React.ReactElement {
           <Field
             label="audience"
             multiline
-            placeholder="Qui utilise ce produit et pour quoi faire ?"
+            placeholder="e.g. SaaS product managers who need to track feature adoption"
             value={context.audience}
             onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, audience: e.target.value })}
             rows={2}
           />
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '-12px 0 0' }}>Who uses this product and what do they use it for?</p>
 
           <Field
             label="workflow"
             multiline
-            placeholder="Quel est le workflow le plus important ?"
+            placeholder="e.g. User creates a project, adds team members, sets up integrations, runs first report"
             value={context.workflow}
             onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, workflow: e.target.value })}
             rows={2}
           />
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '-12px 0 0' }}>What is the most important user journey?</p>
 
           <Field
             label="quirks"
             multiline
-            placeholder="Y a-t-il des termes ou comportements non-évidents ?"
+            placeholder="e.g. 'Workspace' means a team account. The 'Archive' button is hidden until 5+ items exist."
             value={context.quirks}
             onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, quirks: e.target.value })}
             rows={2}
           />
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '-12px 0 0' }}>Non-obvious terms, hidden behaviors, or domain-specific knowledge the agent won&apos;t guess from the UI.</p>
 
           {/* Credentials */}
           <div style={{
