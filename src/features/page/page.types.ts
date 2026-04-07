@@ -14,6 +14,16 @@ export interface PageBriefing {
   resources: PageResource[]
 }
 
+export interface PageResourceWithContent extends PageResource {
+  content?: string
+}
+
+export interface PageBriefingWithContent {
+  objective: string
+  knowledge: string
+  resources: PageResourceWithContent[]
+}
+
 export interface DocPage {
   id: string
   projectId: string

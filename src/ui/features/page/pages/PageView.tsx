@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { type ChangeEvent, useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useOutletContext, useNavigate } from 'react-router-dom'
 import {
   Button,
@@ -9,6 +9,7 @@ import {
   EmptyState,
 } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO } from '../../../shared/api/client.js'
+import { supabase } from '../../../shared/api/supabase.js'
 import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
 
 interface PageContext {
@@ -185,14 +186,30 @@ export function PageView(): React.ReactElement {
     abortRef.current?.abort()
   }
 
-  // Debounced page metadata update (title, goal, startUrl, customPrompt)
+  // Debounced page metadata update — flushes on unmount to prevent data loss
   const pageUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingUpdatesRef = useRef<Record<string, unknown> | null>(null)
   const debouncedPageUpdate = useCallback((updates: Record<string, unknown>) => {
     if (!projectId || !pageId) return
+    pendingUpdatesRef.current = { ...(pendingUpdatesRef.current ?? {}), ...updates }
     if (pageUpdateTimeoutRef.current) clearTimeout(pageUpdateTimeoutRef.current)
     pageUpdateTimeoutRef.current = setTimeout(() => {
-      void api.pages.update(projectId, pageId, updates)
+      if (pendingUpdatesRef.current) {
+        void api.pages.update(projectId, pageId, pendingUpdatesRef.current)
+        pendingUpdatesRef.current = null
+      }
     }, 1000)
+  }, [projectId, pageId])
+
+  // Flush pending updates when navigating away or changing page
+  useEffect(() => {
+    return () => {
+      if (pageUpdateTimeoutRef.current) clearTimeout(pageUpdateTimeoutRef.current)
+      if (pendingUpdatesRef.current && projectId && pageId) {
+        void api.pages.update(projectId, pageId, pendingUpdatesRef.current)
+        pendingUpdatesRef.current = null
+      }
+    }
   }, [projectId, pageId])
 
   const handleSaveContent = async (markdown: string): Promise<void> => {
@@ -275,6 +292,7 @@ export function PageView(): React.ReactElement {
           />
           <BriefingEditor
             briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
+            pageId={pageId!}
             onChange={(briefing) => {
               setPage({ ...page, briefing })
               void debouncedPageUpdate({ briefing })
@@ -408,14 +426,20 @@ function hasSelfAssessment(json: Record<string, unknown>): boolean {
 // --- Briefing Editor ---
 
 const RESOURCE_TYPES: PageResourceDTO['type'][] = ['url', 'credential', 'endpoint', 'file', 'note']
+const ALLOWED_FILE_EXTENSIONS = ['.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml']
+const MAX_FILE_SIZE = 500 * 1024 // 500KB
 
 function BriefingEditor({
   briefing,
+  pageId,
   onChange,
 }: {
   briefing: PageBriefingDTO
+  pageId: string
   onChange: (briefing: PageBriefingDTO) => void
 }): React.ReactElement {
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
   const update = (partial: Partial<PageBriefingDTO>): void => {
     onChange({ ...briefing, ...partial })
   }
@@ -434,6 +458,34 @@ function BriefingEditor({
 
   const removeResource = (index: number): void => {
     update({ resources: briefing.resources.filter((_, i) => i !== index) })
+  }
+
+  const handleFileUpload = async (index: number, e: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploadError(null)
+
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+    if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) {
+      setUploadError(`Type non supporté. Formats acceptés : ${ALLOWED_FILE_EXTENSIONS.join(', ')}`)
+      return
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setUploadError('Fichier trop volumineux (max 500KB)')
+      return
+    }
+
+    const path = `pages/${pageId}/${file.name}`
+    const { error } = await supabase.storage.from('briefing-files').upload(path, file, { upsert: true })
+    if (error) {
+      setUploadError(`Upload failed: ${error.message}`)
+      return
+    }
+
+    const updated = briefing.resources.map((r, i) =>
+      i === index ? { ...r, value: path, label: r.label || file.name } : r,
+    )
+    update({ resources: updated })
   }
 
   const fieldStyle: React.CSSProperties = {
@@ -484,6 +536,9 @@ function BriefingEditor({
             + add
           </button>
         </div>
+        {uploadError && (
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-red)', margin: '0 0 var(--space-xs)' }}>{uploadError}</p>
+        )}
         {briefing.resources.map((r, i) => (
           <div key={i} style={{
             display: 'grid', gridTemplateColumns: 'auto 1fr 2fr auto',
@@ -508,13 +563,28 @@ function BriefingEditor({
               placeholder="label"
               style={{ ...fieldStyle, minHeight: 'unset', padding: '4px 0' }}
             />
-            <input
-              type="text"
-              value={r.value}
-              onChange={(e) => updateResource(i, 'value', e.target.value)}
-              placeholder="value"
-              style={{ ...fieldStyle, minHeight: 'unset', padding: '4px 0' }}
-            />
+            {r.type === 'file' ? (
+              r.value ? (
+                <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)', padding: '4px 0' }}>
+                  {r.value.split('/').pop()}
+                </span>
+              ) : (
+                <input
+                  type="file"
+                  accept={ALLOWED_FILE_EXTENSIONS.join(',')}
+                  onChange={(e) => void handleFileUpload(i, e)}
+                  style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', padding: '4px 0' }}
+                />
+              )
+            ) : (
+              <input
+                type="text"
+                value={r.value}
+                onChange={(e) => updateResource(i, 'value', e.target.value)}
+                placeholder="value"
+                style={{ ...fieldStyle, minHeight: 'unset', padding: '4px 0' }}
+              />
+            )}
             <button
               type="button"
               onClick={() => removeResource(i)}

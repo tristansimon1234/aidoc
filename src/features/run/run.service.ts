@@ -7,7 +7,7 @@ import * as questionRepo from '../../features/questions/questions.repository.js'
 import { generateAndSaveDoc } from '../documentation/documentation.service.js'
 import type { DocDeps } from '../documentation/documentation.service.js'
 import type { GeneratedDoc } from '../documentation/documentation.types.js'
-import type { PageBriefing } from '../page/page.types.js'
+import type { PageBriefingWithContent } from '../page/page.types.js'
 import type { ProjectContext } from '../project/project.types.js'
 
 function buildRunDeps(): RunDeps {
@@ -49,7 +49,7 @@ async function getProjectAwareness(docPageId: string): Promise<{
   tableOfContents: string | undefined
   credentials: { label: string; username: string; password: string }[] | undefined
   customPrompt: string | undefined
-  briefing: PageBriefing | undefined
+  briefing: PageBriefingWithContent | undefined
   existingPageSummaries: { title: string; slug: string; contentPreview: string }[] | undefined
 }> {
   const { findPageById, findPagesByProjectId } = await import('../page/page.repository.js')
@@ -97,8 +97,35 @@ async function getProjectAwareness(docPageId: string): Promise<{
     tableOfContents: toc || undefined,
     credentials: project.credentials ?? undefined,
     customPrompt: page.customPrompt ?? undefined,
-    briefing: page.briefing ?? undefined,
+    briefing: await enrichBriefingWithFileContents(page.briefing),
     existingPageSummaries: summaries.length > 0 ? summaries : undefined,
+  }
+}
+
+async function enrichBriefingWithFileContents(
+  briefing: import('../page/page.types.js').PageBriefing | null,
+): Promise<PageBriefingWithContent | undefined> {
+  if (!briefing) return undefined
+
+  const { supabase } = await import('../../shared/db/supabase.client.js')
+  const enrichedResources = await Promise.all(
+    briefing.resources.map(async (r) => {
+      if (r.type !== 'file' || !r.value) return r
+      try {
+        const { data, error } = await supabase.storage.from('briefing-files').download(r.value)
+        if (error || !data) return r
+        const text = await data.text()
+        return { ...r, content: text.slice(0, 4000) }
+      } catch {
+        return r
+      }
+    }),
+  )
+
+  return {
+    objective: briefing.objective,
+    knowledge: briefing.knowledge,
+    resources: enrichedResources,
   }
 }
 

@@ -6,7 +6,7 @@ import {
 import { STAGEHAND_MODEL } from '../../shared/ai/anthropic.client.js'
 import * as explorationBrowser from './exploration.browser.js'
 import type { AgentActionRecord, StepEvent, ExplorationSummary, ExplorationBlocker } from './exploration.types.js'
-import type { PageBriefing } from '../page/page.types.js'
+import type { PageBriefingWithContent, PageResourceWithContent } from '../page/page.types.js'
 
 // In-memory cancellation signal — same process handles exploration + cancel request
 const cancelledRuns = new Set<string>()
@@ -49,7 +49,7 @@ export interface ExploreOptions {
   tableOfContents?: string
   credentials?: { label: string; username: string; password: string }[]
   customPrompt?: string
-  briefing?: PageBriefing
+  briefing?: PageBriefingWithContent
   onEvent?: (event: StepEvent) => void
 }
 
@@ -137,7 +137,15 @@ Use these credentials to log in when you encounter a login page. The values are 
       if (b.objective) briefingBlock += `\n\n## Page Objective\n${b.objective}`
       if (b.knowledge) briefingBlock += `\n\n## Domain Knowledge\n${b.knowledge}`
       if (b.resources.length > 0) {
-        briefingBlock += `\n\n## Resources\n${b.resources.map((r) => `- [${r.type}] ${r.label}: ${r.value}`).join('\n')}`
+        const resourceBlocks = b.resources.map((r) => {
+          const res = r as PageResourceWithContent
+          if (res.type === 'file' && res.content) {
+            const ext = res.value.split('.').pop() ?? ''
+            return `### [file] ${res.label}\n\`\`\`${ext}\n${res.content}\n\`\`\``
+          }
+          return `- [${res.type}] ${res.label}: ${res.value}`
+        })
+        briefingBlock += `\n\n## Resources\n${resourceBlocks.join('\n\n')}`
       }
     } else if (options?.customPrompt) {
       briefingBlock = `\n\n## Custom Instructions from User\n${options.customPrompt}`
