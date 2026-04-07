@@ -43,16 +43,9 @@ export function PageView(): React.ReactElement {
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
     try {
-      // Fetch page, latest run, and page-level doc all in parallel
-      const [pageData, runData, pageDoc] = await Promise.all([
-        api.pages.get(projectId, pageId),
-        api.pages.latestRun(projectId, pageId),
-        api.pages.doc(projectId, pageId).catch(() => null),
-      ])
+      // Single call fetches page + latest run + doc
+      const { page: pageData, latestRun: runData, doc: docData } = await api.pages.full(projectId, pageId)
       setPage(pageData)
-
-      // If no page-level doc, try run-level doc (only one extra call if needed)
-      const docData = pageDoc ?? (runData ? await api.runs.doc(runData.id).catch(() => null) : null)
       setDoc(docData)
       setLatestRun(runData)
 

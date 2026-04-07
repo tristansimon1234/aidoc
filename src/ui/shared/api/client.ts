@@ -154,6 +154,8 @@ export const api = {
     list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
     get: (projectId: string, pageId: string): Promise<DocPageDTO> =>
       request(`/projects/${projectId}/pages/${pageId}`),
+    full: (projectId: string, pageId: string): Promise<{ page: DocPageDTO; latestRun: RunDTO | null; doc: GeneratedDocDTO | null }> =>
+      request(`/projects/${projectId}/pages/${pageId}/full`),
     create: (projectId: string, body: { title: string; slug: string; parentId?: string; startUrl?: string; goal?: string }): Promise<DocPageDTO> =>
       request(`/projects/${projectId}/pages`, { method: 'POST', body: JSON.stringify(body) }),
     update: (projectId: string, pageId: string, body: Record<string, unknown>): Promise<DocPageDTO> =>
