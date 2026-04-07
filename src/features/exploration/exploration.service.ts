@@ -134,8 +134,9 @@ Use these credentials to log in when you encounter a login page. The values are 
     let briefingBlock = ''
     if (options?.briefing) {
       const b = options.briefing
-      if (b.objective) briefingBlock += `\n\n## Page Objective\n${b.objective}`
-      if (b.knowledge) briefingBlock += `\n\n## Domain Knowledge\n${b.knowledge}`
+      const parts: string[] = []
+      if (b.objective) parts.push(`**YOUR OBJECTIVE**: ${b.objective}`)
+      if (b.knowledge) parts.push(`**IMPORTANT CONTEXT — read carefully before exploring**:\n${b.knowledge}`)
       if (b.resources.length > 0) {
         const resourceBlocks = b.resources.map((r) => {
           const res = r as PageResourceWithContent
@@ -145,8 +146,9 @@ Use these credentials to log in when you encounter a login page. The values are 
           }
           return `- [${res.type}] ${res.label}: ${res.value}`
         })
-        briefingBlock += `\n\n## Resources\n${resourceBlocks.join('\n\n')}`
+        parts.push(`**Reference materials**:\n${resourceBlocks.join('\n\n')}`)
       }
+      briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
     } else if (options?.customPrompt) {
       briefingBlock = `\n\n## Custom Instructions from User\n${options.customPrompt}`
     }
@@ -156,7 +158,7 @@ Use these credentials to log in when you encounter a login page. The values are 
 Feature: ${run.featureName}
 Goal: ${run.goal}
 Start URL: ${run.startUrl}
-${isResuming ? `\nYou are RESUMING a previous exploration. The browser has been navigated to ${run.startUrl}. Focus on sections you haven't explored yet.` : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}${briefingBlock}
+${isResuming ? `\nYou are RESUMING a previous exploration. The browser has been navigated to ${run.startUrl}. Focus on sections you haven't explored yet.` : ''}${briefingBlock}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}
 
 Instructions:
 - You are now on ${run.startUrl} — start exploring from here
