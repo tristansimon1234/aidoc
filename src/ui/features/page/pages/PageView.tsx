@@ -175,7 +175,7 @@ export function PageView(): React.ReactElement {
     }
   }
 
-  const handleNewExploration = async (): Promise<void> => {
+  const handleNewExploration = async (mode: 'complete' | 'replace' = 'replace'): Promise<void> => {
     if (!projectId || !pageId || !page) return
     const startUrl = page.startUrl ?? context.project.baseUrl
     const run = await api.runs.create({
@@ -185,8 +185,14 @@ export function PageView(): React.ReactElement {
       docPageId: pageId,
     })
     await dbUpdatePage(projectId, pageId, { status: 'exploring' })
-    const customPrompt = (page as DocPageDTO & { customPrompt?: string | null }).customPrompt ?? undefined
-    await runExploration(run.id, customPrompt)
+
+    // In "complete" mode, pass existing doc as context so the agent fills gaps
+    let exploreContext: string | undefined
+    if (mode === 'complete' && page.content) {
+      exploreContext = `## Existing Documentation (DO NOT repeat — focus on gaps and missing sections)\n\n${page.content.slice(0, 4000)}`
+    }
+
+    await runExploration(run.id, exploreContext)
   }
 
   const handleCancel = async (): Promise<void> => {
@@ -335,12 +341,29 @@ export function PageView(): React.ReactElement {
           {/* Action button */}
           {!exploring && !generating && (
             <div className={styles.actions}>
-              <Button
-                variant={page.briefing?.objective ? undefined : 'secondary'}
-                onClick={() => void handleNewExploration()}
-              >
-                {latestRun ? 'Re-explore' : 'Explore & Document'}
-              </Button>
+              {latestRun && page.content ? (
+                <>
+                  <Button
+                    variant={page.briefing?.objective ? undefined : 'secondary'}
+                    onClick={() => void handleNewExploration('complete')}
+                  >
+                    Complete documentation
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => void handleNewExploration('replace')}
+                  >
+                    Start from scratch
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant={page.briefing?.objective ? undefined : 'secondary'}
+                  onClick={() => void handleNewExploration('replace')}
+                >
+                  Explore & Document
+                </Button>
+              )}
               {!page.briefing?.objective && (
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
                   Add an objective for better results
@@ -408,7 +431,7 @@ export function PageView(): React.ReactElement {
                   setError((err as Error).message)
                 }
               }}
-              onReExplore={() => handleNewExploration()}
+              onReExplore={() => handleNewExploration('replace')}
             />
           )}
 
