@@ -1,0 +1,7 @@
+{
+  "mustMention": ["workspace", "settings", "members", "role"],
+  "mustNotMention": ["error occurred", "could not access"],
+  "minSections": 2,
+  "language": "en",
+  "minCompleteness": 40
+}

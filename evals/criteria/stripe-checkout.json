@@ -1,0 +1,7 @@
+{
+  "mustMention": ["checkout", "payment", "plan", "pricing", "test mode", "dashboard"],
+  "mustNotMention": ["error occurred", "could not access"],
+  "minSections": 3,
+  "language": "en",
+  "minCompleteness": 40
+}
