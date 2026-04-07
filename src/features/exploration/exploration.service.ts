@@ -64,14 +64,15 @@ export async function exploreRun(
   const emit = options?.onEvent ?? (() => {})
 
   // Safety timeout: must finish before Vercel kills the function (maxDuration: 300s)
-  const SAFETY_TIMEOUT_MS = 300_000
-  const startTime = Date.now()
+  // Start timer AFTER browser launch (~20s) so the agent gets the full budget
+  const SAFETY_TIMEOUT_MS = 270_000
 
   await deps.updateRunStatus(runId, 'running')
   emit({ type: 'status', message: 'Launching browser...' })
 
   const isResuming = run.browserbaseSessionId !== null
   const session = await launchBrowser(run.browserbaseSessionId ?? undefined)
+  const startTime = Date.now() // Start timer after browser launch
 
   try {
     const sessionId = getSessionId(session)
