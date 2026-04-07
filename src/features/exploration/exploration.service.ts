@@ -147,6 +147,12 @@ Use these credentials to log in when you encounter a login page. The values are 
           return `- [${res.type}] ${res.label}: ${res.value}`
         })
         parts.push(`**Reference materials**:\n${resourceBlocks.join('\n\n')}`)
+
+        // Tell the agent about uploadable files
+        const uploadableFiles = b.resources.filter((r) => r.type === 'file' && (r as PageResourceWithContent).fileBuffer)
+        if (uploadableFiles.length > 0) {
+          parts.push(`**Files available for upload**: ${uploadableFiles.map((f) => f.label || f.value.split('/').pop()).join(', ')}. When you encounter a file upload input in the application, click it — the file will be provided automatically.`)
+        }
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
       console.log(`[exploration] Briefing injected: objective=${b.objective ? 'yes' : 'no'}, knowledge=${b.knowledge ? 'yes' : 'no'}, resources=${b.resources.length} (files with content: ${b.resources.filter((r) => (r as PageResourceWithContent).content).length})`)
@@ -187,6 +193,51 @@ When to call done:
 - You've captured the key user flows and interactions
 - You're running low on actions (~40+)
 - OR you are blocked and cannot proceed further`
+
+    // Make briefing files available for upload via CDP file chooser interception
+    const briefingFiles = (options?.briefing?.resources ?? [])
+      .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
+        r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
+      )
+
+    if (briefingFiles.length > 0) {
+      const activePage = session.context.activePage()
+      const firstFile = briefingFiles[0]
+      if (activePage && firstFile) {
+        const base64 = firstFile.fileBuffer.toString('base64')
+        await activePage.evaluate(
+          ({ b64, name }: { b64: string; name: string }) => {
+            // Store file data globally for file input auto-fill
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const w = window as any
+            w.__aidocFile = { b64, name }
+
+            const fillFileInputs = (): void => {
+              document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => {
+                if (input.dataset.aidocFilled) return
+                input.dataset.aidocFilled = 'true'
+                input.addEventListener('click', (e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const stored = w.__aidocFile as { b64: string; name: string }
+                  const bytes = Uint8Array.from(atob(stored.b64), (c) => c.charCodeAt(0))
+                  const f = new File([bytes], stored.name, { type: 'application/octet-stream' })
+                  const dt = new DataTransfer()
+                  dt.items.add(f)
+                  input.files = dt.files
+                  input.dispatchEvent(new Event('change', { bubbles: true }))
+                }, { once: true })
+              })
+            }
+
+            fillFileInputs()
+            new MutationObserver(fillFileInputs).observe(document.body, { childList: true, subtree: true })
+          },
+          { b64: base64, name: firstFile.fileName },
+        )
+        console.log(`[exploration] File upload helper injected: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
+      }
+    }
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
 

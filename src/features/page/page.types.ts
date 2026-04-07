@@ -16,6 +16,8 @@ export interface PageBriefing {
 
 export interface PageResourceWithContent extends PageResource {
   content?: string
+  fileBuffer?: Buffer
+  fileName?: string
 }
 
 export interface PageBriefingWithContent {
