@@ -1,0 +1,158 @@
+/* Tab bar — Linear-style minimal underline navigation */
+.tabBar {
+  display: flex;
+  gap: var(--space-lg);
+  border-bottom: 1px solid var(--color-border-subtle);
+  margin-bottom: var(--space-lg);
+}
+
+.tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.tab:hover {
+  color: var(--color-text-secondary);
+}
+
+.tabActive {
+  color: var(--color-text-primary);
+}
+
+.tabActive::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--color-accent-blue);
+  border-radius: 1px;
+}
+
+/* Tab content fade-in */
+.tabContent {
+  animation: tabFadeIn 0.15s ease;
+}
+
+@keyframes tabFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Page title — Documentation tab */
+.pageTitle {
+  background: none;
+  border: none;
+  outline: none;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  width: 100%;
+  font-family: var(--font-sans);
+  margin-bottom: var(--space-md);
+}
+
+/* Dashboard sections — Exploration tab */
+.section {
+  padding: var(--space-md);
+  background-color: var(--color-bg-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-md);
+}
+
+.sectionLabel {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  margin: 0 0 var(--space-sm);
+}
+
+/* Session replay */
+.replayContainer {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+}
+
+.replayHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-xs) var(--space-md);
+  background-color: var(--color-bg-surface);
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.replayIframe {
+  width: 100%;
+  height: 450px;
+  border: none;
+  display: block;
+  background-color: var(--color-bg-elevated);
+}
+
+/* Live feed */
+.liveFeedHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.liveFeedStatus {
+  font-size: var(--text-sm);
+  flex: 1;
+}
+
+.stepsLog {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+.stepRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background-color: var(--color-bg-surface);
+  font-size: var(--text-sm);
+}
+
+.stepIndex {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  min-width: 20px;
+  padding-top: 2px;
+}
+
+.stepAction {
+  color: var(--color-text-primary);
+  line-height: 1.4;
+}
+
+/* Action bar */
+.actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+}

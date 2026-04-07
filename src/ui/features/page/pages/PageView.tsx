@@ -12,6 +12,7 @@ import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDT
 import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
+import styles from './PageView.module.css'
 
 interface PageContext {
   project: ProjectDTO
@@ -40,6 +41,7 @@ export function PageView(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration'>('doc')
 
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
@@ -220,6 +222,11 @@ export function PageView(): React.ReactElement {
     }
   }, [projectId, pageId])
 
+  // Auto-switch to exploration tab when agent is active
+  useEffect(() => {
+    if (exploring || generating) setActiveTab('exploration')
+  }, [exploring, generating])
+
   const handleSaveContent = async (markdown: string): Promise<void> => {
     if (!projectId || !pageId) return
     await dbUpdatePage(projectId, pageId, { content: markdown })
@@ -234,175 +241,42 @@ export function PageView(): React.ReactElement {
     published: 'completed',
   }
 
-  const canContinue = latestRun &&
-    (latestRun.status === 'blocked' || latestRun.status === 'failed') &&
-    !exploring && !generating
-
   return (
     <div>
-      {/* Page header — editable inline */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-xs)' }}>
+      {/* Header — status + tab bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-sm)' }}>
         <StatusIndicator status={statusMap[page.status] ?? 'pending'} label={page.status} />
         {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
       </div>
 
-      {/* Editable page settings */}
-      {!exploring && !generating && (
-        <div style={{
-          padding: 'var(--space-md)',
-          backgroundColor: 'var(--color-bg-surface)',
-          border: '1px solid var(--color-border-subtle)',
-          borderRadius: 'var(--radius-lg)',
-          marginBottom: 'var(--space-md)',
-          display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)',
-        }}>
+      <div className={styles.tabBar}>
+        <button
+          className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`}
+          onClick={() => setActiveTab('doc')}
+        >
+          Documentation
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`}
+          onClick={() => setActiveTab('exploration')}
+        >
+          Exploration
+          {(exploring || generating) && <Spinner size="sm" />}
+        </button>
+      </div>
+
+      {/* ===== DOCUMENTATION TAB ===== */}
+      {activeTab === 'doc' && (
+        <div className={styles.tabContent}>
           <input
+            className={styles.pageTitle}
             type="text"
             value={page.title}
             onChange={(e) => {
               setPage({ ...page, title: e.target.value })
               void debouncedPageUpdate({ title: e.target.value })
             }}
-            style={{
-              background: 'none', border: 'none', outline: 'none',
-              fontSize: 'var(--text-xl)', fontWeight: 600,
-              color: 'var(--color-text-primary)', width: '100%',
-              fontFamily: 'var(--font-sans)',
-            }}
           />
-          <input
-            type="text"
-            value={page.goal ?? ''}
-            onChange={(e) => {
-              setPage({ ...page, goal: e.target.value })
-              void debouncedPageUpdate({ goal: e.target.value })
-            }}
-            placeholder="Goal: what should this page document?"
-            style={{
-              background: 'none', border: 'none', outline: 'none',
-              fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
-              width: '100%', fontFamily: 'var(--font-sans)',
-            }}
-          />
-          <input
-            type="text"
-            value={page.startUrl ?? ''}
-            onChange={(e) => {
-              setPage({ ...page, startUrl: e.target.value })
-              void debouncedPageUpdate({ startUrl: e.target.value })
-            }}
-            placeholder="Start URL for exploration (e.g. /pricing)"
-            style={{
-              background: 'none', border: 'none', outline: 'none',
-              fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-              color: 'var(--color-text-muted)', width: '100%',
-            }}
-          />
-          <BriefingEditor
-            briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
-            pageId={pageId!}
-            onChange={(briefing) => {
-              setPage({ ...page, briefing })
-              void debouncedPageUpdate({ briefing })
-            }}
-          />
-        </div>
-      )}
-
-      {/* Exploration Assistant — shows after any exploration */}
-      {!exploring && !generating && latestRun && (
-        <ExplorationAssistant
-          run={latestRun}
-          onContinue={async (context) => {
-            if (!latestRun || !projectId || !pageId) return
-            await dbUpdatePage(projectId, pageId, { status: 'exploring' })
-            await runExploration(latestRun.id, context)
-          }}
-          onSkipAndGenerate={async () => {
-            if (!latestRun) return
-            try {
-              const generatedDoc = await api.runs.generateDoc(latestRun.id)
-              setDoc(generatedDoc)
-              if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
-              await fetchData()
-              await context.refetchPages()
-            } catch (err) {
-              setError((err as Error).message)
-            }
-          }}
-          onReExplore={() => handleNewExploration()}
-        />
-      )}
-
-      {/* Action buttons — only for pages that have never been explored */}
-      {!exploring && !generating && !latestRun && (
-        <div style={{ display: 'flex', gap: 'var(--space-sm)', margin: 'var(--space-sm) 0 var(--space-lg)', flexWrap: 'wrap' }}>
-          <Button onClick={() => void handleNewExploration()}
-          >
-            {doc ? 'Re-explore from scratch' : canContinue ? 'Start fresh' : 'Explore & Document'}
-          </Button>
-        </div>
-      )}
-
-      {/* Live exploration feed */}
-      {(exploring || generating) && (
-        <div style={{ margin: 'var(--space-lg) 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
-            <Spinner size="sm" />
-            <span style={{ color: generating ? 'var(--color-accent-green)' : 'var(--color-accent-blue)', fontSize: 'var(--text-sm)', flex: 1 }}>
-              {statusMessage}
-            </span>
-            {exploring && !generating && (
-              <Button size="sm" variant="ghost" onClick={() => void handleCancel()}>
-                Stop
-              </Button>
-            )}
-          </div>
-
-          {liveUrl && (
-            <div style={{
-              marginBottom: 'var(--space-md)', borderRadius: 'var(--radius-lg)',
-              overflow: 'hidden', border: '1px solid var(--color-border-default)',
-            }}>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-                padding: 'var(--space-xs) var(--space-md)',
-                backgroundColor: 'var(--color-bg-surface)', borderBottom: '1px solid var(--color-border-subtle)',
-              }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: 'var(--radius-full)', backgroundColor: 'var(--color-accent-green)', animation: 'pulse 2s infinite' }} />
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Live browser</span>
-              </div>
-              <iframe src={liveUrl} title="Live browser" style={{ width: '100%', height: '400px', border: 'none', display: 'block' }} />
-            </div>
-          )}
-
-          {liveSteps.length > 0 && (
-            <div style={{
-              display: 'flex', flexDirection: 'column', gap: '2px',
-              borderRadius: 'var(--radius-lg)',
-              overflow: 'hidden', maxHeight: '250px', overflowY: 'auto',
-            }}>
-              {liveSteps.map((ls, i) => (
-                <div key={i} style={{
-                  display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)',
-                  padding: 'var(--space-sm) var(--space-md)',
-                  backgroundColor: 'var(--color-bg-surface)',
-                  fontSize: 'var(--text-sm)',
-                }}>
-                  <span style={{ color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', minWidth: '20px', paddingTop: '2px' }}>{ls.stepIndex + 1}</span>
-                  <span style={{ color: 'var(--color-text-primary)', lineHeight: 1.4 }}>{ls.action}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {error && <EmptyState title="Error" description={error} />}
-
-      {/* Block Editor — always visible, always editable (like Notion) */}
-      {!exploring && !generating && (
-        <div style={{ marginTop: 'var(--space-lg)' }}>
           <BlockEditor
             key={`${pageId}-${page.content ? 'has-content' : 'empty'}-${doc?.id ?? 'no-doc'}`}
             content={page.content ?? ''}
@@ -411,18 +285,142 @@ export function PageView(): React.ReactElement {
         </div>
       )}
 
-      {/* Self-assessment + actionable suggestions */}
-      {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && !exploring && !generating && (
-        <SuggestionsPanel
-          assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment}
-          projectId={projectId!}
-          onPageCreated={async () => {
-            await fetchData()
-            await context.refetchPages()
-          }}
-        />
-      )}
+      {/* ===== EXPLORATION TAB ===== */}
+      {activeTab === 'exploration' && (
+        <div className={styles.tabContent}>
 
+          {/* Briefing config */}
+          <div className={styles.section}>
+            <input
+              type="text"
+              value={page.goal ?? ''}
+              onChange={(e) => {
+                setPage({ ...page, goal: e.target.value })
+                void debouncedPageUpdate({ goal: e.target.value })
+              }}
+              placeholder="Goal: what should this page document?"
+              style={{
+                background: 'none', border: 'none', outline: 'none', width: '100%',
+                fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
+                fontFamily: 'var(--font-sans)', marginBottom: 'var(--space-sm)',
+              }}
+            />
+            <input
+              type="text"
+              value={page.startUrl ?? ''}
+              onChange={(e) => {
+                setPage({ ...page, startUrl: e.target.value })
+                void debouncedPageUpdate({ startUrl: e.target.value })
+              }}
+              placeholder="Start URL (e.g. /pricing)"
+              style={{
+                background: 'none', border: 'none', outline: 'none', width: '100%',
+                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+                color: 'var(--color-text-muted)', marginBottom: 'var(--space-sm)',
+              }}
+            />
+            <BriefingEditor
+              briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
+              pageId={pageId!}
+              onChange={(briefing) => {
+                setPage({ ...page, briefing })
+                void debouncedPageUpdate({ briefing })
+              }}
+            />
+          </div>
+
+          {/* Action button */}
+          {!exploring && !generating && (
+            <div className={styles.actions}>
+              <Button onClick={() => void handleNewExploration()}>
+                {latestRun ? 'Re-explore' : 'Explore & Document'}
+              </Button>
+            </div>
+          )}
+
+          {/* Live exploration feed */}
+          {(exploring || generating) && (
+            <div className={styles.section}>
+              <div className={styles.liveFeedHeader}>
+                <Spinner size="sm" />
+                <span className={styles.liveFeedStatus} style={{ color: generating ? 'var(--color-accent-green)' : 'var(--color-accent-blue)' }}>
+                  {statusMessage}
+                </span>
+                {exploring && !generating && (
+                  <Button size="sm" variant="ghost" onClick={() => void handleCancel()}>Stop</Button>
+                )}
+              </div>
+
+              {liveUrl && (
+                <div className={styles.replayContainer} style={{ marginBottom: 'var(--space-md)' }}>
+                  <div className={styles.replayHeader}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: 'var(--radius-full)', backgroundColor: 'var(--color-accent-green)', animation: 'pulse 2s infinite' }} />
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>live</span>
+                    </span>
+                  </div>
+                  <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
+                </div>
+              )}
+
+              {liveSteps.length > 0 && (
+                <div className={styles.stepsLog}>
+                  {liveSteps.map((ls, i) => (
+                    <div key={i} className={styles.stepRow}>
+                      <span className={styles.stepIndex}>{ls.stepIndex + 1}</span>
+                      <span className={styles.stepAction}>{ls.action}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Exploration Assistant — post-exploration */}
+          {!exploring && !generating && latestRun && (
+            <ExplorationAssistant
+              run={latestRun}
+              onContinue={async (ctx) => {
+                if (!latestRun || !projectId || !pageId) return
+                await dbUpdatePage(projectId, pageId, { status: 'exploring' })
+                await runExploration(latestRun.id, ctx)
+              }}
+              onSkipAndGenerate={async () => {
+                if (!latestRun) return
+                try {
+                  const generatedDoc = await api.runs.generateDoc(latestRun.id)
+                  setDoc(generatedDoc)
+                  if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
+                  await fetchData()
+                  await context.refetchPages()
+                } catch (err) {
+                  setError((err as Error).message)
+                }
+              }}
+              onReExplore={() => handleNewExploration()}
+            />
+          )}
+
+          {/* Session replay — always available after exploration */}
+          {!exploring && latestRun?.browserbaseSessionId && (
+            <SessionReplay sessionId={latestRun.browserbaseSessionId} />
+          )}
+
+          {/* Suggestions */}
+          {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && !exploring && !generating && (
+            <SuggestionsPanel
+              assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment}
+              projectId={projectId!}
+              onPageCreated={async () => {
+                await fetchData()
+                await context.refetchPages()
+              }}
+            />
+          )}
+
+          {error && <EmptyState title="Error" description={error} />}
+        </div>
+      )}
     </div>
   )
 }
@@ -605,6 +603,38 @@ function BriefingEditor({
             </button>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// --- Session Replay ---
+
+function SessionReplay({ sessionId }: { sessionId: string }): React.ReactElement {
+  const replayUrl = `https://www.browserbase.com/sessions/${sessionId}`
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.replayHeader} style={{ border: 'none', padding: 0, marginBottom: 'var(--space-sm)', background: 'none' }}>
+        <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
+          session replay
+        </span>
+        <a
+          href={replayUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)', textDecoration: 'none' }}
+        >
+          Open in Browserbase
+        </a>
+      </div>
+      <div className={styles.replayContainer}>
+        <iframe
+          src={replayUrl}
+          title="Session replay"
+          className={styles.replayIframe}
+          allow="autoplay"
+        />
       </div>
     </div>
   )

@@ -219,6 +219,7 @@ function mapRun(row: Record<string, unknown>): RunDTO {
     goal: row.goal as string,
     status: row.status as RunDTO['status'],
     tokenUsage: row.token_usage as number,
+    browserbaseSessionId: (row.browserbase_session_id as string) ?? null,
     summaryJson: (row.summary_json as RunDTO['summaryJson']) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
