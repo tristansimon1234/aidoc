@@ -9,6 +9,7 @@ import {
   EmptyState,
 } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO } from '../../../shared/api/client.js'
+import { fetchPageFull } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
 
@@ -43,8 +44,8 @@ export function PageView(): React.ReactElement {
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
     try {
-      // Single call fetches page + latest run + doc
-      const { page: pageData, latestRun: runData, doc: docData } = await api.pages.full(projectId, pageId)
+      // Direct Supabase query — no Vercel cold start
+      const { page: pageData, latestRun: runData, doc: docData } = await fetchPageFull(pageId)
       setPage(pageData)
       setDoc(docData)
       setLatestRun(runData)

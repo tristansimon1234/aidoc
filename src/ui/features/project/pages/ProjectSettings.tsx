@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Field, Spinner } from '../../../design-system/components/index.js'
 import { api, type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
+import { fetchProject } from '../../../shared/api/db.js'
 
 interface Credential {
   label: string
@@ -25,7 +26,7 @@ export function ProjectSettings(): React.ReactElement {
 
   useEffect(() => {
     if (!projectId) return
-    api.projects.get(projectId).then((p) => {
+    fetchProject(projectId).then((p) => {
       setProject(p)
       setName(p.name)
       setBaseUrl(p.baseUrl)

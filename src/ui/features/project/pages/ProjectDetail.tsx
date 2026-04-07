@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect } from 'react'
 import { useParams, useNavigate, Outlet, useLocation, Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Spinner, EmptyState } from '../../../design-system/components/index.js'
-import { api, type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
+import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
+import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
 import styles from './ProjectDetail.module.css'
 
@@ -18,8 +19,8 @@ export function ProjectDetail(): React.ReactElement {
     if (!projectId) return
     try {
       const [proj, tree] = await Promise.all([
-        api.projects.get(projectId),
-        api.pages.list(projectId),
+        fetchProject(projectId),
+        fetchPageTree(projectId),
       ])
       setProject(proj)
       setPages(tree)
