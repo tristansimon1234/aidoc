@@ -402,8 +402,8 @@ export function PageView(): React.ReactElement {
           )}
 
           {/* Session replay — always available after exploration */}
-          {!exploring && latestRun?.browserbaseSessionId && (
-            <SessionReplay sessionId={latestRun.browserbaseSessionId} />
+          {!exploring && latestRun && (
+            <SessionReplay runId={latestRun.id} />
           )}
 
           {/* Suggestions */}
@@ -610,27 +610,57 @@ function BriefingEditor({
 
 // --- Session Replay ---
 
-function SessionReplay({ sessionId }: { sessionId: string }): React.ReactElement {
-  const replayUrl = `https://www.browserbase.com/sessions/${sessionId}`
+function SessionReplay({ runId }: { runId: string }): React.ReactElement {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadRecording = async (): Promise<void> => {
+      try {
+        // Get public URL for the recording
+        const { data } = supabase.storage.from('artifacts').getPublicUrl(`runs/${runId}/recording.json`)
+        if (!data.publicUrl) { setStatus('empty'); return }
+
+        const res = await fetch(data.publicUrl)
+        if (!res.ok) { setStatus('empty'); return }
+
+        const events = await res.json() as unknown[]
+        if (cancelled || !containerRef.current || events.length === 0) { setStatus('empty'); return }
+
+        // Dynamic import to avoid bundling rrweb for all pages
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rrweb = await import('rrweb') as any
+        containerRef.current.innerHTML = ''
+        new rrweb.Replayer(events, {
+          root: containerRef.current,
+          skipInactive: true,
+          showWarning: false,
+          showDebug: false,
+          blockClass: 'rr-block',
+          speed: 1,
+        })
+        setStatus('ready')
+      } catch {
+        if (!cancelled) setStatus('error')
+      }
+    }
+
+    void loadRecording()
+    return () => { cancelled = true }
+  }, [runId])
+
+  if (status === 'empty') return <></>
 
   return (
     <div className={styles.section}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
-          session replay
-        </span>
-        <a
-          href={replayUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)',
-            fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)', textDecoration: 'none',
-          }}
-        >
-          View recording on Browserbase &rarr;
-        </a>
-      </div>
+      <p style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)' }}>
+        session replay
+      </p>
+      {status === 'loading' && <Spinner size="sm" />}
+      {status === 'error' && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Recording unavailable</span>}
+      <div ref={containerRef} className={styles.replayContainer} />
     </div>
   )
 }

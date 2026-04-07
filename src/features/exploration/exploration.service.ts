@@ -421,8 +421,15 @@ When to call done:
   } finally {
     cancelledRuns.delete(runId)
     // Always close browser to avoid Browserbase billing
-    // Resume works via step context + navigating back to startUrl
     await closeBrowser(session)
+
+    // Download session recording from Browserbase and store in Supabase
+    const bbSessionId = getSessionId(session)
+    if (bbSessionId) {
+      saveSessionRecording(runId, bbSessionId).catch((err) =>
+        console.error(`[recording] Failed to save recording for run ${runId}:`, err),
+      )
+    }
   }
 }
 
@@ -582,4 +589,33 @@ function buildToolDescription(
       return toolName
     }
   }
+}
+
+async function saveSessionRecording(runId: string, browserbaseSessionId: string): Promise<void> {
+  const { env } = await import('../../shared/config/env.js')
+  const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
+
+  console.log(`[recording] Downloading recording for session ${browserbaseSessionId}`)
+
+  // Fetch recording from Browserbase API
+  const response = await fetch(
+    `https://api.browserbase.com/v1/sessions/${browserbaseSessionId}/recording`,
+    { headers: { 'x-bb-api-key': env.BROWSERBASE_API_KEY } },
+  )
+
+  if (!response.ok) {
+    console.error(`[recording] Browserbase API returned ${response.status}`)
+    return
+  }
+
+  const recording = await response.json() as unknown[]
+  const json = JSON.stringify(recording)
+  const buffer = Buffer.from(json, 'utf-8')
+
+  console.log(`[recording] Recording size: ${(buffer.length / 1024).toFixed(0)}KB (${recording.length} events)`)
+
+  const path = `runs/${runId}/recording.json`
+  await uploadToStorage('artifacts', path, buffer, 'application/json')
+
+  console.log(`[recording] Saved to ${path}`)
 }
