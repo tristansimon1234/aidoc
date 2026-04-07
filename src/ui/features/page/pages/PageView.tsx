@@ -615,7 +615,7 @@ function SessionReplay({ sessionId }: { sessionId: string }): React.ReactElement
 
   return (
     <div className={styles.section}>
-      <div className={styles.replayHeader} style={{ border: 'none', padding: 0, marginBottom: 'var(--space-sm)', background: 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
           session replay
         </span>
@@ -623,18 +623,13 @@ function SessionReplay({ sessionId }: { sessionId: string }): React.ReactElement
           href={replayUrl}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)', textDecoration: 'none' }}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)',
+            fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)', textDecoration: 'none',
+          }}
         >
-          Open in Browserbase
+          View recording on Browserbase &rarr;
         </a>
-      </div>
-      <div className={styles.replayContainer}>
-        <iframe
-          src={replayUrl}
-          title="Session replay"
-          className={styles.replayIframe}
-          allow="autoplay"
-        />
       </div>
     </div>
   )
