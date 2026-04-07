@@ -185,9 +185,9 @@ Instructions:
 - Visit all linked pages within the feature
 - Be systematic: go through navigation items one by one
 
-BUDGET: You have a maximum of 50 actions. Plan accordingly:
+BUDGET: You have a maximum of 30 actions. Plan accordingly:
 - Prioritize the MOST IMPORTANT sections first
-- After ~40 actions, start wrapping up and call done with a summary
+- After ~22 actions, start wrapping up and call done with a summary
 - Better to document 5 sections thoroughly than 10 sections poorly
 - Each screenshot, scroll, and click counts as one action
 
@@ -201,7 +201,7 @@ CRITICAL RULES FOR STOPPING:
 When to call done:
 - You have explored all main sections relevant to the goal
 - You've captured the key user flows and interactions
-- You're running low on actions (~40+)
+- You're running low on actions (~22+)
 - OR you are blocked and cannot proceed further`
 
     // Make briefing files available for upload via CDP file chooser interception
@@ -263,7 +263,7 @@ When to call done:
 
     const result = await agent.execute({
       instruction,
-      maxSteps: 50,
+      maxSteps: 30,
       ...(Object.keys(variables).length > 0 ? { variables } : {}),
       callbacks: {
         onStepFinish: async (event) => {
@@ -384,7 +384,7 @@ When to call done:
     if (hitStepLimit) {
       summary.blockers.push({
         type: 'other',
-        description: `Reached the 50-step exploration limit. The agent explored ${allSteps.length} actions but hasn't finished documenting all sections.`,
+        description: `Reached the 30-step exploration limit. The agent explored ${allSteps.length} actions but hasn't finished documenting all sections.`,
         section: 'Exploration budget',
         actionLabel: 'Continue exploring remaining sections',
       })
