@@ -1,7 +1,7 @@
 import { type ChangeEvent, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Button, Field } from '../../../design-system/components/index.js'
-import { api } from '../../../shared/api/client.js'
+import { createPage } from '../../../shared/api/db.js'
 
 export function NewPage(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
@@ -26,8 +26,7 @@ export function NewPage(): React.ReactElement {
     setSubmitting(true)
     setError(null)
 
-    api.pages
-      .create(projectId, {
+    createPage(projectId, {
         title,
         slug,
         startUrl: startUrl || undefined,

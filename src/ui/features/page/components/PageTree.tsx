@@ -15,7 +15,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { DocPageDTO } from '../../../shared/api/client.js'
-import { api } from '../../../shared/api/client.js'
+import { reorderPages, deletePage } from '../../../shared/api/db.js'
 import styles from './PageTree.module.css'
 
 interface PageTreeProps {
@@ -70,7 +70,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh }: PageTree
     }))
 
     try {
-      await api.pages.reorder(projectId, updates)
+      await reorderPages(projectId, updates)
       await onRefresh()
     } catch {
       // Revert on error
@@ -134,7 +134,7 @@ function SortablePageNode({
   }
 
   const handleDelete = async (): Promise<void> => {
-    await api.pages.delete(projectId, page.id)
+    await deletePage(projectId, page.id)
     await onRefresh()
     navigate(`/projects/${projectId}`)
     setMenuOpen(false)

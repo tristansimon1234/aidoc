@@ -1,7 +1,7 @@
 import { supabase } from './supabase.js'
-import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO } from './client.js'
+import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO, ProjectContextDTO } from './client.js'
 
-// Direct Supabase queries — bypass Vercel serverless for reads
+// Direct Supabase queries — bypass Vercel serverless
 
 export async function fetchPageFull(pageId: string): Promise<{
   page: DocPageDTO
@@ -53,6 +53,127 @@ export async function fetchProjects(): Promise<ProjectDTO[]> {
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return (data ?? []).map(mapProject)
+}
+
+// --- Writes ---
+
+export async function createProject(body: {
+  name: string
+  baseUrl: string
+  context?: ProjectContextDTO
+  credentials?: { label: string; username: string; password: string }[]
+}): Promise<ProjectDTO> {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      user_id: user.id,
+      name: body.name,
+      base_url: body.baseUrl,
+      context: body.context ?? null,
+      credentials: body.credentials ?? null,
+    })
+    .select('*')
+    .single()
+  if (error) throw new Error(error.message)
+
+  // Auto-create Getting Started page
+  await supabase.from('doc_pages').insert({
+    project_id: data.id,
+    title: 'Getting Started',
+    slug: 'getting-started',
+    start_url: body.baseUrl,
+    goal: `Document how to get started with ${body.name}`,
+    sort_order: 0,
+  })
+
+  return mapProject(data)
+}
+
+export async function updateProject(id: string, body: Record<string, unknown>): Promise<ProjectDTO> {
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (body.name !== undefined) updates.name = body.name
+  if (body.baseUrl !== undefined) updates.base_url = body.baseUrl
+  if (body.description !== undefined) updates.description = body.description
+  if (body.context !== undefined) updates.context = body.context
+  if (body.credentials !== undefined) updates.credentials = body.credentials
+  if (body.discoveredContext !== undefined) updates.discovered_context = body.discoveredContext
+
+  const { data, error } = await supabase.from('projects').update(updates).eq('id', id).select('*').single()
+  if (error) throw new Error(error.message)
+  return mapProject(data)
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  const { error } = await supabase.from('projects').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function createPage(
+  projectId: string,
+  body: { title: string; slug: string; parentId?: string; startUrl?: string; goal?: string },
+): Promise<DocPageDTO> {
+  const { data, error } = await supabase
+    .from('doc_pages')
+    .insert({
+      project_id: projectId,
+      title: body.title,
+      slug: body.slug,
+      parent_id: body.parentId ?? null,
+      start_url: body.startUrl ?? null,
+      goal: body.goal ?? null,
+      sort_order: 0,
+    })
+    .select('*')
+    .single()
+  if (error) throw new Error(error.message)
+  return mapPage(data)
+}
+
+export async function updatePage(
+  _projectId: string,
+  pageId: string,
+  body: Record<string, unknown>,
+): Promise<DocPageDTO> {
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (body.title !== undefined) updates.title = body.title
+  if (body.slug !== undefined) updates.slug = body.slug
+  if (body.startUrl !== undefined) updates.start_url = body.startUrl
+  if (body.goal !== undefined) updates.goal = body.goal
+  if (body.parentId !== undefined) updates.parent_id = body.parentId
+  if (body.sortOrder !== undefined) updates.sort_order = body.sortOrder
+  if (body.status !== undefined) updates.status = body.status
+  if (body.content !== undefined) updates.content = body.content
+  if (body.customPrompt !== undefined) updates.custom_prompt = body.customPrompt
+  if (body.briefing !== undefined) updates.briefing = body.briefing
+
+  const { data, error } = await supabase.from('doc_pages').update(updates).eq('id', pageId).select('*').single()
+  if (error) throw new Error(error.message)
+  return mapPage(data)
+}
+
+export async function deletePage(_projectId: string, pageId: string): Promise<void> {
+  const { error } = await supabase.from('doc_pages').delete().eq('id', pageId)
+  if (error) throw new Error(error.message)
+}
+
+export async function reorderPages(
+  _projectId: string,
+  items: { id: string; parentId: string | null; sortOrder: number }[],
+): Promise<void> {
+  for (const item of items) {
+    const { error } = await supabase
+      .from('doc_pages')
+      .update({
+        parent_id: item.parentId,
+        sort_order: item.sortOrder,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', item.id)
+    if (error) throw new Error(error.message)
+  }
 }
 
 // --- snake_case → camelCase mappers ---

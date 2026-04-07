@@ -2,8 +2,8 @@ import { type ChangeEvent, useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Field, Spinner } from '../../../design-system/components/index.js'
-import { api, type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
-import { fetchProject } from '../../../shared/api/db.js'
+import { type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
+import { fetchProject, updateProject } from '../../../shared/api/db.js'
 
 interface Credential {
   label: string
@@ -56,7 +56,7 @@ export function ProjectSettings(): React.ReactElement {
 
     try {
       const validCreds = credentials.filter((c) => c.label && c.username && c.password)
-      await api.projects.update(projectId, {
+      await updateProject(projectId, {
         name,
         baseUrl,
         context: (context.audience || context.workflow || context.quirks) ? context : undefined,
@@ -221,7 +221,7 @@ function KnowledgePanel({
         summary,
         terminology: Object.fromEntries(terminology.filter(([k]) => k.trim())),
       }
-      await api.projects.update(projectId, { discoveredContext: updated })
+      await updateProject(projectId, { discoveredContext: updated })
       onSaved(updated)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)

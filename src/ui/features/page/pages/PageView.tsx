@@ -9,7 +9,7 @@ import {
   EmptyState,
 } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO } from '../../../shared/api/client.js'
-import { fetchPageFull } from '../../../shared/api/db.js'
+import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
 
@@ -52,7 +52,7 @@ export function PageView(): React.ReactElement {
 
       // If doc exists but page.content is empty, copy it over
       if (docData?.markdownContent && !pageData.content) {
-        void api.pages.update(projectId, pageId, { content: docData.markdownContent })
+        void dbUpdatePage(projectId, pageId, { content: docData.markdownContent })
         setPage({ ...pageData, content: docData.markdownContent })
       }
     } catch (err) {
@@ -127,7 +127,7 @@ export function PageView(): React.ReactElement {
       // Mark it as failed so we can still generate doc from partial data.
       if (updatedRun.status === 'running' || updatedRun.status === 'pending') {
         try {
-          await api.pages.update(projectId!, pageId!, { status: 'draft' })
+          await dbUpdatePage(projectId!, pageId!, { status: 'draft' })
           await fetchData()
           await context.refetchPages()
           setStatusMessage('Exploration timed out — you can retry or generate doc from what was captured')
@@ -144,7 +144,7 @@ export function PageView(): React.ReactElement {
         try {
           const generatedDoc = await api.runs.generateDoc(runId)
           setDoc(generatedDoc)
-          await api.pages.update(projectId!, pageId!, { status: 'published' })
+          await dbUpdatePage(projectId!, pageId!, { status: 'published' })
         } catch (genErr) {
           console.error('Doc generation failed:', genErr)
         }
@@ -182,7 +182,7 @@ export function PageView(): React.ReactElement {
       goal: page.goal ?? `Document the "${page.title}" feature`,
       docPageId: pageId,
     })
-    await api.pages.update(projectId, pageId, { status: 'exploring' })
+    await dbUpdatePage(projectId, pageId, { status: 'exploring' })
     const customPrompt = (page as DocPageDTO & { customPrompt?: string | null }).customPrompt ?? undefined
     await runExploration(run.id, customPrompt)
   }
@@ -203,7 +203,7 @@ export function PageView(): React.ReactElement {
     if (pageUpdateTimeoutRef.current) clearTimeout(pageUpdateTimeoutRef.current)
     pageUpdateTimeoutRef.current = setTimeout(() => {
       if (pendingUpdatesRef.current) {
-        void api.pages.update(projectId, pageId, pendingUpdatesRef.current)
+        void dbUpdatePage(projectId, pageId, pendingUpdatesRef.current)
         pendingUpdatesRef.current = null
       }
     }, 1000)
@@ -214,7 +214,7 @@ export function PageView(): React.ReactElement {
     return () => {
       if (pageUpdateTimeoutRef.current) clearTimeout(pageUpdateTimeoutRef.current)
       if (pendingUpdatesRef.current && projectId && pageId) {
-        void api.pages.update(projectId, pageId, pendingUpdatesRef.current)
+        void dbUpdatePage(projectId, pageId, pendingUpdatesRef.current)
         pendingUpdatesRef.current = null
       }
     }
@@ -222,7 +222,7 @@ export function PageView(): React.ReactElement {
 
   const handleSaveContent = async (markdown: string): Promise<void> => {
     if (!projectId || !pageId) return
-    await api.pages.update(projectId, pageId, { content: markdown })
+    await dbUpdatePage(projectId, pageId, { content: markdown })
   }
 
   if (loading) return <Spinner size="lg" />
@@ -315,7 +315,7 @@ export function PageView(): React.ReactElement {
           run={latestRun}
           onContinue={async (context) => {
             if (!latestRun || !projectId || !pageId) return
-            await api.pages.update(projectId, pageId, { status: 'exploring' })
+            await dbUpdatePage(projectId, pageId, { status: 'exploring' })
             await runExploration(latestRun.id, context)
           }}
           onSkipAndGenerate={async () => {
@@ -323,7 +323,7 @@ export function PageView(): React.ReactElement {
             try {
               const generatedDoc = await api.runs.generateDoc(latestRun.id)
               setDoc(generatedDoc)
-              if (projectId && pageId) await api.pages.update(projectId, pageId, { status: 'published' })
+              if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
               await fetchData()
               await context.refetchPages()
             } catch (err) {
@@ -640,7 +640,7 @@ function SuggestionsPanel({
     setCreatingIndex(index)
     try {
       const slug = ns.suggestion.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
-      const newPage = await api.pages.create(projectId, {
+      const newPage = await dbCreatePage(projectId, {
         title: ns.suggestion,
         slug: slug || `page-${Date.now()}`,
         goal: ns.reason,

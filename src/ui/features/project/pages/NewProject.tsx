@@ -2,7 +2,7 @@ import { type ChangeEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Field } from '../../../design-system/components/index.js'
-import { api } from '../../../shared/api/client.js'
+import { createProject } from '../../../shared/api/db.js'
 import styles from './NewProject.module.css'
 
 interface Credential {
@@ -39,8 +39,7 @@ export function NewProject(): React.ReactElement {
 
     const validCreds = credentials.filter((c) => c.label && c.username && c.password)
 
-    api.projects
-      .create({
+    createProject({
         name,
         baseUrl,
         context: (context.audience || context.workflow || context.quirks) ? context : undefined,
