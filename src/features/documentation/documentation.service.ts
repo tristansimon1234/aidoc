@@ -46,12 +46,20 @@ export async function generateAndSaveDoc(
   const steps = await deps.findStepsByRunId(runId)
   const questions = await deps.findQuestionsByRunId(runId)
 
-  const stepSummaries: StepSummary[] = steps.map((s) => {
+  // Filter noisy supporting steps to reduce token usage
+  // Keep: all KEY steps (act, goto, fillForm, done) + last screenshot per URL
+  const noiseTools = new Set(['scroll', 'ariaTree', 'wait', 'keys', 'screenshot'])
+  const filteredSteps = steps.filter((s) => {
+    const toolType = (s.action ?? '').split(' ')[0]?.toLowerCase() ?? ''
+    return !noiseTools.has(toolType)
+  })
+
+  const stepSummaries: StepSummary[] = filteredSteps.map((s) => {
     const screenshotUrl = s.screenshotPath ? getPublicUrl('artifacts', s.screenshotPath) : null
     return {
       url: s.url ?? '',
       action: s.action ?? '',
-      observation: s.observation ?? '',
+      observation: (s.observation ?? '').slice(0, 500),
       screenshotUrl,
     }
   })

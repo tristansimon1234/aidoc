@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { anthropic, CLAUDE_MODEL } from '../../shared/ai/anthropic.client.js'
-import { buildDocumentationPrompt } from '../../shared/ai/prompt.builder.js'
+import { buildDocumentationPrompt, getDocSystemPrompt } from '../../shared/ai/prompt.builder.js'
 import type { AnthropicUsage } from '../../shared/ai/anthropic.types.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
@@ -64,12 +64,18 @@ export async function generateDocumentation(context: {
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
   runStatus?: string
 }): Promise<GenerationResult> {
-  const prompt = buildDocumentationPrompt(context)
+  const systemPrompt = getDocSystemPrompt()
+  const userPrompt = buildDocumentationPrompt(context)
 
   const response = await anthropic.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 16384,
-    messages: [{ role: 'user', content: prompt }],
+    system: [{
+      type: 'text',
+      text: systemPrompt,
+      cache_control: { type: 'ephemeral' },
+    }],
+    messages: [{ role: 'user', content: userPrompt }],
   })
 
   const textBlock = response.content.find((block) => block.type === 'text')

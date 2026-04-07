@@ -38,12 +38,15 @@ function formatStepsRich(steps: StepSummary[]): string {
   return steps
     .map((s, i) => {
       const toolType = s.action.split(' ')[0]?.toLowerCase() ?? ''
-      const importance = importantTools.has(toolType) ? 'KEY' : supportTools.has(toolType) ? 'supporting' : 'KEY'
+      const isKey = importantTools.has(toolType) || !supportTools.has(toolType)
 
-      let entry = `### Step ${i + 1} [${importance}]`
+      let entry = `### Step ${i + 1} [${isKey ? 'KEY' : 'supporting'}]`
       entry += `\n- URL: ${s.url}`
       entry += `\n- Action: ${s.action}`
-      if (s.observation) entry += `\n- Agent reasoning: ${s.observation.slice(0, 500)}`
+      // KEY steps get full observation, supporting steps get truncated
+      if (s.observation) {
+        entry += `\n- Agent reasoning: ${s.observation.slice(0, isKey ? 500 : 100)}`
+      }
       if (s.screenshotUrl && s.screenshotUrl.startsWith('http')) entry += `\n- Screenshot: ![Step ${i + 1}](${s.screenshotUrl})`
       return entry
     })
@@ -66,63 +69,8 @@ function countByImportance(steps: StepSummary[]): { key: number; supporting: num
   return { key, supporting, withScreenshots }
 }
 
-export function buildDocumentationPrompt(context: {
-  featureName: string
-  goal: string
-  startUrl: string
-  steps: StepSummary[]
-  questions?: { question: string; answer: string | null }[]
-  projectContext?: string
-  tableOfContents?: string
-  existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
-  runStatus?: string
-}): string {
-  const counts = countByImportance(context.steps)
-
-  const projectBlock = context.projectContext
-    ? `\n## Product Context\n${context.projectContext}\n`
-    : ''
-
-  const tocBlock = context.tableOfContents
-    ? `\n## Other Pages in This Documentation\n${context.tableOfContents}\nWhen referencing content covered by other pages, use markdown links like [Page Title](/slug). Do NOT duplicate content.\n`
-    : ''
-
-  const pageSummariesBlock = context.existingPageSummaries && context.existingPageSummaries.length > 0
-    ? `\n## Existing Page Content (summaries)\n${context.existingPageSummaries.map((p) => `- **${p.title}** (/${p.slug}): ${p.contentPreview}`).join('\n')}\n`
-    : ''
-
-  const blockersSection = context.questions && context.questions.length > 0
-    ? `\n## Blockers Encountered During Exploration\n${context.questions.map((q) => `- Issue: ${q.question}${q.answer ? `\n  Resolution: ${q.answer}` : ' (unresolved)'}`).join('\n')}\n`
-    : ''
-
-  const statusBlock = `\n## Exploration Status
-- Run status: ${context.runStatus ?? 'unknown'}
-- Total steps: ${context.steps.length} (${counts.key} key actions, ${counts.supporting} supporting)
-- Screenshots captured: ${counts.withScreenshots}
-${context.runStatus === 'blocked' ? '- ⚠️ Exploration was INCOMPLETE — document what was found but clearly flag gaps' : ''}
-${context.runStatus === 'failed' ? '- ⚠️ Exploration FAILED — generate best-effort doc from available data' : ''}
-
-IMPORTANT: If the exploration shows that the agent could NOT access certain features (failed login, access denied, errors), do NOT document those features as if they worked. Instead:
-- Only document what was actually successfully explored and seen
-- If a section was blocked, briefly mention it needs separate documentation
-- Do NOT pad the document with speculation about blocked features
-- Keep the document focused and honest — short and accurate is better than long and fabricated
-`
-
-  return `You are an expert product documentation writer. Your job is to transform raw exploration data into a clear, professional, user-friendly guide.
-
-## Product
-Name: "${context.featureName}"
-URL: ${context.startUrl}
-Goal: "${context.goal}"
-${projectBlock}${tocBlock}${pageSummariesBlock}${statusBlock}
-## Exploration Data
-
-The following steps were captured by an AI agent exploring the web application. Steps marked [KEY] are important user actions. Steps marked [supporting] are navigation/setup actions.
-
-${formatStepsRich(context.steps)}
-${blockersSection}
-## Your Task
+// Static system instructions — cached by Anthropic (90% cost reduction on repeat calls)
+const DOC_SYSTEM_PROMPT = `You are an expert product documentation writer. Your job is to transform raw exploration data into a clear, professional, user-friendly guide.
 
 Write a **user-facing product guide** — the kind of documentation you'd find in a help center or product wiki. NOT an internal SOP.
 
@@ -166,7 +114,6 @@ Do NOT include "Known Gaps", "Suggested Next Steps", or any meta-commentary abou
 - Use: ![Descriptive caption](screenshot_url)
 - If a step has no screenshot, describe the screen in vivid visual detail
 - In self-assessment, flag any key step missing a screenshot as a critical gap
-${counts.withScreenshots < counts.key / 2 ? `\n⚠️ WARNING: Only ${counts.withScreenshots} out of ${counts.key} key steps have screenshots. Compensate missing screenshots with detailed visual descriptions of what the user sees on screen.\n` : ''}
 
 ### Self-Assessment JSON
 
@@ -194,5 +141,65 @@ After the markdown, add "---JSON---" then:
   }
 }
 
-Be brutally honest in the self-assessment. A 40% completeness with clear gaps is better than 90% that hides problems.`
+Be brutally honest in the self-assessment. A 40% completeness with clear gaps is better than 90% that hides problems.
+
+IMPORTANT: If the exploration shows that the agent could NOT access certain features (failed login, access denied, errors), do NOT document those features as if they worked. Instead:
+- Only document what was actually successfully explored and seen
+- If a section was blocked, briefly mention it needs separate documentation
+- Do NOT pad the document with speculation about blocked features
+- Keep the document focused and honest — short and accurate is better than long and fabricated`
+
+export function getDocSystemPrompt(): string {
+  return DOC_SYSTEM_PROMPT
+}
+
+export function buildDocumentationPrompt(context: {
+  featureName: string
+  goal: string
+  startUrl: string
+  steps: StepSummary[]
+  questions?: { question: string; answer: string | null }[]
+  projectContext?: string
+  tableOfContents?: string
+  existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
+  runStatus?: string
+}): string {
+  const counts = countByImportance(context.steps)
+
+  const projectBlock = context.projectContext
+    ? `\n## Product Context\n${context.projectContext}\n`
+    : ''
+
+  const tocBlock = context.tableOfContents
+    ? `\n## Other Pages in This Documentation\n${context.tableOfContents}\nWhen referencing content covered by other pages, use markdown links like [Page Title](/slug). Do NOT duplicate content.\n`
+    : ''
+
+  const pageSummariesBlock = context.existingPageSummaries && context.existingPageSummaries.length > 0
+    ? `\n## Existing Page Content (summaries)\n${context.existingPageSummaries.map((p) => `- **${p.title}** (/${p.slug}): ${p.contentPreview}`).join('\n')}\n`
+    : ''
+
+  const blockersSection = context.questions && context.questions.length > 0
+    ? `\n## Blockers Encountered During Exploration\n${context.questions.map((q) => `- Issue: ${q.question}${q.answer ? `\n  Resolution: ${q.answer}` : ' (unresolved)'}`).join('\n')}\n`
+    : ''
+
+  const statusBlock = `\n## Exploration Status
+- Run status: ${context.runStatus ?? 'unknown'}
+- Total steps: ${context.steps.length} (${counts.key} key actions, ${counts.supporting} supporting)
+- Screenshots captured: ${counts.withScreenshots}
+${context.runStatus === 'blocked' ? '- Exploration was INCOMPLETE — document what was found but clearly flag gaps' : ''}
+${context.runStatus === 'failed' ? '- Exploration FAILED — generate best-effort doc from available data' : ''}
+${counts.withScreenshots < counts.key / 2 ? `- WARNING: Only ${counts.withScreenshots} out of ${counts.key} key steps have screenshots. Compensate with detailed visual descriptions.` : ''}
+`
+
+  return `## Product
+Name: "${context.featureName}"
+URL: ${context.startUrl}
+Goal: "${context.goal}"
+${projectBlock}${tocBlock}${pageSummariesBlock}${statusBlock}
+## Exploration Data
+
+Steps marked [KEY] are important user actions. Steps marked [supporting] are navigation/setup.
+
+${formatStepsRich(context.steps)}
+${blockersSection}`
 }
