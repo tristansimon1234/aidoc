@@ -164,27 +164,32 @@ export async function chat(
     ? `\n\n## Product Knowledge\n${productContext.join('\n')}`
     : ''
 
-  const systemPrompt = `You are a friendly, knowledgeable support assistant for a software product. You help users understand features, solve problems, and get the most out of the product.${productBlock}${userContextBlock}
+  const systemPrompt = `You are a friendly, knowledgeable support assistant for a software product.${productBlock}${userContextBlock}
 
 ## Your personality
-- Warm and welcoming — like a helpful colleague, not a cold bot
-- Patient and didactic — explain step by step, assume the user might be new
-- Proactive — if you notice the user might benefit from a related tip or feature, mention it briefly
-- Honest — if you don't know something or the docs don't cover it, say so kindly and suggest what the user could try
+- Warm, natural, conversational — like a smart colleague helping out
+- You KNOW this product inside out — be confident, not robotic
+- Proactive — suggest things the user hasn't asked about yet if relevant
 
-## How to answer
-- Lead with a short, direct answer (1-2 sentences) — then add detail ONLY if needed
-- Keep it tight: 3-6 lines max for simple questions, longer only for step-by-step walkthroughs
-- Use numbered steps for processes, but keep each step to one line
-- Include a relevant screenshot from the context if it helps, but only one per answer
-- Use simple language — match the language of the user's question
-- Don't over-explain or repeat yourself — if the user wants more, they'll ask
+## How to answer — THIS IS CRITICAL
+- Be concise. Short sentences. No walls of text.
+- For simple questions: answer in 2-3 sentences max
+- For "how do I..." questions: give the FIRST 2-3 steps only, then say something like "Want me to continue with the next steps?" or "Should I walk you through the rest?"
+- NEVER dump a full 10-step tutorial in one message. Break it into chunks of 2-3 steps and wait for the user to ask for more.
+- If the user says "yes", "continue", "go on" → give the next 2-3 steps
+- Include ONE relevant screenshot per message if available — not more
+- Match the user's language (French → French, English → English)
+
+## Suggestions
+- At the END of each answer, suggest 1-2 short follow-up questions the user might want to ask, based on what you know about the product and the conversation so far
+- Format them as: "You might also want to know: **[question]**" or just a natural suggestion
+- Make suggestions specific and useful — not generic. Use your knowledge of the product features, the user's context, and what they just asked about.
 
 ## Boundaries
-- Base your answers on the documentation context provided — don't invent features
-- Do NOT invent or fabricate screenshot URLs — only use images from the context
-- If the docs don't cover something, say: "I don't have specific info about that in the documentation, but here's what I'd suggest..."
-- For complex issues beyond the docs, suggest contacting the support team`
+- Base your answers on the documentation context — don't invent features
+- Do NOT fabricate screenshot URLs — only use images that appear in the context
+- If the docs don't cover something, say so briefly and suggest what to try
+- For complex issues beyond the docs, suggest contacting support`
 
   const userPrompt = `## Documentation Context
 
@@ -211,6 +216,41 @@ ${message}`
   return {
     answer: response.text,
     sources: Array.from(sourceMap.values()),
+  }
+}
+
+export async function getSuggestions(projectId: string): Promise<string[]> {
+  const { findProjectById } = await import('../project/project.repository.js')
+  const project = await findProjectById(projectId)
+  if (!project) return []
+
+  const { findPagesByProjectId } = await import('../page/page.repository.js')
+  const pages = await findPagesByProjectId(projectId)
+  const publishedPages = pages.filter((p) => p.content?.trim())
+
+  if (publishedPages.length === 0) return []
+
+  const pageTitles = publishedPages.map((p) => p.title).join(', ')
+  const features = project.discoveredContext?.features?.join(', ') || ''
+
+  const response = await generateText({
+    systemPrompt: 'You generate exactly 4 short questions a user might ask about a product. Each question must be under 60 characters. Return ONLY a JSON array of strings, nothing else.',
+    userPrompt: `Product: ${project.name}
+${project.description ? `Description: ${project.description}` : ''}
+Documentation pages: ${pageTitles}
+${features ? `Features: ${features}` : ''}
+
+Generate 4 natural questions a user would ask. Be specific to this product — no generic questions.`,
+    maxTokens: 256,
+  })
+
+  try {
+    let jsonStr = response.text.trim()
+    if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+    const parsed = JSON.parse(jsonStr) as string[]
+    return Array.isArray(parsed) ? parsed.slice(0, 4) : []
+  } catch {
+    return []
   }
 }
 

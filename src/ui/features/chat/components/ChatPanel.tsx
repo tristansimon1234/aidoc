@@ -11,11 +11,9 @@ interface ChatMessage {
   sources?: { pageId: string; pageTitle: string; pageSlug: string }[]
 }
 
-const SUGGESTIONS = [
+const FALLBACK_SUGGESTIONS = [
   'How does this product work?',
   'What are the main features?',
-  'Walk me through the onboarding flow',
-  'What can a new user do first?',
 ]
 
 export function ChatPanel({
@@ -34,6 +32,7 @@ export function ChatPanel({
   const [indexing, setIndexing] = useState(false)
   const [indexed, setIndexed] = useState<boolean | null>(null)
   const [indexError, setIndexError] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -50,6 +49,11 @@ export function ChatPanel({
       setIndexing(true)
       const result = await api.chat.index(projectId)
       setIndexed(result.indexed > 0)
+      if (result.indexed > 0) {
+        api.chat.suggestions(projectId)
+          .then((r) => { if (r.suggestions.length > 0) setSuggestions(r.suggestions) })
+          .catch(() => {})
+      }
     } catch (err) {
       setIndexError((err as Error).message)
       setIndexed(false)
@@ -144,7 +148,7 @@ export function ChatPanel({
 
                   <div className={styles.suggestions}>
                     <span className={styles.suggestionsLabel}>Try asking</span>
-                    {SUGGESTIONS.map((s) => (
+                    {suggestions.map((s) => (
                       <button
                         key={s}
                         className={styles.suggestion}

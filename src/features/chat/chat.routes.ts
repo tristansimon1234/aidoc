@@ -55,3 +55,18 @@ chatRouter.post('/index', (req: Request, res: Response, next: NextFunction) => {
     }
   })()
 })
+
+// Get dynamic suggestions based on project content
+chatRouter.get('/suggestions', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = UuidParamSchema.safeParse({ id: req.params.projectId })
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const suggestions = await chatService.getSuggestions(params.data.id)
+      res.status(200).json({ suggestions })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})

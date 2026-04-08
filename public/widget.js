@@ -19,10 +19,15 @@
   var isOpen = false;
   var isSending = false;
 
-  // --- Fetch config ---
+  var dynamicSuggestions = [];
+
+  // --- Fetch config + suggestions ---
   fetch(API_BASE + '/' + API_KEY + '/config')
     .then(function (r) { return r.json(); })
-    .then(function (cfg) { projectName = cfg.projectName || 'this product'; })
+    .then(function (cfg) {
+      projectName = cfg.projectName || 'this product';
+      if (cfg.suggestions && cfg.suggestions.length > 0) dynamicSuggestions = cfg.suggestions;
+    })
     .catch(function () {});
 
   // --- Styles ---
@@ -101,9 +106,10 @@
         '<div><h3>' + (USER_NAME ? 'Hi ' + USER_NAME + '!' : 'Hi! Ask me anything.') + '</h3>',
         '<p>I can help you find answers about ' + (projectName || 'this product') + '.</p></div>',
         '<div class="aidoc-suggestions">',
-        '<button class="aidoc-suggestion">How does this product work?</button>',
-        '<button class="aidoc-suggestion">What are the main features?</button>',
-        '<button class="aidoc-suggestion">Walk me through the setup</button>',
+        (dynamicSuggestions.length > 0
+          ? dynamicSuggestions
+          : ['How does ' + projectName + ' work?', 'What are the main features?']
+        ).map(function (s) { return '<button class="aidoc-suggestion">' + s + '</button>'; }).join(''),
         '</div></div>',
       ].join('');
       msgContainer.querySelectorAll('.aidoc-suggestion').forEach(function (el) {
