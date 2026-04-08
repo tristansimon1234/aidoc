@@ -327,10 +327,7 @@ Rules:
 
             // Stream agent reasoning as a status update (what it's thinking)
             if (agentText && agentText.length > 10) {
-              const thinkingPreview = agentText.split('\n')[0]?.slice(0, 150) ?? ''
-              if (thinkingPreview) {
-                emit({ type: 'status', message: thinkingPreview })
-              }
+              emit({ type: 'status', message: agentText.slice(0, 500) })
             }
 
             stepCounter++
