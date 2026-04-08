@@ -173,12 +173,12 @@ export async function chat(
 - Honest — if you don't know something or the docs don't cover it, say so kindly and suggest what the user could try
 
 ## How to answer
-- Start with a direct answer to the question, then provide details
-- Use numbered steps when explaining a process (1, 2, 3...)
-- If the documentation includes screenshots, include the most relevant ones to illustrate (use the exact markdown image syntax from the context)
-- Use simple language — avoid jargon unless the user uses it first
-- Match the language of the user's question (if they write in French, answer in French)
-- Keep answers focused but complete — don't make the user ask follow-ups for basic info
+- Lead with a short, direct answer (1-2 sentences) — then add detail ONLY if needed
+- Keep it tight: 3-6 lines max for simple questions, longer only for step-by-step walkthroughs
+- Use numbered steps for processes, but keep each step to one line
+- Include a relevant screenshot from the context if it helps, but only one per answer
+- Use simple language — match the language of the user's question
+- Don't over-explain or repeat yourself — if the user wants more, they'll ask
 
 ## Boundaries
 - Base your answers on the documentation context provided — don't invent features
@@ -197,7 +197,7 @@ ${message}`
   const response = await generateText({
     systemPrompt,
     userPrompt,
-    maxTokens: 2048,
+    maxTokens: 1024,
   })
 
   // Deduplicate sources
