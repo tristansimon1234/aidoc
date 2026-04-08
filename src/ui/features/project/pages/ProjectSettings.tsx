@@ -4,6 +4,7 @@ import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Spinner } from '../../../design-system/components/index.js'
 import { api, type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
 import { fetchProject, updateProject } from '../../../shared/api/db.js'
+import styles from './ProjectSettings.module.css'
 
 interface Credential {
   label: string
@@ -36,201 +37,222 @@ export function ProjectSettings(): React.ReactElement {
     }).catch(() => setLoading(false))
   }, [projectId])
 
-  const addCredential = (): void => {
-    setCredentials([...credentials, { label: '', username: '', password: '' }])
-  }
-
-  const updateCredential = (index: number, field: keyof Credential, value: string): void => {
-    setCredentials(credentials.map((c, i) => i === index ? { ...c, [field]: value } : c))
-  }
-
-  const removeCredential = (index: number): void => {
-    setCredentials(credentials.filter((_, i) => i !== index))
-  }
-
   const handleSave = async (): Promise<void> => {
     if (!projectId) return
-    setSaving(true)
-    setError(null)
-    setSaved(false)
-
+    setSaving(true); setError(null); setSaved(false)
     try {
       const validCreds = credentials.filter((c) => c.label && c.username && c.password)
       await updateProject(projectId, {
-        name,
-        baseUrl,
+        name, baseUrl,
         context: (context.audience || context.workflow || context.quirks) ? context : undefined,
         credentials: validCreds.length > 0 ? validCreds : undefined,
       })
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setSaving(false)
-    }
+    } catch (err) { setError((err as Error).message) }
+    finally { setSaving(false) }
   }
 
-  if (loading) return <Shell><Spinner size="lg" /></Shell>
+  if (loading) return <Shell><div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-2xl)' }}><Spinner size="lg" /></div></Shell>
   if (!project) return <Shell><p>Project not found</p></Shell>
-
-  const is: React.CSSProperties = {
-    width: '100%', padding: 'var(--space-sm)',
-    fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)',
-    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
-    borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none',
-  }
-  const ts: React.CSSProperties = { ...is, resize: 'vertical' as const, minHeight: '60px' }
-  const sn: React.CSSProperties = {
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
-    backgroundColor: 'var(--color-accent-blue)', color: 'white',
-    fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)',
-  }
-  const hs: React.CSSProperties = { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }
-  const lb: React.CSSProperties = { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }
 
   return (
     <Shell>
-      <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-xl)' }}>
-          <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 600 }}>Project Settings</h1>
+      <div className={styles.page}>
+        <div className={styles.header}>
+          <h1 className={styles.title}>Settings</h1>
           <Button size="sm" variant="ghost" onClick={() => navigate(`/projects/${projectId}`)}>
             &larr; Back
           </Button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-xl)', alignItems: 'start' }}>
-          {/* Left: Settings form */}
-          <div style={{
-            padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-            border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-            display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)',
-          }}>
-            {/* Step 1 */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
-                <span style={sn}>1</span>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Product</span>
+        <div className={styles.sections}>
+
+          {/* General */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>General</h2>
+              <p className={styles.sectionDesc}>Basic project information.</p>
+            </div>
+            <div className={styles.fieldGrid}>
+              <div className={styles.field}>
+                <label className={styles.label}>Name</label>
+                <input className={styles.input} type="text" value={name} onChange={(e) => setName(e.target.value)} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
-                <div>
-                  <label style={lb}>Name</label>
-                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={is} />
-                </div>
-                <div>
-                  <label style={lb}>URL</label>
-                  <input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
-                    style={{ ...is, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }} />
-                </div>
+              <div className={styles.field}>
+                <label className={styles.label}>URL</label>
+                <input className={styles.inputMono} type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
               </div>
             </div>
+          </div>
 
-            {/* Step 2 */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
-                <span style={sn}>2</span>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Who is this for?</span>
-              </div>
-              <p style={hs}>The AI writes documentation adapted to this audience.</p>
-              <textarea value={context.audience} onChange={(e) => setContext({ ...context, audience: e.target.value })}
-                placeholder="e.g. SaaS product managers who need to track feature adoption"
-                rows={2} style={ts} />
+          {/* AI Context */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>AI Context</h2>
+              <p className={styles.sectionDesc}>Help the AI understand your product. Better context = better documentation.</p>
             </div>
-
-            {/* Step 3 */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
-                <span style={sn}>3</span>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Key workflow</span>
+            <div className={styles.fieldGrid}>
+              <div className={`${styles.field} ${styles.fieldFull}`}>
+                <label className={styles.label}>Target audience</label>
+                <textarea className={styles.textarea} value={context.audience}
+                  onChange={(e) => setContext({ ...context, audience: e.target.value })}
+                  placeholder="e.g. SaaS product managers who need to track feature adoption" rows={2} />
               </div>
-              <p style={hs}>The AI prioritizes exploring and documenting this flow.</p>
-              <textarea value={context.workflow} onChange={(e) => setContext({ ...context, workflow: e.target.value })}
-                placeholder="e.g. User creates a project, adds team members, sets up integrations, runs first report"
-                rows={2} style={ts} />
-            </div>
-
-            {/* Step 4 */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
-                <span style={sn}>4</span>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Non-obvious behaviors</span>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+              <div className={`${styles.field} ${styles.fieldFull}`}>
+                <label className={styles.label}>Key workflow</label>
+                <textarea className={styles.textarea} value={context.workflow}
+                  onChange={(e) => setContext({ ...context, workflow: e.target.value })}
+                  placeholder="e.g. User creates a project, adds team members, runs first report" rows={2} />
               </div>
-              <p style={hs}>Terms, hidden features, or domain knowledge the AI can&apos;t guess from the UI.</p>
-              <textarea value={context.quirks} onChange={(e) => setContext({ ...context, quirks: e.target.value })}
-                placeholder="e.g. 'Workspace' means a team account. The 'Archive' button is hidden until 5+ items exist."
-                rows={2} style={ts} />
-            </div>
-
-            {/* Step 5 */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                  <span style={sn}>5</span>
-                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Test credentials</span>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
-                </div>
-                <button type="button" onClick={addCredential} style={{
-                  background: 'none', border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)', padding: '2px 8px',
-                }}>+ add</button>
+              <div className={`${styles.field} ${styles.fieldFull}`}>
+                <label className={styles.label}>Domain knowledge <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                <textarea className={styles.textarea} value={context.quirks}
+                  onChange={(e) => setContext({ ...context, quirks: e.target.value })}
+                  placeholder="e.g. 'Workspace' means a team account. Archive is hidden until 5+ items." rows={2} />
               </div>
-              <p style={hs}>The AI uses these to log in during exploration.</p>
-              {credentials.map((cred, i) => (
-                <div key={i} style={{
-                  display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
-                  gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)', alignItems: 'center',
-                }}>
-                  <input type="text" value={cred.label} onChange={(e) => updateCredential(i, 'label', e.target.value)}
-                    placeholder="label" style={{ ...is, fontSize: 'var(--text-xs)' }} />
-                  <input type="text" value={cred.username} onChange={(e) => updateCredential(i, 'username', e.target.value)}
-                    placeholder="user@test.com" style={{ ...is, fontSize: 'var(--text-xs)' }} />
-                  <input type="password" value={cred.password} onChange={(e) => updateCredential(i, 'password', e.target.value)}
-                    placeholder="••••••" style={{ ...is, fontSize: 'var(--text-xs)' }} />
-                  <button type="button" onClick={() => removeCredential(i)} style={{
-                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-                  }}>x</button>
-                </div>
-              ))}
-              {credentials.length === 0 && (
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontStyle: 'italic', margin: 0 }}>No credentials added</p>
-              )}
             </div>
+          </div>
 
-            {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)' }}>{error}</p>}
-            {saved && <p style={{ color: 'var(--color-accent-green)', fontSize: 'var(--text-sm)' }}>Saved</p>}
+          {/* Credentials */}
+          <div className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Test Credentials</h2>
+              <p className={styles.sectionDesc}>Used by the AI agent to log in during auto-exploration.</p>
+            </div>
+            {credentials.map((cred, i) => (
+              <div key={i} className={styles.credRow}>
+                <input className={styles.credInput} type="text" value={cred.label}
+                  onChange={(e) => setCredentials(credentials.map((c, j) => j === i ? { ...c, label: e.target.value } : c))}
+                  placeholder="label" />
+                <input className={styles.credInput} type="text" value={cred.username}
+                  onChange={(e) => setCredentials(credentials.map((c, j) => j === i ? { ...c, username: e.target.value } : c))}
+                  placeholder="user@test.com" />
+                <input className={styles.credInput} type="password" value={cred.password}
+                  onChange={(e) => setCredentials(credentials.map((c, j) => j === i ? { ...c, password: e.target.value } : c))}
+                  placeholder="password" />
+                <button className={styles.removeBtn} onClick={() => setCredentials(credentials.filter((_, j) => j !== i))}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            ))}
+            <button className={styles.addBtn} onClick={() => setCredentials([...credentials, { label: '', username: '', password: '' }])}>
+              + Add credential
+            </button>
+          </div>
 
+          {/* Save */}
+          <div className={styles.saveBar}>
             <Button onClick={() => void handleSave()} disabled={saving}>
-              {saving ? 'Saving...' : 'Save Settings'}
+              {saving ? 'Saving...' : 'Save Changes'}
             </Button>
+            {saved && <span className={`${styles.saveMsg} ${styles.success}`}>Saved</span>}
+            {error && <span className={`${styles.saveMsg} ${styles.error}`}>{error}</span>}
           </div>
 
-          {/* Right column */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-            <KnowledgePanel
-              context={project.discoveredContext}
-              projectId={projectId!}
-              onSaved={(updated) => setProject({ ...project, discoveredContext: updated })}
-            />
-            <WidgetPanel
-              project={project}
-              onUpdate={(updates) => setProject({ ...project, ...updates })}
-            />
-          </div>
+          {/* Widget — core feature highlight */}
+          <WidgetSection project={project} onUpdate={(u) => setProject({ ...project, ...u })} />
+
+          {/* Knowledge Base */}
+          <KnowledgeSection
+            context={project.discoveredContext}
+            projectId={projectId!}
+            onSaved={(updated) => setProject({ ...project, discoveredContext: updated })}
+          />
         </div>
       </div>
     </Shell>
   )
 }
 
-// --- Knowledge Base Panel ---
+// --- Widget Section (core feature) ---
 
-function KnowledgePanel({
-  context,
-  projectId,
-  onSaved,
-}: {
+function WidgetSection({ project, onUpdate }: { project: ProjectDTO; onUpdate: (u: Partial<ProjectDTO>) => void }): React.ReactElement {
+  const [generating, setGenerating] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const handleGenerate = async (): Promise<void> => {
+    setGenerating(true)
+    try {
+      const result = await api.projects.generateWidgetKey(project.id)
+      onUpdate({ widgetApiKey: result.widgetApiKey, widgetEnabled: result.widgetEnabled })
+    } finally { setGenerating(false) }
+  }
+
+  const copy = (text: string, label: string): void => {
+    void navigator.clipboard.writeText(text)
+    setCopied(label)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const snippet = project.widgetApiKey
+    ? `<script src="${origin}/widget.js"\n  data-key="${project.widgetApiKey}"\n  data-user-name="{{USER_NAME}}"\n  data-user-email="{{USER_EMAIL}}"\n  data-user-plan="{{USER_PLAN}}"\n></script>`
+    : ''
+
+  return (
+    <div className={styles.featureSection}>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>Embed Chat Widget</h2>
+        <p className={styles.sectionDesc}>
+          Add an AI-powered chat to your app. Your users ask questions, the widget answers using your documentation.
+        </p>
+      </div>
+
+      {!project.widgetApiKey ? (
+        <Button onClick={() => void handleGenerate()} disabled={generating}>
+          {generating ? 'Generating...' : 'Enable Widget'}
+        </Button>
+      ) : (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+            <div className={styles.field}>
+              <label className={styles.label}>
+                API Key {project.widgetEnabled
+                  ? <span className={styles.statusActive}>active</span>
+                  : <span className={styles.statusDisabled}>disabled</span>}
+              </label>
+              <div className={styles.codeBlock}>
+                {project.widgetApiKey}
+                <button className={styles.copyBtn} onClick={() => copy(project.widgetApiKey!, 'key')}>
+                  {copied === 'key' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            <div className={styles.field}>
+              <label className={styles.label}>Add to your HTML</label>
+              <div className={styles.codeBlock}>
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{snippet}</pre>
+                <button className={styles.copyBtn} onClick={() => copy(snippet, 'snippet')}>
+                  {copied === 'snippet' ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+              <p className={styles.widgetHelp}>
+                Replace <code>{'{{...}}'}</code> placeholders with your user&apos;s data. All <code>data-user-*</code> attributes are optional.
+              </p>
+            </div>
+
+            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+              <Button size="sm" variant="secondary" onClick={() => void handleGenerate()} disabled={generating}>
+                Regenerate Key
+              </Button>
+              {project.widgetEnabled && (
+                <Button size="sm" variant="ghost" onClick={() => void api.projects.disableWidget(project.id).then(() => onUpdate({ widgetEnabled: false }))}>
+                  Disable
+                </Button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// --- Knowledge Section ---
+
+function KnowledgeSection({ context, projectId, onSaved }: {
   context: DiscoveredContextDTO | null
   projectId: string
   onSaved: (ctx: DiscoveredContextDTO) => void
@@ -244,174 +266,99 @@ function KnowledgePanel({
 
   if (!context) {
     return (
-      <div style={{
-        marginTop: 'var(--space-xl)', padding: 'var(--space-lg)',
-        backgroundColor: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
-        borderRadius: 'var(--radius-lg)', textAlign: 'center',
-      }}>
-        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', margin: 0 }}>
-          The AI builds this knowledge base automatically as it explores your product. Run an exploration on any page to get started.
-        </p>
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Knowledge Base</h2>
+          <p className={styles.sectionDesc}>
+            The AI builds this automatically as it generates documentation. Generate docs for any page to get started.
+          </p>
+        </div>
       </div>
     )
   }
 
   const handleSave = async (): Promise<void> => {
-    setSaving(true)
-    setSaved(false)
+    setSaving(true); setSaved(false)
     try {
       const updated: DiscoveredContextDTO = {
-        ...context,
-        summary,
+        ...context, summary,
         terminology: Object.fromEntries(terminology.filter(([k]) => k.trim())),
       }
       await updateProject(projectId, { discoveredContext: updated })
       onSaved(updated)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const addTerm = (): void => {
-    setTerminology([...terminology, ['', '']])
-  }
-
-  const updateTerm = (i: number, col: 0 | 1, val: string): void => {
-    setTerminology(terminology.map((entry, idx) => {
-      if (idx !== i) return entry
-      const copy: [string, string] = [...entry]
-      copy[col] = val
-      return copy
-    }))
-  }
-
-  const removeTerm = (i: number): void => {
-    setTerminology(terminology.filter((_, idx) => idx !== i))
-  }
-
-  const statStyle: React.CSSProperties = {
-    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-    padding: '2px 8px', borderRadius: 'var(--radius-sm)',
-    backgroundColor: 'var(--color-bg-elevated)', color: 'var(--color-text-secondary)',
-  }
-
-  const sectionLabel: React.CSSProperties = {
-    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-    color: 'var(--color-text-muted)', margin: '0 0 var(--space-xs)',
+    } finally { setSaving(false) }
   }
 
   const ago = context.lastUpdated ? formatTimeAgo(context.lastUpdated) : ''
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-      <div>
-        <h2 style={{ fontSize: 'var(--text-md)', fontWeight: 600, margin: '0 0 4px' }}>Knowledge Base</h2>
-        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: 0 }}>
-          Auto-generated by the AI during explorations. You can edit to correct mistakes.
-        </p>
+    <div className={styles.section}>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>Knowledge Base</h2>
+        <p className={styles.sectionDesc}>Auto-generated by the AI. Edit to correct mistakes.</p>
       </div>
 
-      {/* Coverage stats */}
-      <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
-        <span style={statStyle}>{context.features.length} features</span>
-        <span style={statStyle}>{context.siteStructure.length} pages</span>
-        <span style={statStyle}>{Object.keys(context.terminology).length} terms</span>
-        {ago && <span style={statStyle}>updated {ago}</span>}
+      <div className={styles.statRow}>
+        <span className={styles.stat}>{context.features.length} features</span>
+        <span className={styles.stat}>{context.siteStructure.length} pages</span>
+        <span className={styles.stat}>{Object.keys(context.terminology).length} terms</span>
+        {ago && <span className={styles.stat}>updated {ago}</span>}
       </div>
 
-      {/* Summary — editable */}
-      <div>
-        <p style={sectionLabel}>summary</p>
-        <textarea
-          value={summary}
-          onChange={(e) => setSummary(e.target.value)}
-          rows={3}
-          style={{
-            width: '100%', fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)',
-            background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
-            borderRadius: 'var(--radius-md)', padding: 'var(--space-sm)',
-            fontFamily: 'var(--font-sans)', resize: 'vertical',
-          }}
-        />
-      </div>
-
-      {/* Terminology — editable */}
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <p style={sectionLabel}>terminology</p>
-          <button type="button" onClick={addTerm} style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)',
-          }}>+ add</button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <div className={styles.field}>
+          <p className={styles.subLabel}>Summary</p>
+          <textarea className={styles.textarea} value={summary} onChange={(e) => setSummary(e.target.value)} rows={3} />
         </div>
-        {terminology.map(([term, def], i) => (
-          <div key={i} style={{
-            display: 'grid', gridTemplateColumns: '1fr 2fr auto',
-            gap: 'var(--space-xs)', marginBottom: 'var(--space-xs)', alignItems: 'center',
-          }}>
-            <input type="text" value={term} onChange={(e) => updateTerm(i, 0, e.target.value)}
-              placeholder="term" style={{
-                fontSize: 'var(--text-sm)', fontFamily: 'var(--font-mono)', fontWeight: 500,
-                background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
-                borderRadius: 'var(--radius-sm)', padding: '4px 8px', color: 'var(--color-text-primary)',
-              }} />
-            <input type="text" value={def} onChange={(e) => updateTerm(i, 1, e.target.value)}
-              placeholder="definition" style={{
-                fontSize: 'var(--text-sm)', fontFamily: 'var(--font-sans)',
-                background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
-                borderRadius: 'var(--radius-sm)', padding: '4px 8px', color: 'var(--color-text-secondary)',
-              }} />
-            <button type="button" onClick={() => removeTerm(i)} style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-            }}>x</button>
-          </div>
-        ))}
-      </div>
 
-      {/* Features — read-only */}
-      {context.features.length > 0 && (
         <div>
-          <p style={sectionLabel}>features</p>
-          <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
-            {context.features.map((f, i) => (
-              <span key={i} style={statStyle}>{f}</span>
-            ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <p className={styles.subLabel}>Terminology</p>
+            <button className={styles.addBtn} style={{ width: 'auto', padding: '2px 8px' }}
+              onClick={() => setTerminology([...terminology, ['', '']])}>+ add</button>
           </div>
+          {terminology.map(([term, def], i) => (
+            <div key={i} className={styles.termRow}>
+              <input className={styles.credInput} style={{ fontFamily: 'var(--font-mono)', fontWeight: 500 }}
+                value={term} onChange={(e) => setTerminology(terminology.map((t, j) => j === i ? [e.target.value, t[1]] : t))}
+                placeholder="term" />
+              <input className={styles.credInput} value={def}
+                onChange={(e) => setTerminology(terminology.map((t, j) => j === i ? [t[0], e.target.value] : t))}
+                placeholder="definition" />
+              <button className={styles.removeBtn} onClick={() => setTerminology(terminology.filter((_, j) => j !== i))}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          ))}
         </div>
-      )}
 
-      {/* Navigation — read-only */}
-      {context.navigation.length > 0 && (
-        <div>
-          <p style={sectionLabel}>navigation</p>
-          <div style={{ display: 'flex', gap: 'var(--space-xs)', flexWrap: 'wrap' }}>
-            {context.navigation.map((n, i) => (
-              <span key={i} style={statStyle}>{n}</span>
-            ))}
+        {context.features.length > 0 && (
+          <div>
+            <p className={styles.subLabel}>Features</p>
+            <div className={styles.tagList}>
+              {context.features.map((f, i) => <span key={i} className={styles.stat}>{f}</span>)}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Site structure — read-only */}
-      {context.siteStructure.length > 0 && (
-        <div>
-          <p style={sectionLabel}>site_structure</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            {context.siteStructure.map((url, i) => (
-              <span key={i} style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>{url}</span>
-            ))}
+        {context.siteStructure.length > 0 && (
+          <div>
+            <p className={styles.subLabel}>Site structure</p>
+            <div className={styles.urlList}>
+              {context.siteStructure.map((url, i) => <span key={i}>{url}</span>)}
+            </div>
           </div>
+        )}
+
+        <div className={styles.saveBar}>
+          <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
+            {saving ? 'Saving...' : 'Save Knowledge'}
+          </Button>
+          {saved && <span className={`${styles.saveMsg} ${styles.success}`}>Saved</span>}
         </div>
-      )}
-
-      {saved && <p style={{ color: 'var(--color-accent-green)', fontSize: 'var(--text-sm)' }}>Knowledge saved</p>}
-
-      <Button onClick={() => void handleSave()} disabled={saving}>
-        {saving ? 'Saving...' : 'Save Knowledge'}
-      </Button>
+      </div>
     </div>
   )
 }
@@ -423,125 +370,5 @@ function formatTimeAgo(iso: string): string {
   if (mins < 60) return `${mins}m ago`
   const hours = Math.floor(mins / 60)
   if (hours < 24) return `${hours}h ago`
-  const days = Math.floor(hours / 24)
-  return `${days}d ago`
-}
-
-// --- Widget Panel ---
-
-function WidgetPanel({
-  project,
-  onUpdate,
-}: {
-  project: ProjectDTO
-  onUpdate: (updates: Partial<ProjectDTO>) => void
-}): React.ReactElement {
-  const [generating, setGenerating] = useState(false)
-  const [copied, setCopied] = useState<string | null>(null)
-
-  const handleGenerate = async (): Promise<void> => {
-    setGenerating(true)
-    try {
-      const result = await api.projects.generateWidgetKey(project.id)
-      onUpdate({ widgetApiKey: result.widgetApiKey, widgetEnabled: result.widgetEnabled })
-    } finally {
-      setGenerating(false)
-    }
-  }
-
-  const handleDisable = async (): Promise<void> => {
-    await api.projects.disableWidget(project.id)
-    onUpdate({ widgetEnabled: false })
-  }
-
-  const copyToClipboard = (text: string, label: string): void => {
-    void navigator.clipboard.writeText(text)
-    setCopied(label)
-    setTimeout(() => setCopied(null), 2000)
-  }
-
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const embedSnippet = project.widgetApiKey
-    ? `<script src="${origin}/widget.js"\n  data-key="${project.widgetApiKey}"\n  data-user-name="{{USER_NAME}}"\n  data-user-email="{{USER_EMAIL}}"\n  data-user-plan="{{USER_PLAN}}"\n></script>`
-    : ''
-
-  const panelStyle: React.CSSProperties = {
-    background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
-    borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)',
-  }
-  const codeBlockStyle: React.CSSProperties = {
-    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
-    borderRadius: 'var(--radius-md)', padding: 'var(--space-sm) var(--space-md)',
-    fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
-    color: 'var(--color-text-primary)', wordBreak: 'break-all',
-    lineHeight: 1.6, position: 'relative' as const,
-  }
-  const copyBtnStyle: React.CSSProperties = {
-    position: 'absolute', top: 6, right: 6,
-    background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
-    borderRadius: 'var(--radius-sm)', padding: '2px 8px',
-    fontSize: '10px', fontFamily: 'var(--font-mono)',
-    color: 'var(--color-text-muted)', cursor: 'pointer',
-  }
-
-  return (
-    <div style={panelStyle}>
-      <h2 style={{ fontSize: 'var(--text-md)', fontWeight: 600, margin: '0 0 4px' }}>Embed Widget</h2>
-      <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-md)', lineHeight: 1.5 }}>
-        Add a chat widget to your app so your users can ask questions about your product.
-      </p>
-
-      {!project.widgetApiKey ? (
-        <Button size="sm" onClick={() => void handleGenerate()} disabled={generating}>
-          {generating ? 'Generating...' : 'Generate API Key'}
-        </Button>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-          {/* API Key */}
-          <div>
-            <label style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>
-              API Key {project.widgetEnabled
-                ? <span style={{ color: 'var(--color-accent-green)' }}>active</span>
-                : <span style={{ color: 'var(--color-accent-red)' }}>disabled</span>
-              }
-            </label>
-            <div style={codeBlockStyle}>
-              {project.widgetApiKey}
-              <button style={copyBtnStyle} onClick={() => copyToClipboard(project.widgetApiKey!, 'key')}>
-                {copied === 'key' ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-          </div>
-
-          {/* Embed snippet */}
-          <div>
-            <label style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>
-              Add this to your HTML
-            </label>
-            <div style={codeBlockStyle}>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{embedSnippet}</pre>
-              <button style={copyBtnStyle} onClick={() => copyToClipboard(embedSnippet, 'snippet')}>
-                {copied === 'snippet' ? 'Copied' : 'Copy'}
-              </button>
-            </div>
-            <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', margin: '8px 0 0', lineHeight: 1.5 }}>
-              Replace <code style={{ background: 'var(--color-bg-elevated)', padding: '1px 4px', borderRadius: 3 }}>{'{{...}}'}</code> with your user's data. All <code style={{ background: 'var(--color-bg-elevated)', padding: '1px 4px', borderRadius: 3 }}>data-user-*</code> attributes are optional.
-            </p>
-          </div>
-
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-            <Button size="sm" variant="secondary" onClick={() => void handleGenerate()} disabled={generating}>
-              Regenerate Key
-            </Button>
-            {project.widgetEnabled && (
-              <Button size="sm" variant="ghost" onClick={() => void handleDisable()}>
-                Disable Widget
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  )
+  return `${Math.floor(hours / 24)}d ago`
 }
