@@ -9,24 +9,29 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-sm) var(--space-lg);
-  border-bottom: 1px solid var(--color-border-subtle);
-  background-color: var(--color-bg-surface);
-  height: 48px;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-card);
+  backdrop-filter: blur(12px);
+  height: 52px;
   flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 50;
 }
 
 .logo {
-  font-family: var(--font-mono);
-  font-weight: 600;
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
+  font-weight: 700;
   font-size: var(--text-md);
-  color: var(--color-text-primary);
-  letter-spacing: -0.03em;
+  color: var(--color-fg);
+  letter-spacing: var(--heading-tracking);
   text-decoration: none;
 }
 
 .logo:hover {
   text-decoration: none;
-  color: var(--color-accent-blue);
+  color: var(--color-primary);
 }
 
 .nav {
@@ -42,17 +47,17 @@
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: none;
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   font-size: 16px;
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
 }
 
 .themeToggle:hover {
-  background-color: var(--color-bg-elevated);
-  color: var(--color-text-primary);
+  background-color: var(--color-secondary);
+  color: var(--color-fg);
 }
 
 .main {

@@ -1,14 +1,14 @@
 .layout {
   display: flex;
-  height: calc(100vh - 48px);
+  height: calc(100vh - 52px);
 }
 
 .sidebar {
   width: 280px;
   flex-shrink: 0;
-  border-right: 1px solid var(--color-border-subtle);
+  border-right: 1px solid var(--color-border);
   padding: var(--space-md);
-  background-color: var(--color-bg-surface);
+  background-color: var(--color-card);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -20,13 +20,16 @@
   justify-content: space-between;
   margin-bottom: var(--space-md);
   padding-bottom: var(--space-md);
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .projectName {
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
   font-size: var(--text-md);
   font-weight: 600;
-  color: var(--color-text-primary);
+  letter-spacing: var(--heading-tracking);
+  color: var(--color-fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -47,17 +50,17 @@
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   background: none;
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   font-size: 16px;
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
 }
 
 .headerBtn:hover {
-  background-color: var(--color-bg-elevated);
-  color: var(--color-text-primary);
+  background-color: var(--color-secondary);
+  color: var(--color-fg);
 }
 
 .headerBtnPrimary {
@@ -67,17 +70,17 @@
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: var(--radius-md);
-  background-color: var(--color-accent-blue);
-  color: var(--color-text-inverse);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-primary);
+  color: white;
   font-size: 18px;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: background-color 0.15s;
 }
 
 .headerBtnPrimary:hover {
-  opacity: 0.85;
+  background-color: var(--color-primary-hover);
 }
 
 .addButton {
@@ -93,6 +96,7 @@
   flex: 1;
   padding: var(--space-xl);
   overflow-y: auto;
+  background-color: var(--color-bg);
 }
 
 .emptyContent {
@@ -100,6 +104,7 @@
   align-items: center;
   justify-content: center;
   flex: 1;
+  background-color: var(--color-bg);
 }
 
 @media (max-width: 768px) {
@@ -110,7 +115,7 @@
   .sidebar {
     width: 100%;
     border-right: none;
-    border-bottom: 1px solid var(--color-border-subtle);
+    border-bottom: 1px solid var(--color-border);
     max-height: 200px;
   }
   .content {

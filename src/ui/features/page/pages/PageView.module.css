@@ -1,8 +1,8 @@
-/* Tab bar — Linear-style minimal underline navigation */
+/* Tab bar */
 .tabBar {
   display: flex;
   gap: var(--space-lg);
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border);
   margin-bottom: var(--space-lg);
 }
 
@@ -15,7 +15,7 @@
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   font-weight: 500;
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   background: none;
   border: none;
   cursor: pointer;
@@ -23,11 +23,11 @@
 }
 
 .tab:hover {
-  color: var(--color-text-secondary);
+  color: var(--color-fg);
 }
 
 .tabActive {
-  color: var(--color-text-primary);
+  color: var(--color-fg);
 }
 
 .tabActive::after {
@@ -37,11 +37,10 @@
   left: 0;
   right: 0;
   height: 2px;
-  background-color: var(--color-accent-blue);
+  background-color: var(--color-primary);
   border-radius: 1px;
 }
 
-/* Tab content fade-in */
 .tabContent {
   animation: tabFadeIn 0.15s ease;
 }
@@ -51,40 +50,42 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Page title — Documentation tab */
+/* Page title */
 .pageTitle {
   background: none;
   border: none;
   outline: none;
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
   font-size: var(--text-xl);
   font-weight: 600;
-  color: var(--color-text-primary);
+  letter-spacing: var(--heading-tracking);
+  color: var(--color-fg);
   width: 100%;
-  font-family: var(--font-sans);
   margin-bottom: var(--space-md);
 }
 
-/* Dashboard sections — Exploration tab */
+/* Dashboard sections */
 .section {
   padding: var(--space-md);
-  background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
   margin-bottom: var(--space-md);
 }
 
 .sectionLabel {
   font-size: var(--text-xs);
   font-family: var(--font-mono);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   margin: 0 0 var(--space-sm);
 }
 
 /* Session replay */
 .replayContainer {
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   overflow: hidden;
-  border: 1px solid var(--color-border-default);
+  border: 1px solid var(--color-border);
 }
 
 .replayHeader {
@@ -92,8 +93,8 @@
   align-items: center;
   justify-content: space-between;
   padding: var(--space-xs) var(--space-md);
-  background-color: var(--color-bg-surface);
-  border-bottom: 1px solid var(--color-border-subtle);
+  background-color: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .replayIframe {
@@ -101,10 +102,10 @@
   height: 450px;
   border: none;
   display: block;
-  background-color: var(--color-bg-elevated);
+  background-color: var(--color-secondary);
 }
 
-/* Live feed — two-column: activity left, video right */
+/* Live feed */
 .liveLayout {
   display: grid;
   grid-template-columns: 340px 1fr;
@@ -128,40 +129,40 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   overflow: hidden;
   max-height: 500px;
   overflow-y: auto;
-  background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border-subtle);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
 }
 
 .activityHeader {
   padding: var(--space-sm);
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border);
   font-size: var(--text-xs);
   font-family: var(--font-mono);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   position: sticky;
   top: 0;
-  background-color: var(--color-bg-surface);
+  background-color: var(--color-card);
   z-index: 1;
 }
 
 .activityEntry {
   padding: var(--space-sm) var(--space-md);
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--color-muted-fg);
   line-height: 1.5;
-  border-bottom: 1px solid var(--color-border-subtle);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .activityEntry:last-child {
   border-bottom: none;
-  color: var(--color-accent-blue);
+  color: var(--color-primary);
 }
 
-/* Post-exploration dashboard — two-column grid */
+/* Dashboard grid */
 .dashboardGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -192,12 +193,17 @@
 
 .methodCard {
   padding: var(--space-lg);
-  background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
   display: flex;
   flex-direction: column;
   gap: var(--space-md);
+  transition: border-color 0.15s;
+}
+
+.methodCard:hover {
+  border-color: var(--color-primary);
 }
 
 .methodHeader {
@@ -207,15 +213,17 @@
 }
 
 .methodTitle {
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
   font-size: var(--text-sm);
   font-weight: 600;
-  color: var(--color-text-primary);
-  font-family: var(--font-mono);
+  letter-spacing: var(--heading-tracking);
+  color: var(--color-fg);
 }
 
 .methodDesc {
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   line-height: 1.5;
   margin: 0;
 }
@@ -233,7 +241,7 @@
   align-items: center;
   gap: var(--space-sm);
   font-size: var(--text-sm);
-  color: var(--color-accent-blue);
+  color: var(--color-primary);
   padding: var(--space-sm) 0;
 }
 
@@ -244,29 +252,29 @@
   justify-content: center;
   padding: var(--space-lg) var(--space-md);
   cursor: pointer;
-  border: 2px dashed var(--color-border-subtle);
-  border-radius: var(--radius-md);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-lg);
   transition: border-color 0.15s, background-color 0.15s;
 }
 
 .dropZone:hover {
-  border-color: var(--color-accent-green);
-  background-color: color-mix(in srgb, var(--color-accent-green) 5%, transparent);
+  border-color: var(--color-primary);
+  background-color: var(--color-accent);
 }
 
 .dropZoneTitle {
   font-size: var(--text-sm);
   font-weight: 500;
-  color: var(--color-text-secondary);
+  color: var(--color-muted-fg);
   margin-bottom: var(--space-xs);
 }
 
 .dropZoneHint {
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
 }
 
-/* Step numbers in briefing */
+/* Step numbers */
 .stepNumber {
   display: flex;
   align-items: center;
@@ -274,7 +282,7 @@
   width: 20px;
   height: 20px;
   border-radius: var(--radius-full);
-  background-color: var(--color-accent-blue);
+  background-color: var(--color-primary);
   color: white;
   font-size: 11px;
   font-weight: 600;
