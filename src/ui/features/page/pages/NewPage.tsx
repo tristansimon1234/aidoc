@@ -38,6 +38,8 @@ export function NewPage(): React.ReactElement {
   const [slug, setSlug] = useState('')
   const [startUrl, setStartUrl] = useState('')
   const [goal, setGoal] = useState('')
+  const [objective, setObjective] = useState('')
+  const [knowledge, setKnowledge] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -48,9 +50,8 @@ export function NewPage(): React.ReactElement {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent): void => {
-    e.preventDefault()
-    if (!projectId) return
+  const handleCreate = (mode: 'explore' | 'manual'): void => {
+    if (!projectId || !title || !slug) return
     setSubmitting(true)
     setError(null)
 
@@ -60,7 +61,20 @@ export function NewPage(): React.ReactElement {
         startUrl: startUrl || undefined,
         goal: goal || undefined,
       })
-      .then((page) => navigate(`/projects/${projectId}/pages/${page.id}`))
+      .then(async (page) => {
+        // Save briefing if any field is filled
+        if (objective || knowledge) {
+          const { updatePage } = await import('../../../shared/api/db.js')
+          await updatePage(projectId, page.id, {
+            briefing: { objective, knowledge, resources: [] },
+          })
+        }
+        if (mode === 'explore') {
+          navigate(`/projects/${projectId}/pages/${page.id}?tab=exploration`)
+        } else {
+          navigate(`/projects/${projectId}/pages/${page.id}`)
+        }
+      })
       .catch((err: Error) => {
         setError(err.message)
         setSubmitting(false)
@@ -74,7 +88,7 @@ export function NewPage(): React.ReactElement {
         Create a documentation page. The AI will explore the URL and generate content based on your goal.
       </p>
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={(e) => e.preventDefault()}>
         <div style={{
           padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
           border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
@@ -129,13 +143,46 @@ export function NewPage(): React.ReactElement {
               placeholder="e.g. Document how a new user creates an account, verifies their email, and completes onboarding"
               rows={3} style={textareaStyle} />
           </div>
+
+          {/* Step 4: Objective */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+              <span style={stepNumStyle}>4</span>
+              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Objective for the AI</span>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+            </div>
+            <p style={helpStyle}>
+              What should the user learn from this page? Be specific — &quot;Document the checkout flow step by step&quot; works better than &quot;Document checkout&quot;.
+            </p>
+            <textarea value={objective} onChange={(e) => setObjective(e.target.value)}
+              placeholder="e.g. Document the pricing page: compare plans, show the upgrade flow from free to pro, explain what happens when the trial expires"
+              rows={3} style={textareaStyle} />
+          </div>
+
+          {/* Step 5: Domain knowledge */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+              <span style={stepNumStyle}>5</span>
+              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>What the agent can&apos;t see</span>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+            </div>
+            <p style={helpStyle}>
+              Business rules, edge cases, hidden behaviors — anything not obvious from the UI.
+            </p>
+            <textarea value={knowledge} onChange={(e) => setKnowledge(e.target.value)}
+              placeholder="e.g. Free trial users can't access billing. The 'Export' button only appears after 3 entries."
+              rows={2} style={textareaStyle} />
+          </div>
         </div>
 
         {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-md)' }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-lg)' }}>
-          <Button type="submit" disabled={submitting}>
-            {submitting ? 'Creating...' : 'Create Page'}
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-lg)', alignItems: 'center' }}>
+          <Button type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('explore')}>
+            {submitting ? 'Creating...' : 'Let the AI document'}
+          </Button>
+          <Button variant="secondary" type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('manual')}>
+            Write it myself
           </Button>
           <Button variant="ghost" type="button" onClick={() => navigate(`/projects/${projectId}`)}>
             Cancel
