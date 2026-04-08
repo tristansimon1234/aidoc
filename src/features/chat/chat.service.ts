@@ -206,7 +206,7 @@ ${message}`
   const response = await generateText({
     systemPrompt,
     userPrompt,
-    maxTokens: 1024,
+    maxTokens: 2048,
   })
 
   // Deduplicate sources
