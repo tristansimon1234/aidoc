@@ -1,6 +1,5 @@
-/* Fonts: Mona Sans (body), Hubot Sans (headings) */
-@import url('https://cdn.jsdelivr.net/npm/@fontsource-variable/mona-sans@5/index.min.css');
-@import url('https://cdn.jsdelivr.net/npm/@fontsource-variable/hubot-sans@5/index.min.css');
+/* Fonts: Inter (body + headings) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..800&display=swap');
 
 /* ===== LIGHT MODE (default) ===== */
 :root {
@@ -62,8 +61,8 @@
   --radius-full: 9999px;
 
   /* fonts */
-  --font-sans: 'Mona Sans Variable', 'Mona Sans', system-ui, -apple-system, sans-serif;
-  --font-heading: 'Hubot Sans Variable', 'Hubot Sans', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
   --heading-stretch: 90%;
   --heading-tracking: -0.02em;

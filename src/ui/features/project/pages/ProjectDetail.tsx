@@ -36,7 +36,7 @@ export function ProjectDetail(): React.ReactElement {
   useEffect(() => { void fetchData() }, [fetchData])
 
   if (loading) {
-    return <Shell fullWidth><Spinner size="lg" /></Shell>
+    return <Shell fullWidth><div className={styles.loadingState}><Spinner size="lg" /></div></Shell>
   }
 
   if (!project) {
@@ -49,8 +49,9 @@ export function ProjectDetail(): React.ReactElement {
     <Shell
       fullWidth
       actions={
-        <Link to="/">
-          <Button size="sm" variant="ghost">&larr; Projects</Button>
+        <Link to="/" className={styles.breadcrumb}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+          Projects
         </Link>
       }
     >
@@ -58,37 +59,35 @@ export function ProjectDetail(): React.ReactElement {
         <aside className={styles.sidebar}>
           <div className={styles.sidebarHeader}>
             <span className={styles.projectName}>{project.name}</span>
-            <div className={styles.headerActions}>
-              <button
-                className={styles.headerBtn}
-                onClick={() => setChatOpen(true)}
-                title="Chat with docs"
-              >
-                &#128172;
+          </div>
+
+          <div className={styles.sidebarActions}>
+            <button className={styles.actionBtn} onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New page
+            </button>
+            <div className={styles.actionBtnGroup}>
+              <button className={styles.iconBtn} onClick={() => setChatOpen(true)} title="Chat with docs">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               </button>
-              <button
-                className={styles.headerBtn}
-                onClick={() => navigate(`/projects/${projectId}/settings`)}
-                title="Project settings"
-              >
-                &#9881;
-              </button>
-              <button
-                className={styles.headerBtnPrimary}
-                onClick={() => navigate(`/projects/${projectId}/pages/new`)}
-                title="Add page"
-              >
-                +
+              <button className={styles.iconBtn} onClick={() => navigate(`/projects/${projectId}/settings`)} title="Settings">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
               </button>
             </div>
           </div>
+
+          <div className={styles.sidebarLabel}>Pages</div>
+
           <div className={styles.pageList}>
             {pages.length > 0 ? (
               <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
             ) : (
-              <p style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', padding: 'var(--space-sm)' }}>
-                No pages yet
-              </p>
+              <div className={styles.emptyPages}>
+                <span>No pages yet</span>
+                <Button size="sm" onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
+                  Create first page
+                </Button>
+              </div>
             )}
           </div>
         </aside>

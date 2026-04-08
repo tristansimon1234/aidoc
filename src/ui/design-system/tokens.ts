@@ -36,8 +36,8 @@ export const tokens = {
     full: '9999px',
   },
   font: {
-    sans: "'Mona Sans Variable', 'Mona Sans', system-ui, -apple-system, sans-serif",
-    heading: "'Hubot Sans Variable', 'Hubot Sans', system-ui, -apple-system, sans-serif",
+    sans: "'Inter', system-ui, -apple-system, sans-serif",
+    heading: "'Inter', system-ui, -apple-system, sans-serif",
     mono: "'Geist Mono', 'JetBrains Mono', ui-monospace, monospace",
   },
   fontSize: {
