@@ -20,10 +20,9 @@ interface PageContext {
   refetchPages: () => Promise<void>
 }
 
-interface LiveStep {
-  type: string
-  action: string
-  stepIndex: number
+interface ActivityEntry {
+  text: string
+  timestamp: number
 }
 
 export function PageView(): React.ReactElement {
@@ -35,7 +34,7 @@ export function PageView(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [exploring, setExploring] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [liveSteps, setLiveSteps] = useState<LiveStep[]>([])
+  const [activity, setActivity] = useState<ActivityEntry[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const runIdRef = useRef<string | null>(null)
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
@@ -69,7 +68,7 @@ export function PageView(): React.ReactElement {
     setDoc(null)
     setLatestRun(null)
     setError(null)
-    setLiveSteps([])
+    setActivity([])
     setLiveUrl(null)
     setExploring(false)
     setGenerating(false)
@@ -80,7 +79,7 @@ export function PageView(): React.ReactElement {
   const runExploration = async (runId: string, customPrompt?: string): Promise<void> => {
     setExploring(true)
     setError(null)
-    setLiveSteps([])
+    setActivity([])
     setLiveUrl(null)
     setStatusMessage('Launching browser...')
 
@@ -94,15 +93,15 @@ export function PageView(): React.ReactElement {
         (event: StepEventDTO) => {
           switch (event.type) {
             case 'live': setLiveUrl(event.liveUrl ?? null); break
-            case 'status': setStatusMessage(event.message ?? null); break
+            case 'status':
+              if (event.message && event.message.length > 15) {
+                setActivity((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
+              }
+              setStatusMessage(event.message ?? null)
+              break
             case 'step':
-              if (event.step) {
-                setLiveSteps((prev) => [...prev, {
-                  type: event.step!.type,
-                  action: event.step!.action ?? event.step!.type,
-                  stepIndex: event.stepIndex ?? prev.length,
-                }])
-                setStatusMessage(event.message ?? null)
+              if (event.message && event.message.length > 15) {
+                setActivity((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
               }
               break
             case 'done': setStatusMessage(event.message ?? 'Exploration complete'); break
@@ -386,6 +385,17 @@ export function PageView(): React.ReactElement {
               </div>
 
               <div className={styles.liveLayout}>
+                <div className={styles.activityLog}>
+                  <div className={styles.activityHeader}>
+                    reasoning ({activity.length})
+                  </div>
+                  {activity.map((entry, i) => (
+                    <div key={i} className={styles.activityEntry}>
+                      {entry.text}
+                    </div>
+                  ))}
+                </div>
+
                 {liveUrl ? (
                   <div className={styles.replayContainer}>
                     <div className={styles.replayHeader}>
@@ -401,38 +411,21 @@ export function PageView(): React.ReactElement {
                     <Spinner size="lg" />
                   </div>
                 )}
-
-                <div className={styles.stepsLog}>
-                  <div style={{ padding: 'var(--space-sm)', borderBottom: '1px solid var(--color-border-subtle)' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
-                      activity ({liveSteps.length})
-                    </span>
-                  </div>
-                  {liveSteps.map((ls, i) => (
-                    <div key={i} className={styles.stepRow}>
-                      <span className={styles.stepIndex}>{ls.stepIndex + 1}</span>
-                      <span className={styles.stepAction}>{ls.action}</span>
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
           )}
 
-          {/* Steps persist after exploration — show last run's activity */}
-          {!exploring && !generating && liveSteps.length > 0 && (
-            <div className={styles.section}>
-              <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
-                last exploration ({liveSteps.length} actions)
-              </span>
-              <div className={styles.stepsLog} style={{ marginTop: 'var(--space-sm)', maxHeight: '200px' }}>
-                {liveSteps.map((ls, i) => (
-                  <div key={i} className={styles.stepRow}>
-                    <span className={styles.stepIndex}>{ls.stepIndex + 1}</span>
-                    <span className={styles.stepAction}>{ls.action}</span>
-                  </div>
-                ))}
+          {/* Reasoning persists after exploration */}
+          {!exploring && !generating && activity.length > 0 && (
+            <div className={styles.activityLog} style={{ maxHeight: '200px', marginBottom: 'var(--space-md)' }}>
+              <div className={styles.activityHeader}>
+                exploration reasoning ({activity.length})
               </div>
+              {activity.map((entry, i) => (
+                <div key={i} className={styles.activityEntry}>
+                  {entry.text}
+                </div>
+              ))}
             </div>
           )}
 
