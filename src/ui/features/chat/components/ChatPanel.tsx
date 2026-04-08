@@ -170,6 +170,19 @@ export function ChatPanel({
                       ) : (
                         msg.content
                       )}
+                      {msg.followUps && msg.followUps.length > 0 && i === messages.length - 1 && !sending && (
+                        <div className={styles.followUps}>
+                          {msg.followUps.map((q) => (
+                            <button
+                              key={q}
+                              className={styles.followUp}
+                              onClick={() => void sendMessage(q)}
+                            >
+                              {q}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {msg.sources && msg.sources.length > 0 && (
                         <div className={styles.sources}>
                           <span className={styles.sourcesLabel}>Sources</span>
@@ -183,19 +196,6 @@ export function ChatPanel({
                               }}
                             >
                               {s.pageTitle}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {msg.followUps && msg.followUps.length > 0 && i === messages.length - 1 && !sending && (
-                        <div className={styles.followUps}>
-                          {msg.followUps.map((q) => (
-                            <button
-                              key={q}
-                              className={styles.followUp}
-                              onClick={() => void sendMessage(q)}
-                            >
-                              {q}
                             </button>
                           ))}
                         </div>
