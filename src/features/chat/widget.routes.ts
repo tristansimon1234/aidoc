@@ -55,6 +55,7 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
         project.id,
         body.data.message,
         body.data.history,
+        body.data.userContext,
       )
 
       res.status(200).json(result)
