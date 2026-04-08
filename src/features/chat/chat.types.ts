@@ -3,9 +3,17 @@ export interface ChatMessage {
   content: string
 }
 
+export interface UserContext {
+  name?: string
+  email?: string
+  plan?: string
+  extra?: string
+}
+
 export interface ChatRequest {
   message: string
   history: ChatMessage[]
+  userContext?: UserContext
 }
 
 export interface DocChunk {

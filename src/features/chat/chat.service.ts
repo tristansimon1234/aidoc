@@ -100,6 +100,7 @@ export async function chat(
   projectId: string,
   message: string,
   history: ChatMessage[],
+  userContext?: { name?: string; email?: string; plan?: string; extra?: string },
 ): Promise<ChatResponse> {
   // 1. Embed the user query
   const queryEmbedding = await embedText(message)
@@ -123,7 +124,18 @@ export async function chat(
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n\n')
 
-  const systemPrompt = `You are a helpful assistant that answers questions based on product documentation.
+  // Build user context block
+  const userInfo: string[] = []
+  if (userContext?.name) userInfo.push(`Name: ${userContext.name}`)
+  if (userContext?.email) userInfo.push(`Email: ${userContext.email}`)
+  if (userContext?.plan) userInfo.push(`Plan: ${userContext.plan}`)
+  if (userContext?.extra) userInfo.push(`Additional context: ${userContext.extra}`)
+
+  const userContextBlock = userInfo.length > 0
+    ? `\n\nThe user you are speaking with is a logged-in user of the product:\n${userInfo.join('\n')}\n\nPersonalize your responses when relevant (e.g. if they are on a specific plan, tailor your answer to what's available on their plan). Address them by first name if you know it.`
+    : ''
+
+  const systemPrompt = `You are a helpful assistant that answers questions based on product documentation.${userContextBlock}
 
 Rules:
 - ONLY answer based on the provided documentation context

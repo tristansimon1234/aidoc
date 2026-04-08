@@ -7,6 +7,12 @@
   var API_KEY = script.getAttribute('data-key');
   if (!API_KEY) { console.error('[AiDoc] Missing data-key attribute'); return; }
 
+  // User context — the client app can pass info about the logged-in user
+  var USER_NAME = script.getAttribute('data-user-name') || '';
+  var USER_EMAIL = script.getAttribute('data-user-email') || '';
+  var USER_PLAN = script.getAttribute('data-user-plan') || '';
+  var USER_CONTEXT = script.getAttribute('data-user-context') || '';
+
   var API_BASE = script.src.replace(/\/widget\.js.*$/, '/api/widget');
   var projectName = '';
   var messages = [];
@@ -92,8 +98,8 @@
     if (messages.length === 0) {
       msgContainer.innerHTML = [
         '<div class="aidoc-welcome">',
-        '<div><h3>Hi! Ask me anything.</h3>',
-        '<p>I can help you find answers in the documentation.</p></div>',
+        '<div><h3>' + (USER_NAME ? 'Hi ' + USER_NAME + '!' : 'Hi! Ask me anything.') + '</h3>',
+        '<p>I can help you find answers about ' + (projectName || 'this product') + '.</p></div>',
         '<div class="aidoc-suggestions">',
         '<button class="aidoc-suggestion">How does this product work?</button>',
         '<button class="aidoc-suggestion">What are the main features?</button>',
@@ -154,7 +160,10 @@
     fetch(API_BASE + '/' + API_KEY + '/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history: history.slice(0, -1) }),
+      body: JSON.stringify({
+        message: text,
+        history: history.slice(0, -1),
+        userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT } }),
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
