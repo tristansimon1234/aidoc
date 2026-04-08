@@ -220,7 +220,8 @@ ${message}`
   // Parse follow-ups from response
   let answer = response.text
   let followUps: string[] = []
-  const followUpSplit = answer.split('---FOLLOWUPS---')
+  // Match various formats Gemini might use: ---FOLLOWUPS---, FOLLOWUPS, ---FOLLOWUPS, etc.
+  const followUpSplit = answer.split(/---?\s*FOLLOWUPS\s*---?/i)
   if (followUpSplit.length > 1) {
     answer = followUpSplit[0]!.trim()
     try {
