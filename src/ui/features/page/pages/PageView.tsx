@@ -857,11 +857,10 @@ function VideoUploader({
         docPageId: pageId,
       })
 
-      // 2. Upload video to Supabase Storage
+      // 2. Upload video via backend (service key)
       setStatus('uploading')
       const videoPath = `runs/${run.id}/video${file.name.substring(file.name.lastIndexOf('.'))}`
-      const { error: uploadErr } = await supabase.storage.from('artifacts').upload(videoPath, file, { upsert: true })
-      if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`)
+      await api.runs.uploadArtifact(run.id, file, videoPath)
 
       // 3. Analyze with Gemini — returns timestamps for each step
       setStatus('analyzing')
@@ -925,7 +924,7 @@ function VideoUploader({
   )
 }
 
-// Extract frames from video at exact Gemini timestamps and upload as screenshots
+// Extract frames from video at exact Gemini timestamps and upload via backend
 async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
   if (timestamps.length === 0) return
 
@@ -952,11 +951,7 @@ async function extractAndUploadFrames(videoFile: File, runId: string, timestamps
         canvas.toBlob(async (blob) => {
           if (blob) {
             const path = `runs/${runId}/frame-${stepIndex}.jpg`
-            await supabase.storage.from('artifacts').upload(path, blob, { contentType: 'image/jpeg', upsert: true })
-            await supabase.from('run_steps')
-              .update({ screenshot_path: path })
-              .eq('run_id', runId)
-              .eq('step_index', stepIndex)
+            await api.runs.uploadArtifact(runId, blob, path, stepIndex)
           }
           i++
           extractNext()

@@ -11,6 +11,7 @@ import { errorHandler } from './shared/middleware/error.middleware.js'
 export const app = express()
 
 app.use(cors())
+app.use('/runs/:id/upload-artifact', express.raw({ type: '*/*', limit: '500mb' }))
 app.use(express.json())
 app.use(authMiddleware)
 

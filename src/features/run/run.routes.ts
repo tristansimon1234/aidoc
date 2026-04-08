@@ -83,6 +83,39 @@ runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) 
   })()
 })
 
+// Upload artifact (video or frame) to Supabase Storage via service key
+runRouter.post('/:id/upload-artifact', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const contentType = req.headers['content-type'] ?? ''
+      const artifactPath = req.headers['x-artifact-path']
+      const stepIndexHeader = req.headers['x-step-index']
+
+      if (!artifactPath || typeof artifactPath !== 'string') {
+        throw new ValidationError('x-artifact-path header is required')
+      }
+
+      const buffer = Buffer.from(req.body as Buffer)
+
+      const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
+      await uploadToStorage('artifacts', artifactPath, buffer, contentType)
+
+      // If step index provided, update the step's screenshot_path
+      if (stepIndexHeader !== undefined) {
+        const { updateStepScreenshot } = await import('./run.repository.js')
+        await updateStepScreenshot(params.data.id, Number(stepIndexHeader), artifactPath)
+      }
+
+      res.status(200).json({ path: artifactPath })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Analyze video — Gemini extracts steps from a screen recording
 runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
