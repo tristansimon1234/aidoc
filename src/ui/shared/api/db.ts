@@ -207,6 +207,7 @@ function mapPage(row: Record<string, unknown>): DocPageDTO {
     customPrompt: (row.custom_prompt as string) ?? null,
     briefing: (row.briefing as DocPageDTO['briefing']) ?? null,
     status: row.status as DocPageDTO['status'],
+    isPublic: (row.is_public as boolean) ?? false,
     sortOrder: row.sort_order as number,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

@@ -147,6 +147,7 @@ export interface DocPageDTO {
   customPrompt: string | null
   briefing: PageBriefingDTO | null
   status: 'draft' | 'exploring' | 'published'
+  isPublic: boolean
   sortOrder: number
   createdAt: string
   updatedAt: string

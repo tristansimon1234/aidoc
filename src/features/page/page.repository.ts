@@ -14,6 +14,7 @@ interface PageRow {
   custom_prompt: string | null
   briefing: PageBriefing | null
   status: string
+  is_public: boolean
   sort_order: number
   created_at: string
   updated_at: string
@@ -32,6 +33,7 @@ function mapToPage(row: PageRow): DocPage {
     customPrompt: row.custom_prompt,
     briefing: row.briefing ?? null,
     status: row.status as DocPage['status'],
+    isPublic: row.is_public,
     sortOrder: row.sort_order,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -85,6 +87,7 @@ export async function updatePage(id: string, input: UpdatePageInput): Promise<Do
   if (input.content !== undefined) updates.content = input.content
   if (input.customPrompt !== undefined) updates.custom_prompt = input.customPrompt
   if (input.briefing !== undefined) updates.briefing = input.briefing
+  if (input.isPublic !== undefined) updates.is_public = input.isPublic
 
   const { data, error } = await supabase
     .from('doc_pages')

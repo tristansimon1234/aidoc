@@ -2,13 +2,13 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Spinner } from '../../../design-system/components/index.js'
-import { api, type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
+import { type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
 import { fetchProject, updateProject } from '../../../shared/api/db.js'
 import styles from './ProjectSettings.module.css'
 
 interface Credential { label: string; username: string; password: string }
 
-type SettingsTab = 'general' | 'widget' | 'context' | 'credentials' | 'knowledge'
+type SettingsTab = 'general' | 'context' | 'credentials' | 'knowledge'
 
 export function ProjectSettings(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
@@ -57,7 +57,6 @@ export function ProjectSettings(): React.ReactElement {
 
   const tabs: { id: SettingsTab; label: string; highlight?: boolean }[] = [
     { id: 'general', label: 'General' },
-    { id: 'widget', label: 'Widget', highlight: true },
     { id: 'context', label: 'AI Context' },
     { id: 'credentials', label: 'Credentials' },
     { id: 'knowledge', label: 'Knowledge' },
@@ -111,10 +110,6 @@ export function ProjectSettings(): React.ReactElement {
                 {error && <span className={`${styles.saveMsg} ${styles.error}`}>{error}</span>}
               </div>
             </div>
-          )}
-
-          {activeTab === 'widget' && (
-            <WidgetTab project={project} onUpdate={(u) => setProject({ ...project, ...u })} />
           )}
 
           {activeTab === 'context' && (
@@ -193,97 +188,6 @@ export function ProjectSettings(): React.ReactElement {
         </div>
       </div>
     </Shell>
-  )
-}
-
-// --- Widget Tab (core feature, prominent) ---
-
-function WidgetTab({ project, onUpdate }: { project: ProjectDTO; onUpdate: (u: Partial<ProjectDTO>) => void }): React.ReactElement {
-  const [generating, setGenerating] = useState(false)
-  const [copied, setCopied] = useState<string | null>(null)
-
-  const handleGenerate = async (): Promise<void> => {
-    setGenerating(true)
-    try {
-      const result = await api.projects.generateWidgetKey(project.id)
-      onUpdate({ widgetApiKey: result.widgetApiKey, widgetEnabled: result.widgetEnabled })
-    } finally { setGenerating(false) }
-  }
-
-  const copy = (text: string, label: string): void => {
-    void navigator.clipboard.writeText(text)
-    setCopied(label)
-    setTimeout(() => setCopied(null), 2000)
-  }
-
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const snippet = project.widgetApiKey
-    ? `<script src="${origin}/widget.js"\n  data-key="${project.widgetApiKey}"\n  data-user-name="{{USER_NAME}}"\n  data-user-email="{{USER_EMAIL}}"\n  data-user-plan="{{USER_PLAN}}"\n></script>`
-    : ''
-
-  return (
-    <div className={styles.featureSection}>
-      <div className={styles.featureIcon}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-        </svg>
-      </div>
-      <div className={styles.sectionHeader}>
-        <h2 className={styles.sectionTitle}>Embed Chat Widget</h2>
-        <p className={styles.sectionDesc}>
-          Deploy an AI-powered chat on your app. Your users ask questions about your product — the widget answers using your documentation, with screenshots and step-by-step guidance.
-        </p>
-      </div>
-
-      <WidgetPreview projectName={project.name} />
-
-      {!project.widgetApiKey ? (
-        <Button onClick={() => void handleGenerate()} disabled={generating}>
-          {generating ? 'Generating...' : 'Enable Widget'}
-        </Button>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-          <div className={styles.field}>
-            <label className={styles.label}>
-              API Key {project.widgetEnabled
-                ? <span className={styles.statusActive}>active</span>
-                : <span className={styles.statusDisabled}>disabled</span>}
-            </label>
-            <div className={styles.codeBlock}>
-              {project.widgetApiKey}
-              <button className={styles.copyBtn} onClick={() => copy(project.widgetApiKey!, 'key')}>
-                {copied === 'key' ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-          </div>
-
-          <div className={styles.field}>
-            <label className={styles.label}>Add to your HTML</label>
-            <div className={styles.codeBlock}>
-              <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{snippet}</pre>
-              <button className={styles.copyBtn} onClick={() => copy(snippet, 'snippet')}>
-                {copied === 'snippet' ? 'Copied!' : 'Copy'}
-              </button>
-            </div>
-            <p className={styles.widgetHelp}>
-              Replace <code>{'{{...}}'}</code> placeholders with your user&apos;s data. All <code>data-user-*</code> attributes are optional.
-              The widget auto-detects the current page URL for contextual answers.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
-            <Button size="sm" variant="secondary" onClick={() => void handleGenerate()} disabled={generating}>
-              Regenerate Key
-            </Button>
-            {project.widgetEnabled && (
-              <Button size="sm" variant="ghost" onClick={() => void api.projects.disableWidget(project.id).then(() => onUpdate({ widgetEnabled: false }))}>
-                Disable
-              </Button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -394,49 +298,6 @@ function KnowledgeTab({ context, projectId, onSaved }: {
           {saved && <span className={`${styles.saveMsg} ${styles.success}`}>Saved</span>}
         </div>
       </div>
-    </div>
-  )
-}
-
-// --- Widget Preview ---
-
-function WidgetPreview({ projectName }: { projectName: string }): React.ReactElement {
-  return (
-    <div className={styles.preview}>
-      <div className={styles.previewFrame}>
-        {/* Mini widget panel */}
-        <div className={styles.previewPanel}>
-          <div className={styles.previewPanelHeader}>
-            <span style={{ fontSize: 10, fontWeight: 600, color: '#e5e5e5' }}>Ask about the docs</span>
-            <span style={{ fontSize: 12, color: '#666' }}>&times;</span>
-          </div>
-          <div className={styles.previewPanelBody}>
-            <div style={{ textAlign: 'center', padding: '12px 8px' }}>
-              <p style={{ fontSize: 10, fontWeight: 600, color: '#e5e5e5', margin: '0 0 4px' }}>
-                Hi! Ask me anything.
-              </p>
-              <p style={{ fontSize: 8, color: '#888', margin: '0 0 8px' }}>
-                I can help you find answers about {projectName}.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div className={styles.previewSuggestion}>How does it work?</div>
-                <div className={styles.previewSuggestion}>What are the main features?</div>
-              </div>
-            </div>
-          </div>
-          <div className={styles.previewPanelInput}>
-            <div className={styles.previewInputField}>Ask a question...</div>
-            <div className={styles.previewSendBtn}>Send</div>
-          </div>
-        </div>
-        {/* Mini floating button */}
-        <div className={styles.previewBtn}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-        </div>
-      </div>
-      <p className={styles.previewCaption}>This is how the widget appears on your app</p>
     </div>
   )
 }

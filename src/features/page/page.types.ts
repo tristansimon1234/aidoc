@@ -38,6 +38,7 @@ export interface DocPage {
   customPrompt: string | null
   briefing: PageBriefing | null
   status: PageStatus
+  isPublic: boolean
   sortOrder: number
   createdAt: Date
   updatedAt: Date
@@ -68,6 +69,7 @@ export interface UpdatePageInput {
   content?: string
   customPrompt?: string
   briefing?: PageBriefing
+  isPublic?: boolean
 }
 
 export interface ReorderItem {
