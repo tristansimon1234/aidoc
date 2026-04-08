@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Spinner } from '../../../design-system/components/index.js'
-import { type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
+import { api, type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
 import { fetchProject, updateProject } from '../../../shared/api/db.js'
 
 interface Credential {
@@ -206,12 +206,16 @@ export function ProjectSettings(): React.ReactElement {
             </Button>
           </div>
 
-          {/* Right: Knowledge Base */}
-          <div>
+          {/* Right column */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
             <KnowledgePanel
               context={project.discoveredContext}
               projectId={projectId!}
               onSaved={(updated) => setProject({ ...project, discoveredContext: updated })}
+            />
+            <WidgetPanel
+              project={project}
+              onUpdate={(updates) => setProject({ ...project, ...updates })}
             />
           </div>
         </div>
@@ -421,4 +425,120 @@ function formatTimeAgo(iso: string): string {
   if (hours < 24) return `${hours}h ago`
   const days = Math.floor(hours / 24)
   return `${days}d ago`
+}
+
+// --- Widget Panel ---
+
+function WidgetPanel({
+  project,
+  onUpdate,
+}: {
+  project: ProjectDTO
+  onUpdate: (updates: Partial<ProjectDTO>) => void
+}): React.ReactElement {
+  const [generating, setGenerating] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const handleGenerate = async (): Promise<void> => {
+    setGenerating(true)
+    try {
+      const result = await api.projects.generateWidgetKey(project.id)
+      onUpdate({ widgetApiKey: result.widgetApiKey, widgetEnabled: result.widgetEnabled })
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleDisable = async (): Promise<void> => {
+    await api.projects.disableWidget(project.id)
+    onUpdate({ widgetEnabled: false })
+  }
+
+  const copyToClipboard = (text: string, label: string): void => {
+    void navigator.clipboard.writeText(text)
+    setCopied(label)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const embedSnippet = project.widgetApiKey
+    ? `<script src="${origin}/widget.js" data-key="${project.widgetApiKey}"></script>`
+    : ''
+
+  const panelStyle: React.CSSProperties = {
+    background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
+    borderRadius: 'var(--radius-lg)', padding: 'var(--space-lg)',
+  }
+  const codeBlockStyle: React.CSSProperties = {
+    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
+    borderRadius: 'var(--radius-md)', padding: 'var(--space-sm) var(--space-md)',
+    fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
+    color: 'var(--color-text-primary)', wordBreak: 'break-all',
+    lineHeight: 1.6, position: 'relative' as const,
+  }
+  const copyBtnStyle: React.CSSProperties = {
+    position: 'absolute', top: 6, right: 6,
+    background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
+    borderRadius: 'var(--radius-sm)', padding: '2px 8px',
+    fontSize: '10px', fontFamily: 'var(--font-mono)',
+    color: 'var(--color-text-muted)', cursor: 'pointer',
+  }
+
+  return (
+    <div style={panelStyle}>
+      <h2 style={{ fontSize: 'var(--text-md)', fontWeight: 600, margin: '0 0 4px' }}>Embed Widget</h2>
+      <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-md)', lineHeight: 1.5 }}>
+        Add a chat widget to your app so your users can ask questions about your product.
+      </p>
+
+      {!project.widgetApiKey ? (
+        <Button size="sm" onClick={() => void handleGenerate()} disabled={generating}>
+          {generating ? 'Generating...' : 'Generate API Key'}
+        </Button>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          {/* API Key */}
+          <div>
+            <label style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>
+              API Key {project.widgetEnabled
+                ? <span style={{ color: 'var(--color-accent-green)' }}>active</span>
+                : <span style={{ color: 'var(--color-accent-red)' }}>disabled</span>
+              }
+            </label>
+            <div style={codeBlockStyle}>
+              {project.widgetApiKey}
+              <button style={copyBtnStyle} onClick={() => copyToClipboard(project.widgetApiKey!, 'key')}>
+                {copied === 'key' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+
+          {/* Embed snippet */}
+          <div>
+            <label style={{ fontSize: '11px', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>
+              Add this to your HTML
+            </label>
+            <div style={codeBlockStyle}>
+              {embedSnippet}
+              <button style={copyBtnStyle} onClick={() => copyToClipboard(embedSnippet, 'snippet')}>
+                {copied === 'snippet' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+            <Button size="sm" variant="secondary" onClick={() => void handleGenerate()} disabled={generating}>
+              Regenerate Key
+            </Button>
+            {project.widgetEnabled && (
+              <Button size="sm" variant="ghost" onClick={() => void handleDisable()}>
+                Disable Widget
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }

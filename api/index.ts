@@ -8,6 +8,7 @@ import { runRouter } from '../src/features/run/run.routes.js'
 import { questionsRouter } from '../src/features/questions/questions.routes.js'
 import { documentationRouter } from '../src/features/documentation/documentation.routes.js'
 import { chatRouter } from '../src/features/chat/chat.routes.js'
+import { widgetRouter } from '../src/features/chat/widget.routes.js'
 import { errorHandler } from '../src/shared/middleware/error.middleware.js'
 
 const app = express()
@@ -19,6 +20,9 @@ app.use(express.json())
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' })
 })
+
+// Public widget routes (no auth — API key validated in route)
+app.use('/api/widget', widgetRouter)
 
 // Protected routes
 app.use('/api/projects', authMiddleware, projectRouter)

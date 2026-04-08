@@ -19,6 +19,8 @@ export interface Project {
   context: ProjectContext | null
   credentials: ProjectCredential[] | null
   discoveredContext: DiscoveredContext | null
+  widgetApiKey: string | null
+  widgetEnabled: boolean
   createdAt: Date
   updatedAt: Date
 }

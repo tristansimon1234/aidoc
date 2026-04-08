@@ -11,6 +11,8 @@ interface ProjectRow {
   context: ProjectContext | null
   credentials: ProjectCredential[] | null
   discovered_context: DiscoveredContext | null
+  widget_api_key: string | null
+  widget_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -25,6 +27,8 @@ function mapToProject(row: ProjectRow): Project {
     context: row.context,
     credentials: row.credentials,
     discoveredContext: row.discovered_context,
+    widgetApiKey: row.widget_api_key,
+    widgetEnabled: row.widget_enabled,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -89,6 +93,40 @@ export async function updateDiscoveredContext(id: string, context: DiscoveredCon
     .update({ discovered_context: context as unknown as Record<string, unknown>, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw new DatabaseError(error.message)
+}
+
+export async function findProjectByWidgetKey(widgetApiKey: string): Promise<Project | null> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('widget_api_key', widgetApiKey)
+    .eq('widget_enabled', true)
+    .single()
+  if (error && error.code === 'PGRST116') return null
+  if (error) throw new DatabaseError(error.message)
+  return data ? mapToProject(data as ProjectRow) : null
+}
+
+export async function setWidgetApiKey(id: string, apiKey: string): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ widget_api_key: apiKey, widget_enabled: true, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw new DatabaseError(error.message)
+  return mapToProject(data as ProjectRow)
+}
+
+export async function disableWidget(id: string): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ widget_enabled: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw new DatabaseError(error.message)
+  return mapToProject(data as ProjectRow)
 }
 
 export async function deleteProject(id: string): Promise<void> {

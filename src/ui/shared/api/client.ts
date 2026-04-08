@@ -117,6 +117,8 @@ export interface ProjectDTO {
   description: string | null
   context: ProjectContextDTO | null
   discoveredContext: DiscoveredContextDTO | null
+  widgetApiKey: string | null
+  widgetEnabled: boolean
   createdAt: string
   updatedAt: string
 }
@@ -160,6 +162,10 @@ export const api = {
     update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>
       request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: string): Promise<void> => request(`/projects/${id}`, { method: 'DELETE' }),
+    generateWidgetKey: (id: string): Promise<{ widgetApiKey: string; widgetEnabled: boolean }> =>
+      request(`/projects/${id}/widget-key`, { method: 'POST' }),
+    disableWidget: (id: string): Promise<{ widgetEnabled: boolean }> =>
+      request(`/projects/${id}/widget-key`, { method: 'DELETE' }),
   },
   pages: {
     list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),

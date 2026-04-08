@@ -187,6 +187,8 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     description: (row.description as string) ?? null,
     context: (row.context as ProjectDTO['context']) ?? null,
     discoveredContext: (row.discovered_context as ProjectDTO['discoveredContext']) ?? null,
+    widgetApiKey: (row.widget_api_key as string) ?? null,
+    widgetEnabled: (row.widget_enabled as boolean) ?? false,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }
