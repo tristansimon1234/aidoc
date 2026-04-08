@@ -100,7 +100,7 @@ export async function chat(
   projectId: string,
   message: string,
   history: ChatMessage[],
-  userContext?: { name?: string; email?: string; plan?: string; extra?: string },
+  userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
 ): Promise<ChatResponse> {
   // 1. Embed the user query
   const queryEmbedding = await embedText(message)
