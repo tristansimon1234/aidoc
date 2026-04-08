@@ -13,7 +13,7 @@
 .name {
   font-size: var(--text-md);
   font-weight: 500;
-  color: var(--color-text-primary);
+  color: var(--color-fg);
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -23,7 +23,7 @@
 .url {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   margin: var(--space-xs) 0 0;
   white-space: nowrap;
   overflow: hidden;
@@ -40,5 +40,5 @@
 .tokens {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
 }

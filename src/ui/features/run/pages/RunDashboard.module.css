@@ -13,7 +13,7 @@
 
 .subtitle {
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--color-muted-fg);
   margin-top: var(--space-xs);
 }
 
