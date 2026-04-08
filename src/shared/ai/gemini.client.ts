@@ -67,7 +67,7 @@ export async function generateText(opts: {
 
 // --- Embeddings ---
 
-const EMBEDDING_MODEL = 'text-embedding-004'
+const EMBEDDING_MODEL = 'gemini-embedding-exp-03-07'
 const EMBEDDING_DIMENSIONS = 768
 
 export async function embedTexts(texts: string[]): Promise<number[][]> {
