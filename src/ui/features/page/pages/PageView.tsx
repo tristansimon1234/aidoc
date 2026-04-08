@@ -372,9 +372,9 @@ export function PageView(): React.ReactElement {
             </div>
           )}
 
-          {/* Live exploration feed */}
+          {/* Live exploration feed — video left, steps right */}
           {(exploring || generating) && (
-            <div className={styles.section}>
+            <div>
               <div className={styles.liveFeedHeader}>
                 <Spinner size="sm" />
                 <span className={styles.liveFeedStatus} style={{ color: generating ? 'var(--color-accent-green)' : 'var(--color-accent-blue)' }}>
@@ -385,20 +385,29 @@ export function PageView(): React.ReactElement {
                 )}
               </div>
 
-              {liveUrl && (
-                <div className={styles.replayContainer} style={{ marginBottom: 'var(--space-md)' }}>
-                  <div className={styles.replayHeader}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                      <span style={{ width: '8px', height: '8px', borderRadius: 'var(--radius-full)', backgroundColor: 'var(--color-accent-green)', animation: 'pulse 2s infinite' }} />
-                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>live</span>
+              <div className={styles.liveLayout}>
+                {liveUrl ? (
+                  <div className={styles.replayContainer}>
+                    <div className={styles.replayHeader}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: 'var(--radius-full)', backgroundColor: 'var(--color-accent-green)', animation: 'pulse 2s infinite' }} />
+                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>live</span>
+                      </span>
+                    </div>
+                    <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
+                  </div>
+                ) : (
+                  <div className={styles.section} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '300px' }}>
+                    <Spinner size="lg" />
+                  </div>
+                )}
+
+                <div className={styles.stepsLog}>
+                  <div style={{ padding: 'var(--space-sm)', borderBottom: '1px solid var(--color-border-subtle)' }}>
+                    <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
+                      activity ({liveSteps.length})
                     </span>
                   </div>
-                  <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
-                </div>
-              )}
-
-              {liveSteps.length > 0 && (
-                <div className={styles.stepsLog}>
                   {liveSteps.map((ls, i) => (
                     <div key={i} className={styles.stepRow}>
                       <span className={styles.stepIndex}>{ls.stepIndex + 1}</span>
@@ -406,50 +415,72 @@ export function PageView(): React.ReactElement {
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
             </div>
           )}
 
-          {/* Exploration Assistant — post-exploration */}
+          {/* Steps persist after exploration — show last run's activity */}
+          {!exploring && !generating && liveSteps.length > 0 && (
+            <div className={styles.section}>
+              <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)' }}>
+                last exploration ({liveSteps.length} actions)
+              </span>
+              <div className={styles.stepsLog} style={{ marginTop: 'var(--space-sm)', maxHeight: '200px' }}>
+                {liveSteps.map((ls, i) => (
+                  <div key={i} className={styles.stepRow}>
+                    <span className={styles.stepIndex}>{ls.stepIndex + 1}</span>
+                    <span className={styles.stepAction}>{ls.action}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Post-exploration dashboard — grid layout */}
           {!exploring && !generating && latestRun && (
-            <ExplorationAssistant
-              run={latestRun}
-              onContinue={async (ctx) => {
-                if (!latestRun || !projectId || !pageId) return
-                await dbUpdatePage(projectId, pageId, { status: 'exploring' })
-                await runExploration(latestRun.id, ctx)
-              }}
-              onSkipAndGenerate={async () => {
-                if (!latestRun) return
-                try {
-                  const generatedDoc = await api.runs.generateDoc(latestRun.id)
-                  setDoc(generatedDoc)
-                  if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
-                  await fetchData()
-                  await context.refetchPages()
-                } catch (err) {
-                  setError((err as Error).message)
-                }
-              }}
-              onReExplore={() => handleNewExploration('replace')}
-            />
-          )}
+            <div className={styles.dashboardGrid}>
+              {/* Left: Exploration status + actions */}
+              <div>
+                <ExplorationAssistant
+                  run={latestRun}
+                  onContinue={async (ctx) => {
+                    if (!latestRun || !projectId || !pageId) return
+                    await dbUpdatePage(projectId, pageId, { status: 'exploring' })
+                    await runExploration(latestRun.id, ctx)
+                  }}
+                  onSkipAndGenerate={async () => {
+                    if (!latestRun) return
+                    try {
+                      const generatedDoc = await api.runs.generateDoc(latestRun.id)
+                      setDoc(generatedDoc)
+                      if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
+                      await fetchData()
+                      await context.refetchPages()
+                    } catch (err) {
+                      setError((err as Error).message)
+                    }
+                  }}
+                  onReExplore={() => handleNewExploration('replace')}
+                />
+              </div>
 
-          {/* Session replay — always available after exploration */}
-          {!exploring && latestRun && (
-            <SessionReplay runId={latestRun.id} />
-          )}
+              {/* Right: Session replay */}
+              <SessionReplay runId={latestRun.id} />
 
-          {/* Suggestions */}
-          {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && !exploring && !generating && (
-            <SuggestionsPanel
-              assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment}
-              projectId={projectId!}
-              onPageCreated={async () => {
-                await fetchData()
-                await context.refetchPages()
-              }}
-            />
+              {/* Full width: Suggestions */}
+              {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
+                <div className={styles.dashboardFull}>
+                  <SuggestionsPanel
+                    assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment}
+                    projectId={projectId!}
+                    onPageCreated={async () => {
+                      await fetchData()
+                      await context.refetchPages()
+                    }}
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           {error && <EmptyState title="Error" description={error} />}

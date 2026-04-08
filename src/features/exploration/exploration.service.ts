@@ -314,7 +314,7 @@ Rules:
 
             // Stream the agent's thinking, not just tool names
             // Skip noisy internal tools from the live feed
-            const isInternalTool = toolName === 'ariaTree' || toolName === 'screenshot' || toolName === 'wait'
+            const isInternalTool = toolName === 'ariaTree' || toolName === 'screenshot' || toolName === 'wait' || toolName === 'scroll' || toolName === 'keys'
 
             if (!isInternalTool) {
               emit({
