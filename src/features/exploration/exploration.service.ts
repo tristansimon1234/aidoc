@@ -63,16 +63,11 @@ export async function exploreRun(
 
   const emit = options?.onEvent ?? (() => {})
 
-  // Safety timeout: must finish before Vercel kills the function (maxDuration: 300s)
-  // Start timer AFTER browser launch (~20s) so the agent gets the full budget
-  const SAFETY_TIMEOUT_MS = 270_000
-
   await deps.updateRunStatus(runId, 'running')
   emit({ type: 'status', message: 'Launching browser...' })
 
   const isResuming = run.browserbaseSessionId !== null
   const session = await launchBrowser(run.browserbaseSessionId ?? undefined)
-  const startTime = Date.now() // Start timer after browser launch
 
   try {
     const sessionId = getSessionId(session)
@@ -254,11 +249,6 @@ Rules:
             throw new Error('Exploration cancelled by user')
           }
 
-          // Safety timeout — stop before Vercel kills the function
-          if (Date.now() - startTime > SAFETY_TIMEOUT_MS) {
-            throw new Error('Exploration timeout — stopping to save progress')
-          }
-
           const toolCalls = event.toolCalls ?? []
           const toolResults = event.toolResults ?? []
 
@@ -387,12 +377,9 @@ Rules:
   } catch (err) {
     const msg = (err as Error).message
     const isCancelled = msg === 'Exploration cancelled by user'
-    const isTimeout = msg === 'Exploration timeout — stopping to save progress'
     await deps.updateRunStatus(runId, 'failed')
     if (isCancelled) {
       emit({ type: 'cancelled', message: 'Exploration stopped by user' })
-    } else if (isTimeout) {
-      emit({ type: 'done', completed: false, message: 'Exploration timed out — doc will be generated from steps captured so far.' })
     } else {
       console.error(`Exploration failed for run ${runId}:`, err)
       emit({ type: 'error', message: msg })
