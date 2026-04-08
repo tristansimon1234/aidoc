@@ -41,6 +41,7 @@ export function PageView(): React.ReactElement {
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'doc' | 'exploration'>('doc')
+  const [genMethod, setGenMethod] = useState<'video' | 'explore'>('video')
 
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
@@ -310,21 +311,30 @@ export function PageView(): React.ReactElement {
             }}
           />
 
-          {/* Generation methods — two cards side by side */}
+          {/* Generation methods — segmented control + content */}
           {!exploring && !generating && (
-            <div className={styles.methodGrid}>
-              {/* Video Recording — recommended */}
-              <div className={styles.methodCard}>
-                <div className={styles.methodIcon} style={{ color: 'var(--color-success)' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-                </div>
-                <div className={styles.methodHeader}>
-                  <span className={styles.methodTitle}>Screen recording</span>
-                  <Badge color="green">recommended</Badge>
-                </div>
-                <p className={styles.methodDesc}>
-                  Upload a video of the workflow. AI analyzes every action, extracts screenshots, and writes the documentation.
-                </p>
+            <>
+            <div className={styles.methodToggle}>
+              <button
+                className={`${styles.methodOption} ${genMethod === 'video' ? styles.methodOptionActive : ''}`}
+                onClick={() => setGenMethod('video')}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                Screen recording
+                <Badge color="green">recommended</Badge>
+              </button>
+              <button
+                className={`${styles.methodOption} ${genMethod === 'explore' ? styles.methodOptionActive : ''}`}
+                onClick={() => setGenMethod('explore')}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                Auto-exploration
+                <Badge color="amber">beta</Badge>
+              </button>
+            </div>
+
+            {genMethod === 'video' && (
+              <div className={styles.methodContent}>
                 <VideoUploader
                   projectId={projectId!}
                   pageId={pageId!}
@@ -336,31 +346,20 @@ export function PageView(): React.ReactElement {
                   }}
                 />
               </div>
+            )}
 
-              {/* Browser exploration — beta */}
-              <div className={styles.methodCard}>
-                <div className={styles.methodIcon} style={{ color: 'var(--color-primary)' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                </div>
-                <div className={styles.methodHeader}>
-                  <span className={styles.methodTitle}>Auto-exploration</span>
-                  <Badge color="amber">beta</Badge>
-                </div>
-                <p className={styles.methodDesc}>
-                  An AI agent navigates your app autonomously in a cloud browser, captures screenshots, and writes the doc.
-                </p>
+            {genMethod === 'explore' && (
+              <div className={styles.methodContent}>
                 <div className={styles.methodActions}>
                   {latestRun && page.content ? (
                     <>
                       <Button
-                        size="sm"
                         variant={page.briefing?.objective ? undefined : 'secondary'}
                         onClick={() => void handleNewExploration('complete')}
                       >
                         Complete documentation
                       </Button>
                       <Button
-                        size="sm"
                         variant="ghost"
                         onClick={() => void handleNewExploration('replace')}
                       >
@@ -369,7 +368,6 @@ export function PageView(): React.ReactElement {
                     </>
                   ) : (
                     <Button
-                      size="sm"
                       variant={page.briefing?.objective ? undefined : 'secondary'}
                       onClick={() => void handleNewExploration('replace')}
                     >
@@ -383,7 +381,8 @@ export function PageView(): React.ReactElement {
                   )}
                 </div>
               </div>
-            </div>
+            )}
+            </>
           )}
 
           {/* Live exploration feed — activity left, video right */}
@@ -930,8 +929,11 @@ function VideoUploader({
   return (
     <div>
       <label className={styles.dropZone}>
-        <span className={styles.dropZoneTitle}>Upload a screen recording</span>
-        <span className={styles.dropZoneHint}>.mp4, .webm, .mov — max 500MB</span>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ color: 'var(--color-primary)', marginBottom: 'var(--space-sm)' }}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <span className={styles.dropZoneTitle}>Drop a screen recording here</span>
+        <span className={styles.dropZoneHint}>or click to browse — .mp4, .webm, .mov up to 500MB</span>
         <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleVideoUpload(e)}
           style={{ display: 'none' }} />
       </label>
