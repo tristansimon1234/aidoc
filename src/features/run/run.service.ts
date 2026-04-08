@@ -259,20 +259,18 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
         const project = await findProjectById(page.projectId)
         if (project) {
           const { buildContextEnrichmentPrompt } = await import('../../shared/ai/prompt.builder.js')
-          const { anthropic } = await import('../../shared/ai/anthropic.client.js')
+          const { generateText } = await import('../../shared/ai/gemini.client.js')
           const prompt = buildContextEnrichmentPrompt(
             project.discoveredContext,
             doc.markdownContent,
             run.featureName,
           )
-          const response = await anthropic.messages.create({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 2048,
-            messages: [{ role: 'user', content: prompt }],
+          const response = await generateText({
+            userPrompt: prompt,
+            maxTokens: 2048,
           })
-          const textBlock = response.content.find((b) => b.type === 'text')
-          if (textBlock && textBlock.type === 'text') {
-            let jsonStr = textBlock.text.trim()
+          {
+            let jsonStr = response.text.trim()
             if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
             const { DiscoveredContextSchema } = await import('../project/project.schema.js')
             const parsed = DiscoveredContextSchema.safeParse(JSON.parse(jsonStr))

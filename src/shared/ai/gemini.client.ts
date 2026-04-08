@@ -3,6 +3,68 @@ import { GoogleAIFileManager } from '@google/generative-ai/server'
 import { z } from 'zod'
 import { env } from '../config/env.js'
 
+// --- Shared Gemini client ---
+
+const GEMINI_MODEL = 'gemini-2.5-flash'
+
+function getGenAI(): GoogleGenerativeAI {
+  if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured')
+  return new GoogleGenerativeAI(env.GEMINI_API_KEY)
+}
+
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn()
+    } catch (err: unknown) {
+      const status = (err as { status?: number }).status
+      if (status === 429 && attempt < maxRetries) {
+        const waitSec = Math.min(30 * (attempt + 1), 90)
+        console.log(`[gemini] Rate limited, retrying in ${waitSec}s (attempt ${attempt + 1}/${maxRetries})`)
+        await new Promise((r) => setTimeout(r, waitSec * 1000))
+        continue
+      }
+      throw err
+    }
+  }
+  throw new Error('Unreachable')
+}
+
+// --- Generic text generation ---
+
+export interface GeminiUsage {
+  inputTokens: number
+  outputTokens: number
+}
+
+export async function generateText(opts: {
+  systemPrompt?: string
+  userPrompt: string
+  maxTokens?: number
+}): Promise<{ text: string; usage: GeminiUsage }> {
+  const genAI = getGenAI()
+  const model = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    ...(opts.systemPrompt ? { systemInstruction: opts.systemPrompt } : {}),
+  })
+
+  const result = await withRetry(() =>
+    model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: opts.userPrompt }] }],
+      generationConfig: { maxOutputTokens: opts.maxTokens },
+    }),
+  )
+
+  const usage = result.response.usageMetadata
+  return {
+    text: result.response.text(),
+    usage: {
+      inputTokens: usage?.promptTokenCount ?? 0,
+      outputTokens: usage?.candidatesTokenCount ?? 0,
+    },
+  }
+}
+
 const VideoStepSchema = z.object({
   timestamp: z.number(),
   screenDescription: z.string(),
@@ -28,12 +90,8 @@ export async function analyzeVideoWithGemini(
   mimeType: string,
   fileName: string,
 ): Promise<VideoAnalysis> {
-  if (!env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY is not configured')
-  }
-
-  const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY)
-  const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY)
+  const genAI = getGenAI()
+  const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY!)
 
   // Upload video to Gemini Files API
   console.log(`[gemini] Uploading video: ${fileName} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
@@ -72,27 +130,9 @@ export async function analyzeVideoWithGemini(
   console.log(`[gemini] Video processed. Analyzing...`)
 
   // Analyze the video
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL })
 
-  const generateWithRetry = async (content: Parameters<typeof model.generateContent>[0], maxRetries = 3) => {
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await model.generateContent(content)
-      } catch (err: unknown) {
-        const status = (err as { status?: number }).status
-        if (status === 429 && attempt < maxRetries) {
-          const waitSec = Math.min(30 * (attempt + 1), 90)
-          console.log(`[gemini] Rate limited, retrying in ${waitSec}s (attempt ${attempt + 1}/${maxRetries})`)
-          await new Promise((r) => setTimeout(r, waitSec * 1000))
-          continue
-        }
-        throw err
-      }
-    }
-    throw new Error('Unreachable')
-  }
-
-  const result = await generateWithRetry([
+  const result = await withRetry(() => model.generateContent([
     {
       fileData: {
         mimeType: file.mimeType,
@@ -130,7 +170,7 @@ Return ONLY valid JSON (no markdown fences):
 
 Be thorough — capture every meaningful action. Skip idle moments or pauses where nothing changes.`,
     },
-  ])
+  ]))
 
   const text = result.response.text()
 

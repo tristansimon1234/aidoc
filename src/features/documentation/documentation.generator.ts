@@ -1,7 +1,6 @@
 import { z } from 'zod'
-import { anthropic, CLAUDE_MODEL } from '../../shared/ai/anthropic.client.js'
+import { generateText, type GeminiUsage } from '../../shared/ai/gemini.client.js'
 import { buildDocumentationPrompt, getDocSystemPrompt, VIDEO_DOC_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
-import type { AnthropicUsage } from '../../shared/ai/anthropic.types.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
 const StepAssessmentSchema = z.object({
@@ -50,7 +49,7 @@ const DocJsonSchema = z.object({
 export interface GenerationResult {
   markdown: string
   json: Record<string, unknown>
-  usage: AnthropicUsage
+  usage: GeminiUsage
 }
 
 export async function generateDocumentation(context: {
@@ -68,23 +67,13 @@ export async function generateDocumentation(context: {
   const systemPrompt = context.isVideoRun ? VIDEO_DOC_SYSTEM_PROMPT : getDocSystemPrompt()
   const userPrompt = buildDocumentationPrompt(context)
 
-  const response = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 16384,
-    system: [{
-      type: 'text',
-      text: systemPrompt,
-      cache_control: { type: 'ephemeral' },
-    }],
-    messages: [{ role: 'user', content: userPrompt }],
+  const response = await generateText({
+    systemPrompt,
+    userPrompt,
+    maxTokens: 16384,
   })
 
-  const textBlock = response.content.find((block) => block.type === 'text')
-  if (!textBlock || textBlock.type !== 'text') {
-    throw new Error('No text response from Anthropic')
-  }
-
-  const parts = textBlock.text.split('---JSON---')
+  const parts = response.text.split('---JSON---')
   const markdown = parts[0]?.trim() ?? ''
   const jsonStr = parts[1]?.trim() ?? '{}'
 
@@ -111,9 +100,6 @@ export async function generateDocumentation(context: {
   return {
     markdown,
     json,
-    usage: {
-      inputTokens: response.usage.input_tokens,
-      outputTokens: response.usage.output_tokens,
-    },
+    usage: response.usage,
   }
 }

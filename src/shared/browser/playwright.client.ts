@@ -11,7 +11,7 @@ export async function launchBrowser(existingSessionId?: string): Promise<Stageha
     projectId: env.BROWSERBASE_PROJECT_ID,
     model: {
       modelName: STAGEHAND_MODEL,
-      apiKey: env.ANTHROPIC_API_KEY,
+      apiKey: env.ANTHROPIC_API_KEY ?? '',
     },
     ...(existingSessionId ? { browserbaseSessionID: existingSessionId } : {}),
     keepAlive: true,

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
-import { anthropic, CLAUDE_MODEL } from '../../shared/ai/anthropic.client.js'
+import { generateText } from '../../shared/ai/gemini.client.js'
 import { launchBrowser, closeBrowser } from '../../shared/browser/playwright.client.js'
 import type { DocPage, DocPageTreeNode, CreatePageInput, UpdatePageInput, ReorderItem } from './page.types.js'
 import * as pageRepo from './page.repository.js'
@@ -81,13 +81,9 @@ export async function autoGenerateStructure(projectId: string): Promise<DocPage[
     // Extract the site structure using Stagehand
     const pageText = await session.extract()
 
-    // Ask Claude to propose a documentation structure
-    const response = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: `You are a documentation architect. Analyze this website and propose a documentation structure.
+    // Ask Gemini to propose a documentation structure
+    const response = await generateText({
+      userPrompt: `You are a documentation architect. Analyze this website and propose a documentation structure.
 
 ## Website
 Name: ${project.name}
@@ -136,14 +132,11 @@ Rules:
 - sortOrder determines display order among siblings
 
 Respond ONLY with the JSON object.`,
-      }],
+      maxTokens: 4096,
     })
 
-    const textBlock = response.content.find((b) => b.type === 'text')
-    if (!textBlock || textBlock.type !== 'text') throw new Error('No response from Claude')
-
     // Parse the JSON — handle markdown code fences
-    let jsonStr = textBlock.text.trim()
+    let jsonStr = response.text.trim()
     if (jsonStr.startsWith('```')) {
       jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
     }
