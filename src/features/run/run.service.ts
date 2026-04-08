@@ -300,6 +300,62 @@ export async function cancelExploration(id: string): Promise<void> {
   cancelRun(id)
 }
 
+export async function analyzeVideo(runId: string, videoPath: string): Promise<void> {
+  const run = await runRepo.findRunById(runId)
+  if (!run) throw new NotFoundError('Run')
+
+  await runRepo.updateRunStatus(runId, 'running')
+
+  try {
+    // Download video from Supabase Storage
+    const { supabase } = await import('../../shared/db/supabase.client.js')
+    const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
+    if (error || !data) throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
+
+    const buffer = Buffer.from(await data.arrayBuffer())
+    const mimeType = videoPath.endsWith('.webm') ? 'video/webm'
+      : videoPath.endsWith('.mov') ? 'video/quicktime'
+      : 'video/mp4'
+    const fileName = videoPath.split('/').pop() ?? 'video.mp4'
+
+    // Analyze with Gemini
+    const { analyzeVideoWithGemini } = await import('../../shared/ai/gemini.client.js')
+    const analysis = await analyzeVideoWithGemini(buffer, mimeType, fileName)
+
+    // Create RunSteps from analysis
+    for (let i = 0; i < analysis.steps.length; i++) {
+      const s = analysis.steps[i]!
+      const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
+      await runRepo.createRunStep({
+        runId,
+        stepIndex: i,
+        title: s.userAction,
+        action: s.userAction,
+        observation: `${s.screenDescription}${narrationText}`,
+        status: 'completed',
+      })
+    }
+
+    // Build summary
+    await runRepo.updateRunSummary(runId, {
+      sections: [{
+        url: 'video',
+        label: analysis.productName || run.featureName,
+        status: 'documented',
+        stepCount: analysis.steps.length,
+      }],
+      blockers: [],
+      agentMessage: analysis.summary,
+    })
+
+    await runRepo.updateRunStatus(runId, 'completed')
+  } catch (err) {
+    console.error(`[video] Analysis failed for run ${runId}:`, err)
+    await runRepo.updateRunStatus(runId, 'failed')
+    throw err
+  }
+}
+
 export async function getRun(id: string): Promise<Run> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')

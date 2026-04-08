@@ -83,6 +83,24 @@ runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) 
   })()
 })
 
+// Analyze video — Gemini extracts steps from a screen recording
+runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { videoPath?: string }
+      if (!body.videoPath || typeof body.videoPath !== 'string') {
+        throw new ValidationError('videoPath is required')
+      }
+      await runService.analyzeVideo(params.data.id, body.videoPath)
+      res.status(200).json({ success: true })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Generate SOP doc
 runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {

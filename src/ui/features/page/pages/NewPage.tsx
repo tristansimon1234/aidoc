@@ -177,11 +177,14 @@ export function NewPage(): React.ReactElement {
 
         {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-md)' }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-lg)', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-lg)', alignItems: 'center', flexWrap: 'wrap' }}>
           <Button type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('explore')}>
-            {submitting ? 'Creating...' : 'Let the AI document'}
+            {submitting ? 'Creating...' : 'Let the AI explore'}
           </Button>
-          <Button variant="secondary" type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('manual')}>
+          <Button variant="secondary" type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('explore')}>
+            Upload a recording
+          </Button>
+          <Button variant="ghost" type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('manual')}>
             Write it myself
           </Button>
           <Button variant="ghost" type="button" onClick={() => navigate(`/projects/${projectId}`)}>

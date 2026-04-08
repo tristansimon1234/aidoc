@@ -13,6 +13,7 @@ export interface DocDeps {
     status: string
     tokenUsage: number
     docPageId: string | null
+    browserbaseSessionId?: string | null
   } | null>
   findStepsByRunId: (runId: string) => Promise<
     { url: string | null; action: string | null; observation: string | null; screenshotPath: string | null }[]
@@ -46,10 +47,10 @@ export async function generateAndSaveDoc(
   const steps = await deps.findStepsByRunId(runId)
   const questions = await deps.findQuestionsByRunId(runId)
 
-  // Filter noisy supporting steps to reduce token usage
-  // Keep: all KEY steps (act, goto, fillForm, done) + last screenshot per URL
+  // Filter noisy supporting steps (only for browser explorations, not video)
+  const isVideoRun = !run.browserbaseSessionId
   const noiseTools = new Set(['scroll', 'ariaTree', 'wait', 'keys', 'screenshot'])
-  const filteredSteps = steps.filter((s) => {
+  const filteredSteps = isVideoRun ? steps : steps.filter((s) => {
     const toolType = (s.action ?? '').split(' ')[0]?.toLowerCase() ?? ''
     return !noiseTools.has(toolType)
   })
@@ -74,6 +75,7 @@ export async function generateAndSaveDoc(
     tableOfContents: options?.tableOfContents,
     existingPageSummaries: options?.existingPageSummaries,
     runStatus: run.status,
+    isVideoRun: !run.browserbaseSessionId,
   })
 
   await deps.incrementTokenUsage(runId, result.usage.inputTokens + result.usage.outputTokens)

@@ -70,6 +70,14 @@ function countByImportance(steps: StepSummary[]): { key: number; supporting: num
 }
 
 // Static system instructions — cached by Anthropic (90% cost reduction on repeat calls)
+export const VIDEO_DOC_SYSTEM_PROMPT = `You are an expert product documentation writer. Your job is to transform screen recording analysis data into a clear, professional, user-friendly guide.
+
+The steps below were extracted from a screen recording of a web application (not a live exploration). Each step describes what was visible on screen and what the user was doing. Some steps may include narration from the person recording.
+
+Write a **user-facing product guide** — the kind of documentation you'd find in a help center. Follow the same structure as for live explorations: Introduction, Getting Started, Walkthrough (group into logical flows), Key Features, FAQ/Tips. Embed screenshots at relevant steps using ![caption](url).
+
+After the markdown, add "---JSON---" and the self-assessment JSON (same schema as live explorations).`
+
 const DOC_SYSTEM_PROMPT = `You are an expert product documentation writer. Your job is to transform raw exploration data into a clear, professional, user-friendly guide.
 
 Write a **user-facing product guide** — the kind of documentation you'd find in a help center or product wiki. NOT an internal SOP.

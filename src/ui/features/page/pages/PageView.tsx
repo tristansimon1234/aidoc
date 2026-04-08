@@ -344,7 +344,21 @@ export function PageView(): React.ReactElement {
             </div>
           )}
 
-          {/* Live exploration feed — video left, steps right */}
+          {/* Video upload — alternative to exploration */}
+          {!exploring && !generating && (
+            <VideoUploader
+              projectId={projectId!}
+              pageId={pageId!}
+              page={page}
+              onComplete={async () => {
+                await fetchData()
+                await context.refetchPages()
+                setActiveTab('doc')
+              }}
+            />
+          )}
+
+          {/* Live exploration feed — activity left, video right */}
           {(exploring || generating) && (
             <div>
               <div className={styles.liveFeedHeader}>
@@ -806,6 +820,161 @@ interface SelfAssessment {
   overallCompleteness: number
   gaps: { area: string; reason: string; severity: string }[]
   nextSteps: { suggestion: string; reason: string; priority: string }[]
+}
+
+// --- Video Uploader ---
+
+function VideoUploader({
+  projectId,
+  pageId,
+  page,
+  onComplete,
+}: {
+  projectId: string
+  pageId: string
+  page: DocPageDTO
+  onComplete: () => Promise<void>
+}): React.ReactElement {
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'analyzing' | 'generating' | 'extracting'>('idle')
+  const [error, setError] = useState<string | null>(null)
+
+  const handleVideoUpload = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setError(null)
+
+    if (file.size > 500 * 1024 * 1024) {
+      setError('Video too large (max 500MB)')
+      return
+    }
+
+    try {
+      // 1. Create a run
+      const run = await api.runs.create({
+        featureName: page.title,
+        startUrl: page.startUrl ?? '',
+        goal: page.goal ?? `Document from screen recording`,
+        docPageId: pageId,
+      })
+
+      // 2. Upload video to Supabase Storage
+      setStatus('uploading')
+      const videoPath = `runs/${run.id}/video${file.name.substring(file.name.lastIndexOf('.'))}`
+      const { error: uploadErr } = await supabase.storage.from('artifacts').upload(videoPath, file, { upsert: true })
+      if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`)
+
+      // 3. Analyze with Gemini
+      setStatus('analyzing')
+      await api.runs.analyzeVideo(run.id, videoPath)
+
+      // 4. Extract frames from video at timestamps and upload them
+      setStatus('extracting')
+      await extractAndUploadFrames(file, run.id)
+
+      // 5. Generate doc
+      setStatus('generating')
+      await api.runs.generateDoc(run.id)
+      await dbUpdatePage(projectId, pageId, { status: 'published' })
+
+      await onComplete()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setStatus('idle')
+    }
+  }
+
+  if (status !== 'idle') {
+    return (
+      <div className={styles.section}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+          <Spinner size="sm" />
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-accent-blue)' }}>
+            {status === 'uploading' && 'Uploading video...'}
+            {status === 'analyzing' && 'Analyzing video with AI — this may take a minute...'}
+            {status === 'extracting' && 'Extracting screenshots...'}
+            {status === 'generating' && 'Generating documentation...'}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={styles.section}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-sm) 0' }}>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>or</span>
+      </div>
+      <label style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        padding: 'var(--space-lg)', cursor: 'pointer',
+        border: '2px dashed var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+        transition: 'border-color 0.15s',
+      }}>
+        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>
+          Upload a screen recording
+        </span>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+          .mp4, .webm, .mov — max 500MB
+        </span>
+        <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleVideoUpload(e)}
+          style={{ display: 'none' }} />
+      </label>
+      {error && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-red)', marginTop: 'var(--space-sm)' }}>{error}</p>}
+    </div>
+  )
+}
+
+// Extract frames from a video file at regular intervals and upload to Supabase
+async function extractAndUploadFrames(videoFile: File, runId: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video')
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { resolve(); return }
+
+    video.onloadedmetadata = () => {
+      canvas.width = Math.min(video.videoWidth, 1280)
+      canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
+
+      const intervalSec = Math.max(2, video.duration / 25) // ~25 frames max
+      let currentTime = 0
+      let frameIndex = 0
+
+      const extractNext = (): void => {
+        if (currentTime > video.duration) {
+          resolve()
+          return
+        }
+        video.currentTime = currentTime
+      }
+
+      video.onseeked = () => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const path = `runs/${runId}/frame-${frameIndex}.jpg`
+            await supabase.storage.from('artifacts').upload(path, blob, { contentType: 'image/jpeg', upsert: true })
+            // Update the run step with the screenshot path
+            // We do this via a direct Supabase update since we know the step index
+            await supabase.from('run_steps')
+              .update({ screenshot_path: path })
+              .eq('run_id', runId)
+              .eq('step_index', frameIndex)
+          }
+          frameIndex++
+          currentTime += intervalSec
+          extractNext()
+        }, 'image/jpeg', 0.8)
+      }
+
+      video.onerror = () => reject(new Error('Failed to load video'))
+      extractNext()
+    }
+
+    video.onerror = () => reject(new Error('Failed to load video'))
+    video.src = URL.createObjectURL(videoFile)
+  })
 }
 
 function getCompletenessColor(pct: number): string {

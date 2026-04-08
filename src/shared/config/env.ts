@@ -8,6 +8,7 @@ const EnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   BROWSERBASE_API_KEY: z.string().min(1),
   BROWSERBASE_PROJECT_ID: z.string().min(1),
+  GEMINI_API_KEY: z.string().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>

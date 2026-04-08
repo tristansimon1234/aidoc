@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { anthropic, CLAUDE_MODEL } from '../../shared/ai/anthropic.client.js'
-import { buildDocumentationPrompt, getDocSystemPrompt } from '../../shared/ai/prompt.builder.js'
+import { buildDocumentationPrompt, getDocSystemPrompt, VIDEO_DOC_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
 import type { AnthropicUsage } from '../../shared/ai/anthropic.types.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
@@ -63,8 +63,9 @@ export async function generateDocumentation(context: {
   questions?: { question: string; answer: string | null }[]
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
   runStatus?: string
+  isVideoRun?: boolean
 }): Promise<GenerationResult> {
-  const systemPrompt = getDocSystemPrompt()
+  const systemPrompt = context.isVideoRun ? VIDEO_DOC_SYSTEM_PROMPT : getDocSystemPrompt()
   const userPrompt = buildDocumentationPrompt(context)
 
   const response = await anthropic.messages.create({
