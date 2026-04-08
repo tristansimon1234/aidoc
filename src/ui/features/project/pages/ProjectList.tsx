@@ -29,48 +29,59 @@ export function ProjectList({ onSignOut }: ProjectListProps): React.ReactElement
       <div className={styles.header}>
         <div>
           <h1 className={styles.title}>Projects</h1>
-          {projects && <p className={styles.subtitle}>{projects.length} project{projects.length !== 1 ? 's' : ''}</p>}
+          {projects && projects.length > 0 && (
+            <p className={styles.subtitle}>{projects.length} project{projects.length !== 1 ? 's' : ''}</p>
+          )}
         </div>
       </div>
 
-      {loading && <Spinner />}
+      {loading && <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-2xl)' }}><Spinner size="lg" /></div>}
       {error && <EmptyState title="Failed to load" description={error} />}
 
       {projects && projects.length === 0 && (
-        <div style={{ maxWidth: '500px', margin: '0 auto', textAlign: 'center', padding: 'var(--space-2xl) 0' }}>
-          <h2 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, marginBottom: 'var(--space-sm)' }}>
-            Welcome to aidoc
-          </h2>
-          <p style={{ color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xl)' }}>
-            Create beautiful product documentation in minutes, not hours.
-          </p>
+        <div className={styles.welcome}>
+          <div className={styles.welcomeContent}>
+            <h2 className={styles.welcomeTitle}>
+              Generate docs, deploy an AI chatbot.
+            </h2>
+            <p className={styles.welcomeDesc}>
+              Upload a screen recording or let AI explore your app. Get professional documentation and an embeddable chat widget in minutes.
+            </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', textAlign: 'left', marginBottom: 'var(--space-xl)' }}>
-            {[
-              { step: '1', title: 'Create a project', desc: 'Add your product URL and describe what it does' },
-              { step: '2', title: 'AI scans your site', desc: 'Our agent explores your app and proposes a doc structure' },
-              { step: '3', title: 'Review & publish', desc: 'Edit the generated docs, add details, and organize pages' },
-            ].map((s) => (
-              <div key={s.step} style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'flex-start' }}>
-                <span style={{
-                  width: '28px', height: '28px', borderRadius: 'var(--radius-full)',
-                  backgroundColor: 'var(--color-accent-blue)', color: 'var(--color-text-inverse)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 'var(--text-sm)', fontWeight: 600, flexShrink: 0,
-                }}>
-                  {s.step}
-                </span>
+            <div className={styles.features}>
+              <div className={styles.feature}>
+                <div className={styles.featureIcon} style={{ color: 'var(--color-success)' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                </div>
                 <div>
-                  <p style={{ fontWeight: 500, margin: 0, fontSize: 'var(--text-base)' }}>{s.title}</p>
-                  <p style={{ color: 'var(--color-text-muted)', margin: '2px 0 0', fontSize: 'var(--text-sm)' }}>{s.desc}</p>
+                  <p className={styles.featureTitle}>AI Documentation</p>
+                  <p className={styles.featureDesc}>Upload a video, get a full product guide with screenshots</p>
                 </div>
               </div>
-            ))}
-          </div>
+              <div className={styles.feature}>
+                <div className={styles.featureIcon} style={{ color: 'var(--color-primary)' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <div>
+                  <p className={styles.featureTitle}>Embeddable Chat Widget</p>
+                  <p className={styles.featureDesc}>Your users ask questions, AI answers from your docs</p>
+                </div>
+              </div>
+              <div className={styles.feature}>
+                <div className={styles.featureIcon} style={{ color: 'var(--color-warning)' }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </div>
+                <div>
+                  <p className={styles.featureTitle}>Auto-Exploration</p>
+                  <p className={styles.featureDesc}>AI agent browses your app and writes docs autonomously</p>
+                </div>
+              </div>
+            </div>
 
-          <Link to="/projects/new">
-            <Button>Create Your First Project</Button>
-          </Link>
+            <Link to="/projects/new">
+              <Button>Create Your First Project</Button>
+            </Link>
+          </div>
         </div>
       )}
 
