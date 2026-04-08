@@ -17,8 +17,8 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const lastContentRef = useRef('')
 
   const getTheme = (): 'dark' | 'light' => {
-    if (typeof document === 'undefined') return 'dark'
-    return (document.documentElement.getAttribute('data-theme') as 'dark' | 'light') ?? 'dark'
+    if (typeof document === 'undefined') return 'light'
+    return (document.documentElement.getAttribute('data-theme') as 'dark' | 'light') ?? 'light'
   }
   const [theme, setTheme] = useState<'dark' | 'light'>(getTheme)
 
