@@ -99,6 +99,37 @@
   overflow-y: auto;
 }
 
+/* Sidebar footer — fixed at bottom */
+.sidebarFooter {
+  margin-top: auto;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.footerBtn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  width: 100%;
+  padding: 6px var(--space-sm);
+  border: none;
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--color-muted-fg);
+  font-size: var(--text-xs);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+
+.footerBtn:hover {
+  background-color: var(--color-secondary);
+  color: var(--color-fg);
+}
+
 .emptyPages {
   display: flex;
   flex-direction: column;
