@@ -3,8 +3,53 @@
 ## Core User Journey
 
 ```
-Login → Projects → Create Project → Auto-generate Pages → Explore Pages → Edit Docs → Export
+Login → Projects → Create Project → Generate Docs (Video or Auto-explore) → 
+Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 ```
+
+## Video-to-Doc Flow (Recommended)
+
+**Trigger**: User clicks "Upload a screen recording" in the Generate tab
+**Flow**:
+1. Frontend creates a run (`POST /api/runs`)
+2. Video uploaded to Supabase Storage via signed URL (`POST /runs/:id/signed-upload-url`)
+3. Backend sends video to Gemini 2.5 Flash for analysis (`POST /runs/:id/analyze-video`)
+4. Gemini returns structured steps: timestamp, screen description, user action, narration
+5. Frontend extracts JPEG frames at exact Gemini timestamps (Canvas API, ~25 frames max)
+6. Frames uploaded to Supabase via signed URLs, linked to run steps
+7. Gemini generates documentation from enriched steps (`POST /runs/:id/generate-doc`)
+8. Doc auto-copied to `doc_pages.content`, page embeddings auto-indexed for chat
+
+## Chat with Documentation (RAG)
+
+**Trigger**: User clicks 💬 in project sidebar
+**Flow**:
+1. `POST /chat/index` — checks if embeddings exist, indexes if not
+2. `GET /chat/suggestions` — Gemini generates 6 project-specific questions (cached 1h)
+3. User sends message → `POST /chat`
+4. Query embedded with Gemini embedding model → pgvector cosine search → top 10 chunks
+5. Gemini generates answer with project context (name, audience, features, knowledge base)
+6. Response includes: answer, source pages (clickable), follow-up suggestions (clickable)
+7. Step-by-step: for "how do I" questions, gives 2-3 steps then proposes to continue
+
+## Embeddable Widget
+
+**Setup**: Project Settings → Embed Widget → Generate API Key → Copy snippet
+**Integration**:
+```html
+<script src="https://app.aidoc.com/widget.js"
+  data-key="aidoc_xxx"
+  data-user-name="{{USER_NAME}}"
+  data-user-email="{{USER_EMAIL}}"
+  data-user-plan="{{USER_PLAN}}"
+></script>
+```
+**Runtime**:
+1. Widget loads config from `GET /api/widget/:key/config` (project name + suggestions)
+2. Auto-detects current URL (`window.location.href`) for page-aware suggestions
+3. Messages sent to `POST /api/widget/:key/chat` (rate limited 30 req/min)
+4. Same RAG pipeline as internal chat, with user context for personalization
+5. Floating button (bottom-right) + popup panel, dark theme, mobile responsive
 
 ## 1. Project Creation
 

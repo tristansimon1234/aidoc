@@ -103,6 +103,29 @@ created_at        timestamptz DEFAULT now()
 ```
 **Index**: `idx_artifacts_run_id`
 
+### doc_embeddings
+```sql
+id                uuid PK DEFAULT gen_random_uuid()
+project_id        uuid NOT NULL FK → projects(id) CASCADE
+page_id           uuid NOT NULL FK → doc_pages(id) CASCADE
+chunk_index       integer NOT NULL
+chunk_text        text NOT NULL
+embedding         vector(768) NOT NULL        -- pgvector, Gemini embedding model
+page_title        text NOT NULL
+page_slug         text NOT NULL
+created_at        timestamptz DEFAULT now()
+```
+**Indexes**: `idx_doc_embeddings_project_id`, `idx_doc_embeddings_page_id`, `idx_doc_embeddings_vector` (HNSW, cosine)
+**RLS**: Via `project_id → projects.user_id`
+**Function**: `match_doc_chunks(project_id, embedding, match_count, threshold)` — cosine similarity search
+
+### projects (additional columns)
+```sql
+widget_api_key    text UNIQUE                 -- API key for embeddable widget
+widget_enabled    boolean NOT NULL DEFAULT false
+```
+**Index**: `idx_projects_widget_api_key`
+
 ## Migrations (chronological)
 
 | # | File | Description |
@@ -120,12 +143,17 @@ created_at        timestamptz DEFAULT now()
 | 11 | `20260325000010_add_discovered_context.sql` | Add discovered_context to projects |
 | 12 | `20260331000000_structured_project_context.sql` | Convert projects.context from text to jsonb |
 | 13 | `20260331000001_add_page_briefing.sql` | Add briefing jsonb to doc_pages |
+| 14 | `20260331000002_add_composite_run_index.sql` | Composite index on runs |
+| 15 | `20260408000000_add_doc_embeddings.sql` | doc_embeddings table with pgvector for RAG chat |
+| 16 | `20260408000001_add_widget_api_key.sql` | Widget API key + enabled flag on projects |
 
 ## Relationships
 
 ```
 projects 1:N doc_pages (CASCADE)
+projects 1:N doc_embeddings (CASCADE)
 doc_pages 1:N doc_pages (self-ref via parent_id, SET NULL)
+doc_pages 1:N doc_embeddings (CASCADE)
 doc_pages 1:N runs (via doc_page_id, SET NULL)
 runs 1:N run_steps (CASCADE)
 runs 1:N run_questions (CASCADE)

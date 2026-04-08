@@ -4,9 +4,14 @@
 
 | Purpose | Model | Cost | Where |
 |---|---|---|---|
-| Browser exploration (Stagehand) | `claude-sonnet-4-20250514` | ~$0.01/step | `playwright.client.ts`, `exploration.service.ts` via `STAGEHAND_MODEL` |
-| Documentation generation | `claude-sonnet-4-20250514` | ~$0.08/doc | `documentation.generator.ts` via `CLAUDE_MODEL` |
-| Auto-generate structure | `claude-sonnet-4-20250514` | ~$0.03/call | `page.service.ts` via direct API |
+| Documentation generation | Gemini 2.5 Flash | ~$0.003/doc | `documentation.generator.ts` via `generateText()` |
+| Video analysis | Gemini 2.5 Flash | ~$0.01/video | `gemini.client.ts` → `analyzeVideoWithGemini()` |
+| Auto-generate structure | Gemini 2.5 Flash | ~$0.002/call | `page.service.ts` via `generateText()` |
+| Context enrichment | Gemini 2.5 Flash | ~$0.001/call | `run.service.ts` via `generateText()` |
+| Chat (RAG) | Gemini 2.5 Flash | ~$0.001/msg | `chat.service.ts` via `generateText()` |
+| Chat suggestions | Gemini 2.5 Flash | ~$0.001/call | `chat.service.ts` → `getSuggestions()` |
+| Embeddings | Gemini embedding (auto-discovered) | ~$0.0001/chunk | `gemini.client.ts` → `embedTexts()` via REST API |
+| Browser exploration (beta) | Claude Sonnet 4 via Stagehand | ~$0.01/step | `exploration.service.ts` via `STAGEHAND_MODEL` |
 
 ## Exploration Agent Instruction
 
