@@ -68,22 +68,37 @@ export async function generateText(opts: {
 // --- Embeddings ---
 
 const EMBEDDING_MODEL = 'text-embedding-004'
+const EMBEDDING_DIMENSIONS = 768
 
 export async function embedTexts(texts: string[]): Promise<number[][]> {
-  const genAI = getGenAI()
-  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL })
+  if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured')
 
   const results: number[][] = []
-  // Batch in groups of 100 (API limit)
+  // Use REST API directly — SDK's getGenerativeModel doesn't support embedding models
   for (let i = 0; i < texts.length; i += 100) {
     const batch = texts.slice(i, i + 100)
-    const response = await withRetry(() =>
-      model.batchEmbedContents({
-        requests: batch.map((text) => ({
-          content: { role: 'user', parts: [{ text }] },
-        })),
-      }),
-    )
+    const response = await withRetry(async () => {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:batchEmbedContents?key=${env.GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requests: batch.map((text) => ({
+              model: `models/${EMBEDDING_MODEL}`,
+              content: { parts: [{ text }] },
+              outputDimensionality: EMBEDDING_DIMENSIONS,
+            })),
+          }),
+        },
+      )
+      if (!res.ok) {
+        const err = new Error(`Embedding failed: ${res.status} ${res.statusText}`) as Error & { status: number }
+        err.status = res.status
+        throw err
+      }
+      return res.json() as Promise<{ embeddings: { values: number[] }[] }>
+    })
     for (const emb of response.embeddings) {
       results.push(emb.values)
     }
