@@ -93,8 +93,8 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
       if (!body.videoPath || typeof body.videoPath !== 'string') {
         throw new ValidationError('videoPath is required')
       }
-      await runService.analyzeVideo(params.data.id, body.videoPath)
-      res.status(200).json({ success: true })
+      const result = await runService.analyzeVideo(params.data.id, body.videoPath)
+      res.status(200).json(result)
     } catch (err) {
       next(err)
     }

@@ -863,13 +863,13 @@ function VideoUploader({
       const { error: uploadErr } = await supabase.storage.from('artifacts').upload(videoPath, file, { upsert: true })
       if (uploadErr) throw new Error(`Upload failed: ${uploadErr.message}`)
 
-      // 3. Analyze with Gemini
+      // 3. Analyze with Gemini — returns timestamps for each step
       setStatus('analyzing')
-      await api.runs.analyzeVideo(run.id, videoPath)
+      const { timestamps } = await api.runs.analyzeVideo(run.id, videoPath)
 
-      // 4. Extract frames from video at timestamps and upload them
+      // 4. Extract frames at exact Gemini timestamps and upload as screenshots
       setStatus('extracting')
-      await extractAndUploadFrames(file, run.id)
+      await extractAndUploadFrames(file, run.id, timestamps)
 
       // 5. Generate doc
       setStatus('generating')
@@ -925,8 +925,10 @@ function VideoUploader({
   )
 }
 
-// Extract frames from a video file at regular intervals and upload to Supabase
-async function extractAndUploadFrames(videoFile: File, runId: string): Promise<void> {
+// Extract frames from video at exact Gemini timestamps and upload as screenshots
+async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
+  if (timestamps.length === 0) return
+
   return new Promise((resolve, reject) => {
     const video = document.createElement('video')
     const canvas = document.createElement('canvas')
@@ -937,33 +939,26 @@ async function extractAndUploadFrames(videoFile: File, runId: string): Promise<v
       canvas.width = Math.min(video.videoWidth, 1280)
       canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
 
-      const intervalSec = Math.max(2, video.duration / 25) // ~25 frames max
-      let currentTime = 0
-      let frameIndex = 0
+      let i = 0
 
       const extractNext = (): void => {
-        if (currentTime > video.duration) {
-          resolve()
-          return
-        }
-        video.currentTime = currentTime
+        if (i >= timestamps.length) { resolve(); return }
+        video.currentTime = timestamps[i]!
       }
 
       video.onseeked = () => {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const stepIndex = i
         canvas.toBlob(async (blob) => {
           if (blob) {
-            const path = `runs/${runId}/frame-${frameIndex}.jpg`
+            const path = `runs/${runId}/frame-${stepIndex}.jpg`
             await supabase.storage.from('artifacts').upload(path, blob, { contentType: 'image/jpeg', upsert: true })
-            // Update the run step with the screenshot path
-            // We do this via a direct Supabase update since we know the step index
             await supabase.from('run_steps')
               .update({ screenshot_path: path })
               .eq('run_id', runId)
-              .eq('step_index', frameIndex)
+              .eq('step_index', stepIndex)
           }
-          frameIndex++
-          currentTime += intervalSec
+          i++
           extractNext()
         }, 'image/jpeg', 0.8)
       }

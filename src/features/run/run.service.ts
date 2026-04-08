@@ -300,7 +300,7 @@ export async function cancelExploration(id: string): Promise<void> {
   cancelRun(id)
 }
 
-export async function analyzeVideo(runId: string, videoPath: string): Promise<void> {
+export async function analyzeVideo(runId: string, videoPath: string): Promise<{ timestamps: number[] }> {
   const run = await runRepo.findRunById(runId)
   if (!run) throw new NotFoundError('Run')
 
@@ -349,6 +349,8 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<vo
     })
 
     await runRepo.updateRunStatus(runId, 'completed')
+
+    return { timestamps: analysis.steps.map((s) => s.timestamp) }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')

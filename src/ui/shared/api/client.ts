@@ -189,7 +189,7 @@ export const api = {
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
     cancel: (id: string): Promise<{ cancelled: boolean }> =>
       request(`/runs/${id}/cancel`, { method: 'POST' }),
-    analyzeVideo: (id: string, videoPath: string): Promise<{ success: boolean }> =>
+    analyzeVideo: (id: string, videoPath: string): Promise<{ timestamps: number[] }> =>
       request(`/runs/${id}/analyze-video`, { method: 'POST', body: JSON.stringify({ videoPath }) }),
     exploreStream: async (
       id: string,
