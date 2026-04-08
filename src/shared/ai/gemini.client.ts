@@ -74,7 +74,25 @@ export async function analyzeVideoWithGemini(
   // Analyze the video
   const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
-  const result = await model.generateContent([
+  const generateWithRetry = async (content: Parameters<typeof model.generateContent>[0], maxRetries = 3) => {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await model.generateContent(content)
+      } catch (err: unknown) {
+        const status = (err as { status?: number }).status
+        if (status === 429 && attempt < maxRetries) {
+          const waitSec = Math.min(30 * (attempt + 1), 90)
+          console.log(`[gemini] Rate limited, retrying in ${waitSec}s (attempt ${attempt + 1}/${maxRetries})`)
+          await new Promise((r) => setTimeout(r, waitSec * 1000))
+          continue
+        }
+        throw err
+      }
+    }
+    throw new Error('Unreachable')
+  }
+
+  const result = await generateWithRetry([
     {
       fileData: {
         mimeType: file.mimeType,
