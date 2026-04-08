@@ -1,0 +1,81 @@
+{
+  "featureName": "Linear Issue Management",
+  "goal": "Document how to create, manage, and track issues in Linear",
+  "startUrl": "https://linear.app",
+  "projectContext": "**Target audience**: Software engineering teams using Linear for project management\n**Key workflow**: Creating issues, assigning them, setting priority, and tracking status through the workflow\n**Non-obvious behaviors / terminology**: Linear uses 'Cycles' instead of 'Sprints'. Issues have a unique identifier like 'ENG-123'. Triage is the default state for new issues without a cycle.",
+  "runStatus": "completed",
+  "steps": [
+    {
+      "url": "https://linear.app/team/inbox",
+      "action": "Navigate to https://linear.app/team/inbox",
+      "observation": "The Linear inbox loaded. It shows a clean, minimal interface with a left sidebar containing: Inbox, My Issues, Views, Roadmap, Cycles, and team sections. The main content area shows the Inbox with 3 existing notifications. The top bar has a search shortcut (Cmd+K) and user avatar.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/inbox",
+      "action": "Click 'My Issues' in the sidebar",
+      "observation": "Navigated to My Issues view. Shows a grouped list of issues assigned to the current user. Groups: 'In Progress' (2 issues), 'Todo' (5 issues), 'Backlog' (3 issues). Each issue row shows: status icon (colored circle), issue ID (ENG-xxx), title, priority indicator, and due date if set. The view has filter and sort controls at the top.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/my-issues",
+      "action": "Press keyboard shortcut C to create new issue",
+      "observation": "A new issue creation modal appeared. It has fields: Title (large text input at top), Description (rich text editor with markdown support), Status (dropdown, default 'Backlog'), Priority (dropdown with urgency levels), Assignee (user picker), Labels (multi-select), Cycle (optional), Project (optional), and Due date. The modal is clean with minimal chrome.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/my-issues",
+      "action": "Fill form: entered issue title 'Fix authentication timeout on mobile'",
+      "observation": "Typed the title 'Fix authentication timeout on mobile'. As typing, Linear shows a duplicate detection hint: 'Similar: ENG-89 Auth session expires too quickly (Closed)'. The title field accepts markdown formatting.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/my-issues",
+      "action": "Fill form: entered description with markdown formatting",
+      "observation": "Entered description: 'Users report being logged out after 5 minutes of inactivity on mobile browsers. Expected: session should last 30 minutes. Steps to reproduce: 1. Login on mobile Safari 2. Lock phone for 5 min 3. Return to app — redirected to login.' The editor rendered the numbered list automatically.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/my-issues",
+      "action": "Set priority to 'Urgent' using the priority dropdown",
+      "observation": "Clicked the priority dropdown. Options shown: No priority, Urgent (red), High (orange), Medium (yellow), Low (blue). Selected 'Urgent'. The priority icon changed to a red exclamation mark next to the title.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/my-issues",
+      "action": "Assign issue to team member using the assignee picker",
+      "observation": "Clicked the assignee field. A searchable dropdown appeared showing team members with avatars: 'Alice Chen', 'Bob Martinez', 'Carol Park', 'David Kim'. Selected 'Alice Chen'. Her avatar now appears next to the issue.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/my-issues",
+      "action": "Add labels 'bug' and 'mobile'",
+      "observation": "Clicked the labels field. Multi-select dropdown with existing labels: 'bug' (red), 'feature' (green), 'improvement' (blue), 'mobile' (purple), 'backend' (gray), 'frontend' (teal). Selected 'bug' and 'mobile'. Both labels now appear as colored chips on the issue.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/my-issues",
+      "action": "Set status to 'Todo' and submit the issue",
+      "observation": "Changed status from 'Backlog' to 'Todo' using the status dropdown. Status options: Backlog, Todo, In Progress, In Review, Done, Cancelled. Clicked 'Create issue' button. Issue created successfully as ENG-142. A toast notification appeared: 'Issue ENG-142 created'. The issue now appears in the 'Todo' group of My Issues.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/issue/ENG-142",
+      "action": "Click on the newly created issue ENG-142 to open detail view",
+      "observation": "Issue detail page opened. Full layout: left panel shows title, description, and activity feed. Right sidebar shows properties: Status (Todo), Priority (Urgent), Assignee (Alice Chen), Labels (bug, mobile), Cycle (none), Project (none), Due date (none), Created (just now). Activity section shows 'Created by You just now'. There's a comment input at the bottom.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/issue/ENG-142",
+      "action": "Change issue status from 'Todo' to 'In Progress'",
+      "observation": "Clicked the status dropdown in the right sidebar. Changed from 'Todo' to 'In Progress'. The status icon changed from a gray circle to a yellow half-filled circle. Activity feed updated: 'You changed status from Todo to In Progress just now'. The issue will now appear in the 'In Progress' group on the board view.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://linear.app/team/issue/ENG-142",
+      "action": "Done: Completed exploration of Linear issue management workflow",
+      "observation": "Successfully explored the complete Linear issue management flow: viewing inbox and personal issues, creating a new issue with all fields (title, description, priority, assignee, labels, status), viewing issue details, and changing issue status. Key concepts covered: issue IDs (ENG-xxx), priority levels, status workflow, labels, and team assignment.",
+      "screenshotUrl": null
+    }
+  ]
+}

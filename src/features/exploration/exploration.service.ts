@@ -3,8 +3,17 @@ import {
   closeBrowser,
   getSessionId,
 } from '../../shared/browser/playwright.client.js'
+import { STAGEHAND_MODEL } from '../../shared/ai/anthropic.client.js'
 import * as explorationBrowser from './exploration.browser.js'
 import type { AgentActionRecord, StepEvent, ExplorationSummary, ExplorationBlocker } from './exploration.types.js'
+import type { PageBriefingWithContent, PageResourceWithContent } from '../page/page.types.js'
+
+// In-memory cancellation signal — same process handles exploration + cancel request
+const cancelledRuns = new Set<string>()
+
+export function cancelRun(runId: string): void {
+  cancelledRuns.add(runId)
+}
 
 export interface RunData {
   startUrl: string
@@ -40,6 +49,7 @@ export interface ExploreOptions {
   tableOfContents?: string
   credentials?: { label: string; username: string; password: string }[]
   customPrompt?: string
+  briefing?: PageBriefingWithContent
   onEvent?: (event: StepEvent) => void
 }
 
@@ -121,43 +131,98 @@ Use these credentials to log in when you encounter a login page. The values are 
       variables[`${c.label}_password`] = { value: c.password, description: `Password for ${c.label}` }
     }
 
-    const customPromptBlock = options?.customPrompt
-      ? `\n\n## Custom Instructions from User\n${options.customPrompt}`
-      : ''
+    let briefingBlock = ''
+    if (options?.briefing) {
+      const b = options.briefing
+      const parts: string[] = []
+      if (b.objective) parts.push(`**YOUR OBJECTIVE**: ${b.objective}`)
+      if (b.knowledge) parts.push(`**IMPORTANT CONTEXT — read carefully before exploring**:\n${b.knowledge}`)
+      if (b.resources.length > 0) {
+        // Separate uploadable files (shown as upload instructions) from other resources (shown as context)
+        const uploadable: string[] = []
+        const contextBlocks: string[] = []
 
-    const instruction = `You are a documentation agent. Your job is to thoroughly explore a web application feature so we can generate product documentation from your exploration.
+        for (const r of b.resources) {
+          const res = r as PageResourceWithContent
+          if (res.type === 'file' && res.fileBuffer) {
+            // File is for upload only — don't dump content into prompt
+            uploadable.push(res.label || res.value.split('/').pop() || 'file')
+          } else {
+            contextBlocks.push(`- [${res.type}] ${res.label}: ${res.value}`)
+          }
+        }
+
+        if (contextBlocks.length > 0) {
+          parts.push(`**Reference materials**:\n${contextBlocks.join('\n')}`)
+        }
+        if (uploadable.length > 0) {
+          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. When you encounter a file upload input in the application, click it — the file will be provided automatically.`)
+        }
+      }
+      briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
+      console.log(`[exploration] Briefing injected: objective=${b.objective ? 'yes' : 'no'}, knowledge=${b.knowledge ? 'yes' : 'no'}, resources=${b.resources.length} (files with content: ${b.resources.filter((r) => (r as PageResourceWithContent).content).length})`)
+    } else if (options?.customPrompt) {
+      briefingBlock = `\n\n## Custom Instructions from User\n${options.customPrompt}`
+    }
+
+    const instruction = `Documentation agent — explore a web app to generate product docs.
 
 Feature: ${run.featureName}
 Goal: ${run.goal}
-Start URL: ${run.startUrl}
-${isResuming ? `\nYou are RESUMING a previous exploration. The browser has been navigated to ${run.startUrl}. Focus on sections you haven't explored yet.` : ''}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}${customPromptBlock}
+Start: ${run.startUrl}${isResuming ? ' (RESUMING — skip already-covered sections)' : ''}
+${briefingBlock}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}
 
-Instructions:
-- You are now on ${run.startUrl} — start exploring from here
-- Click through every section, button, menu, and interactive element you find
-- Fill forms with realistic test data when needed
-- Scroll to see all content on each page
-- Visit all linked pages within the feature
-- Be systematic: go through navigation items one by one
+Rules:
+- Explore systematically: navigate sections, click buttons, fill forms with test data
+- Budget: 50 actions max. Prioritize the most important sections. Wrap up at ~40.
+- Login wall without credentials → call done immediately
+- Action fails twice → move on
+- All sections explored → call done`
 
-BUDGET: You have a maximum of 50 actions. Plan accordingly:
-- Prioritize the MOST IMPORTANT sections first
-- After ~40 actions, start wrapping up and call done with a summary
-- Better to document 5 sections thoroughly than 10 sections poorly
-- Each screenshot, scroll, and click counts as one action
+    // Make briefing files available for upload via CDP file chooser interception
+    const briefingFiles = (options?.briefing?.resources ?? [])
+      .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
+        r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
+      )
 
-CRITICAL RULES FOR STOPPING:
-- If you encounter a login page or auth wall and do NOT have credentials, call done IMMEDIATELY. Do not retry. Explain what access is needed.
-- If an action fails, try ONE alternative. If that also fails, move on. Do NOT retry more than twice.
-- If the page looks empty, broken, or returns an error, call done and explain.
-- If you've explored all visible sections, call done. Don't navigate in circles.
-- When your goal is achieved, call done. Don't keep exploring unnecessarily.
+    if (briefingFiles.length > 0) {
+      const activePage = session.context.activePage()
+      const firstFile = briefingFiles[0]
+      if (activePage && firstFile) {
+        const base64 = firstFile.fileBuffer.toString('base64')
+        await activePage.evaluate(
+          ({ b64, name }: { b64: string; name: string }) => {
+            // Store file data globally for file input auto-fill
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const w = window as any
+            w.__aidocFile = { b64, name }
 
-When to call done:
-- You have explored all main sections relevant to the goal
-- You've captured the key user flows and interactions
-- You're running low on actions (~40+)
-- OR you are blocked and cannot proceed further`
+            const fillFileInputs = (): void => {
+              document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => {
+                if (input.dataset.aidocFilled) return
+                input.dataset.aidocFilled = 'true'
+                input.addEventListener('click', (e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const stored = w.__aidocFile as { b64: string; name: string }
+                  const bytes = Uint8Array.from(atob(stored.b64), (c) => c.charCodeAt(0))
+                  const f = new File([bytes], stored.name, { type: 'application/octet-stream' })
+                  const dt = new DataTransfer()
+                  dt.items.add(f)
+                  input.files = dt.files
+                  input.dispatchEvent(new Event('change', { bubbles: true }))
+                }, { once: true })
+              })
+            }
+
+            fillFileInputs()
+            new MutationObserver(fillFileInputs).observe(document.body, { childList: true, subtree: true })
+          },
+          { b64: base64, name: firstFile.fileName },
+        )
+        console.log(`[exploration] File upload helper injected: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
+      }
+    }
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
 
@@ -166,9 +231,10 @@ When to call done:
 
     const agent = session.agent({
       model: {
-        modelName: 'anthropic/claude-haiku-4-5-20251001',
+        modelName: STAGEHAND_MODEL,
         apiKey: process.env.ANTHROPIC_API_KEY,
       },
+      mode: 'hybrid',
     })
 
     const result = await agent.execute({
@@ -177,6 +243,12 @@ When to call done:
       ...(Object.keys(variables).length > 0 ? { variables } : {}),
       callbacks: {
         onStepFinish: async (event) => {
+          // Check cancellation signal before processing
+          if (cancelledRuns.has(runId)) {
+            cancelledRuns.delete(runId)
+            throw new Error('Exploration cancelled by user')
+          }
+
           const toolCalls = event.toolCalls ?? []
           const toolResults = event.toolResults ?? []
 
@@ -242,7 +314,7 @@ When to call done:
 
             // Stream the agent's thinking, not just tool names
             // Skip noisy internal tools from the live feed
-            const isInternalTool = toolName === 'ariaTree' || toolName === 'screenshot' || toolName === 'wait'
+            const isInternalTool = toolName === 'ariaTree' || toolName === 'screenshot' || toolName === 'wait' || toolName === 'scroll' || toolName === 'keys'
 
             if (!isInternalTool) {
               emit({
@@ -255,10 +327,7 @@ When to call done:
 
             // Stream agent reasoning as a status update (what it's thinking)
             if (agentText && agentText.length > 10) {
-              const thinkingPreview = agentText.split('\n')[0]?.slice(0, 150) ?? ''
-              if (thinkingPreview) {
-                emit({ type: 'status', message: thinkingPreview })
-              }
+              emit({ type: 'status', message: agentText.slice(0, 500) })
             }
 
             stepCounter++
@@ -303,14 +372,28 @@ When to call done:
       emit({ type: 'blocked', message: result.message || 'Agent stopped — you can continue the exploration' })
     }
   } catch (err) {
-    console.error(`Exploration failed for run ${runId}:`, err)
+    const msg = (err as Error).message
+    const isCancelled = msg === 'Exploration cancelled by user'
     await deps.updateRunStatus(runId, 'failed')
-    emit({ type: 'error', message: (err as Error).message })
+    if (isCancelled) {
+      emit({ type: 'cancelled', message: 'Exploration stopped by user' })
+    } else {
+      console.error(`Exploration failed for run ${runId}:`, err)
+      emit({ type: 'error', message: msg })
+    }
     throw err
   } finally {
+    cancelledRuns.delete(runId)
     // Always close browser to avoid Browserbase billing
-    // Resume works via step context + navigating back to startUrl
     await closeBrowser(session)
+
+    // Download session recording from Browserbase and store in Supabase
+    const bbSessionId = getSessionId(session)
+    if (bbSessionId) {
+      saveSessionRecording(runId, bbSessionId).catch((err) =>
+        console.error(`[recording] Failed to save recording for run ${runId}:`, err),
+      )
+    }
   }
 }
 
@@ -470,4 +553,33 @@ function buildToolDescription(
       return toolName
     }
   }
+}
+
+async function saveSessionRecording(runId: string, browserbaseSessionId: string): Promise<void> {
+  const { env } = await import('../../shared/config/env.js')
+  const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
+
+  console.log(`[recording] Downloading recording for session ${browserbaseSessionId}`)
+
+  // Fetch recording from Browserbase API
+  const response = await fetch(
+    `https://api.browserbase.com/v1/sessions/${browserbaseSessionId}/recording`,
+    { headers: { 'x-bb-api-key': env.BROWSERBASE_API_KEY } },
+  )
+
+  if (!response.ok) {
+    console.error(`[recording] Browserbase API returned ${response.status}`)
+    return
+  }
+
+  const recording = await response.json() as unknown[]
+  const json = JSON.stringify(recording)
+  const buffer = Buffer.from(json, 'utf-8')
+
+  console.log(`[recording] Recording size: ${(buffer.length / 1024).toFixed(0)}KB (${recording.length} events)`)
+
+  const path = `runs/${runId}/recording.json`
+  await uploadToStorage('artifacts', path, buffer, 'application/json')
+
+  console.log(`[recording] Saved to ${path}`)
 }

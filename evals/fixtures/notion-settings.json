@@ -1,0 +1,69 @@
+{
+  "featureName": "Notion Workspace Settings",
+  "goal": "Document the workspace settings panel including members management and integrations",
+  "startUrl": "https://notion.so",
+  "projectContext": "**Target audience**: Workspace administrators managing their Notion organization\n**Key workflow**: Accessing settings, managing team members (invite, roles, remove), and configuring integrations\n**Non-obvious behaviors / terminology**: Notion has 'Members' (full access), 'Guests' (limited access to shared pages), and 'Groups' for bulk permissions. 'Connections' is what Notion calls third-party integrations.",
+  "runStatus": "completed",
+  "steps": [
+    {
+      "url": "https://notion.so",
+      "action": "Navigate to https://notion.so",
+      "observation": "Notion workspace loaded. Left sidebar shows: Search, Home, Inbox, page tree with 'Getting Started', 'Team Wiki', 'Projects', 'Meeting Notes'. At the bottom: 'Settings & members' link and username with workspace name 'Acme Corp'. The main area shows the Home page with recent pages and favorites.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so",
+      "action": "Click 'Settings & members' in the sidebar",
+      "observation": "Settings panel opened as a modal overlay. Left tabs: Account (My profile, My notifications), Workspace (Settings, Members, Upgrade, Billing, Security, Identity & provisioning, Connections). The default view shows the 'Settings' tab with workspace name 'Acme Corp', workspace icon, and domain settings.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so/settings",
+      "action": "Explore the Settings tab",
+      "observation": "The Settings tab shows: Workspace name ('Acme Corp' — editable), Workspace icon (click to change), Domain ('acme-corp.notion.site' — editable), Allowed email domains for auto-join ('acme.com'), Public home page toggle (off), Export workspace button. Each setting has a description text explaining what it does.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so/settings",
+      "action": "Click 'Members' tab in the settings sidebar",
+      "observation": "Members management page loaded. Shows a search bar at top and a member list below. Current members (5): 'John Admin (Owner)', 'Sarah Dev (Admin)', 'Mike Design (Member)', 'Lisa PM (Member)', 'Guest User (Guest)'. Each row shows: avatar, name, email, role badge, and a '...' menu button. Above the list: 'Invite' button and member count '5 members, 1 guest'.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so/settings/members",
+      "action": "Click 'Invite' button to add a new member",
+      "observation": "An invite modal appeared. It has an email input field with placeholder 'Enter email addresses...'. Below: role selector (Member, Admin, Guest) with 'Member' as default. There's a message area for an optional invite note. 'Send invite' button at the bottom. The modal also shows 'Or copy invite link' option with a link that expires in 7 days.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so/settings/members",
+      "action": "Click the role dropdown to see available roles",
+      "observation": "Role dropdown expanded showing three options: 'Admin' — can manage workspace settings, members, and billing. 'Member' — can create, edit, and share pages. Full access to workspace content. 'Guest' — can only access pages explicitly shared with them. Limited to specific pages. Each role has a description underneath.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so/settings/members",
+      "action": "Close invite modal and click '...' menu on a member",
+      "observation": "Closed the invite modal. Clicked the '...' menu on 'Mike Design (Member)'. Dropdown options: 'Change role' (submenu with Admin, Member, Guest), 'Remove from workspace', 'View activity'. The remove option is in red text. Note: the Owner role cannot be changed or removed through this menu.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so/settings/members",
+      "action": "Click 'Connections' tab in the settings sidebar",
+      "observation": "Connections page loaded. Shows two sections: 'Workspace connections' (2 active) and 'Discover new connections'. Active connections: 'Slack' (connected, shows 'Connected to #general, #engineering'), 'Google Drive' (connected, shows 'All members can embed'). Each has a 'Configure' button and a toggle. Below, 'Discover' section shows: GitHub, Figma, Jira, Trello, Zapier with 'Connect' buttons.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so/settings/connections",
+      "action": "Click 'Configure' on the Slack connection",
+      "observation": "Slack configuration panel expanded. Shows: Connection status 'Active' (green dot), Connected workspace 'Acme Corp Slack', Channels synced: #general, #engineering, #design. Options: 'Add channel' button, notification preferences (page mentions, comments, reminders), and 'Disconnect' button at the bottom in red. Last synced: '2 minutes ago'.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://notion.so/settings/connections",
+      "action": "Done: Completed exploration of Notion workspace settings",
+      "observation": "Successfully explored Notion workspace settings: main settings (workspace name, domain, email domains), members management (list, invite with roles, role descriptions, member actions), and connections/integrations (active connections, configuration, discovering new integrations). Key concepts covered: Owner/Admin/Member/Guest roles, invite flow, workspace connections with Slack and Google Drive.",
+      "screenshotUrl": null
+    }
+  ]
+}

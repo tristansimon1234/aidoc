@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Card, Spinner, EmptyState } from '../../../design-system/components/index.js'
 import { useAsync } from '../../../shared/hooks/useAsync.js'
-import { api } from '../../../shared/api/client.js'
+import { fetchProjects } from '../../../shared/api/db.js'
 import styles from './ProjectList.module.css'
 
 interface ProjectListProps {
@@ -11,7 +11,7 @@ interface ProjectListProps {
 
 export function ProjectList({ onSignOut }: ProjectListProps): React.ReactElement {
   const navigate = useNavigate()
-  const { data: projects, loading, error } = useAsync(() => api.projects.list())
+  const { data: projects, loading, error } = useAsync(() => fetchProjects())
 
   return (
     <Shell

@@ -5,9 +5,10 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().default(3000),
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_KEY: z.string().min(1),
-  ANTHROPIC_API_KEY: z.string().min(1),
+  ANTHROPIC_API_KEY: z.string().optional(),
   BROWSERBASE_API_KEY: z.string().min(1),
   BROWSERBASE_PROJECT_ID: z.string().min(1),
+  GEMINI_API_KEY: z.string().min(1),
 })
 
 export type Env = z.infer<typeof EnvSchema>

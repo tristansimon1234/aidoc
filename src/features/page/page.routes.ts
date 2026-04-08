@@ -106,6 +106,33 @@ pageRouter.get('/:pageId', (req: Request, res: Response, next: NextFunction) => 
   })()
 })
 
+// Combined endpoint — returns page + latest run + doc in a single call
+pageRouter.get('/:pageId/full', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = PageParams.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const [page, latestRun, doc] = await Promise.all([
+        pageService.getPage(params.data.pageId),
+        getLatestRunByPageId(params.data.pageId),
+        findDocByPageId(params.data.pageId),
+      ])
+
+      // If no page-level doc, try run-level doc
+      let finalDoc = doc
+      if (!finalDoc && latestRun) {
+        const { findDocByRunId } = await import('../documentation/documentation.repository.js')
+        finalDoc = await findDocByRunId(latestRun.id)
+      }
+
+      res.status(200).json({ page, latestRun: latestRun ?? null, doc: finalDoc ?? null })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Get the generated doc for a page
 pageRouter.get('/:pageId/doc', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {

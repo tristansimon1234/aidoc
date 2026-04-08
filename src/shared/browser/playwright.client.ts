@@ -1,15 +1,20 @@
 import { Stagehand } from '@browserbasehq/stagehand'
+import { STAGEHAND_MODEL } from '../ai/anthropic.client.js'
 import { env } from '../config/env.js'
 
 export type StagehandSession = Stagehand
 
 export async function launchBrowser(existingSessionId?: string): Promise<StagehandSession> {
+  if (!env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is required for auto-exploration. Configure it in your environment variables.')
+  }
+
   const stagehand = new Stagehand({
     env: 'BROWSERBASE',
     apiKey: env.BROWSERBASE_API_KEY,
     projectId: env.BROWSERBASE_PROJECT_ID,
     model: {
-      modelName: 'anthropic/claude-haiku-4-5-20251001',
+      modelName: STAGEHAND_MODEL,
       apiKey: env.ANTHROPIC_API_KEY,
     },
     ...(existingSessionId ? { browserbaseSessionID: existingSessionId } : {}),

@@ -62,6 +62,38 @@ projectRouter.put('/:id', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
+// Generate or regenerate widget API key
+projectRouter.post('/:id/widget-key', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { randomBytes } = await import('node:crypto')
+      const apiKey = `aidoc_${randomBytes(24).toString('hex')}`
+      const { setWidgetApiKey } = await import('./project.repository.js')
+      const project = await setWidgetApiKey(params.data.id, apiKey)
+      res.status(200).json({ widgetApiKey: project.widgetApiKey, widgetEnabled: project.widgetEnabled })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Disable widget
+projectRouter.delete('/:id/widget-key', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { disableWidget } = await import('./project.repository.js')
+      await disableWidget(params.data.id)
+      res.status(200).json({ widgetEnabled: false })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 projectRouter.delete('/:id', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {

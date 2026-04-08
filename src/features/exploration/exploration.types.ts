@@ -21,7 +21,7 @@ export interface AgentActionRecord {
 }
 
 export interface StepEvent {
-  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'live' | 'summary'
+  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'live' | 'summary' | 'cancelled'
   step?: AgentActionRecord
   stepIndex?: number
   message?: string

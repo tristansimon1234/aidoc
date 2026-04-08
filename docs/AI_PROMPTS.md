@@ -4,7 +4,7 @@
 
 | Purpose | Model | Cost | Where |
 |---|---|---|---|
-| Browser exploration (Stagehand) | `claude-haiku-4-5-20251001` | ~$0.003/step | `playwright.client.ts`, `exploration.service.ts` |
+| Browser exploration (Stagehand) | `claude-sonnet-4-20250514` | ~$0.01/step | `playwright.client.ts`, `exploration.service.ts` via `STAGEHAND_MODEL` |
 | Documentation generation | `claude-sonnet-4-20250514` | ~$0.08/doc | `documentation.generator.ts` via `CLAUDE_MODEL` |
 | Auto-generate structure | `claude-sonnet-4-20250514` | ~$0.03/call | `page.service.ts` via direct API |
 
@@ -15,10 +15,11 @@
 **Context injected**:
 - Feature name, goal, start URL
 - Previous steps (grouped by URL with action counts) — for resume
-- Project context (product description)
+- Project context — structured: audience, workflow, quirks (formatted as markdown)
 - Table of contents (sibling pages with status)
 - Credentials (as Stagehand `%variable%` syntax)
-- Custom prompt (user's page-specific instructions)
+- Page briefing — objective, domain knowledge, typed resources (replaces custom prompt)
+- Custom prompt — legacy fallback if no briefing exists
 
 **Key instructions to the agent**:
 - "Be systematic: go through navigation items one by one"

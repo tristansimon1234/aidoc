@@ -13,6 +13,7 @@ export interface DocDeps {
     status: string
     tokenUsage: number
     docPageId: string | null
+    browserbaseSessionId?: string | null
   } | null>
   findStepsByRunId: (runId: string) => Promise<
     { url: string | null; action: string | null; observation: string | null; screenshotPath: string | null }[]
@@ -46,12 +47,20 @@ export async function generateAndSaveDoc(
   const steps = await deps.findStepsByRunId(runId)
   const questions = await deps.findQuestionsByRunId(runId)
 
-  const stepSummaries: StepSummary[] = steps.map((s) => {
+  // Filter noisy supporting steps (only for browser explorations, not video)
+  const isVideoRun = !run.browserbaseSessionId
+  const noiseTools = new Set(['scroll', 'ariaTree', 'wait', 'keys', 'screenshot'])
+  const filteredSteps = isVideoRun ? steps : steps.filter((s) => {
+    const toolType = (s.action ?? '').split(' ')[0]?.toLowerCase() ?? ''
+    return !noiseTools.has(toolType)
+  })
+
+  const stepSummaries: StepSummary[] = filteredSteps.map((s) => {
     const screenshotUrl = s.screenshotPath ? getPublicUrl('artifacts', s.screenshotPath) : null
     return {
       url: s.url ?? '',
       action: s.action ?? '',
-      observation: s.observation ?? '',
+      observation: (s.observation ?? '').slice(0, 500),
       screenshotUrl,
     }
   })
@@ -66,6 +75,7 @@ export async function generateAndSaveDoc(
     tableOfContents: options?.tableOfContents,
     existingPageSummaries: options?.existingPageSummaries,
     runStatus: run.status,
+    isVideoRun: !run.browserbaseSessionId,
   })
 
   await deps.incrementTokenUsage(runId, result.usage.inputTokens + result.usage.outputTokens)

@@ -1,5 +1,31 @@
 export type PageStatus = 'draft' | 'exploring' | 'published'
 
+export type PageResourceType = 'url' | 'credential' | 'endpoint' | 'file' | 'note'
+
+export interface PageResource {
+  type: PageResourceType
+  label: string
+  value: string
+}
+
+export interface PageBriefing {
+  objective: string
+  knowledge: string
+  resources: PageResource[]
+}
+
+export interface PageResourceWithContent extends PageResource {
+  content?: string
+  fileBuffer?: Buffer
+  fileName?: string
+}
+
+export interface PageBriefingWithContent {
+  objective: string
+  knowledge: string
+  resources: PageResourceWithContent[]
+}
+
 export interface DocPage {
   id: string
   projectId: string
@@ -10,6 +36,7 @@ export interface DocPage {
   goal: string | null
   content: string | null
   customPrompt: string | null
+  briefing: PageBriefing | null
   status: PageStatus
   sortOrder: number
   createdAt: Date
@@ -40,6 +67,7 @@ export interface UpdatePageInput {
   status?: PageStatus
   content?: string
   customPrompt?: string
+  briefing?: PageBriefing
 }
 
 export interface ReorderItem {

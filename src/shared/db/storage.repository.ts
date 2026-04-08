@@ -15,6 +15,15 @@ export async function uploadToStorage(
   return path
 }
 
+export async function createSignedUploadUrl(
+  bucket: string,
+  path: string,
+): Promise<string> {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(path)
+  if (error || !data) throw new DatabaseError(`Signed URL failed: ${error?.message ?? 'no data'}`)
+  return data.signedUrl
+}
+
 export function getPublicUrl(bucket: string, path: string): string | null {
   if (!path) return null
   try {

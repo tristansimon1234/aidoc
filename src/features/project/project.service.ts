@@ -3,7 +3,20 @@ import type { Project, CreateProjectInput, UpdateProjectInput } from './project.
 import * as projectRepo from './project.repository.js'
 
 export async function createProject(userId: string, input: CreateProjectInput): Promise<Project> {
-  return projectRepo.createProject(userId, input)
+  const project = await projectRepo.createProject(userId, input)
+
+  // Auto-create a "Getting Started" page so the project isn't empty
+  const { createPage } = await import('../page/page.repository.js')
+  await createPage({
+    projectId: project.id,
+    title: 'Getting Started',
+    slug: 'getting-started',
+    startUrl: input.baseUrl,
+    goal: `Document how to get started with ${input.name}`,
+    sortOrder: 0,
+  })
+
+  return project
 }
 
 export async function getProject(id: string): Promise<Project> {

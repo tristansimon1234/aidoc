@@ -10,6 +10,18 @@ export const CreatePageSchema = z.object({
   sortOrder: z.number().int().optional(),
 })
 
+const PageResourceSchema = z.object({
+  type: z.enum(['url', 'credential', 'endpoint', 'file', 'note']),
+  label: z.string().min(1),
+  value: z.string().min(1),
+})
+
+const PageBriefingSchema = z.object({
+  objective: z.string(),
+  knowledge: z.string(),
+  resources: z.array(PageResourceSchema),
+})
+
 export const UpdatePageSchema = z.object({
   title: z.string().min(1).optional(),
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/).optional(),
@@ -20,6 +32,7 @@ export const UpdatePageSchema = z.object({
   status: z.enum(['draft', 'exploring', 'published']).optional(),
   content: z.string().optional(),
   customPrompt: z.string().optional(),
+  briefing: PageBriefingSchema.optional(),
 })
 
 export const ReorderSchema = z.array(z.object({

@@ -1,0 +1,99 @@
+{
+  "featureName": "Stripe Checkout",
+  "goal": "Document the complete checkout flow from pricing page to payment confirmation",
+  "startUrl": "https://stripe.com/pricing",
+  "projectContext": "**Target audience**: Developers integrating Stripe payments into their applications\n**Key workflow**: Selecting a plan, entering payment details, and completing checkout\n**Non-obvious behaviors / terminology**: Stripe uses 'Payment Intents' for one-time payments and 'Subscriptions' for recurring billing. Test mode uses card number 4242 4242 4242 4242.",
+  "runStatus": "completed",
+  "steps": [
+    {
+      "url": "https://stripe.com/pricing",
+      "action": "Navigate to https://stripe.com/pricing",
+      "observation": "The pricing page loaded. It shows three main plans: Integrated (2.9% + 30c per transaction), Customized (custom pricing), and a comparison table below. There's a header with 'Products', 'Solutions', 'Developers', 'Resources', and 'Pricing' nav items. A prominent 'Start now' button appears next to each plan.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://stripe.com/pricing",
+      "action": "Scroll down to see all pricing plans",
+      "observation": "Scrolled down to reveal the full pricing comparison table. Three tiers visible: 'Integrated' for startups (2.9% + 30c), 'Customized' for large volumes (custom pricing with volume discounts), and feature comparison rows showing: recurring billing, invoicing, tax calculation, fraud prevention (Radar), and 24/7 support. Each row shows checkmarks for included features.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://stripe.com/pricing",
+      "action": "Click 'Start now' button under the Integrated plan",
+      "observation": "Clicked the 'Start now' button for the Integrated plan. The page navigated to the Stripe registration form. Agent reasoning: The Integrated plan is the most common starting point for new users.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://stripe.com/register",
+      "action": "Navigate to registration page",
+      "observation": "The registration page shows a form with fields: Email, Full name, Country, and Password. There's also 'Sign in' link for existing users and social sign-up options (Google). The page has a clean layout with Stripe branding and a brief description: 'Start accepting payments in minutes.'",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://stripe.com/register",
+      "action": "Fill form: entered email test@example.com",
+      "observation": "Filled in the email field with 'test@example.com'. The field accepted the input and showed a green checkmark validation indicator.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://stripe.com/register",
+      "action": "Fill form: entered full name and selected country",
+      "observation": "Filled 'Full name' with 'Test User' and selected 'United States' from the country dropdown. The country dropdown is a searchable select with all countries listed alphabetically.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://stripe.com/register",
+      "action": "Fill form: entered password and submitted",
+      "observation": "Entered a password and clicked 'Create account'. Password field shows strength indicator. Form submitted successfully and redirected to the Stripe Dashboard onboarding flow.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://dashboard.stripe.com/onboarding",
+      "action": "Navigate to dashboard onboarding",
+      "observation": "The onboarding page shows a step-by-step setup wizard. Current step: 'Activate payments'. There are 4 steps visible: 1) Add business details, 2) Add bank account, 3) Activate payments, 4) Start accepting payments. A progress bar at the top shows 25% completion.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://dashboard.stripe.com/onboarding",
+      "action": "Scroll down to see onboarding details",
+      "observation": "Below the steps, there's a 'Test mode' toggle prominently displayed with explanation text: 'Use test mode to simulate transactions without processing real payments. Toggle to live mode when ready to accept real payments.' Test mode is currently ON (orange indicator).",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://dashboard.stripe.com/test/payments",
+      "action": "Click 'Payments' in the sidebar navigation",
+      "observation": "Navigated to the Payments section. The page shows an empty state: 'No payments yet. Create a test payment to see how it works.' There's a blue 'Create payment' button. Left sidebar shows: Home, Payments, Balances, Customers, Products, and more items. 'TEST MODE' badge is visible in the header.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://dashboard.stripe.com/test/payments",
+      "action": "Click 'Create payment' button",
+      "observation": "A modal appeared titled 'Create a payment'. Fields shown: Amount (pre-filled with $10.00), Currency (USD dropdown), Description (optional), Customer (optional autocomplete), Payment method section with card input fields. The modal has 'Create' and 'Cancel' buttons at the bottom.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://dashboard.stripe.com/test/payments",
+      "action": "Fill form: entered amount $25.00 and test card number",
+      "observation": "Changed amount to $25.00. Entered test card number 4242 4242 4242 4242, expiry 12/25, CVC 123. A help tooltip appeared next to the card field: 'Use test card numbers to simulate different scenarios.' The form validated all fields with green checkmarks.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://dashboard.stripe.com/test/payments",
+      "action": "Click 'Create' to submit the test payment",
+      "observation": "Payment created successfully. The modal closed and the payments list now shows one entry: '$25.00 USD — Succeeded' with a green status badge. Timestamp shows 'Just now'. The payment ID (pi_...) is visible as a clickable link.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://dashboard.stripe.com/test/payments/pi_test123",
+      "action": "Click on the payment to view details",
+      "observation": "Payment detail page shows: Status 'Succeeded' (green), Amount $25.00 USD, Payment method 'Visa ending in 4242', Timeline with events (Payment created, Payment succeeded), Risk evaluation 'Normal' (green), and metadata section. There's a 'Refund' button in the top right and tabs for Overview, Events, and Logs.",
+      "screenshotUrl": null
+    },
+    {
+      "url": "https://dashboard.stripe.com/test/payments/pi_test123",
+      "action": "Done: Completed exploration of Stripe checkout and payment flow",
+      "observation": "Successfully explored the complete Stripe flow: pricing page with plan comparison, account registration, dashboard onboarding with test mode, creating a test payment with card details, and viewing payment details with status and timeline. Key flows documented: plan selection, registration, test mode setup, payment creation, and payment detail view.",
+      "screenshotUrl": null
+    }
+  ]
+}

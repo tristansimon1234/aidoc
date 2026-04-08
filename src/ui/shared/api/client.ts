@@ -44,6 +44,7 @@ export interface RunDTO {
   goal: string
   status: 'pending' | 'running' | 'blocked' | 'completed' | 'failed'
   tokenUsage: number
+  browserbaseSessionId: string | null
   summaryJson: {
     sections: { url: string; label: string; status: string; stepCount: number }[]
     blockers: { type: string; description: string; section: string; actionLabel: string }[]
@@ -85,12 +86,27 @@ export interface QuestionDTO {
 }
 
 export interface StepEventDTO {
-  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'close' | 'live'
+  type: 'step' | 'status' | 'done' | 'error' | 'blocked' | 'close' | 'live' | 'cancelled'
   step?: { type: string; action: string | null; pageUrl: string | null; reasoning: string | null }
   liveUrl?: string
   stepIndex?: number
   message?: string
   completed?: boolean
+}
+
+export interface ProjectContextDTO {
+  audience: string
+  workflow: string
+  quirks: string
+}
+
+export interface DiscoveredContextDTO {
+  lastUpdated: string
+  siteStructure: string[]
+  navigation: string[]
+  terminology: Record<string, string>
+  features: string[]
+  summary: string
 }
 
 export interface ProjectDTO {
@@ -99,9 +115,24 @@ export interface ProjectDTO {
   name: string
   baseUrl: string
   description: string | null
-  context: string | null
+  context: ProjectContextDTO | null
+  discoveredContext: DiscoveredContextDTO | null
+  widgetApiKey: string | null
+  widgetEnabled: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface PageResourceDTO {
+  type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'
+  label: string
+  value: string
+}
+
+export interface PageBriefingDTO {
+  objective: string
+  knowledge: string
+  resources: PageResourceDTO[]
 }
 
 export interface DocPageDTO {
@@ -114,6 +145,7 @@ export interface DocPageDTO {
   goal: string | null
   content: string | null
   customPrompt: string | null
+  briefing: PageBriefingDTO | null
   status: 'draft' | 'exploring' | 'published'
   sortOrder: number
   createdAt: string
@@ -125,16 +157,22 @@ export const api = {
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),
     get: (id: string): Promise<ProjectDTO> => request(`/projects/${id}`),
-    create: (body: { name: string; baseUrl: string; description?: string; context?: string; credentials?: { label: string; username: string; password: string }[] }): Promise<ProjectDTO> =>
+    create: (body: { name: string; baseUrl: string; description?: string; context?: ProjectContextDTO; credentials?: { label: string; username: string; password: string }[] }): Promise<ProjectDTO> =>
       request('/projects', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>
       request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: string): Promise<void> => request(`/projects/${id}`, { method: 'DELETE' }),
+    generateWidgetKey: (id: string): Promise<{ widgetApiKey: string; widgetEnabled: boolean }> =>
+      request(`/projects/${id}/widget-key`, { method: 'POST' }),
+    disableWidget: (id: string): Promise<{ widgetEnabled: boolean }> =>
+      request(`/projects/${id}/widget-key`, { method: 'DELETE' }),
   },
   pages: {
     list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
     get: (projectId: string, pageId: string): Promise<DocPageDTO> =>
       request(`/projects/${projectId}/pages/${pageId}`),
+    full: (projectId: string, pageId: string): Promise<{ page: DocPageDTO; latestRun: RunDTO | null; doc: GeneratedDocDTO | null }> =>
+      request(`/projects/${projectId}/pages/${pageId}/full`),
     create: (projectId: string, body: { title: string; slug: string; parentId?: string; startUrl?: string; goal?: string }): Promise<DocPageDTO> =>
       request(`/projects/${projectId}/pages`, { method: 'POST', body: JSON.stringify(body) }),
     update: (projectId: string, pageId: string, body: Record<string, unknown>): Promise<DocPageDTO> =>
@@ -155,19 +193,32 @@ export const api = {
     get: (id: string): Promise<RunDTO> => request(`/runs/${id}`),
     create: (body: { featureName: string; startUrl: string; goal: string; docPageId?: string }): Promise<RunDTO> =>
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
+    cancel: (id: string): Promise<{ cancelled: boolean }> =>
+      request(`/runs/${id}/cancel`, { method: 'POST' }),
+    analyzeVideo: (id: string, videoPath: string): Promise<{ timestamps: number[] }> =>
+      request(`/runs/${id}/analyze-video`, { method: 'POST', body: JSON.stringify({ videoPath }) }),
+    getSignedUploadUrl: (id: string, path: string): Promise<{ signedUrl: string; path: string }> =>
+      request(`/runs/${id}/signed-upload-url`, { method: 'POST', body: JSON.stringify({ path }) }),
+    updateStepScreenshot: (id: string, stepIndex: number, screenshotPath: string): Promise<{ ok: boolean }> =>
+      request(`/runs/${id}/steps/${stepIndex}/screenshot`, { method: 'POST', body: JSON.stringify({ screenshotPath }) }),
     exploreStream: async (
       id: string,
       onEvent: (event: StepEventDTO) => void,
       context?: string,
+      signal?: AbortSignal,
     ): Promise<void> => {
       const token = await getAuthToken()
-      const params = new URLSearchParams()
-      if (context) params.set('context', context)
 
       const res = await fetch(
-        `${API_BASE}/runs/${id}/explore${params.toString() ? `?${params}` : ''}`,
+        `${API_BASE}/runs/${id}/explore`,
         {
-          headers: { Authorization: `Bearer ${token}` },
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ context }),
+          signal,
         },
       )
 
@@ -212,4 +263,15 @@ export const api = {
         body: JSON.stringify({ answer }),
       }),
   },
+  chat: {
+    send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[]): Promise<ChatResponseDTO> =>
+      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history }) }),
+    index: (projectId: string, force?: boolean): Promise<{ indexed: number }> =>
+      request(`/projects/${projectId}/chat/index`, { method: 'POST', body: JSON.stringify({ force }) }),
+  },
+}
+
+export interface ChatResponseDTO {
+  answer: string
+  sources: { pageId: string; pageTitle: string; pageSlug: string }[]
 }

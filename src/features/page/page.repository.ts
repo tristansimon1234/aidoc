@@ -1,6 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
-import type { DocPage, CreatePageInput, UpdatePageInput, DocPageTreeNode, ReorderItem } from './page.types.js'
+import type { DocPage, CreatePageInput, UpdatePageInput, DocPageTreeNode, ReorderItem, PageBriefing } from './page.types.js'
 
 interface PageRow {
   id: string
@@ -12,6 +12,7 @@ interface PageRow {
   goal: string | null
   content: string | null
   custom_prompt: string | null
+  briefing: PageBriefing | null
   status: string
   sort_order: number
   created_at: string
@@ -29,6 +30,7 @@ function mapToPage(row: PageRow): DocPage {
     goal: row.goal,
     content: row.content,
     customPrompt: row.custom_prompt,
+    briefing: row.briefing ?? null,
     status: row.status as DocPage['status'],
     sortOrder: row.sort_order,
     createdAt: new Date(row.created_at),
@@ -82,6 +84,7 @@ export async function updatePage(id: string, input: UpdatePageInput): Promise<Do
   if (input.status !== undefined) updates.status = input.status
   if (input.content !== undefined) updates.content = input.content
   if (input.customPrompt !== undefined) updates.custom_prompt = input.customPrompt
+  if (input.briefing !== undefined) updates.briefing = input.briefing
 
   const { data, error } = await supabase
     .from('doc_pages')

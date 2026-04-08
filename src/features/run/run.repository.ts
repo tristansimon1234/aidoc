@@ -195,3 +195,16 @@ export async function createRunStep(input: {
   if (error) throw new DatabaseError(error.message)
   return mapToRunStep(data as RunStepRow)
 }
+
+export async function updateStepScreenshot(
+  runId: string,
+  stepIndex: number,
+  screenshotPath: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from('run_steps')
+    .update({ screenshot_path: screenshotPath })
+    .eq('run_id', runId)
+    .eq('step_index', stepIndex)
+  if (error) throw new DatabaseError(error.message)
+}
