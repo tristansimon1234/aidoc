@@ -28,6 +28,23 @@
   /* accent bg */
   --color-accent: oklch(0.95 0.025 277);           /* light indigo tint */
 
+  /* status (light mode) */
+  --color-status-pending-bg: #F0F0F3;
+  --color-status-pending-text: #425466;
+  --color-status-pending-border: #E6EBF1;
+  --color-status-running-bg: #EEF0FF;
+  --color-status-running-text: #635BFF;
+  --color-status-running-border: #D4D0FF;
+  --color-status-blocked-bg: #FFF5E6;
+  --color-status-blocked-text: #B87A00;
+  --color-status-blocked-border: #FFE0A3;
+  --color-status-completed-bg: #E8F7F0;
+  --color-status-completed-text: #09825D;
+  --color-status-completed-border: #B4E6D0;
+  --color-status-failed-bg: #FDE8EC;
+  --color-status-failed-text: #CD3D64;
+  --color-status-failed-border: #F9C2CE;
+
   /* spacing */
   --space-xs: 4px;
   --space-sm: 8px;
@@ -105,6 +122,23 @@
 
   --color-border: oklch(0.245 0.015 255);           /* #30363D */
   --color-accent: oklch(0.20 0.03 277);
+
+  /* status (dark mode) */
+  --color-status-pending-bg: #1A1A20;
+  --color-status-pending-text: #8B949E;
+  --color-status-pending-border: #30363D;
+  --color-status-running-bg: #0D1A35;
+  --color-status-running-text: #7C74FF;
+  --color-status-running-border: #2A2560;
+  --color-status-blocked-bg: #2D1A0A;
+  --color-status-blocked-text: #F5A623;
+  --color-status-blocked-border: #4A2D10;
+  --color-status-completed-bg: #0A1F16;
+  --color-status-completed-text: #3DD68C;
+  --color-status-completed-border: #124D2C;
+  --color-status-failed-bg: #1F0A0A;
+  --color-status-failed-text: #FF4D4D;
+  --color-status-failed-border: #4D1212;
 
   --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
   --shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);

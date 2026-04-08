@@ -1,14 +1,14 @@
 .card {
-  background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
   padding: var(--space-lg);
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .elevated {
-  background-color: var(--color-bg-elevated);
+  background-color: var(--color-secondary);
   box-shadow: var(--shadow-md);
 }
 
@@ -17,6 +17,7 @@
 }
 
 .clickable:hover {
-  border-color: var(--color-border-default);
+  border-color: var(--color-primary);
   box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }

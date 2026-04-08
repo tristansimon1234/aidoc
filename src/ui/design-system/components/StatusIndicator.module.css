@@ -8,7 +8,7 @@
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg);
   border: 1px solid;
   line-height: 1.6;
 }
@@ -20,38 +20,38 @@
   flex-shrink: 0;
 }
 
-/* status variants */
+/* status variants — using CSS custom properties from globals.css */
 .pending {
-  color: #9898A6;
-  background-color: #1A1A20;
-  border-color: #3A3A3F;
+  color: var(--color-status-pending-text);
+  background-color: var(--color-status-pending-bg);
+  border-color: var(--color-status-pending-border);
 }
-.pending .dot { background-color: #9898A6; }
+.pending .dot { background-color: var(--color-status-pending-text); }
 
 .running {
-  color: #4D9CFF;
-  background-color: #0D1F35;
-  border-color: #1A3A5C;
+  color: var(--color-status-running-text);
+  background-color: var(--color-status-running-bg);
+  border-color: var(--color-status-running-border);
 }
-.running .dot { background-color: #4D9CFF; }
+.running .dot { background-color: var(--color-status-running-text); }
 
 .blocked {
-  color: #F5A623;
-  background-color: #2D1A0A;
-  border-color: #4A2D10;
+  color: var(--color-status-blocked-text);
+  background-color: var(--color-status-blocked-bg);
+  border-color: var(--color-status-blocked-border);
 }
-.blocked .dot { background-color: #F5A623; }
+.blocked .dot { background-color: var(--color-status-blocked-text); }
 
 .completed {
-  color: #3DD68C;
-  background-color: #0A1F16;
-  border-color: #124D2C;
+  color: var(--color-status-completed-text);
+  background-color: var(--color-status-completed-bg);
+  border-color: var(--color-status-completed-border);
 }
-.completed .dot { background-color: #3DD68C; }
+.completed .dot { background-color: var(--color-status-completed-text); }
 
 .failed {
-  color: #FF4D4D;
-  background-color: #1F0A0A;
-  border-color: #4D1212;
+  color: var(--color-status-failed-text);
+  background-color: var(--color-status-failed-bg);
+  border-color: var(--color-status-failed-border);
 }
-.failed .dot { background-color: #FF4D4D; }
+.failed .dot { background-color: var(--color-status-failed-text); }
