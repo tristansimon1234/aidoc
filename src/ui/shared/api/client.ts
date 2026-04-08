@@ -267,5 +267,5 @@ export const api = {
 
 export interface ChatResponseDTO {
   answer: string
-  sources: { pageTitle: string; pageSlug: string }[]
+  sources: { pageId: string; pageTitle: string; pageSlug: string }[]
 }

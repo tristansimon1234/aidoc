@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Spinner } from '../../../design-system/components/index.js'
 import { api, type ChatResponseDTO } from '../../../shared/api/client.js'
 import { MarkdownRenderer } from '../../../design-system/components/index.js'
@@ -7,7 +8,7 @@ import styles from './ChatPanel.module.css'
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
-  sources?: { pageTitle: string; pageSlug: string }[]
+  sources?: { pageId: string; pageTitle: string; pageSlug: string }[]
 }
 
 const SUGGESTIONS = [
@@ -26,6 +27,7 @@ export function ChatPanel({
   projectName: string
   onClose: () => void
 }): React.ReactElement {
+  const navigate = useNavigate()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -157,9 +159,16 @@ export function ChatPanel({
                         <div className={styles.sources}>
                           <span className={styles.sourcesLabel}>Sources</span>
                           {msg.sources.map((s) => (
-                            <span key={s.pageSlug} className={styles.sourceTag}>
+                            <button
+                              key={s.pageSlug}
+                              className={styles.sourceTag}
+                              onClick={() => {
+                                onClose()
+                                navigate(`/projects/${projectId}/pages/${s.pageId}`)
+                              }}
+                            >
                               {s.pageTitle}
-                            </span>
+                            </button>
                           ))}
                         </div>
                       )}

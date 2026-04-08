@@ -20,5 +20,5 @@ export interface DocChunk {
 
 export interface ChatResponse {
   answer: string
-  sources: { pageTitle: string; pageSlug: string }[]
+  sources: { pageId: string; pageTitle: string; pageSlug: string }[]
 }

@@ -108,7 +108,15 @@
   color: var(--color-accent-blue);
   background: color-mix(in srgb, var(--color-accent-blue) 10%, transparent);
   padding: 2px 8px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sourceTag:hover {
+  border-color: var(--color-accent-blue);
+  background: color-mix(in srgb, var(--color-accent-blue) 20%, transparent);
 }
 
 .inputBar {

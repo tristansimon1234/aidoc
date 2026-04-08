@@ -128,9 +128,10 @@ export async function chat(
 Rules:
 - ONLY answer based on the provided documentation context
 - If the documentation doesn't cover something, say so honestly
-- Reference specific pages when relevant using [Page Title](/slug) format
-- Be concise and direct
-- Use the same language as the documentation
+- Be concise and direct — answer in 2-5 sentences unless the user asks for detail
+- Use the same language as the user's question
+- If the context contains screenshots (markdown images like ![caption](url)), include the most relevant ones in your answer to illustrate your point
+- Do NOT invent screenshots or image URLs — only use images that appear in the context
 - If the user asks something unrelated to the product, politely redirect to the documentation topics`
 
   const userPrompt = `## Documentation Context
@@ -148,10 +149,10 @@ ${message}`
   })
 
   // Deduplicate sources
-  const sourceMap = new Map<string, { pageTitle: string; pageSlug: string }>()
+  const sourceMap = new Map<string, { pageId: string; pageTitle: string; pageSlug: string }>()
   for (const chunk of chunks) {
     if (!sourceMap.has(chunk.pageSlug)) {
-      sourceMap.set(chunk.pageSlug, { pageTitle: chunk.pageTitle, pageSlug: chunk.pageSlug })
+      sourceMap.set(chunk.pageSlug, { pageId: chunk.pageId, pageTitle: chunk.pageTitle, pageSlug: chunk.pageSlug })
     }
   }
 
