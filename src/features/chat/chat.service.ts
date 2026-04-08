@@ -100,7 +100,7 @@ export async function chat(
   projectId: string,
   message: string,
   history: ChatMessage[],
-  userContext?: { name?: string; email?: string; plan?: string; extra?: string },
+  userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
 ): Promise<ChatResponse> {
   // 1. Embed the user query
   const queryEmbedding = await embedText(message)
@@ -155,10 +155,11 @@ export async function chat(
   if (userContext?.name) userInfo.push(`Name: ${userContext.name}`)
   if (userContext?.email) userInfo.push(`Email: ${userContext.email}`)
   if (userContext?.plan) userInfo.push(`Plan: ${userContext.plan}`)
+  if (userContext?.currentUrl) userInfo.push(`Currently viewing: ${userContext.currentUrl}`)
   if (userContext?.extra) userInfo.push(`Additional context: ${userContext.extra}`)
 
   const userContextBlock = userInfo.length > 0
-    ? `\n\n## About the user you're helping\n${userInfo.join('\n')}\nAddress them by first name if known. Tailor answers to their plan/context when relevant.`
+    ? `\n\n## About the user you're helping\n${userInfo.join('\n')}\nAddress them by first name if known. Tailor answers to their plan/context when relevant. If you know which page they're currently viewing, prioritize help related to that page and make your follow-up suggestions relevant to where they are in the app.`
     : ''
 
   const productBlock = productContext.length > 0

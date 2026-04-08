@@ -13,6 +13,9 @@
   var USER_PLAN = script.getAttribute('data-user-plan') || '';
   var USER_CONTEXT = script.getAttribute('data-user-context') || '';
 
+  // Track current page URL — updates on navigation (SPA support)
+  function getCurrentPage() { return window.location.href; }
+
   var API_BASE = script.src.replace(/\/widget\.js.*$/, '/api/widget');
   var projectName = '';
   var messages = [];
@@ -185,7 +188,7 @@
       body: JSON.stringify({
         message: text,
         history: history.slice(0, -1),
-        userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT } }),
+        userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() } }),
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
