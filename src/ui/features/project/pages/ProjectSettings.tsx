@@ -1,7 +1,7 @@
-import { type ChangeEvent, useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
-import { Button, Field, Spinner } from '../../../design-system/components/index.js'
+import { Button, Spinner } from '../../../design-system/components/index.js'
 import { type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
 import { fetchProject, updateProject } from '../../../shared/api/db.js'
 
@@ -74,6 +74,22 @@ export function ProjectSettings(): React.ReactElement {
   if (loading) return <Shell><Spinner size="lg" /></Shell>
   if (!project) return <Shell><p>Project not found</p></Shell>
 
+  const is: React.CSSProperties = {
+    width: '100%', padding: 'var(--space-sm)',
+    fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)',
+    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
+    borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none',
+  }
+  const ts: React.CSSProperties = { ...is, resize: 'vertical' as const, minHeight: '60px' }
+  const sn: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+    backgroundColor: 'var(--color-accent-blue)', color: 'white',
+    fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)',
+  }
+  const hs: React.CSSProperties = { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }
+  const lb: React.CSSProperties = { fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }
+
   return (
     <Shell>
       <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
@@ -86,94 +102,109 @@ export function ProjectSettings(): React.ReactElement {
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-xl)', alignItems: 'start' }}>
           {/* Left: Settings form */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-            <h2 style={{ fontSize: 'var(--text-md)', fontWeight: 600, margin: 0 }}>Configuration</h2>
-          <Field
-            label="project_name"
-            type="text"
-            value={name}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-          />
-
-          <Field
-            label="base_url"
-            type="url"
-            value={baseUrl}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setBaseUrl(e.target.value)}
-          />
-
-          <Field
-            label="audience"
-            multiline
-            placeholder="e.g. SaaS product managers who need to track feature adoption"
-            value={context.audience}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, audience: e.target.value })}
-            rows={2}
-          />
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '-12px 0 0' }}>Who uses this product and what do they use it for?</p>
-
-          <Field
-            label="workflow"
-            multiline
-            placeholder="e.g. User creates a project, adds team members, sets up integrations, runs first report"
-            value={context.workflow}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, workflow: e.target.value })}
-            rows={2}
-          />
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '-12px 0 0' }}>What is the most important user journey?</p>
-
-          <Field
-            label="quirks"
-            multiline
-            placeholder="e.g. 'Workspace' means a team account. The 'Archive' button is hidden until 5+ items exist."
-            value={context.quirks}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, quirks: e.target.value })}
-            rows={2}
-          />
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '-12px 0 0' }}>Non-obvious terms, hidden behaviors, or domain-specific knowledge the agent won&apos;t guess from the UI.</p>
-
-          {/* Credentials */}
           <div style={{
-            padding: 'var(--space-md)',
-            backgroundColor: 'var(--color-bg-surface)',
-            border: '1px solid var(--color-border-subtle)',
-            borderRadius: 'var(--radius-lg)',
+            padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+            display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)',
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: credentials.length > 0 ? 'var(--space-md)' : 0 }}>
-              <div>
-                <p style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)', margin: 0 }}>
-                  Test Credentials
-                </p>
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
-                  Used by the agent to log in during exploration
-                </p>
+            {/* Step 1 */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+                <span style={sn}>1</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Product</span>
               </div>
-              <Button size="sm" variant="ghost" type="button" onClick={addCredential}>+ Add</Button>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+                <div>
+                  <label style={lb}>Name</label>
+                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} style={is} />
+                </div>
+                <div>
+                  <label style={lb}>URL</label>
+                  <input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+                    style={{ ...is, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }} />
+                </div>
+              </div>
             </div>
 
-            {credentials.map((cred, i) => (
-              <div key={i} style={{
-                display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
-                gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)', alignItems: 'end',
-              }}>
-                <Field label="label" type="text" placeholder="admin" value={cred.label}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'label', e.target.value)} />
-                <Field label="username" type="text" placeholder="user@test.com" value={cred.username}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'username', e.target.value)} />
-                <Field label="password" type="password" placeholder="••••••" value={cred.password}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'password', e.target.value)} />
-                <Button size="sm" variant="ghost" type="button" onClick={() => removeCredential(i)}>x</Button>
+            {/* Step 2 */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+                <span style={sn}>2</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Who is this for?</span>
               </div>
-            ))}
+              <p style={hs}>The AI writes documentation adapted to this audience.</p>
+              <textarea value={context.audience} onChange={(e) => setContext({ ...context, audience: e.target.value })}
+                placeholder="e.g. SaaS product managers who need to track feature adoption"
+                rows={2} style={ts} />
+            </div>
+
+            {/* Step 3 */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+                <span style={sn}>3</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Key workflow</span>
+              </div>
+              <p style={hs}>The AI prioritizes exploring and documenting this flow.</p>
+              <textarea value={context.workflow} onChange={(e) => setContext({ ...context, workflow: e.target.value })}
+                placeholder="e.g. User creates a project, adds team members, sets up integrations, runs first report"
+                rows={2} style={ts} />
+            </div>
+
+            {/* Step 4 */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+                <span style={sn}>4</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Non-obvious behaviors</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+              </div>
+              <p style={hs}>Terms, hidden features, or domain knowledge the AI can&apos;t guess from the UI.</p>
+              <textarea value={context.quirks} onChange={(e) => setContext({ ...context, quirks: e.target.value })}
+                placeholder="e.g. 'Workspace' means a team account. The 'Archive' button is hidden until 5+ items exist."
+                rows={2} style={ts} />
+            </div>
+
+            {/* Step 5 */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                  <span style={sn}>5</span>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Test credentials</span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+                </div>
+                <button type="button" onClick={addCredential} style={{
+                  background: 'none', border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)', padding: '2px 8px',
+                }}>+ add</button>
+              </div>
+              <p style={hs}>The AI uses these to log in during exploration.</p>
+              {credentials.map((cred, i) => (
+                <div key={i} style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
+                  gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)', alignItems: 'center',
+                }}>
+                  <input type="text" value={cred.label} onChange={(e) => updateCredential(i, 'label', e.target.value)}
+                    placeholder="label" style={{ ...is, fontSize: 'var(--text-xs)' }} />
+                  <input type="text" value={cred.username} onChange={(e) => updateCredential(i, 'username', e.target.value)}
+                    placeholder="user@test.com" style={{ ...is, fontSize: 'var(--text-xs)' }} />
+                  <input type="password" value={cred.password} onChange={(e) => updateCredential(i, 'password', e.target.value)}
+                    placeholder="••••••" style={{ ...is, fontSize: 'var(--text-xs)' }} />
+                  <button type="button" onClick={() => removeCredential(i)} style={{
+                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+                  }}>x</button>
+                </div>
+              ))}
+              {credentials.length === 0 && (
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontStyle: 'italic', margin: 0 }}>No credentials added</p>
+              )}
+            </div>
+
+            {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)' }}>{error}</p>}
+            {saved && <p style={{ color: 'var(--color-accent-green)', fontSize: 'var(--text-sm)' }}>Saved</p>}
+
+            <Button onClick={() => void handleSave()} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Settings'}
+            </Button>
           </div>
-
-          {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)' }}>{error}</p>}
-          {saved && <p style={{ color: 'var(--color-accent-green)', fontSize: 'var(--text-sm)' }}>Saved</p>}
-
-          <Button onClick={() => void handleSave()} disabled={saving}>
-            {saving ? 'Saving...' : 'Save Settings'}
-          </Button>
-        </div>
 
           {/* Right: Knowledge Base */}
           <div>

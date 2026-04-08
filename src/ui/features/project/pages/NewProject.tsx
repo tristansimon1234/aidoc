@@ -1,13 +1,36 @@
-import { type ChangeEvent, useState } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
-import { Button, Field } from '../../../design-system/components/index.js'
+import { Button } from '../../../design-system/components/index.js'
 import { createProject } from '../../../shared/api/db.js'
 
 interface Credential {
   label: string
   username: string
   password: string
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: 'var(--space-sm)',
+  fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)',
+  background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
+  borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none',
+}
+
+const textareaStyle: React.CSSProperties = {
+  ...inputStyle, resize: 'vertical' as const, minHeight: '60px',
+}
+
+const stepNumStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+  backgroundColor: 'var(--color-accent-blue)', color: 'white',
+  fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)',
+}
+
+const helpStyle: React.CSSProperties = {
+  fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+  margin: '0 0 var(--space-sm)', lineHeight: 1.4,
 }
 
 export function NewProject(): React.ReactElement {
@@ -53,124 +76,117 @@ export function NewProject(): React.ReactElement {
 
   return (
     <Shell>
-      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, marginBottom: 'var(--space-xl)' }}>New Project</h1>
+      <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+        <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, marginBottom: 'var(--space-xs)' }}>New Project</h1>
+        <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-xl)' }}>
+          Set up your product so the AI knows what to explore and who the documentation is for.
+        </p>
 
         <form onSubmit={handleSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-xl)', alignItems: 'start' }}>
+          <div style={{
+            padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
+            border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+            display: 'flex', flexDirection: 'column', gap: 'var(--space-xl)',
+          }}>
 
-            {/* Left: Essentials */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', backgroundColor: 'var(--color-accent-blue)', color: 'white', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>1</span>
-                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Product</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-                  <Field
-                    label="project_name"
-                    type="text"
-                    placeholder="e.g. My SaaS App"
-                    value={name}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
-                    required
-                  />
-                  <Field
-                    label="base_url"
-                    type="url"
-                    placeholder="https://myapp.com"
-                    value={baseUrl}
-                    onChange={(e: ChangeEvent<HTMLInputElement>) => setBaseUrl(e.target.value)}
-                    required
-                  />
-                </div>
+            {/* Step 1: Product */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+                <span style={stepNumStyle}>1</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Your product</span>
               </div>
-
-              {/* Credentials */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', backgroundColor: 'var(--color-accent-blue)', color: 'white', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>2</span>
-                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Test Credentials</span>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+              <p style={helpStyle}>Name and URL of the web application the AI will explore.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>Name</label>
+                  <input type="text" value={name} onChange={(e) => setName(e.target.value)} required
+                    placeholder="e.g. My SaaS App" style={inputStyle} />
                 </div>
-                <div style={{
-                  padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-                  border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-                }}>
-                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)' }}>
-                    The agent uses these to log in during exploration. Add them here or later in Settings.
-                  </p>
-                  {credentials.map((cred, i) => (
-                    <div key={i} style={{
-                      display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
-                      gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)', alignItems: 'end',
-                    }}>
-                      <Field label="label" type="text" placeholder="e.g. admin" value={cred.label}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'label', e.target.value)} />
-                      <Field label="username" type="text" placeholder="user@example.com" value={cred.username}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'username', e.target.value)} />
-                      <Field label="password" type="password" placeholder="••••••••" value={cred.password}
-                        onChange={(e: ChangeEvent<HTMLInputElement>) => updateCredential(i, 'password', e.target.value)} />
-                      <Button size="sm" variant="ghost" type="button" onClick={() => removeCredential(i)}>x</Button>
-                    </div>
-                  ))}
-                  <Button size="sm" variant="ghost" type="button" onClick={addCredential}>+ Add credentials</Button>
+                <div>
+                  <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: 4 }}>URL</label>
+                  <input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} required
+                    placeholder="https://myapp.com" style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }} />
                 </div>
               </div>
             </div>
 
-            {/* Right: Product context */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, borderRadius: '50%', backgroundColor: 'var(--color-accent-blue)', color: 'white', fontSize: 11, fontWeight: 600, fontFamily: 'var(--font-mono)' }}>3</span>
-                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500 }}>Product Context</span>
-                </div>
-                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-md)', lineHeight: 1.4 }}>
-                  Help the AI understand your product. This context is injected into every exploration and doc generation.
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                  <div>
-                    <Field
-                      label="audience"
-                      multiline
-                      placeholder="e.g. SaaS product managers who need to track feature adoption"
-                      value={context.audience}
-                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, audience: e.target.value })}
-                      rows={2}
-                    />
-                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>Who uses this product and what do they use it for?</p>
-                  </div>
-                  <div>
-                    <Field
-                      label="workflow"
-                      multiline
-                      placeholder="e.g. User creates a project, adds team members, sets up integrations, runs first report"
-                      value={context.workflow}
-                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, workflow: e.target.value })}
-                      rows={2}
-                    />
-                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>What is the most important user journey?</p>
-                  </div>
-                  <div>
-                    <Field
-                      label="quirks"
-                      multiline
-                      placeholder="e.g. 'Workspace' means a team account. The 'Archive' button is hidden until 5+ items exist."
-                      value={context.quirks}
-                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setContext({ ...context, quirks: e.target.value })}
-                      rows={2}
-                    />
-                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '4px 0 0' }}>Non-obvious terms, hidden behaviors, or domain-specific knowledge.</p>
-                  </div>
-                </div>
+            {/* Step 2: Audience */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+                <span style={stepNumStyle}>2</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Who is this for?</span>
               </div>
+              <p style={helpStyle}>The AI writes documentation adapted to this audience. Be specific about their role and what they need to accomplish.</p>
+              <textarea value={context.audience} onChange={(e) => setContext({ ...context, audience: e.target.value })}
+                placeholder="e.g. SaaS product managers who need to track feature adoption and report to stakeholders"
+                rows={2} style={textareaStyle} />
+            </div>
+
+            {/* Step 3: Workflow */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+                <span style={stepNumStyle}>3</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Key workflow</span>
+              </div>
+              <p style={helpStyle}>The most important user journey. The AI prioritizes exploring and documenting this flow.</p>
+              <textarea value={context.workflow} onChange={(e) => setContext({ ...context, workflow: e.target.value })}
+                placeholder="e.g. User creates a project, adds team members, sets up integrations, runs first report"
+                rows={2} style={textareaStyle} />
+            </div>
+
+            {/* Step 4: Quirks */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+                <span style={stepNumStyle}>4</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Non-obvious behaviors</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+              </div>
+              <p style={helpStyle}>Terms, hidden features, or domain-specific knowledge the AI can&apos;t guess from the UI.</p>
+              <textarea value={context.quirks} onChange={(e) => setContext({ ...context, quirks: e.target.value })}
+                placeholder="e.g. 'Workspace' means a team account. The 'Archive' button is hidden until 5+ items exist."
+                rows={2} style={textareaStyle} />
+            </div>
+
+            {/* Step 5: Credentials */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                  <span style={stepNumStyle}>5</span>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Test credentials</span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+                </div>
+                <button type="button" onClick={addCredential} style={{
+                  background: 'none', border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)',
+                  padding: '2px 8px',
+                }}>+ add</button>
+              </div>
+              <p style={helpStyle}>The AI uses these to log in during exploration. You can also add them later in Settings.</p>
+              {credentials.map((cred, i) => (
+                <div key={i} style={{
+                  display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
+                  gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)', alignItems: 'center',
+                }}>
+                  <input type="text" value={cred.label} onChange={(e) => updateCredential(i, 'label', e.target.value)}
+                    placeholder="e.g. admin" style={{ ...inputStyle, fontSize: 'var(--text-xs)' }} />
+                  <input type="text" value={cred.username} onChange={(e) => updateCredential(i, 'username', e.target.value)}
+                    placeholder="user@example.com" style={{ ...inputStyle, fontSize: 'var(--text-xs)' }} />
+                  <input type="password" value={cred.password} onChange={(e) => updateCredential(i, 'password', e.target.value)}
+                    placeholder="••••••••" style={{ ...inputStyle, fontSize: 'var(--text-xs)' }} />
+                  <button type="button" onClick={() => removeCredential(i)} style={{
+                    background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+                  }}>x</button>
+                </div>
+              ))}
+              {credentials.length === 0 && (
+                <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontStyle: 'italic', margin: 0 }}>No credentials added</p>
+              )}
             </div>
           </div>
 
           {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-md)' }}>{error}</p>}
 
-          <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-xl)' }}>
+          <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-lg)' }}>
             <Button type="submit" disabled={submitting}>
               {submitting ? 'Creating...' : 'Create Project'}
             </Button>
