@@ -33,6 +33,7 @@ export function ChatPanel({
   const [sending, setSending] = useState(false)
   const [indexing, setIndexing] = useState(false)
   const [indexed, setIndexed] = useState<boolean | null>(null)
+  const [indexError, setIndexError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -49,7 +50,8 @@ export function ChatPanel({
       setIndexing(true)
       const result = await api.chat.index(projectId)
       setIndexed(result.indexed > 0)
-    } catch {
+    } catch (err) {
+      setIndexError((err as Error).message)
       setIndexed(false)
     } finally {
       setIndexing(false)
@@ -113,10 +115,18 @@ export function ChatPanel({
           </div>
         ) : indexed === false ? (
           <div className={styles.emptyState}>
-            <span className={styles.emptyTitle}>No documentation yet</span>
+            <span className={styles.emptyTitle}>{indexError ? 'Indexing failed' : 'No documentation yet'}</span>
             <span className={styles.emptyHint}>
-              Generate documentation for your pages first. The chat will use it to answer your questions.
+              {indexError
+                ? `Something went wrong: ${indexError}`
+                : 'Generate documentation for your pages first. The chat will use it to answer your questions.'
+              }
             </span>
+            {indexError && (
+              <button className={styles.retryBtn} onClick={() => { setIndexError(null); void checkAndIndex() }}>
+                Retry
+              </button>
+            )}
           </div>
         ) : (
           <>

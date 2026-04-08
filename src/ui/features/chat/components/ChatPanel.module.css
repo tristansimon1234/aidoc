@@ -251,6 +251,23 @@
   line-height: 1.5;
 }
 
+.retryBtn {
+  margin-top: var(--space-sm);
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-xs) var(--space-md);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.retryBtn:hover {
+  border-color: var(--color-accent-blue);
+  color: var(--color-text-primary);
+}
+
 .thinking {
   align-self: flex-start;
   display: flex;

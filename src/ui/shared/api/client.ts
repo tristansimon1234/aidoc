@@ -260,8 +260,8 @@ export const api = {
   chat: {
     send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[]): Promise<ChatResponseDTO> =>
       request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history }) }),
-    index: (projectId: string): Promise<{ indexed: number }> =>
-      request(`/projects/${projectId}/chat/index`, { method: 'POST' }),
+    index: (projectId: string, force?: boolean): Promise<{ indexed: number }> =>
+      request(`/projects/${projectId}/chat/index`, { method: 'POST', body: JSON.stringify({ force }) }),
   },
 }
 
