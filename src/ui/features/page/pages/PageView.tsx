@@ -294,48 +294,21 @@ export function PageView(): React.ReactElement {
       {activeTab === 'exploration' && (
         <div className={styles.tabContent}>
 
-          {/* Briefing config */}
-          <div className={styles.section}>
-            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)', margin: '0 0 var(--space-md)', lineHeight: 1.5 }}>
-              Brief the agent before exploring. The more precise your briefing, the better the documentation — and the less you'll need to re-run.
-            </p>
-            <input
-              type="text"
-              value={page.goal ?? ''}
-              onChange={(e) => {
-                setPage({ ...page, goal: e.target.value })
-                void debouncedPageUpdate({ goal: e.target.value })
-              }}
-              placeholder="Goal: what should this page document?"
-              style={{
-                background: 'none', border: 'none', outline: 'none', width: '100%',
-                fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
-                fontFamily: 'var(--font-sans)', marginBottom: 'var(--space-sm)',
-              }}
-            />
-            <input
-              type="text"
-              value={page.startUrl ?? ''}
-              onChange={(e) => {
-                setPage({ ...page, startUrl: e.target.value })
-                void debouncedPageUpdate({ startUrl: e.target.value })
-              }}
-              placeholder="Start URL (e.g. /pricing)"
-              style={{
-                background: 'none', border: 'none', outline: 'none', width: '100%',
-                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-                color: 'var(--color-text-muted)', marginBottom: 'var(--space-sm)',
-              }}
-            />
-            <BriefingEditor
-              briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
-              pageId={pageId!}
-              onChange={(briefing) => {
-                setPage({ ...page, briefing })
-                void debouncedPageUpdate({ briefing })
-              }}
-            />
-          </div>
+          {/* Briefing config — collapsible during exploration */}
+          <BriefingSection
+            page={page}
+            pageId={pageId!}
+            briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
+            collapsed={exploring || generating}
+            onPageUpdate={(updates) => {
+              setPage({ ...page, ...updates })
+              void debouncedPageUpdate(updates)
+            }}
+            onBriefingChange={(briefing) => {
+              setPage({ ...page, briefing })
+              void debouncedPageUpdate({ briefing })
+            }}
+          />
 
           {/* Action button */}
           {!exploring && !generating && (
@@ -487,26 +460,38 @@ function hasSelfAssessment(json: Record<string, unknown>): boolean {
   return json.selfAssessment != null && typeof json.selfAssessment === 'object'
 }
 
-// --- Briefing Editor ---
+// --- Briefing Section (collapsible, numbered steps) ---
 
 const RESOURCE_TYPES: PageResourceDTO['type'][] = ['url', 'credential', 'endpoint', 'file', 'note']
 const ALLOWED_FILE_EXTENSIONS = ['.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml']
-const MAX_FILE_SIZE = 500 * 1024 // 500KB
+const MAX_FILE_SIZE = 500 * 1024
 
-function BriefingEditor({
-  briefing,
+function BriefingSection({
+  page,
   pageId,
-  onChange,
+  briefing,
+  collapsed,
+  onPageUpdate,
+  onBriefingChange,
 }: {
-  briefing: PageBriefingDTO
+  page: DocPageDTO
   pageId: string
-  onChange: (briefing: PageBriefingDTO) => void
+  briefing: PageBriefingDTO
+  collapsed: boolean
+  onPageUpdate: (updates: Record<string, unknown>) => void
+  onBriefingChange: (briefing: PageBriefingDTO) => void
 }): React.ReactElement {
+  const [open, setOpen] = useState(!collapsed)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [showExample, setShowExample] = useState(false)
 
+  // Auto-collapse when exploration starts
+  useEffect(() => {
+    if (collapsed) setOpen(false)
+  }, [collapsed])
+
   const update = (partial: Partial<PageBriefingDTO>): void => {
-    onChange({ ...briefing, ...partial })
+    onBriefingChange({ ...briefing, ...partial })
   }
 
   const addResource = (): void => {
@@ -514,11 +499,7 @@ function BriefingEditor({
   }
 
   const updateResource = (index: number, field: keyof PageResourceDTO, value: string): void => {
-    update({
-      resources: briefing.resources.map((r, i) =>
-        i === index ? { ...r, [field]: value } : r,
-      ),
-    })
+    update({ resources: briefing.resources.map((r, i) => i === index ? { ...r, [field]: value } : r) })
   }
 
   const removeResource = (index: number): void => {
@@ -529,181 +510,223 @@ function BriefingEditor({
     const file = e.target.files?.[0]
     if (!file) return
     setUploadError(null)
-
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
-    if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) {
-      setUploadError(`Unsupported file type. Accepted: ${ALLOWED_FILE_EXTENSIONS.join(', ')}`)
-      return
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      setUploadError('File too large (max 500KB)')
-      return
-    }
-
+    if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) { setUploadError(`Unsupported type. Accepted: ${ALLOWED_FILE_EXTENSIONS.join(', ')}`); return }
+    if (file.size > MAX_FILE_SIZE) { setUploadError('File too large (max 500KB)'); return }
     const path = `pages/${pageId}/${file.name}`
     const { error } = await supabase.storage.from('briefing-files').upload(path, file, { upsert: true })
-    if (error) {
-      setUploadError(`Upload failed: ${error.message}`)
-      return
-    }
-
-    const updated = briefing.resources.map((r, i) =>
-      i === index ? { ...r, value: path, label: r.label || file.name } : r,
-    )
-    update({ resources: updated })
+    if (error) { setUploadError(`Upload failed: ${error.message}`); return }
+    update({ resources: briefing.resources.map((r, i) => i === index ? { ...r, value: path, label: r.label || file.name } : r) })
   }
 
-  const fieldStyle: React.CSSProperties = {
-    background: 'none', border: 'none', outline: 'none', resize: 'vertical',
-    fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)',
-    width: '100%', fontFamily: 'var(--font-sans)', minHeight: '36px',
+  // Count filled fields for the summary badge
+  const filledCount = [page.goal, page.startUrl, briefing.objective, briefing.knowledge].filter(Boolean).length + briefing.resources.length
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: 'var(--space-sm)',
+    fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)',
+    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
+    borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none',
   }
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-    color: 'var(--color-text-muted)', margin: 0,
-  }
-
-  const helpStyle: React.CSSProperties = {
-    fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-    margin: '2px 0 var(--space-xs)', lineHeight: 1.4,
+  const textareaStyle: React.CSSProperties = {
+    ...inputStyle, resize: 'vertical', minHeight: '60px',
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-          <p style={labelStyle}>objective</p>
-          <button
-            type="button"
-            onClick={() => setShowExample(!showExample)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            {showExample ? 'hide' : 'see example'}
-          </button>
-        </div>
-        <p style={helpStyle}>
-          What should the user learn from this page? Be specific — &quot;Document the checkout flow step by step&quot; works better than &quot;Document checkout&quot;.
-        </p>
-        {showExample && (
-          <div style={{
-            fontSize: 'var(--text-xs)', lineHeight: 1.5,
-            padding: 'var(--space-sm)', marginBottom: 'var(--space-xs)',
-            backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)',
+    <div className={styles.section}>
+      {/* Header — clickable to toggle */}
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          width: '100%', background: 'none', border: 'none', cursor: 'pointer',
+          padding: 0, margin: 0,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
+            Agent Briefing
+          </span>
+          <span style={{
+            fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+            padding: '1px 6px', borderRadius: 'var(--radius-sm)',
+            backgroundColor: filledCount > 2 ? 'rgba(61,214,140,0.15)' : 'rgba(245,166,35,0.15)',
+            color: filledCount > 2 ? 'var(--color-accent-green)' : 'var(--color-accent-amber)',
           }}>
-            <p style={{ color: 'var(--color-accent-red)', margin: '0 0 4px' }}>
-              Bad: &quot;Document pricing&quot;
-            </p>
-            <p style={{ color: 'var(--color-accent-green)', margin: 0 }}>
-              Good: &quot;Document the pricing page: compare plans, show the upgrade flow from free to pro, and explain what happens when the trial expires&quot;
-            </p>
-          </div>
-        )}
-        <textarea
-          value={briefing.objective}
-          onChange={(e) => update({ objective: e.target.value })}
-          placeholder="e.g. Document how a new user creates an account, verifies their email, and completes onboarding"
-          rows={2}
-          style={fieldStyle}
-        />
-      </div>
-      <div>
-        <p style={labelStyle}>knowledge</p>
-        <p style={helpStyle}>
-          What can&apos;t the agent figure out by looking at the UI? Business rules, edge cases, hidden behaviors.
-        </p>
-        <textarea
-          value={briefing.knowledge}
-          onChange={(e) => update({ knowledge: e.target.value })}
-          placeholder="e.g. Free trial users can't access the billing page. The 'Export' button only appears after 3 entries are created."
-          rows={2}
-          style={fieldStyle}
-        />
-      </div>
-      <div>
-        <p style={helpStyle}>
-          Files the agent can upload into the app, or reference links. Add credentials at the project level in Settings.
-        </p>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <p style={labelStyle}>resources</p>
-          <button
-            type="button"
-            onClick={addResource}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-              fontFamily: 'var(--font-mono)',
-            }}
-          >
-            + add
-          </button>
+            {filledCount > 2 ? 'ready' : `${filledCount}/4 filled`}
+          </span>
         </div>
-        {uploadError && (
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-red)', margin: '0 0 var(--space-xs)' }}>{uploadError}</p>
-        )}
-        {briefing.resources.map((r, i) => (
-          <div key={i} style={{
-            display: 'grid', gridTemplateColumns: 'auto 1fr 2fr auto',
-            gap: 'var(--space-xs)', marginBottom: 'var(--space-xs)', alignItems: 'center',
-          }}>
-            <select
-              value={r.type}
-              onChange={(e) => updateResource(i, 'type', e.target.value)}
-              style={{
-                background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
-                borderRadius: 'var(--radius-sm)', padding: '4px',
-                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-                color: 'var(--color-text-secondary)',
-              }}
-            >
-              {RESOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input
-              type="text"
-              value={r.label}
-              onChange={(e) => updateResource(i, 'label', e.target.value)}
-              placeholder="label"
-              style={{ ...fieldStyle, minHeight: 'unset', padding: '4px 0' }}
-            />
-            {r.type === 'file' ? (
-              r.value ? (
-                <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)', padding: '4px 0' }}>
-                  {r.value.split('/').pop()}
-                </span>
-              ) : (
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+          &#9662;
+        </span>
+      </button>
+
+      {!open && (
+        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: 'var(--space-xs) 0 0' }}>
+          {briefing.objective ? briefing.objective.slice(0, 80) + (briefing.objective.length > 80 ? '...' : '') : 'No objective set — click to expand'}
+        </p>
+      )}
+
+      {/* Expanded content */}
+      {open && (
+        <div style={{ marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5 }}>
+            The more precise your briefing, the better the documentation — and the less you&apos;ll need to re-run.
+          </p>
+
+          {/* Step 1: Goal + URL */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+              <span className={styles.stepNumber}>1</span>
+              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Where to explore</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+              <div>
+                <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Start URL</label>
                 <input
-                  type="file"
-                  accept={ALLOWED_FILE_EXTENSIONS.join(',')}
-                  onChange={(e) => void handleFileUpload(i, e)}
-                  style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)', padding: '4px 0' }}
+                  type="text"
+                  value={page.startUrl ?? ''}
+                  onChange={(e) => onPageUpdate({ startUrl: e.target.value })}
+                  placeholder="e.g. /pricing or https://app.com/settings"
+                  style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
                 />
-              )
-            ) : (
-              <input
-                type="text"
-                value={r.value}
-                onChange={(e) => updateResource(i, 'value', e.target.value)}
-                placeholder="value"
-                style={{ ...fieldStyle, minHeight: 'unset', padding: '4px 0' }}
-              />
-            )}
-            <button
-              type="button"
-              onClick={() => removeResource(i)}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-              }}
-            >
-              x
-            </button>
+              </div>
+              <div>
+                <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Goal</label>
+                <input
+                  type="text"
+                  value={page.goal ?? ''}
+                  onChange={(e) => onPageUpdate({ goal: e.target.value })}
+                  placeholder="e.g. Document the pricing and upgrade flow"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
+
+          {/* Step 2: Objective */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                <span className={styles.stepNumber}>2</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>What to document</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowExample(!showExample)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)', fontFamily: 'var(--font-mono)' }}
+              >
+                {showExample ? 'hide example' : 'see example'}
+              </button>
+            </div>
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
+              What should the user learn from this page? Be specific — the agent follows this closely.
+            </p>
+            {showExample && (
+              <div style={{
+                fontSize: 'var(--text-xs)', lineHeight: 1.5, padding: 'var(--space-sm)',
+                marginBottom: 'var(--space-sm)', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)',
+              }}>
+                <p style={{ color: 'var(--color-accent-red)', margin: '0 0 4px' }}>Bad: &quot;Document pricing&quot;</p>
+                <p style={{ color: 'var(--color-accent-green)', margin: 0 }}>Good: &quot;Document the pricing page: compare plans, show the upgrade flow from free to pro, and explain what happens when the trial expires&quot;</p>
+              </div>
+            )}
+            <textarea
+              value={briefing.objective}
+              onChange={(e) => update({ objective: e.target.value })}
+              placeholder="e.g. Document how a new user creates an account, verifies their email, and completes onboarding"
+              rows={3}
+              style={textareaStyle}
+            />
+          </div>
+
+          {/* Step 3: Domain knowledge */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+              <span className={styles.stepNumber}>3</span>
+              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>What the agent can&apos;t see</span>
+            </div>
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
+              Business rules, edge cases, hidden behaviors — anything not obvious from the UI.
+            </p>
+            <textarea
+              value={briefing.knowledge}
+              onChange={(e) => update({ knowledge: e.target.value })}
+              placeholder="e.g. Free trial users can't access billing. The 'Export' button only appears after 3 entries."
+              rows={3}
+              style={textareaStyle}
+            />
+          </div>
+
+          {/* Step 4: Resources */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                <span className={styles.stepNumber}>4</span>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Resources</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+              </div>
+              <button type="button" onClick={addResource} style={{
+                background: 'none', border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)',
+                padding: '2px 8px',
+              }}>
+                + add
+              </button>
+            </div>
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
+              Files the agent can upload into the app, or reference URLs. Credentials go in Project Settings.
+            </p>
+            {uploadError && (
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-red)', margin: '0 0 var(--space-sm)' }}>{uploadError}</p>
+            )}
+            {briefing.resources.map((r, i) => (
+              <div key={i} style={{
+                display: 'grid', gridTemplateColumns: 'auto 1fr 2fr auto',
+                gap: 'var(--space-xs)', marginBottom: 'var(--space-xs)', alignItems: 'center',
+              }}>
+                <select
+                  value={r.type}
+                  onChange={(e) => updateResource(i, 'type', e.target.value)}
+                  style={{
+                    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
+                    borderRadius: 'var(--radius-sm)', padding: '4px 6px',
+                    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  {RESOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <input type="text" value={r.label} onChange={(e) => updateResource(i, 'label', e.target.value)}
+                  placeholder="label" style={{ ...inputStyle, padding: '4px 8px', fontSize: 'var(--text-xs)' }} />
+                {r.type === 'file' ? (
+                  r.value ? (
+                    <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)', padding: '4px 0' }}>
+                      {r.value.split('/').pop()}
+                    </span>
+                  ) : (
+                    <input type="file" accept={ALLOWED_FILE_EXTENSIONS.join(',')}
+                      onChange={(e) => void handleFileUpload(i, e)}
+                      style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }} />
+                  )
+                ) : (
+                  <input type="text" value={r.value} onChange={(e) => updateResource(i, 'value', e.target.value)}
+                    placeholder="value" style={{ ...inputStyle, padding: '4px 8px', fontSize: 'var(--text-xs)' }} />
+                )}
+                <button type="button" onClick={() => removeResource(i)} style={{
+                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
+                }}>x</button>
+              </div>
+            ))}
+            {briefing.resources.length === 0 && (
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontStyle: 'italic', margin: 0 }}>
+                No resources added
+              </p>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

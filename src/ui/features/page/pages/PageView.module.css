@@ -179,4 +179,21 @@
   gap: var(--space-sm);
   margin-bottom: var(--space-md);
   flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Step numbers in briefing */
+.stepNumber {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-accent-blue);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
 }
