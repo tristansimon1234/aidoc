@@ -72,7 +72,7 @@ export async function analyzeVideoWithGemini(
   console.log(`[gemini] Video processed. Analyzing...`)
 
   // Analyze the video
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
   const generateWithRetry = async (content: Parameters<typeof model.generateContent>[0], maxRetries = 3) => {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
