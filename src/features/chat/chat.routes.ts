@@ -30,15 +30,25 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
-// Index/re-index all pages for a project
+// Check if indexed, optionally force re-index
 chatRouter.post('/index', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
       const params = UuidParamSchema.safeParse({ id: req.params.projectId })
       if (!params.success) throw new ValidationError(params.error.flatten())
 
+      const body = req.body as { force?: boolean }
+      const { hasEmbeddings } = await import('./chat.repository.js')
+      const exists = await hasEmbeddings(params.data.id)
+
+      // Skip re-indexing if embeddings exist and not forced
+      if (exists && !body.force) {
+        res.status(200).json({ indexed: 1, cached: true })
+        return
+      }
+
       const count = await chatService.indexProject(params.data.id)
-      res.status(200).json({ indexed: count })
+      res.status(200).json({ indexed: count, cached: false })
     } catch (err) {
       next(err)
     }
