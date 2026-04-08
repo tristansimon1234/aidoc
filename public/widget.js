@@ -19,10 +19,15 @@
   var isOpen = false;
   var isSending = false;
 
-  // --- Fetch config ---
+  var dynamicSuggestions = [];
+
+  // --- Fetch config + suggestions ---
   fetch(API_BASE + '/' + API_KEY + '/config')
     .then(function (r) { return r.json(); })
-    .then(function (cfg) { projectName = cfg.projectName || 'this product'; })
+    .then(function (cfg) {
+      projectName = cfg.projectName || 'this product';
+      if (cfg.suggestions && cfg.suggestions.length > 0) dynamicSuggestions = cfg.suggestions;
+    })
     .catch(function () {});
 
   // --- Styles ---
@@ -101,9 +106,10 @@
         '<div><h3>' + (USER_NAME ? 'Hi ' + USER_NAME + '!' : 'Hi! Ask me anything.') + '</h3>',
         '<p>I can help you find answers about ' + (projectName || 'this product') + '.</p></div>',
         '<div class="aidoc-suggestions">',
-        '<button class="aidoc-suggestion">How does this product work?</button>',
-        '<button class="aidoc-suggestion">What are the main features?</button>',
-        '<button class="aidoc-suggestion">Walk me through the setup</button>',
+        (dynamicSuggestions.length > 0
+          ? dynamicSuggestions
+          : ['How does ' + projectName + ' work?', 'What are the main features?']
+        ).map(function (s) { return '<button class="aidoc-suggestion">' + s + '</button>'; }).join(''),
         '</div></div>',
       ].join('');
       msgContainer.querySelectorAll('.aidoc-suggestion').forEach(function (el) {
@@ -134,6 +140,22 @@
       }
       msgContainer.appendChild(div);
     });
+
+    // Render follow-up buttons for the last assistant message
+    var lastMsg = messages[messages.length - 1];
+    if (!isSending && lastMsg && lastMsg.role === 'assistant' && lastMsg.followUps && lastMsg.followUps.length > 0) {
+      var fuDiv = document.createElement('div');
+      fuDiv.className = 'aidoc-suggestions';
+      fuDiv.style.alignSelf = 'flex-start';
+      lastMsg.followUps.forEach(function (q) {
+        var btn = document.createElement('button');
+        btn.className = 'aidoc-suggestion';
+        btn.textContent = q;
+        btn.onclick = function () { sendMessage(q); };
+        fuDiv.appendChild(btn);
+      });
+      msgContainer.appendChild(fuDiv);
+    }
 
     if (isSending) {
       var typing = document.createElement('div');
@@ -167,7 +189,7 @@
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        messages.push({ role: 'assistant', content: data.answer, sources: data.sources });
+        messages.push({ role: 'assistant', content: data.answer, sources: data.sources, followUps: data.followUps || [] });
       })
       .catch(function () {
         messages.push({ role: 'assistant', content: 'Sorry, something went wrong. Please try again.' });

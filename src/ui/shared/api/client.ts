@@ -268,10 +268,13 @@ export const api = {
       request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history }) }),
     index: (projectId: string, force?: boolean): Promise<{ indexed: number }> =>
       request(`/projects/${projectId}/chat/index`, { method: 'POST', body: JSON.stringify({ force }) }),
+    suggestions: (projectId: string): Promise<{ suggestions: string[] }> =>
+      request(`/projects/${projectId}/chat/suggestions`),
   },
 }
 
 export interface ChatResponseDTO {
   answer: string
   sources: { pageId: string; pageTitle: string; pageSlug: string }[]
+  followUps: string[]
 }

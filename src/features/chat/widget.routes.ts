@@ -76,9 +76,13 @@ widgetRouter.get('/:widgetKey/config', (req: Request, res: Response, next: NextF
       const project = await findProjectByWidgetKey(widgetKey)
       if (!project) throw new NotFoundError('Widget not found or disabled')
 
+      // Fetch dynamic suggestions
+      const suggestions = await chatService.getSuggestions(project.id)
+
       res.status(200).json({
         projectName: project.name,
         enabled: project.widgetEnabled,
+        suggestions,
       })
     } catch (err) {
       next(err)
