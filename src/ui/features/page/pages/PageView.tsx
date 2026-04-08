@@ -315,12 +315,15 @@ export function PageView(): React.ReactElement {
             <div className={styles.methodGrid}>
               {/* Video Recording — recommended */}
               <div className={styles.methodCard}>
+                <div className={styles.methodIcon} style={{ color: 'var(--color-success)' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+                </div>
                 <div className={styles.methodHeader}>
                   <span className={styles.methodTitle}>Screen recording</span>
                   <Badge color="green">recommended</Badge>
                 </div>
                 <p className={styles.methodDesc}>
-                  Upload a recording of the workflow. AI analyzes every action, extracts screenshots, and generates documentation.
+                  Upload a video of the workflow. AI analyzes every action, extracts screenshots, and writes the documentation.
                 </p>
                 <VideoUploader
                   projectId={projectId!}
@@ -336,12 +339,15 @@ export function PageView(): React.ReactElement {
 
               {/* Browser exploration — beta */}
               <div className={styles.methodCard}>
+                <div className={styles.methodIcon} style={{ color: 'var(--color-primary)' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </div>
                 <div className={styles.methodHeader}>
                   <span className={styles.methodTitle}>Auto-exploration</span>
                   <Badge color="amber">beta</Badge>
                 </div>
                 <p className={styles.methodDesc}>
-                  An AI agent navigates your app in a cloud browser, captures screenshots, and writes the doc autonomously.
+                  An AI agent navigates your app autonomously in a cloud browser, captures screenshots, and writes the doc.
                 </p>
                 <div className={styles.methodActions}>
                   {latestRun && page.content ? (
