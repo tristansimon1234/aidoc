@@ -83,33 +83,40 @@ runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) 
   })()
 })
 
-// Upload artifact (video or frame) to Supabase Storage via service key
-runRouter.post('/:id/upload-artifact', (req: Request, res: Response, next: NextFunction) => {
+// Get a signed upload URL for uploading artifacts directly to Supabase Storage
+runRouter.post('/:id/signed-upload-url', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-
-      const contentType = req.headers['content-type'] ?? ''
-      const artifactPath = req.headers['x-artifact-path']
-      const stepIndexHeader = req.headers['x-step-index']
-
-      if (!artifactPath || typeof artifactPath !== 'string') {
-        throw new ValidationError('x-artifact-path header is required')
+      const body = req.body as { path?: string }
+      if (!body.path || typeof body.path !== 'string') {
+        throw new ValidationError('path is required')
       }
+      const { createSignedUploadUrl } = await import('../../shared/db/storage.repository.js')
+      const signedUrl = await createSignedUploadUrl('artifacts', body.path)
+      res.status(200).json({ signedUrl, path: body.path })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
 
-      const buffer = Buffer.from(req.body as Buffer)
-
-      const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
-      await uploadToStorage('artifacts', artifactPath, buffer, contentType)
-
-      // If step index provided, update the step's screenshot_path
-      if (stepIndexHeader !== undefined) {
-        const { updateStepScreenshot } = await import('./run.repository.js')
-        await updateStepScreenshot(params.data.id, Number(stepIndexHeader), artifactPath)
+// Update a step's screenshot path after client-side upload
+runRouter.post('/:id/steps/:stepIndex/screenshot', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const stepIndex = Number(req.params.stepIndex)
+      if (isNaN(stepIndex)) throw new ValidationError('stepIndex must be a number')
+      const body = req.body as { screenshotPath?: string }
+      if (!body.screenshotPath || typeof body.screenshotPath !== 'string') {
+        throw new ValidationError('screenshotPath is required')
       }
-
-      res.status(200).json({ path: artifactPath })
+      const { updateStepScreenshot } = await import('./run.repository.js')
+      await updateStepScreenshot(params.data.id, stepIndex, body.screenshotPath)
+      res.status(200).json({ ok: true })
     } catch (err) {
       next(err)
     }

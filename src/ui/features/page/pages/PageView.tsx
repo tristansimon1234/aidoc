@@ -857,10 +857,12 @@ function VideoUploader({
         docPageId: pageId,
       })
 
-      // 2. Upload video via backend (service key)
+      // 2. Upload video directly to Supabase via signed URL
       setStatus('uploading')
       const videoPath = `runs/${run.id}/video${file.name.substring(file.name.lastIndexOf('.'))}`
-      await api.runs.uploadArtifact(run.id, file, videoPath)
+      const { signedUrl } = await api.runs.getSignedUploadUrl(run.id, videoPath)
+      const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+      if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
 
       // 3. Analyze with Gemini — returns timestamps for each step
       setStatus('analyzing')
@@ -951,7 +953,9 @@ async function extractAndUploadFrames(videoFile: File, runId: string, timestamps
         canvas.toBlob(async (blob) => {
           if (blob) {
             const path = `runs/${runId}/frame-${stepIndex}.jpg`
-            await api.runs.uploadArtifact(runId, blob, path, stepIndex)
+            const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
+            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
+            await api.runs.updateStepScreenshot(runId, stepIndex, path)
           }
           i++
           extractNext()

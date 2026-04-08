@@ -191,22 +191,10 @@ export const api = {
       request(`/runs/${id}/cancel`, { method: 'POST' }),
     analyzeVideo: (id: string, videoPath: string): Promise<{ timestamps: number[] }> =>
       request(`/runs/${id}/analyze-video`, { method: 'POST', body: JSON.stringify({ videoPath }) }),
-    uploadArtifact: async (id: string, blob: Blob, artifactPath: string, stepIndex?: number): Promise<{ path: string }> => {
-      const token = await getAuthToken()
-      const headers: Record<string, string> = {
-        'Content-Type': blob.type,
-        'x-artifact-path': artifactPath,
-        Authorization: `Bearer ${token}`,
-      }
-      if (stepIndex !== undefined) headers['x-step-index'] = String(stepIndex)
-      const res = await fetch(`${API_BASE}/runs/${id}/upload-artifact`, {
-        method: 'POST',
-        headers,
-        body: blob,
-      })
-      if (!res.ok) throw new Error(`Upload failed: ${res.statusText}`)
-      return res.json() as Promise<{ path: string }>
-    },
+    getSignedUploadUrl: (id: string, path: string): Promise<{ signedUrl: string; path: string }> =>
+      request(`/runs/${id}/signed-upload-url`, { method: 'POST', body: JSON.stringify({ path }) }),
+    updateStepScreenshot: (id: string, stepIndex: number, screenshotPath: string): Promise<{ ok: boolean }> =>
+      request(`/runs/${id}/steps/${stepIndex}/screenshot`, { method: 'POST', body: JSON.stringify({ screenshotPath }) }),
     exploreStream: async (
       id: string,
       onEvent: (event: StepEventDTO) => void,

@@ -12,7 +12,6 @@ import { errorHandler } from '../src/shared/middleware/error.middleware.js'
 const app = express()
 
 app.use(cors())
-app.use('/api/runs/:id/upload-artifact', express.raw({ type: '*/*', limit: '500mb' }))
 app.use(express.json())
 
 // Health check (no auth)
