@@ -67,25 +67,48 @@ export async function generateText(opts: {
 
 // --- Embeddings ---
 
-const EMBEDDING_MODEL = 'text-embedding-005'
 const EMBEDDING_DIMENSIONS = 768
+
+// Auto-discover the first available embedding model
+let _cachedEmbeddingModel: string | null = null
+
+async function getEmbeddingModel(): Promise<string> {
+  if (_cachedEmbeddingModel) return _cachedEmbeddingModel
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${env.GEMINI_API_KEY}`,
+  )
+  if (!res.ok) throw new Error(`Failed to list models: ${res.status}`)
+
+  const data = (await res.json()) as { models: { name: string; supportedGenerationMethods: string[] }[] }
+  const embeddingModel = data.models.find((m) =>
+    m.supportedGenerationMethods.includes('embedContent'),
+  )
+
+  if (!embeddingModel) throw new Error('No embedding model available for this API key')
+
+  _cachedEmbeddingModel = embeddingModel.name.replace('models/', '')
+  console.log(`[gemini] Using embedding model: ${_cachedEmbeddingModel}`)
+  return _cachedEmbeddingModel
+}
 
 export async function embedTexts(texts: string[]): Promise<number[][]> {
   if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured')
 
+  const model = await getEmbeddingModel()
   const results: number[][] = []
-  // Use REST API directly — SDK's getGenerativeModel doesn't support embedding models
+
   for (let i = 0; i < texts.length; i += 100) {
     const batch = texts.slice(i, i + 100)
     const response = await withRetry(async () => {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1/models/${EMBEDDING_MODEL}:batchEmbedContents?key=${env.GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:batchEmbedContents?key=${env.GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             requests: batch.map((text) => ({
-              model: `models/${EMBEDDING_MODEL}`,
+              model: `models/${model}`,
               content: { parts: [{ text }] },
               outputDimensionality: EMBEDDING_DIMENSIONS,
             })),
