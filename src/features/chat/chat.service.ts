@@ -108,19 +108,44 @@ export async function chat(
   // 2. Search for relevant chunks
   const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
 
+  // 3. Fetch project context (name, description, knowledge base)
+  const { findProjectById } = await import('../project/project.repository.js')
+  const project = await findProjectById(projectId)
+
+  const productContext: string[] = []
+  if (project) {
+    productContext.push(`Product: ${project.name}`)
+    if (project.description) productContext.push(`Description: ${project.description}`)
+    if (project.context?.audience) productContext.push(`Target audience: ${project.context.audience}`)
+    if (project.context?.workflow) productContext.push(`Core workflow: ${project.context.workflow}`)
+    if (project.context?.quirks) productContext.push(`Important details: ${project.context.quirks}`)
+    if (project.discoveredContext?.summary) productContext.push(`Product summary: ${project.discoveredContext.summary}`)
+    if (project.discoveredContext?.features?.length) {
+      productContext.push(`Key features: ${project.discoveredContext.features.join(', ')}`)
+    }
+    if (project.discoveredContext?.terminology && Object.keys(project.discoveredContext.terminology).length > 0) {
+      const terms = Object.entries(project.discoveredContext.terminology)
+        .map(([term, def]) => `${term}: ${def}`)
+        .join('; ')
+      productContext.push(`Terminology: ${terms}`)
+    }
+  }
+
   if (chunks.length === 0) {
     return {
-      answer: "I couldn't find relevant information in the documentation to answer your question. The documentation may not cover this topic yet.",
+      answer: productContext.length > 0
+        ? "I don't have a specific article about that, but I'd be happy to help! Could you rephrase your question or ask about a specific feature?"
+        : "I couldn't find relevant information to answer your question. The documentation may not cover this topic yet.",
       sources: [],
     }
   }
 
-  // 3. Build context from chunks
+  // 4. Build context from chunks
   const context = buildContextFromChunks(chunks)
 
-  // 4. Build conversation with history
+  // 5. Build conversation with history
   const conversationHistory = history
-    .slice(-10) // last 10 messages max
+    .slice(-10)
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n\n')
 
@@ -132,25 +157,40 @@ export async function chat(
   if (userContext?.extra) userInfo.push(`Additional context: ${userContext.extra}`)
 
   const userContextBlock = userInfo.length > 0
-    ? `\n\nThe user you are speaking with is a logged-in user of the product:\n${userInfo.join('\n')}\n\nPersonalize your responses when relevant (e.g. if they are on a specific plan, tailor your answer to what's available on their plan). Address them by first name if you know it.`
+    ? `\n\n## About the user you're helping\n${userInfo.join('\n')}\nAddress them by first name if known. Tailor answers to their plan/context when relevant.`
     : ''
 
-  const systemPrompt = `You are a helpful assistant that answers questions based on product documentation.${userContextBlock}
+  const productBlock = productContext.length > 0
+    ? `\n\n## Product Knowledge\n${productContext.join('\n')}`
+    : ''
 
-Rules:
-- ONLY answer based on the provided documentation context
-- If the documentation doesn't cover something, say so honestly
-- Be concise and direct — answer in 2-5 sentences unless the user asks for detail
-- Use the same language as the user's question
-- If the context contains screenshots (markdown images like ![caption](url)), include the most relevant ones in your answer to illustrate your point
-- Do NOT invent screenshots or image URLs — only use images that appear in the context
-- If the user asks something unrelated to the product, politely redirect to the documentation topics`
+  const systemPrompt = `You are a friendly, knowledgeable support assistant for a software product. You help users understand features, solve problems, and get the most out of the product.${productBlock}${userContextBlock}
+
+## Your personality
+- Warm and welcoming — like a helpful colleague, not a cold bot
+- Patient and didactic — explain step by step, assume the user might be new
+- Proactive — if you notice the user might benefit from a related tip or feature, mention it briefly
+- Honest — if you don't know something or the docs don't cover it, say so kindly and suggest what the user could try
+
+## How to answer
+- Start with a direct answer to the question, then provide details
+- Use numbered steps when explaining a process (1, 2, 3...)
+- If the documentation includes screenshots, include the most relevant ones to illustrate (use the exact markdown image syntax from the context)
+- Use simple language — avoid jargon unless the user uses it first
+- Match the language of the user's question (if they write in French, answer in French)
+- Keep answers focused but complete — don't make the user ask follow-ups for basic info
+
+## Boundaries
+- Base your answers on the documentation context provided — don't invent features
+- Do NOT invent or fabricate screenshot URLs — only use images from the context
+- If the docs don't cover something, say: "I don't have specific info about that in the documentation, but here's what I'd suggest..."
+- For complex issues beyond the docs, suggest contacting the support team`
 
   const userPrompt = `## Documentation Context
 
 ${context}
 
-${conversationHistory ? `## Conversation History\n\n${conversationHistory}\n\n` : ''}## Current Question
+${conversationHistory ? `## Conversation History\n\n${conversationHistory}\n\n` : ''}## User's Question
 
 ${message}`
 
