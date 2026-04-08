@@ -188,7 +188,7 @@ export function PageView(): React.ReactElement {
     // In "complete" mode, pass existing doc as context so the agent fills gaps
     let exploreContext: string | undefined
     if (mode === 'complete' && page.content) {
-      exploreContext = `## Existing Documentation (DO NOT repeat — focus on gaps and missing sections)\n\n${page.content.slice(0, 4000)}`
+      exploreContext = `## Existing Documentation (DO NOT repeat — focus on gaps and missing sections)\n\n${page.content}`
     }
 
     await runExploration(run.id, exploreContext)

@@ -31,13 +31,14 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
 })
 
 // SSE stream — live exploration events
-runRouter.get('/:id/explore', (req: Request, res: Response, next: NextFunction) => {
+runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
 
-      const context = typeof req.query.context === 'string' ? req.query.context : undefined
+      const body = req.body as { context?: string }
+      const context = typeof body.context === 'string' ? body.context : undefined
 
       // Set up SSE headers
       res.setHeader('Content-Type', 'text/event-stream')

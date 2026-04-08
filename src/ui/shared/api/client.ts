@@ -202,13 +202,16 @@ export const api = {
       signal?: AbortSignal,
     ): Promise<void> => {
       const token = await getAuthToken()
-      const params = new URLSearchParams()
-      if (context) params.set('context', context)
 
       const res = await fetch(
-        `${API_BASE}/runs/${id}/explore${params.toString() ? `?${params}` : ''}`,
+        `${API_BASE}/runs/${id}/explore`,
         {
-          headers: { Authorization: `Bearer ${token}` },
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ context }),
           signal,
         },
       )
