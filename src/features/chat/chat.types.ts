@@ -8,6 +8,7 @@ export interface UserContext {
   email?: string
   plan?: string
   extra?: string
+  currentUrl?: string
 }
 
 export interface ChatRequest {

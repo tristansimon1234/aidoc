@@ -10,6 +10,7 @@ export const UserContextSchema = z.object({
   email: z.string().default(''),
   plan: z.string().default(''),
   extra: z.string().default(''),
+  currentUrl: z.string().default(''),
 }).optional()
 
 export const ChatRequestSchema = z.object({
