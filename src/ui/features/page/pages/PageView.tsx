@@ -402,49 +402,61 @@ export function PageView(): React.ReactElement {
             </div>
           )}
 
-          {/* Post-exploration dashboard — grid layout */}
+          {/* Post-exploration dashboard */}
           {!exploring && !generating && latestRun && (
-            <div className={styles.dashboardGrid}>
-              {/* Left: Exploration status + actions */}
-              <div>
-                <ExplorationAssistant
-                  run={latestRun}
-                  onContinue={async (ctx) => {
-                    if (!latestRun || !projectId || !pageId) return
-                    await dbUpdatePage(projectId, pageId, { status: 'exploring' })
-                    await runExploration(latestRun.id, ctx)
-                  }}
-                  onSkipAndGenerate={async () => {
-                    if (!latestRun) return
-                    try {
-                      const generatedDoc = await api.runs.generateDoc(latestRun.id)
-                      setDoc(generatedDoc)
-                      if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
-                      await fetchData()
-                      await context.refetchPages()
-                    } catch (err) {
-                      setError((err as Error).message)
-                    }
-                  }}
-                  onReExplore={() => handleNewExploration('replace')}
-                />
-              </div>
-
-              {/* Right: Session replay */}
-              <SessionReplay runId={latestRun.id} />
-
-              {/* Full width: Suggestions */}
+            <div>
+              {/* Completeness bar — full width on top */}
               {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
-                <div className={styles.dashboardFull}>
-                  <SuggestionsPanel
-                    assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment}
-                    projectId={projectId!}
-                    onPageCreated={async () => {
-                      await fetchData()
-                      await context.refetchPages()
+                <CompletenessBar assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment} />
+              )}
+
+              {/* Two columns: exploration status (left) + gaps (right) */}
+              <div className={styles.dashboardGrid}>
+                <div>
+                  <ExplorationAssistant
+                    run={latestRun}
+                    onContinue={async (ctx) => {
+                      if (!latestRun || !projectId || !pageId) return
+                      await dbUpdatePage(projectId, pageId, { status: 'exploring' })
+                      await runExploration(latestRun.id, ctx)
                     }}
+                    onSkipAndGenerate={async () => {
+                      if (!latestRun) return
+                      try {
+                        const generatedDoc = await api.runs.generateDoc(latestRun.id)
+                        setDoc(generatedDoc)
+                        if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
+                        await fetchData()
+                        await context.refetchPages()
+                      } catch (err) {
+                        setError((err as Error).message)
+                      }
+                    }}
+                    onReExplore={() => handleNewExploration('replace')}
                   />
                 </div>
+
+                <div>
+                  {/* Gaps */}
+                  {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
+                    <GapsPanel gaps={((doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment).gaps} />
+                  )}
+
+                  {/* Session replay */}
+                  <SessionReplay runId={latestRun.id} />
+                </div>
+              </div>
+
+              {/* Suggested next pages — full width */}
+              {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
+                <NextPagesPanel
+                  nextSteps={((doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment).nextSteps}
+                  projectId={projectId!}
+                  onPageCreated={async () => {
+                    await fetchData()
+                    await context.refetchPages()
+                  }}
+                />
               )}
             </div>
           )}
@@ -802,17 +814,69 @@ function getCompletenessColor(pct: number): string {
   return 'var(--color-accent-red)'
 }
 
-function SuggestionsPanel({
-  assessment,
+function CompletenessBar({ assessment }: { assessment: SelfAssessment }): React.ReactElement {
+  const color = getCompletenessColor(assessment.overallCompleteness)
+  return (
+    <div style={{
+      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
+      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+      marginBottom: 'var(--space-md)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
+        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>Documentation Completeness</span>
+        <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, fontFamily: 'var(--font-mono)', color }}>{assessment.overallCompleteness}%</span>
+      </div>
+      <div style={{ height: '6px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${assessment.overallCompleteness}%`, backgroundColor: color, borderRadius: 'var(--radius-full)', transition: 'width 0.5s ease' }} />
+      </div>
+    </div>
+  )
+}
+
+function GapsPanel({ gaps }: { gaps: SelfAssessment['gaps'] }): React.ReactElement {
+  if (gaps.length === 0) return <></>
+  return (
+    <div style={{
+      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
+      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+      marginBottom: 'var(--space-md)',
+    }}>
+      <h3 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-sm)', color: 'var(--color-accent-amber)', margin: '0 0 var(--space-sm)' }}>
+        Gaps ({gaps.length})
+      </h3>
+      {gaps.map((gap, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)', marginBottom: 'var(--space-xs)' }}>
+          <span style={{
+            fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', padding: '1px 6px',
+            borderRadius: 'var(--radius-sm)', flexShrink: 0,
+            backgroundColor: gap.severity === 'major' ? 'rgba(255,77,77,0.15)' : 'rgba(245,166,35,0.15)',
+            color: gap.severity === 'major' ? 'var(--color-accent-red)' : 'var(--color-accent-amber)',
+          }}>
+            {gap.severity}
+          </span>
+          <div>
+            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)' }}>{gap.area}</span>
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>{gap.reason}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function NextPagesPanel({
+  nextSteps,
   projectId,
   onPageCreated,
 }: {
-  assessment: SelfAssessment
+  nextSteps: SelfAssessment['nextSteps']
   projectId: string
   onPageCreated: () => Promise<void>
 }): React.ReactElement {
   const [creatingIndex, setCreatingIndex] = useState<number | null>(null)
   const navigate = useNavigate()
+
+  if (nextSteps.length === 0) return <></>
 
   const handleCreatePage = async (ns: { suggestion: string; reason: string }, index: number): Promise<void> => {
     setCreatingIndex(index)
@@ -832,93 +896,42 @@ function SuggestionsPanel({
     }
   }
 
-  const color = getCompletenessColor(assessment.overallCompleteness)
-
   return (
-    <div style={{ marginTop: 'var(--space-xl)' }}>
-      {/* Completeness bar */}
-      <div style={{
-        padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-        border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-        marginBottom: 'var(--space-md)',
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
-          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>Documentation Completeness</span>
-          <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, fontFamily: 'var(--font-mono)', color }}>{assessment.overallCompleteness}%</span>
-        </div>
-        <div style={{ height: '6px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${assessment.overallCompleteness}%`, backgroundColor: color, borderRadius: 'var(--radius-full)', transition: 'width 0.5s ease' }} />
-        </div>
-      </div>
-
-      {/* Gaps */}
-      {assessment.gaps.length > 0 && (
-        <div style={{
-          padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-          border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-          marginBottom: 'var(--space-md)',
-        }}>
-          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 500, marginBottom: 'var(--space-sm)', color: 'var(--color-accent-amber)' }}>
-            Gaps ({assessment.gaps.length})
-          </h3>
-          {assessment.gaps.map((gap, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)', marginBottom: 'var(--space-xs)' }}>
-              <span style={{
-                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', padding: '1px 6px',
-                borderRadius: 'var(--radius-sm)', flexShrink: 0,
-                backgroundColor: gap.severity === 'major' ? 'rgba(255,77,77,0.15)' : 'rgba(245,166,35,0.15)',
-                color: gap.severity === 'major' ? 'var(--color-accent-red)' : 'var(--color-accent-amber)',
-              }}>
-                {gap.severity}
-              </span>
-              <div>
-                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)' }}>{gap.area}</span>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginLeft: 'var(--space-sm)' }}>{gap.reason}</span>
-              </div>
+    <div style={{
+      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
+      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
+    }}>
+      <h3 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-md)', color: 'var(--color-accent-blue)', margin: '0 0 var(--space-md)' }}>
+        Suggested Next Pages
+      </h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+        {nextSteps.map((ns, i) => (
+          <div key={i} style={{
+            display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
+            padding: 'var(--space-sm) var(--space-md)',
+            backgroundColor: 'var(--color-bg-elevated)',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--color-border-subtle)',
+          }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)', margin: 0, fontWeight: 500 }}>
+                {ns.suggestion}
+              </p>
+              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
+                {ns.reason}
+              </p>
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* Suggested next pages — actionable */}
-      {assessment.nextSteps.length > 0 && (
-        <div style={{
-          padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-          border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-        }}>
-          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 500, marginBottom: 'var(--space-md)', color: 'var(--color-accent-blue)' }}>
-            Suggested Next Pages
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-            {assessment.nextSteps.map((ns, i) => (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
-                padding: 'var(--space-sm) var(--space-md)',
-                backgroundColor: 'var(--color-bg-elevated)',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border-subtle)',
-              }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)', margin: 0, fontWeight: 500 }}>
-                    {ns.suggestion}
-                  </p>
-                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
-                    {ns.reason}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={creatingIndex === i}
-                  onClick={() => void handleCreatePage(ns, i)}
-                >
-                  {creatingIndex === i ? '...' : 'Create Page'}
-                </Button>
-              </div>
-            ))}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={creatingIndex === i}
+              onClick={() => void handleCreatePage(ns, i)}
+            >
+              {creatingIndex === i ? '...' : 'Create Page'}
+            </Button>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   )
 }
