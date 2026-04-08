@@ -251,6 +251,15 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
     const { updatePageContent, findPageById } = await import('../page/page.repository.js')
     await updatePageContent(run.docPageId, doc.markdownContent)
 
+    // Re-index embeddings for chat (fire-and-forget)
+    findPageById(run.docPageId).then((p) => {
+      if (p) {
+        import('../chat/chat.service.js')
+          .then(({ indexPage }) => indexPage({ id: p.id, projectId: p.projectId, title: p.title, slug: p.slug, content: doc.markdownContent }))
+          .catch((err) => console.error('[chat] Auto-index after doc gen failed:', err))
+      }
+    }).catch(() => {})
+
     // Enrich project discovered context
     try {
       const page = await findPageById(run.docPageId)

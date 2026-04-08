@@ -5,6 +5,7 @@ import { Button, Spinner, EmptyState } from '../../../design-system/components/i
 import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
+import { ChatPanel } from '../../chat/components/ChatPanel.js'
 import styles from './ProjectDetail.module.css'
 
 export function ProjectDetail(): React.ReactElement {
@@ -14,6 +15,7 @@ export function ProjectDetail(): React.ReactElement {
   const [project, setProject] = useState<ProjectDTO | null>(null)
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
+  const [chatOpen, setChatOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -57,6 +59,13 @@ export function ProjectDetail(): React.ReactElement {
           <div className={styles.sidebarHeader}>
             <span className={styles.projectName}>{project.name}</span>
             <div className={styles.headerActions}>
+              <button
+                className={styles.headerBtn}
+                onClick={() => setChatOpen(true)}
+                title="Chat with docs"
+              >
+                &#128172;
+              </button>
               <button
                 className={styles.headerBtn}
                 onClick={() => navigate(`/projects/${projectId}/settings`)}
@@ -104,6 +113,7 @@ export function ProjectDetail(): React.ReactElement {
           )}
         </div>
       </div>
+      {chatOpen && <ChatPanel projectId={projectId!} onClose={() => setChatOpen(false)} />}
     </Shell>
   )
 }

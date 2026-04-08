@@ -6,6 +6,7 @@ import { pageRouter } from './features/page/page.routes.js'
 import { runRouter } from './features/run/run.routes.js'
 import { questionsRouter } from './features/questions/questions.routes.js'
 import { documentationRouter } from './features/documentation/documentation.routes.js'
+import { chatRouter } from './features/chat/chat.routes.js'
 import { errorHandler } from './shared/middleware/error.middleware.js'
 
 export const app = express()
@@ -17,6 +18,7 @@ app.use(authMiddleware)
 // Project routes
 app.use('/projects', projectRouter)
 app.use('/projects/:projectId/pages', pageRouter)
+app.use('/projects/:projectId/chat', chatRouter)
 
 // Legacy run routes (still functional)
 app.use('/runs', runRouter)

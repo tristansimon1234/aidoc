@@ -65,6 +65,37 @@ export async function generateText(opts: {
   }
 }
 
+// --- Embeddings ---
+
+const EMBEDDING_MODEL = 'text-embedding-004'
+
+export async function embedTexts(texts: string[]): Promise<number[][]> {
+  const genAI = getGenAI()
+  const model = genAI.getGenerativeModel({ model: EMBEDDING_MODEL })
+
+  const results: number[][] = []
+  // Batch in groups of 100 (API limit)
+  for (let i = 0; i < texts.length; i += 100) {
+    const batch = texts.slice(i, i + 100)
+    const response = await withRetry(() =>
+      model.batchEmbedContents({
+        requests: batch.map((text) => ({
+          content: { role: 'user', parts: [{ text }] },
+        })),
+      }),
+    )
+    for (const emb of response.embeddings) {
+      results.push(emb.values)
+    }
+  }
+  return results
+}
+
+export async function embedText(text: string): Promise<number[]> {
+  const results = await embedTexts([text])
+  return results[0]!
+}
+
 const VideoStepSchema = z.object({
   timestamp: z.number(),
   screenDescription: z.string(),

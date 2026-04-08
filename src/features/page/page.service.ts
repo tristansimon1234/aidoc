@@ -36,7 +36,24 @@ export async function getPageSiblings(projectId: string, excludePageId?: string)
 export async function updatePage(id: string, input: UpdatePageInput): Promise<DocPage> {
   const page = await pageRepo.findPageById(id)
   if (!page) throw new NotFoundError('Page')
-  return pageRepo.updatePage(id, input)
+  const updated = await pageRepo.updatePage(id, input)
+
+  // Re-index embeddings when content changes (fire-and-forget)
+  if (input.content !== undefined && input.content !== page.content) {
+    import('../chat/chat.service.js')
+      .then(({ indexPage }) =>
+        indexPage({
+          id: updated.id,
+          projectId: updated.projectId,
+          title: updated.title,
+          slug: updated.slug,
+          content: updated.content,
+        }),
+      )
+      .catch((err) => console.error('[chat] Auto-index failed:', err))
+  }
+
+  return updated
 }
 
 export async function deletePage(id: string): Promise<void> {

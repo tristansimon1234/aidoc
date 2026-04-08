@@ -257,4 +257,15 @@ export const api = {
         body: JSON.stringify({ answer }),
       }),
   },
+  chat: {
+    send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[]): Promise<ChatResponseDTO> =>
+      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history }) }),
+    index: (projectId: string): Promise<{ indexed: number }> =>
+      request(`/projects/${projectId}/chat/index`, { method: 'POST' }),
+  },
+}
+
+export interface ChatResponseDTO {
+  answer: string
+  sources: { pageTitle: string; pageSlug: string }[]
 }
