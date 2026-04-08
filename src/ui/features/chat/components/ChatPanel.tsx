@@ -10,11 +10,20 @@ interface ChatMessage {
   sources?: { pageTitle: string; pageSlug: string }[]
 }
 
+const SUGGESTIONS = [
+  'How does this product work?',
+  'What are the main features?',
+  'Walk me through the onboarding flow',
+  'What can a new user do first?',
+]
+
 export function ChatPanel({
   projectId,
+  projectName,
   onClose,
 }: {
   projectId: string
+  projectName: string
   onClose: () => void
 }): React.ReactElement {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -25,15 +34,13 @@ export function ChatPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Auto-index on first open if needed
   useEffect(() => {
     void checkAndIndex()
   }, [projectId])
 
-  // Focus input on open
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    if (indexed && !sending) inputRef.current?.focus()
+  }, [indexed, sending])
 
   const checkAndIndex = async (): Promise<void> => {
     try {
@@ -53,8 +60,8 @@ export function ChatPanel({
 
   useEffect(() => { scrollToBottom() }, [messages])
 
-  const handleSend = async (): Promise<void> => {
-    const msg = input.trim()
+  const sendMessage = async (text: string): Promise<void> => {
+    const msg = text.trim()
     if (!msg || sending) return
 
     setInput('')
@@ -73,7 +80,7 @@ export function ChatPanel({
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: `Error: ${(err as Error).message}` },
+        { role: 'assistant', content: `Sorry, something went wrong. Please try again.` },
       ])
     } finally {
       setSending(false)
@@ -84,7 +91,7 @@ export function ChatPanel({
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      void handleSend()
+      void sendMessage(input)
     }
   }
 
@@ -104,45 +111,67 @@ export function ChatPanel({
           </div>
         ) : indexed === false ? (
           <div className={styles.emptyState}>
-            <span className={styles.emptyTitle}>No documentation to chat with</span>
+            <span className={styles.emptyTitle}>No documentation yet</span>
             <span className={styles.emptyHint}>
-              Generate documentation for your pages first, then come back to chat.
+              Generate documentation for your pages first. The chat will use it to answer your questions.
             </span>
           </div>
         ) : (
           <>
             <div className={styles.messages}>
-              {messages.length === 0 && (
-                <div className={styles.emptyState}>
-                  <span className={styles.emptyTitle}>Ask anything about your docs</span>
-                  <span className={styles.emptyHint}>
-                    Questions are answered using your project's documentation. Try asking about a feature, workflow, or concept.
-                  </span>
+              {messages.length === 0 ? (
+                <div className={styles.welcome}>
+                  <div>
+                    <div className={styles.welcomeGreeting}>
+                      Hi! I know everything about {projectName}.
+                    </div>
+                    <p className={styles.welcomeHint}>
+                      Ask me anything about the documentation. I'll find the relevant sections and give you a clear answer.
+                    </p>
+                  </div>
+
+                  <div className={styles.suggestions}>
+                    <span className={styles.suggestionsLabel}>Try asking</span>
+                    {SUGGESTIONS.map((s) => (
+                      <button
+                        key={s}
+                        className={styles.suggestion}
+                        onClick={() => void sendMessage(s)}
+                        disabled={sending}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
-              {messages.map((msg, i) => (
-                <div key={i} className={`${styles.message} ${msg.role === 'user' ? styles.messageUser : styles.messageAssistant}`}>
-                  {msg.role === 'assistant' ? (
-                    <MarkdownRenderer content={msg.content} />
-                  ) : (
-                    msg.content
-                  )}
-                  {msg.sources && msg.sources.length > 0 && (
-                    <div className={styles.sources}>
-                      {msg.sources.map((s) => (
-                        <span key={s.pageSlug} className={styles.sourceTag}>
-                          {s.pageTitle}
-                        </span>
-                      ))}
+              ) : (
+                <>
+                  {messages.map((msg, i) => (
+                    <div key={i} className={`${styles.message} ${msg.role === 'user' ? styles.messageUser : styles.messageAssistant}`}>
+                      {msg.role === 'assistant' ? (
+                        <MarkdownRenderer content={msg.content} />
+                      ) : (
+                        msg.content
+                      )}
+                      {msg.sources && msg.sources.length > 0 && (
+                        <div className={styles.sources}>
+                          <span className={styles.sourcesLabel}>Sources</span>
+                          {msg.sources.map((s) => (
+                            <span key={s.pageSlug} className={styles.sourceTag}>
+                              {s.pageTitle}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {sending && (
+                    <div className={styles.thinking}>
+                      <Spinner size="sm" />
+                      <span>Searching docs...</span>
                     </div>
                   )}
-                </div>
-              ))}
-              {sending && (
-                <div className={styles.thinking}>
-                  <Spinner size="sm" />
-                  <span>Searching docs...</span>
-                </div>
+                </>
               )}
               <div ref={messagesEndRef} />
             </div>
@@ -151,7 +180,7 @@ export function ChatPanel({
               <input
                 ref={inputRef}
                 className={styles.input}
-                placeholder="Ask about your documentation..."
+                placeholder="Ask a question..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -159,7 +188,7 @@ export function ChatPanel({
               />
               <button
                 className={styles.sendBtn}
-                onClick={() => void handleSend()}
+                onClick={() => void sendMessage(input)}
                 disabled={!input.trim() || sending}
               >
                 Send

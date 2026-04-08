@@ -113,7 +113,7 @@ export function ProjectDetail(): React.ReactElement {
           )}
         </div>
       </div>
-      {chatOpen && <ChatPanel projectId={projectId!} onClose={() => setChatOpen(false)} />}
+      {chatOpen && <ChatPanel projectId={projectId!} projectName={project.name} onClose={() => setChatOpen(false)} />}
     </Shell>
   )
 }
