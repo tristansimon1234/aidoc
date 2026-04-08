@@ -137,6 +137,7 @@ export async function chat(
         ? "I don't have a specific article about that, but I'd be happy to help! Could you rephrase your question or ask about a specific feature?"
         : "I couldn't find relevant information to answer your question. The documentation may not cover this topic yet.",
       sources: [],
+      followUps: [],
     }
   }
 
@@ -180,10 +181,13 @@ export async function chat(
 - Include ONE relevant screenshot per message if available — not more
 - Match the user's language (French → French, English → English)
 
-## Suggestions
-- At the END of each answer, suggest 1-2 short follow-up questions the user might want to ask, based on what you know about the product and the conversation so far
-- Format them as: "You might also want to know: **[question]**" or just a natural suggestion
-- Make suggestions specific and useful — not generic. Use your knowledge of the product features, the user's context, and what they just asked about.
+## Follow-up suggestions
+- After your answer, add a line "---FOLLOWUPS---" then a JSON array of 1-2 short follow-up questions
+- These must be specific to what was just discussed — not generic
+- Example format:
+  ---FOLLOWUPS---
+  ["How do I invite team members?", "What are the different plans?"]
+- ALWAYS include the ---FOLLOWUPS--- separator and array, even if it's just one question
 
 ## Boundaries
 - Base your answers on the documentation context — don't invent features
@@ -213,9 +217,24 @@ ${message}`
     }
   }
 
+  // Parse follow-ups from response
+  let answer = response.text
+  let followUps: string[] = []
+  const followUpSplit = answer.split('---FOLLOWUPS---')
+  if (followUpSplit.length > 1) {
+    answer = followUpSplit[0]!.trim()
+    try {
+      let jsonStr = followUpSplit[1]!.trim()
+      if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+      const parsed = JSON.parse(jsonStr) as string[]
+      if (Array.isArray(parsed)) followUps = parsed.slice(0, 2)
+    } catch { /* keep empty */ }
+  }
+
   return {
-    answer: response.text,
+    answer,
     sources: Array.from(sourceMap.values()),
+    followUps,
   }
 }
 
@@ -233,22 +252,38 @@ export async function getSuggestions(projectId: string): Promise<string[]> {
   const pageTitles = publishedPages.map((p) => p.title).join(', ')
   const features = project.discoveredContext?.features?.join(', ') || ''
 
+  const audience = project.context?.audience || ''
+  const workflow = project.context?.workflow || ''
+  const summary = project.discoveredContext?.summary || ''
+
   const response = await generateText({
-    systemPrompt: 'You generate exactly 4 short questions a user might ask about a product. Each question must be under 60 characters. Return ONLY a JSON array of strings, nothing else.',
+    systemPrompt: `You are an expert at understanding what users need help with when using a software product. Your job is to generate the most useful, specific questions a real user would ask.
+
+Rules:
+- Generate EXACTLY 6 questions
+- Each question must be under 60 characters
+- Questions must be SPECIFIC to this product — never generic like "How does it work?" or "What are the features?"
+- Think about: onboarding friction, common workflows, billing/plan questions, advanced features users discover later, troubleshooting
+- Mix different types: how-to, troubleshooting, feature discovery, best practices
+- Write in the same language as the product documentation
+- Return ONLY a JSON array of 6 strings, nothing else`,
     userPrompt: `Product: ${project.name}
 ${project.description ? `Description: ${project.description}` : ''}
+${audience ? `Target audience: ${audience}` : ''}
+${workflow ? `Core workflow: ${workflow}` : ''}
+${summary ? `Product summary: ${summary}` : ''}
 Documentation pages: ${pageTitles}
-${features ? `Features: ${features}` : ''}
+${features ? `Key features: ${features}` : ''}
 
-Generate 4 natural questions a user would ask. Be specific to this product — no generic questions.`,
-    maxTokens: 256,
+Generate 6 highly specific questions that users of THIS product would actually ask.`,
+    maxTokens: 512,
   })
 
   try {
     let jsonStr = response.text.trim()
     if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
     const parsed = JSON.parse(jsonStr) as string[]
-    return Array.isArray(parsed) ? parsed.slice(0, 4) : []
+    return Array.isArray(parsed) ? parsed.slice(0, 6) : []
   } catch {
     return []
   }

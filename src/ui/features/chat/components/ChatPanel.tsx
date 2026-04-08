@@ -9,6 +9,7 @@ interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   sources?: { pageId: string; pageTitle: string; pageSlug: string }[]
+  followUps?: string[]
 }
 
 const FALLBACK_SUGGESTIONS = [
@@ -83,7 +84,7 @@ export function ChatPanel({
 
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: response.answer, sources: response.sources },
+        { role: 'assistant', content: response.answer, sources: response.sources, followUps: response.followUps },
       ])
     } catch (err) {
       setMessages((prev) => [
@@ -182,6 +183,19 @@ export function ChatPanel({
                               }}
                             >
                               {s.pageTitle}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {msg.followUps && msg.followUps.length > 0 && i === messages.length - 1 && !sending && (
+                        <div className={styles.followUps}>
+                          {msg.followUps.map((q) => (
+                            <button
+                              key={q}
+                              className={styles.followUp}
+                              onClick={() => void sendMessage(q)}
+                            >
+                              {q}
                             </button>
                           ))}
                         </div>

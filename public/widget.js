@@ -141,6 +141,22 @@
       msgContainer.appendChild(div);
     });
 
+    // Render follow-up buttons for the last assistant message
+    var lastMsg = messages[messages.length - 1];
+    if (!isSending && lastMsg && lastMsg.role === 'assistant' && lastMsg.followUps && lastMsg.followUps.length > 0) {
+      var fuDiv = document.createElement('div');
+      fuDiv.className = 'aidoc-suggestions';
+      fuDiv.style.alignSelf = 'flex-start';
+      lastMsg.followUps.forEach(function (q) {
+        var btn = document.createElement('button');
+        btn.className = 'aidoc-suggestion';
+        btn.textContent = q;
+        btn.onclick = function () { sendMessage(q); };
+        fuDiv.appendChild(btn);
+      });
+      msgContainer.appendChild(fuDiv);
+    }
+
     if (isSending) {
       var typing = document.createElement('div');
       typing.className = 'aidoc-typing';
@@ -173,7 +189,7 @@
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        messages.push({ role: 'assistant', content: data.answer, sources: data.sources });
+        messages.push({ role: 'assistant', content: data.answer, sources: data.sources, followUps: data.followUps || [] });
       })
       .catch(function () {
         messages.push({ role: 'assistant', content: 'Sorry, something went wrong. Please try again.' });
