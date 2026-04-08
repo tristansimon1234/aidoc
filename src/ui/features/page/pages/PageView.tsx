@@ -265,7 +265,7 @@ export function PageView(): React.ReactElement {
           className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`}
           onClick={() => setActiveTab('exploration')}
         >
-          Exploration
+          Generate
           {(exploring || generating) && <Spinner size="sm" />}
         </button>
       </div>
@@ -310,52 +310,74 @@ export function PageView(): React.ReactElement {
             }}
           />
 
-          {/* Action button */}
+          {/* Generation methods — two cards side by side */}
           {!exploring && !generating && (
-            <div className={styles.actions}>
-              {latestRun && page.content ? (
-                <>
-                  <Button
-                    variant={page.briefing?.objective ? undefined : 'secondary'}
-                    onClick={() => void handleNewExploration('complete')}
-                  >
-                    Complete documentation
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => void handleNewExploration('replace')}
-                  >
-                    Start from scratch
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant={page.briefing?.objective ? undefined : 'secondary'}
-                  onClick={() => void handleNewExploration('replace')}
-                >
-                  Explore & Document
-                </Button>
-              )}
-              {!page.briefing?.objective && (
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-                  Add an objective for better results
-                </span>
-              )}
-            </div>
-          )}
+            <div className={styles.methodGrid}>
+              {/* Video Recording — recommended */}
+              <div className={styles.methodCard}>
+                <div className={styles.methodHeader}>
+                  <span className={styles.methodTitle}>Screen recording</span>
+                  <Badge color="green">recommended</Badge>
+                </div>
+                <p className={styles.methodDesc}>
+                  Upload a recording of the workflow. AI analyzes every action, extracts screenshots, and generates documentation.
+                </p>
+                <VideoUploader
+                  projectId={projectId!}
+                  pageId={pageId!}
+                  page={page}
+                  onComplete={async () => {
+                    await fetchData()
+                    await context.refetchPages()
+                    setActiveTab('doc')
+                  }}
+                />
+              </div>
 
-          {/* Video upload — alternative to exploration */}
-          {!exploring && !generating && (
-            <VideoUploader
-              projectId={projectId!}
-              pageId={pageId!}
-              page={page}
-              onComplete={async () => {
-                await fetchData()
-                await context.refetchPages()
-                setActiveTab('doc')
-              }}
-            />
+              {/* Browser exploration — beta */}
+              <div className={styles.methodCard}>
+                <div className={styles.methodHeader}>
+                  <span className={styles.methodTitle}>Auto-exploration</span>
+                  <Badge color="amber">beta</Badge>
+                </div>
+                <p className={styles.methodDesc}>
+                  An AI agent navigates your app in a cloud browser, captures screenshots, and writes the doc autonomously.
+                </p>
+                <div className={styles.methodActions}>
+                  {latestRun && page.content ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant={page.briefing?.objective ? undefined : 'secondary'}
+                        onClick={() => void handleNewExploration('complete')}
+                      >
+                        Complete documentation
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void handleNewExploration('replace')}
+                      >
+                        Start from scratch
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant={page.briefing?.objective ? undefined : 'secondary'}
+                      onClick={() => void handleNewExploration('replace')}
+                    >
+                      Explore & Document
+                    </Button>
+                  )}
+                  {!page.briefing?.objective && (
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
+                      Add an objective for better results
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Live exploration feed — activity left, video right */}
@@ -887,37 +909,23 @@ function VideoUploader({
 
   if (status !== 'idle') {
     return (
-      <div className={styles.section}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-          <Spinner size="sm" />
-          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-accent-blue)' }}>
-            {status === 'uploading' && 'Uploading video...'}
-            {status === 'analyzing' && 'Analyzing video with AI — this may take a minute...'}
-            {status === 'extracting' && 'Extracting screenshots...'}
-            {status === 'generating' && 'Generating documentation...'}
-          </span>
-        </div>
+      <div className={styles.methodProgress}>
+        <Spinner size="sm" />
+        <span>
+          {status === 'uploading' && 'Uploading video...'}
+          {status === 'analyzing' && 'Analyzing video with AI — this may take a minute...'}
+          {status === 'extracting' && 'Extracting screenshots...'}
+          {status === 'generating' && 'Generating documentation...'}
+        </span>
       </div>
     )
   }
 
   return (
-    <div className={styles.section}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-sm) 0' }}>
-        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)' }}>or</span>
-      </div>
-      <label style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        padding: 'var(--space-lg)', cursor: 'pointer',
-        border: '2px dashed var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-        transition: 'border-color 0.15s',
-      }}>
-        <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-xs)' }}>
-          Upload a screen recording
-        </span>
-        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-          .mp4, .webm, .mov — max 500MB
-        </span>
+    <div>
+      <label className={styles.dropZone}>
+        <span className={styles.dropZoneTitle}>Upload a screen recording</span>
+        <span className={styles.dropZoneHint}>.mp4, .webm, .mov — max 500MB</span>
         <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleVideoUpload(e)}
           style={{ display: 'none' }} />
       </label>

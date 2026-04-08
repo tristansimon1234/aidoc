@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Button } from '../../../design-system/components/index.js'
+import { Button, Badge } from '../../../design-system/components/index.js'
 import { createPage } from '../../../shared/api/db.js'
 
 const inputStyle: React.CSSProperties = {
@@ -177,13 +177,53 @@ export function NewPage(): React.ReactElement {
 
         {error && <p style={{ color: 'var(--color-accent-red)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-md)' }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-lg)', alignItems: 'center', flexWrap: 'wrap' }}>
-          <Button type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('explore')}>
-            {submitting ? 'Creating...' : 'Let the AI explore'}
-          </Button>
-          <Button variant="secondary" type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('explore')}>
-            Upload a recording
-          </Button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)', marginTop: 'var(--space-lg)' }}>
+          <button
+            type="button"
+            disabled={submitting || !title || !slug}
+            onClick={() => handleCreate('explore')}
+            style={{
+              display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)',
+              padding: 'var(--space-lg)', cursor: 'pointer',
+              background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
+              borderRadius: 'var(--radius-lg)', textAlign: 'left',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                Screen recording
+              </span>
+              <Badge color="green">recommended</Badge>
+            </span>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+              Upload a recording — AI analyzes every action and writes the doc.
+            </span>
+          </button>
+
+          <button
+            type="button"
+            disabled={submitting || !title || !slug}
+            onClick={() => handleCreate('explore')}
+            style={{
+              display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)',
+              padding: 'var(--space-lg)', cursor: 'pointer',
+              background: 'var(--color-bg-surface)', border: '1px solid var(--color-border-subtle)',
+              borderRadius: 'var(--radius-lg)', textAlign: 'left',
+            }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: 'var(--font-mono)' }}>
+                Auto-exploration
+              </span>
+              <Badge color="amber">beta</Badge>
+            </span>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', lineHeight: 1.5 }}>
+              An AI agent navigates your app autonomously in a cloud browser.
+            </span>
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 'var(--space-sm)', alignItems: 'center' }}>
           <Button variant="ghost" type="button" disabled={submitting || !title || !slug} onClick={() => handleCreate('manual')}>
             Write it myself
           </Button>
