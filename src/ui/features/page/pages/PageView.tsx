@@ -853,7 +853,7 @@ function VideoUploader({
       const run = await api.runs.create({
         featureName: page.title,
         startUrl: page.startUrl ?? '',
-        goal: page.goal ?? `Document from screen recording`,
+        goal: page.goal || 'Document from screen recording',
         docPageId: pageId,
       })
 
