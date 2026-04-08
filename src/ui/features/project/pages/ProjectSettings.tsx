@@ -235,6 +235,8 @@ function WidgetTab({ project, onUpdate }: { project: ProjectDTO; onUpdate: (u: P
         </p>
       </div>
 
+      <WidgetPreview projectName={project.name} />
+
       {!project.widgetApiKey ? (
         <Button onClick={() => void handleGenerate()} disabled={generating}>
           {generating ? 'Generating...' : 'Enable Widget'}
@@ -392,6 +394,49 @@ function KnowledgeTab({ context, projectId, onSaved }: {
           {saved && <span className={`${styles.saveMsg} ${styles.success}`}>Saved</span>}
         </div>
       </div>
+    </div>
+  )
+}
+
+// --- Widget Preview ---
+
+function WidgetPreview({ projectName }: { projectName: string }): React.ReactElement {
+  return (
+    <div className={styles.preview}>
+      <div className={styles.previewFrame}>
+        {/* Mini widget panel */}
+        <div className={styles.previewPanel}>
+          <div className={styles.previewPanelHeader}>
+            <span style={{ fontSize: 10, fontWeight: 600, color: '#e5e5e5' }}>Ask about the docs</span>
+            <span style={{ fontSize: 12, color: '#666' }}>&times;</span>
+          </div>
+          <div className={styles.previewPanelBody}>
+            <div style={{ textAlign: 'center', padding: '12px 8px' }}>
+              <p style={{ fontSize: 10, fontWeight: 600, color: '#e5e5e5', margin: '0 0 4px' }}>
+                Hi! Ask me anything.
+              </p>
+              <p style={{ fontSize: 8, color: '#888', margin: '0 0 8px' }}>
+                I can help you find answers about {projectName}.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div className={styles.previewSuggestion}>How does it work?</div>
+                <div className={styles.previewSuggestion}>What are the main features?</div>
+              </div>
+            </div>
+          </div>
+          <div className={styles.previewPanelInput}>
+            <div className={styles.previewInputField}>Ask a question...</div>
+            <div className={styles.previewSendBtn}>Send</div>
+          </div>
+        </div>
+        {/* Mini floating button */}
+        <div className={styles.previewBtn}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="white" stroke="white" strokeWidth="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+      </div>
+      <p className={styles.previewCaption}>This is how the widget appears on your app</p>
     </div>
   )
 }

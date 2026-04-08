@@ -335,6 +335,18 @@ export function PageView(): React.ReactElement {
 
             {genMethod === 'video' && (
               <div className={styles.methodContent}>
+                <div className={styles.methodInfo}>
+                  <div className={styles.methodInfoText}>
+                    <p className={styles.methodInfoDesc}>
+                      Upload a screen recording of your product workflow. AI watches every click, extracts screenshots at key moments, and writes step-by-step documentation automatically.
+                    </p>
+                    <div className={styles.methodInfoTags}>
+                      <span className={styles.methodTag}>.mp4, .webm, .mov</span>
+                      <span className={styles.methodTag}>up to 500MB</span>
+                      <span className={styles.methodTag}>Best for: tutorials, onboarding flows</span>
+                    </div>
+                  </div>
+                </div>
                 <VideoUploader
                   projectId={projectId!}
                   pageId={pageId!}
@@ -350,6 +362,17 @@ export function PageView(): React.ReactElement {
 
             {genMethod === 'explore' && (
               <div className={styles.methodContent}>
+                <div className={styles.methodInfo}>
+                  <div className={styles.methodInfoText}>
+                    <p className={styles.methodInfoDesc}>
+                      An AI agent opens your app in a cloud browser, navigates autonomously, captures screenshots, and generates documentation — no recording needed.
+                    </p>
+                    <div className={styles.methodInfoTags}>
+                      <span className={styles.methodTag}>Requires Anthropic + Browserbase keys</span>
+                      <span className={styles.methodTag}>Best for: full site coverage</span>
+                    </div>
+                  </div>
+                </div>
                 <div className={styles.methodActions}>
                   {latestRun && page.content ? (
                     <>

@@ -223,6 +223,36 @@
   animation: tabFadeIn 0.2s ease;
 }
 
+.methodInfo {
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+}
+
+.methodInfoDesc {
+  font-size: var(--text-sm);
+  color: var(--color-muted-fg);
+  line-height: 1.6;
+  margin: 0 0 var(--space-sm);
+}
+
+.methodInfoTags {
+  display: flex;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.methodTag {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-secondary);
+  color: var(--color-muted-fg);
+}
+
 .methodActions {
   display: flex;
   gap: var(--space-sm);
