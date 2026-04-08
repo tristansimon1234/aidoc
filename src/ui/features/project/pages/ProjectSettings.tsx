@@ -462,7 +462,7 @@ function WidgetPanel({
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   const embedSnippet = project.widgetApiKey
-    ? `<script src="${origin}/widget.js" data-key="${project.widgetApiKey}"></script>`
+    ? `<script src="${origin}/widget.js"\n  data-key="${project.widgetApiKey}"\n  data-user-name="{{USER_NAME}}"\n  data-user-email="{{USER_EMAIL}}"\n  data-user-plan="{{USER_PLAN}}"\n></script>`
     : ''
 
   const panelStyle: React.CSSProperties = {
@@ -519,11 +519,14 @@ function WidgetPanel({
               Add this to your HTML
             </label>
             <div style={codeBlockStyle}>
-              {embedSnippet}
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{embedSnippet}</pre>
               <button style={copyBtnStyle} onClick={() => copyToClipboard(embedSnippet, 'snippet')}>
                 {copied === 'snippet' ? 'Copied' : 'Copy'}
               </button>
             </div>
+            <p style={{ fontSize: '11px', color: 'var(--color-text-muted)', margin: '8px 0 0', lineHeight: 1.5 }}>
+              Replace <code style={{ background: 'var(--color-bg-elevated)', padding: '1px 4px', borderRadius: 3 }}>{'{{...}}'}</code> with your user's data. All <code style={{ background: 'var(--color-bg-elevated)', padding: '1px 4px', borderRadius: 3 }}>data-user-*</code> attributes are optional.
+            </p>
           </div>
 
           {/* Actions */}
