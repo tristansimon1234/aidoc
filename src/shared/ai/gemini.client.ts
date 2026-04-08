@@ -67,7 +67,7 @@ export async function generateText(opts: {
 
 // --- Embeddings ---
 
-const EMBEDDING_MODEL = 'gemini-embedding-exp-03-07'
+const EMBEDDING_MODEL = 'text-embedding-005'
 const EMBEDDING_DIMENSIONS = 768
 
 export async function embedTexts(texts: string[]): Promise<number[][]> {
@@ -79,7 +79,7 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
     const batch = texts.slice(i, i + 100)
     const response = await withRetry(async () => {
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${EMBEDDING_MODEL}:batchEmbedContents?key=${env.GEMINI_API_KEY}`,
+        `https://generativelanguage.googleapis.com/v1/models/${EMBEDDING_MODEL}:batchEmbedContents?key=${env.GEMINI_API_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -93,6 +93,8 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
         },
       )
       if (!res.ok) {
+        const errBody = await res.text()
+        console.error(`[gemini] Embedding error ${res.status}:`, errBody)
         const err = new Error(`Embedding failed: ${res.status} ${res.statusText}`) as Error & { status: number }
         err.status = res.status
         throw err
