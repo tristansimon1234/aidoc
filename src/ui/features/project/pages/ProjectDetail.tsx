@@ -123,7 +123,7 @@ export function ProjectDetail(): React.ReactElement {
           title={item.label}
         >
           {NAV_ICONS[item.id]}
-          {activeTab === item.id && <span className={styles.switchLabel}>{item.label}</span>}
+          <span className={styles.switchLabel}>{item.label}</span>
         </button>
       ))}
     </div>
