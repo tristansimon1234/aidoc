@@ -51,7 +51,7 @@ export function ProjectList({ onSignOut }: ProjectListProps): React.ReactElement
             <div className={styles.features}>
               <div className={styles.feature}>
                 <div className={styles.featureIcon} style={{ color: 'var(--color-success)' }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
                 </div>
                 <div>
                   <p className={styles.featureTitle}>AI Documentation</p>
@@ -60,7 +60,7 @@ export function ProjectList({ onSignOut }: ProjectListProps): React.ReactElement
               </div>
               <div className={styles.feature}>
                 <div className={styles.featureIcon} style={{ color: 'var(--color-primary)' }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></svg>
                 </div>
                 <div>
                   <p className={styles.featureTitle}>Embeddable Chat Widget</p>
@@ -69,7 +69,7 @@ export function ProjectList({ onSignOut }: ProjectListProps): React.ReactElement
               </div>
               <div className={styles.feature}>
                 <div className={styles.featureIcon} style={{ color: 'var(--color-warning)' }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
                 </div>
                 <div>
                   <p className={styles.featureTitle}>Auto-Exploration</p>

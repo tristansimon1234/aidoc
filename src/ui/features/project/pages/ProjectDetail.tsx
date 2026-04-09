@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useParams, useNavigate, Outlet, useLocation, Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Spinner, EmptyState } from '../../../design-system/components/index.js'
@@ -11,11 +11,43 @@ import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'settings'
 
-const NAV_ITEMS: { id: NavTab; label: string; d: string }[] = [
-  { id: 'pages', label: 'Pages', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' },
-  { id: 'chat', label: 'Chat', d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
-  { id: 'share', label: 'Share', d: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13' },
-  { id: 'settings', label: 'Settings', d: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z' },
+/* Proper Lucide-quality multi-path icons */
+const NAV_ICONS: Record<NavTab, React.ReactNode> = {
+  pages: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+      <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+      <path d="M10 13h4" />
+      <path d="M10 17h4" />
+    </svg>
+  ),
+  chat: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+    </svg>
+  ),
+  share: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </svg>
+  ),
+  settings: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  ),
+}
+
+const NAV_ITEMS: { id: NavTab; label: string }[] = [
+  { id: 'pages', label: 'Pages' },
+  { id: 'chat', label: 'Chat' },
+  { id: 'share', label: 'Share' },
+  { id: 'settings', label: 'Settings' },
 ]
 
 export function ProjectDetail(): React.ReactElement {
@@ -26,8 +58,7 @@ export function ProjectDetail(): React.ReactElement {
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>('pages')
-  const switchRef = useRef<HTMLDivElement>(null)
-  const [pill, setPill] = useState({ left: 0, width: 0 })
+  // flat tabs — no pill animation
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -41,16 +72,7 @@ export function ProjectDetail(): React.ReactElement {
 
   useEffect(() => { void fetchData() }, [fetchData])
 
-  // Animate pill
-  useEffect(() => {
-    if (!switchRef.current) return
-    const el = switchRef.current.querySelector(`[data-tab="${activeTab}"]`) as HTMLElement | null
-    if (el) {
-      const rect = el.getBoundingClientRect()
-      const parentRect = switchRef.current.getBoundingClientRect()
-      setPill({ left: rect.left - parentRect.left, width: rect.width })
-    }
-  }, [activeTab])
+  // (pill animation removed — clean flat tabs now)
 
   // Sync settings route
   useEffect(() => {
@@ -72,20 +94,15 @@ export function ProjectDetail(): React.ReactElement {
 
   // Switch bar rendered in the topbar
   const switchBar = (
-    <div className={styles.switchBar} ref={switchRef}>
-      <div className={styles.switchPill} style={{ left: pill.left, width: pill.width }} />
+    <div className={styles.switchBar}>
       {NAV_ITEMS.map((item) => (
         <button
           key={item.id}
-          data-tab={item.id}
           className={`${styles.switchItem} ${activeTab === item.id ? styles.switchItemActive : ''}`}
           onClick={() => handleTab(item.id)}
-          title={item.label}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d={item.d} />
-          </svg>
-          {activeTab === item.id && <span className={styles.switchLabel}>{item.label}</span>}
+          {NAV_ICONS[item.id]}
+          <span className={styles.switchLabel}>{item.label}</span>
         </button>
       ))}
     </div>
@@ -110,7 +127,7 @@ export function ProjectDetail(): React.ReactElement {
         <aside className={styles.sidebar}>
           <div className={styles.sidebarActions}>
             <button className={styles.actionBtn} onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
               New page
             </button>
           </div>
