@@ -11,7 +11,6 @@ import {
 import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
-import { SharePanel } from '../components/SharePanel.js'
 import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
 import styles from './PageView.module.css'
 
@@ -43,7 +42,6 @@ export function PageView(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'doc' | 'exploration'>('doc')
   const [genMethod, setGenMethod] = useState<'video' | 'explore'>('video')
-  const [shareOpen, setShareOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
@@ -251,29 +249,27 @@ export function PageView(): React.ReactElement {
 
   return (
     <div>
-      {/* Header — status + share */}
+      {/* Header — status + publish toggle */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
           <StatusIndicator status={statusMap[page.status] ?? 'pending'} label={page.status} />
-          {page.isPublic && <Badge color="green">Public</Badge>}
           {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
         </div>
-        <div style={{ position: 'relative' }}>
-          <Button size="sm" variant="secondary" onClick={() => setShareOpen(!shareOpen)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
-            Share
-          </Button>
-          {shareOpen && (
-            <SharePanel
-              project={context.project}
-              page={page}
-              projectId={projectId!}
-              pageId={pageId!}
-              onClose={() => setShareOpen(false)}
-              onPageUpdate={(updates) => setPage({ ...page, ...updates })}
-            />
+        <Button
+          size="sm"
+          variant={page.isPublic ? 'secondary' : 'ghost'}
+          onClick={() => {
+            const newVal = !page.isPublic
+            setPage({ ...page, isPublic: newVal })
+            void dbUpdatePage(projectId!, pageId!, { isPublic: newVal })
+          }}
+        >
+          {page.isPublic ? (
+            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Published</>
+          ) : (
+            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg> Draft</>
           )}
-        </div>
+        </Button>
       </div>
 
       <div className={styles.tabBar}>

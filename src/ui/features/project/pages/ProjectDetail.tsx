@@ -6,6 +6,7 @@ import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
 import { ChatPanel } from '../../chat/components/ChatPanel.js'
+import { SharePanel } from '../../page/components/SharePanel.js'
 import styles from './ProjectDetail.module.css'
 
 export function ProjectDetail(): React.ReactElement {
@@ -16,6 +17,7 @@ export function ProjectDetail(): React.ReactElement {
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [chatOpen, setChatOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -84,6 +86,10 @@ export function ProjectDetail(): React.ReactElement {
           </div>
 
           <div className={styles.sidebarFooter}>
+            <button className={styles.footerBtn} onClick={() => setShareOpen(true)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+              Share & Integrate
+            </button>
             <button className={styles.footerBtn} onClick={() => setChatOpen(true)}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               Chat with docs
@@ -116,6 +122,7 @@ export function ProjectDetail(): React.ReactElement {
         </div>
       </div>
       {chatOpen && <ChatPanel projectId={projectId!} projectName={project.name} onClose={() => setChatOpen(false)} />}
+      {shareOpen && <SharePanel project={project} onClose={() => setShareOpen(false)} />}
     </Shell>
   )
 }
