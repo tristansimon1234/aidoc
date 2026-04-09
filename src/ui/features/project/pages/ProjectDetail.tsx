@@ -97,14 +97,14 @@ export function ProjectDetail(): React.ReactElement {
       actions={
         <div className={styles.topbarActions}>
           <Link to="/" className={styles.breadcrumb}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             Projects
           </Link>
           <span className={styles.breadcrumbSep}>/</span>
           <span className={styles.breadcrumbProject}>{project.name}</span>
-          {switchBar}
         </div>
       }
+      navBar={switchBar}
     >
       <div className={styles.layout}>
         <aside className={styles.sidebar}>

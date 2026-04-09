@@ -31,9 +31,9 @@
 .logo {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: 6px;
   font-weight: 600;
-  font-size: var(--text-base);
+  font-size: var(--text-sm);
   color: var(--color-fg);
   text-decoration: none;
   letter-spacing: -0.02em;
@@ -51,24 +51,32 @@
 .nav {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
+  flex-shrink: 0;
 }
 
-.themeToggle {
+.navDivider {
+  width: 1px;
+  height: 20px;
+  background: var(--color-border);
+  margin: 0 var(--space-xs);
+}
+
+.iconBtn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: 8px;
   background: none;
   color: var(--color-muted-fg);
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
 }
 
-.themeToggle:hover {
+.iconBtn:hover {
   background-color: var(--color-secondary);
   color: var(--color-fg);
 }
