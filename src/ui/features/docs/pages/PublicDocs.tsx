@@ -29,6 +29,7 @@ export function PublicDocs(): React.ReactElement {
   const [activePage, setActivePage] = useState<PublicPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (!projectId) return
@@ -72,8 +73,12 @@ export function PublicDocs(): React.ReactElement {
 
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
+          <div className={styles.sidebarSearch}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+            <input className={styles.searchInput} placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
           <nav className={styles.nav}>
-            {pages.map((p) => (
+            {pages.filter((p) => !search || p.title.toLowerCase().includes(search.toLowerCase())).map((p) => (
               <button
                 key={p.id}
                 className={`${styles.navItem} ${activePage?.id === p.id ? styles.navItemActive : ''}`}

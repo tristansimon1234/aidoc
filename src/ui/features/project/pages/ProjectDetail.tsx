@@ -75,6 +75,7 @@ export function ProjectDetail(): React.ReactElement {
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>('pages')
+  const [search, setSearch] = useState('')
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -146,15 +147,21 @@ export function ProjectDetail(): React.ReactElement {
     >
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
-          <div className={styles.sidebarActions}>
-            <button className={styles.actionBtn} onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
+          <div className={styles.sidebarSearch}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.searchIcon}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+            <input
+              className={styles.searchInput}
+              placeholder="Search pages..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <button className={styles.newPageBtn} onClick={() => navigate(`/projects/${projectId}/pages/new`)} title="New page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-              New page
             </button>
           </div>
           <div className={styles.pageList}>
             {pages.length > 0 ? (
-              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
+              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} searchQuery={search} />
             ) : (
               <div className={styles.emptyPages}>
                 <span>No pages yet</span>
