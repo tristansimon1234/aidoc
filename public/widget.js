@@ -82,42 +82,46 @@
     ].join('\n');
   }
 
-  // --- Inject styles ---
+  // --- Apply config to C and rebuild CSS ---
+  function applyConfig(cfg) {
+    projectName = cfg.projectName || 'this product';
+    if (cfg.suggestions && cfg.suggestions.length > 0) dynamicSuggestions = cfg.suggestions;
+
+    var changed = false;
+    if (cfg.design) {
+      if (cfg.design.accentColor && !script.getAttribute('data-color')) { C.accent = cfg.design.accentColor; changed = true; }
+      if (cfg.design.bgColor) { C.bg = cfg.design.bgColor; changed = true; }
+      if (cfg.design.textColor) { C.text = cfg.design.textColor; changed = true; }
+      if (cfg.design.font) { C.font = cfg.design.font; changed = true; }
+    }
+    if (cfg.widgetPosition && !script.getAttribute('data-position')) { C.position = cfg.widgetPosition; changed = true; }
+    if (cfg.widgetGreeting && !script.getAttribute('data-greeting')) { C.greeting = cfg.widgetGreeting; }
+    return changed;
+  }
+
+  // --- Load cached config instantly (no flash) ---
+  var CACHE_KEY = 'aidoc_cfg_' + API_KEY;
+  try {
+    var cached = localStorage.getItem(CACHE_KEY);
+    if (cached) applyConfig(JSON.parse(cached));
+  } catch (e) {}
+
+  // --- Inject styles (with cached or default config) ---
   var styleEl = document.createElement('style');
   styleEl.id = 'aidoc-widget-style';
   styleEl.textContent = buildCSS();
   document.head.appendChild(styleEl);
 
-  // --- Fetch config → apply design + rebuild CSS ---
+  // --- Fetch fresh config in background → update cache ---
   fetch(API_BASE + '/' + API_KEY + '/config')
     .then(function (r) { return r.json(); })
     .then(function (cfg) {
-      projectName = cfg.projectName || 'this product';
-      if (cfg.suggestions && cfg.suggestions.length > 0) dynamicSuggestions = cfg.suggestions;
+      // Cache for next load
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify(cfg)); } catch (e) {}
 
-      var changed = false;
-      if (cfg.design) {
-        if (cfg.design.accentColor && !script.getAttribute('data-color')) { C.accent = cfg.design.accentColor; changed = true; }
-        if (cfg.design.bgColor) { C.bg = cfg.design.bgColor; changed = true; }
-        if (cfg.design.textColor) { C.text = cfg.design.textColor; changed = true; }
-        if (cfg.design.font) { C.font = cfg.design.font; changed = true; }
-      }
-      if (cfg.widgetPosition && !script.getAttribute('data-position')) { C.position = cfg.widgetPosition; changed = true; }
-      if (cfg.widgetGreeting && !script.getAttribute('data-greeting')) { C.greeting = cfg.widgetGreeting; }
-
-      // Rebuild entire CSS with new design
-      if (changed) {
+      if (applyConfig(cfg)) {
         styleEl.textContent = buildCSS();
-        // Update button position
-        var btn = document.getElementById('aidoc-widget-btn');
-        if (btn) {
-          btn.style.background = C.accent;
-          btn.style[C.position !== 'left' ? 'right' : 'left'] = '24px';
-          btn.style[C.position !== 'left' ? 'left' : 'right'] = 'auto';
-        }
       }
-
-      // Re-render welcome if panel is open and empty
       if (isOpen && messages.length === 0) renderMessages();
     })
     .catch(function () {});

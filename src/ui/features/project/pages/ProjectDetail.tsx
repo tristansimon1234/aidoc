@@ -5,7 +5,6 @@ import { Button, Spinner, EmptyState } from '../../../design-system/components/i
 import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
-import { computeThemeVars } from '../../../shared/theme/computeTheme.js'
 import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'settings'
@@ -113,9 +112,6 @@ export function ProjectDetail(): React.ReactElement {
   const isOnChildRoute = !routeTab && location.pathname !== `/projects/${projectId}`
   const showOutlet = isOnChildRoute || routeTab !== null
 
-  const design = project.design
-  const themeStyle = design ? computeThemeVars(design) : undefined
-
   // Switch bar
   const switchBar = (
     <div className={styles.switchBar}>
@@ -134,7 +130,6 @@ export function ProjectDetail(): React.ReactElement {
   )
 
   return (
-    <div style={themeStyle}>
     <Shell
       fullWidth
       actions={
@@ -188,6 +183,5 @@ export function ProjectDetail(): React.ReactElement {
         </div>
       </div>
     </Shell>
-    </div>
   )
 }

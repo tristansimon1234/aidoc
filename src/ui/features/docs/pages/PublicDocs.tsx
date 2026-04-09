@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Spinner, EmptyState } from '../../../design-system/components/index.js'
 import { MarkdownRenderer } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO } from '../../../shared/api/client.js'
-import { computeThemeVars } from '../../../shared/theme/computeTheme.js'
+import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
 import styles from './PublicDocs.module.css'
 
 interface PublicPage {
@@ -61,7 +61,7 @@ export function PublicDocs(): React.ReactElement {
   }
 
   const design = project.design
-  const themeStyle = design ? computeThemeVars(design) : undefined
+  const themeStyle = design ? computeFullTheme(design) : undefined
 
   return (
     <div className={styles.shell} style={themeStyle} data-theme="light">
