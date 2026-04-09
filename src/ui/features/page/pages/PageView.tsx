@@ -241,15 +241,6 @@ export function PageView(): React.ReactElement {
   if (loading) return <Spinner size="lg" />
   if (!page) return <EmptyState title="Page not found" />
 
-  // Project design → CSS custom properties on doc area
-  const design = context.project.design
-  const designVars: React.CSSProperties | undefined = design ? {
-    '--doc-accent': design.accentColor,
-    '--doc-bg': design.bgColor,
-    '--doc-text': design.textColor,
-    '--doc-font': design.font,
-  } as React.CSSProperties : undefined
-
   const statusMap: Record<string, 'pending' | 'running' | 'completed'> = {
     draft: 'pending',
     exploring: 'running',
@@ -300,22 +291,20 @@ export function PageView(): React.ReactElement {
       {/* ===== DOCUMENTATION TAB ===== */}
       {activeTab === 'doc' && (
         <div className={styles.tabContent}>
-          <div className={styles.docDesign} style={designVars}>
-            <input
-              className={styles.pageTitle}
-              type="text"
-              value={page.title}
-              onChange={(e) => {
-                setPage({ ...page, title: e.target.value })
-                void debouncedPageUpdate({ title: e.target.value })
-              }}
-            />
-            <BlockEditor
-              key={`${pageId}-${page.content ? 'has-content' : 'empty'}-${doc?.id ?? 'no-doc'}`}
-              content={page.content ?? ''}
-              onSave={handleSaveContent}
-            />
-          </div>
+          <input
+            className={styles.pageTitle}
+            type="text"
+            value={page.title}
+            onChange={(e) => {
+              setPage({ ...page, title: e.target.value })
+              void debouncedPageUpdate({ title: e.target.value })
+            }}
+          />
+          <BlockEditor
+            key={`${pageId}-${page.content ? 'has-content' : 'empty'}-${doc?.id ?? 'no-doc'}`}
+            content={page.content ?? ''}
+            onSave={handleSaveContent}
+          />
         </div>
       )}
 

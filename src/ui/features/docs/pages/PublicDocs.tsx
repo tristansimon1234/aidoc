@@ -60,7 +60,7 @@ export function PublicDocs(): React.ReactElement {
   }
 
   const design = project.design
-  const designVars: React.CSSProperties | undefined = design ? {
+  const themeVars: React.CSSProperties | undefined = design ? {
     '--doc-accent': design.accentColor,
     '--doc-bg': design.bgColor,
     '--doc-text': design.textColor,
@@ -68,7 +68,7 @@ export function PublicDocs(): React.ReactElement {
   } as React.CSSProperties : undefined
 
   return (
-    <div className={styles.shell} style={designVars}>
+    <div className={`${styles.shell} ${design ? styles.themed : ''}`} style={themeVars}>
       <header className={styles.topbar}>
         <span className={styles.logo}>{project.name}</span>
         <span className={styles.badge}>Documentation</span>
@@ -92,14 +92,14 @@ export function PublicDocs(): React.ReactElement {
         <div className={styles.contentWrapper}>
           <div className={styles.content}>
             {activePage && (
-              <div className={styles.docArea}>
+              <>
                 <h1 className={styles.pageTitle}>{activePage.title}</h1>
                 {activePage.content ? (
                   <MarkdownRenderer content={activePage.content} />
                 ) : (
                   <p className={styles.empty}>This page has no content yet.</p>
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>

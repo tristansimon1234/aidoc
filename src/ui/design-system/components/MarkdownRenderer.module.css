@@ -5,19 +5,6 @@
   line-height: 1.7;
 }
 
-/* When project design tokens are applied — inherits from parent docArea */
-.themed {
-  font-family: var(--doc-font, var(--font-sans));
-  color: var(--doc-text, var(--color-fg));
-}
-
-.themed a { color: var(--doc-accent, var(--color-primary)); }
-.themed blockquote { border-left-color: var(--doc-accent, var(--color-primary)); }
-.themed strong { color: var(--doc-text, var(--color-fg)); }
-.themed h1, .themed h2, .themed h3, .themed h4 {
-  font-family: var(--doc-font, var(--font-heading));
-  color: var(--doc-text, var(--color-fg));
-}
 
 .article h1 {
   font-family: var(--font-heading);

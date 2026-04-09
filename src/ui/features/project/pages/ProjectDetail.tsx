@@ -112,6 +112,15 @@ export function ProjectDetail(): React.ReactElement {
   const isOnChildRoute = !routeTab && location.pathname !== `/projects/${projectId}`
   const showOutlet = isOnChildRoute || routeTab !== null
 
+  // Project design → override CSS vars for entire page
+  const design = project.design
+  const themeStyle: React.CSSProperties | undefined = design ? {
+    '--doc-accent': design.accentColor,
+    '--doc-bg': design.bgColor,
+    '--doc-text': design.textColor,
+    '--doc-font': design.font,
+  } as React.CSSProperties : undefined
+
   // Switch bar
   const switchBar = (
     <div className={styles.switchBar}>
@@ -130,6 +139,7 @@ export function ProjectDetail(): React.ReactElement {
   )
 
   return (
+    <div className={design ? styles.themed : undefined} style={themeStyle}>
     <Shell
       fullWidth
       actions={
@@ -183,5 +193,6 @@ export function ProjectDetail(): React.ReactElement {
         </div>
       </div>
     </Shell>
+    </div>
   )
 }

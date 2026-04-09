@@ -6,6 +6,21 @@
   background: var(--color-bg);
 }
 
+/* Full-page theme override from project design */
+.themed {
+  --color-primary: var(--doc-accent);
+  --color-primary-hover: var(--doc-accent);
+  --color-bg: var(--doc-bg);
+  --color-fg: var(--doc-text);
+  --color-card: color-mix(in oklch, var(--doc-bg) 92%, var(--doc-text));
+  --color-secondary: color-mix(in oklch, var(--doc-bg) 88%, var(--doc-text));
+  --color-border: color-mix(in oklch, var(--doc-bg) 84%, var(--doc-text));
+  --color-muted-fg: color-mix(in oklch, var(--doc-text) 55%, var(--doc-bg));
+  --color-accent: color-mix(in oklch, var(--doc-accent) 12%, var(--doc-bg));
+  --font-sans: var(--doc-font);
+  --font-heading: var(--doc-font);
+}
+
 .shell {
   min-height: 100vh;
   display: flex;
@@ -36,8 +51,8 @@
 .badge {
   font-size: 10px;
   font-weight: 500;
-  color: var(--doc-accent, var(--color-primary));
-  background: oklch(from var(--doc-accent, var(--color-primary)) l c h / 0.1);
+  color: var(--color-primary);
+  background: var(--color-accent);
   padding: 2px 8px;
   border-radius: 6px;
 }
@@ -85,11 +100,11 @@
 
 .navItemActive {
   background: var(--color-accent);
-  color: var(--doc-accent, var(--color-primary));
+  color: var(--color-primary);
   font-weight: 500;
 }
 
-/* Content — centered like the editor */
+/* Content — centered */
 .contentWrapper {
   flex: 1;
   overflow-y: auto;
@@ -103,22 +118,11 @@
   padding: var(--space-xl) var(--space-2xl);
 }
 
-/* Doc design wrapper — matches PageView .docDesign exactly */
-.docArea {
-  background: var(--doc-bg, transparent);
-  color: var(--doc-text, var(--color-fg));
-  font-family: var(--doc-font, var(--font-sans));
-  border-radius: 12px;
-  padding: var(--space-lg);
-  transition: background 0.3s, color 0.3s;
-}
-
 .pageTitle {
-  font-family: var(--doc-font, var(--font-heading));
-  font-stretch: var(--heading-stretch);
+  font-family: var(--font-heading);
   font-size: var(--text-xl);
   font-weight: 600;
-  color: var(--doc-text, var(--color-fg));
+  color: var(--color-fg);
   margin: 0 0 var(--space-lg);
   padding-bottom: var(--space-md);
   border-bottom: 1px solid var(--color-border);
