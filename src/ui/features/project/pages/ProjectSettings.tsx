@@ -12,7 +12,7 @@ type SettingsTab = 'general' | 'context' | 'credentials' | 'knowledge'
 
 export function ProjectSettings(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
-  const { project: outletProject } = useOutletContext<{ project: ProjectDTO }>()
+  const { project: outletProject, setProject: setParentProject } = useOutletContext<{ project: ProjectDTO; setProject: (p: ProjectDTO) => void }>()
   const [project, setProject] = useState<ProjectDTO>(outletProject)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [name, setName] = useState(outletProject.name)
@@ -38,11 +38,13 @@ export function ProjectSettings(): React.ReactElement {
     setSaving(true); setError(null); setSaved(false)
     try {
       const validCreds = credentials.filter((c) => c.label && c.username && c.password)
-      await updateProject(projectId, {
+      const updated = await updateProject(projectId, {
         name, baseUrl,
         context: (context.audience || context.workflow || context.quirks) ? context : undefined,
         credentials: validCreds.length > 0 ? validCreds : undefined,
       })
+      setProject(updated)
+      setParentProject(updated)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) { setError((err as Error).message) }

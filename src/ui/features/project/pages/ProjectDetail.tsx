@@ -207,7 +207,7 @@ export function ProjectDetail(): React.ReactElement {
           {/* Main content */}
           <div className={isOnChildRoute || isRouteTab ? styles.content : styles.emptyContent}>
             {isOnChildRoute || isRouteTab ? (
-              <Outlet context={{ project, pages, refetchPages: fetchData }} />
+              <Outlet context={{ project, setProject, pages, refetchPages: fetchData }} />
             ) : (
               <EmptyState
                 title={pages.length === 0 ? 'No pages yet' : 'Select a page'}

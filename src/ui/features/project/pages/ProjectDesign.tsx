@@ -53,7 +53,7 @@ const FONT_OPTIONS = [
 ]
 
 export function ProjectDesign(): React.ReactElement {
-  const { project } = useOutletContext<{ project: ProjectDTO }>()
+  const { project, setProject } = useOutletContext<{ project: ProjectDTO; setProject: (p: ProjectDTO) => void }>()
   const existing = project.design ?? DEFAULTS
 
   const [design, setDesign] = useState<ProjectDesignDTO>(existing)
@@ -68,7 +68,8 @@ export function ProjectDesign(): React.ReactElement {
   const handleSave = async (): Promise<void> => {
     setSaving(true)
     try {
-      await updateProject(project.id, { design })
+      const updated = await updateProject(project.id, { design })
+      setProject(updated)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } finally { setSaving(false) }
