@@ -65,16 +65,15 @@ export function PageView(): React.ReactElement {
   }, [projectId, pageId])
 
   useEffect(() => {
-    // Only show full spinner on first load, not on page switches
+    // Only show full spinner on very first load — keep previous page visible during transition
     if (!page) setLoading(true)
-    setDoc(null)
-    setLatestRun(null)
     setError(null)
     setActivity([])
     setLiveUrl(null)
     setExploring(false)
     setGenerating(false)
     setStatusMessage(null)
+    setActiveTab('doc')
     void fetchData()
   }, [fetchData])
 
@@ -302,7 +301,7 @@ export function PageView(): React.ReactElement {
             }}
           />
           <BlockEditor
-            key={`${pageId}-${page.content ? 'has-content' : 'empty'}-${doc?.id ?? 'no-doc'}`}
+            key={pageId}
             content={page.content ?? ''}
             onSave={handleSaveContent}
           />

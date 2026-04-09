@@ -51,6 +51,13 @@
   height: auto !important;
   border-radius: var(--radius-lg) !important;
   border: 1px solid var(--color-border) !important;
+  cursor: zoom-in !important;
+  transition: box-shadow 0.15s, transform 0.15s !important;
+}
+
+.editor img:hover {
+  box-shadow: var(--shadow-lg) !important;
+  transform: scale(1.01) !important;
 }
 
 .editor [data-content-type="image"],
