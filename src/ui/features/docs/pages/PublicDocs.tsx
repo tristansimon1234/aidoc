@@ -22,6 +22,27 @@ interface PublicProject {
   design: ProjectDesignDTO | null
 }
 
+// --- Search helper: search titles + content (same as admin) ---
+interface SearchResult { page: PublicPage; snippet: string }
+
+function searchPages(pages: PublicPage[], query: string): SearchResult[] {
+  if (!query || query.length < 2) return []
+  const q = query.toLowerCase()
+  const results: SearchResult[] = []
+  for (const p of pages) {
+    if (p.title.toLowerCase().includes(q)) {
+      results.push({ page: p, snippet: p.title })
+    } else if (p.content?.toLowerCase().includes(q)) {
+      const idx = p.content.toLowerCase().indexOf(q)
+      const start = Math.max(0, idx - 40)
+      const end = Math.min(p.content.length, idx + query.length + 40)
+      const raw = p.content.slice(start, end).replace(/[#*_\[\]]/g, '')
+      results.push({ page: p, snippet: (start > 0 ? '...' : '') + raw + (end < p.content.length ? '...' : '') })
+    }
+  }
+  return results.slice(0, 8)
+}
+
 export function PublicDocs(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
   const [project, setProject] = useState<PublicProject | null>(null)
@@ -92,15 +113,15 @@ export function PublicDocs(): React.ReactElement {
             )}
           </div>
           {searchFocused && search.length >= 2 && (() => {
-            const q = search.toLowerCase()
-            const results = pages.filter((p) => p.title.toLowerCase().includes(q) || p.content?.toLowerCase().includes(q)).slice(0, 8)
+            const results = searchPages(pages, search)
             return (
               <div className={styles.searchDropdown}>
                 {results.length === 0 ? (
                   <div className={styles.searchEmpty}>No results</div>
-                ) : results.map((p) => (
-                  <button key={p.id} className={styles.searchResult} onClick={() => { setActivePage(p); setSearch(''); setSearchFocused(false) }}>
-                    {p.title}
+                ) : results.map((r) => (
+                  <button key={r.page.id} className={styles.searchResult} onClick={() => { setActivePage(r.page); setSearch(''); setSearchFocused(false) }}>
+                    <span className={styles.searchResultTitle}>{r.page.title}</span>
+                    <span className={styles.searchResultSnippet}>{r.snippet}</span>
                   </button>
                 ))}
               </div>

@@ -65,7 +65,8 @@ export function PageView(): React.ReactElement {
   }, [projectId, pageId])
 
   useEffect(() => {
-    setLoading(true)
+    // Only show full spinner on first load, not on page switches
+    if (!page) setLoading(true)
     setDoc(null)
     setLatestRun(null)
     setError(null)

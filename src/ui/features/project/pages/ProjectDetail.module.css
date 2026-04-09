@@ -296,8 +296,8 @@
 
 .content > * {
   width: 100%;
-  max-width: 800px;
-  padding: var(--space-xl) var(--space-2xl);
+  max-width: 820px;
+  padding: var(--space-xl) var(--space-lg);
 }
 
 .emptyContent {
@@ -326,7 +326,7 @@
     max-height: 200px;
   }
   .content > * {
-    padding: var(--space-md);
+    padding: var(--space-md) var(--space-sm);
   }
   .searchWrapper {
     display: none;
