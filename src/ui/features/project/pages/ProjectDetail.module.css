@@ -15,12 +15,13 @@
   padding: var(--space-md) var(--space-sm);
 }
 
-.sidebarHeader {
+.sidebarTop {
   padding: 0 var(--space-sm);
-  margin-bottom: var(--space-sm);
+  margin-bottom: var(--space-md);
 }
 
 .projectName {
+  display: block;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--color-fg);
@@ -28,15 +29,68 @@
   overflow: hidden;
   text-overflow: ellipsis;
   letter-spacing: -0.01em;
+  margin-bottom: var(--space-sm);
 }
 
+/* Switch bar — iOS-style pill tabs */
+.switchBar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--color-secondary);
+  border-radius: var(--radius-lg);
+  padding: 3px;
+}
+
+.switchPill {
+  position: absolute;
+  top: 3px;
+  height: calc(100% - 6px);
+  background: var(--color-card);
+  border-radius: calc(var(--radius-lg) - 2px);
+  box-shadow: var(--shadow-sm);
+  transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 0;
+}
+
+.switchItem {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: calc(var(--radius-lg) - 2px);
+  background: none;
+  color: var(--color-muted-fg);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.switchItem:hover {
+  color: var(--color-fg);
+}
+
+.switchItemActive {
+  color: var(--color-fg);
+}
+
+.switchLabel {
+  font-weight: 500;
+}
+
+/* Sidebar content */
 .sidebarActions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-xs);
   padding: 0 var(--space-xs);
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-sm);
 }
 
 .actionBtn {
@@ -60,30 +114,6 @@
   border-color: var(--color-primary);
 }
 
-.actionBtnGroup {
-  display: flex;
-  gap: 2px;
-}
-
-.iconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--radius-lg);
-  background: none;
-  color: var(--color-muted-fg);
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.iconBtn:hover {
-  background-color: var(--color-secondary);
-  color: var(--color-fg);
-}
-
 .sidebarLabel {
   font-size: 10px;
   font-weight: 600;
@@ -99,37 +129,6 @@
   overflow-y: auto;
 }
 
-/* Sidebar footer — fixed at bottom */
-.sidebarFooter {
-  margin-top: auto;
-  padding-top: var(--space-sm);
-  border-top: 1px solid var(--color-border);
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.footerBtn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  width: 100%;
-  padding: 6px var(--space-sm);
-  border: none;
-  border-radius: var(--radius-lg);
-  background: none;
-  color: var(--color-muted-fg);
-  font-size: var(--text-xs);
-  font-family: var(--font-sans);
-  cursor: pointer;
-  transition: all 0.12s;
-}
-
-.footerBtn:hover {
-  background-color: var(--color-secondary);
-  color: var(--color-fg);
-}
-
 .emptyPages {
   display: flex;
   flex-direction: column;
@@ -140,7 +139,18 @@
   color: var(--color-muted-fg);
 }
 
-/* Content */
+/* Content area */
+.contentArea {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.contentSplit {
+  /* When side panel is open, content and panel share the space */
+}
+
 .content {
   flex: 1;
   padding: var(--space-xl);
@@ -152,6 +162,21 @@
   align-items: center;
   justify-content: center;
   flex: 1;
+}
+
+/* Half-screen side panel */
+.sidePanel {
+  width: 50%;
+  min-width: 380px;
+  max-width: 520px;
+  border-left: 1px solid var(--color-border);
+  overflow-y: auto;
+  animation: panelSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes panelSlideIn {
+  from { width: 0; min-width: 0; opacity: 0; }
+  to { opacity: 1; }
 }
 
 .loadingState {
@@ -190,5 +215,10 @@
   }
   .content {
     padding: var(--space-md);
+  }
+  .sidePanel {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 }

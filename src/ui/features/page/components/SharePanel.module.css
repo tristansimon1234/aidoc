@@ -53,6 +53,13 @@
   background: var(--color-secondary);
 }
 
+.panelInline {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--color-bg);
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

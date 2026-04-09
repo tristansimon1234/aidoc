@@ -8,9 +8,11 @@ type ShareTab = 'share' | 'publish' | 'widget'
 export function SharePanel({
   project,
   onClose,
+  inline = false,
 }: {
   project: ProjectDTO
   onClose: () => void
+  inline?: boolean
 }): React.ReactElement {
   const [activeTab, setActiveTab] = useState<ShareTab>('widget')
 
@@ -22,11 +24,11 @@ export function SharePanel({
 
   return (
     <>
-      <div className={styles.overlay} onClick={onClose} />
-      <div className={styles.panel}>
+      {!inline && <div className={styles.overlay} onClick={onClose} />}
+      <div className={inline ? styles.panelInline : styles.panel}>
         <div className={styles.panelHeader}>
           <span className={styles.panelTitle}>Share &amp; Integrate</span>
-          <button className={styles.closeBtn} onClick={onClose}>&times;</button>
+          {!inline && <button className={styles.closeBtn} onClick={onClose}>&times;</button>}
         </div>
         <div className={styles.tabs}>
           {tabs.map((t) => (
