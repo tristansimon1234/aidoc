@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
-import { Shell } from '../../../shared/layout/Shell.js'
-import { Button, Spinner } from '../../../design-system/components/index.js'
+import { useParams } from 'react-router-dom'
+import { useOutletContext } from 'react-router-dom'
+import { Button } from '../../../design-system/components/index.js'
 import { type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
-import { fetchProject, updateProject } from '../../../shared/api/db.js'
+import { updateProject } from '../../../shared/api/db.js'
 import styles from './ProjectSettings.module.css'
 
 interface Credential { label: string; username: string; password: string }
@@ -12,29 +12,26 @@ type SettingsTab = 'general' | 'context' | 'credentials' | 'knowledge'
 
 export function ProjectSettings(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
-  const navigate = useNavigate()
-  const [project, setProject] = useState<ProjectDTO | null>(null)
+  const { project: outletProject } = useOutletContext<{ project: ProjectDTO }>()
+  const [project, setProject] = useState<ProjectDTO>(outletProject)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
-  const [name, setName] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [context, setContext] = useState({ audience: '', workflow: '', quirks: '' })
-  const [credentials, setCredentials] = useState<Credential[]>([])
-  const [loading, setLoading] = useState(true)
+  const [name, setName] = useState(outletProject.name)
+  const [baseUrl, setBaseUrl] = useState(outletProject.baseUrl)
+  const [context, setContext] = useState(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
+  const [credentials, setCredentials] = useState<Credential[]>(
+    (outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [],
+  )
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!projectId) return
-    fetchProject(projectId).then((p) => {
-      setProject(p)
-      setName(p.name)
-      setBaseUrl(p.baseUrl)
-      setContext(p.context ?? { audience: '', workflow: '', quirks: '' })
-      setCredentials((p as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [])
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [projectId])
+    setProject(outletProject)
+    setName(outletProject.name)
+    setBaseUrl(outletProject.baseUrl)
+    setContext(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
+    setCredentials((outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [])
+  }, [outletProject])
 
   const handleSave = async (): Promise<void> => {
     if (!projectId) return
@@ -52,9 +49,6 @@ export function ProjectSettings(): React.ReactElement {
     finally { setSaving(false) }
   }
 
-  if (loading) return <Shell><div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-2xl)' }}><Spinner size="lg" /></div></Shell>
-  if (!project) return <Shell><p>Project not found</p></Shell>
-
   const tabs: { id: SettingsTab; label: string; highlight?: boolean }[] = [
     { id: 'general', label: 'General' },
     { id: 'context', label: 'AI Context' },
@@ -63,14 +57,10 @@ export function ProjectSettings(): React.ReactElement {
   ]
 
   return (
-    <Shell>
-      <div className={styles.page}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>Settings</h1>
-          <Button size="sm" variant="ghost" onClick={() => navigate(`/projects/${projectId}`)}>
-            &larr; Back
-          </Button>
-        </div>
+    <div className={styles.page}>
+      <div className={styles.header}>
+        <h1 className={styles.title}>Settings</h1>
+      </div>
 
         <div className={styles.tabs}>
           {tabs.map((t) => (
@@ -186,8 +176,7 @@ export function ProjectSettings(): React.ReactElement {
               onSaved={(updated) => setProject({ ...project, discoveredContext: updated })} />
           )}
         </div>
-      </div>
-    </Shell>
+    </div>
   )
 }
 

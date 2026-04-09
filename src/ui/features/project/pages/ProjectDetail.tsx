@@ -58,7 +58,7 @@ export function ProjectDetail(): React.ReactElement {
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>('pages')
-  // flat tabs — no pill animation
+  const [overlay, setOverlay] = useState<'chat' | 'share' | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -72,17 +72,41 @@ export function ProjectDetail(): React.ReactElement {
 
   useEffect(() => { void fetchData() }, [fetchData])
 
-  // (pill animation removed — clean flat tabs now)
-
-  // Sync settings route
+  // Sync tab with route
   useEffect(() => {
-    if (location.pathname.includes('/settings')) setActiveTab('settings')
-    else if (activeTab === 'settings') setActiveTab('pages')
+    if (location.pathname.includes('/settings')) {
+      setActiveTab('settings')
+      setOverlay(null)
+    } else if (activeTab === 'settings') {
+      setActiveTab('pages')
+    }
   }, [location.pathname])
 
   const handleTab = (tab: NavTab): void => {
-    if (tab === 'settings') navigate(`/projects/${projectId}/settings`)
-    else if (activeTab === 'settings') navigate(`/projects/${projectId}`)
+    if (tab === 'chat' || tab === 'share') {
+      // Toggle overlay
+      if (overlay === tab) {
+        setOverlay(null)
+        setActiveTab('pages')
+      } else {
+        setOverlay(tab)
+        setActiveTab(tab)
+        // Navigate back from settings if needed
+        if (location.pathname.includes('/settings')) {
+          navigate(`/projects/${projectId}`)
+        }
+      }
+      return
+    }
+
+    // Close overlay when switching to pages/settings
+    setOverlay(null)
+
+    if (tab === 'settings') {
+      navigate(`/projects/${projectId}/settings`)
+    } else if (activeTab === 'settings') {
+      navigate(`/projects/${projectId}`)
+    }
     setActiveTab(tab)
   }
 
@@ -90,9 +114,9 @@ export function ProjectDetail(): React.ReactElement {
   if (!project) return <Shell fullWidth><EmptyState title="Project not found" /></Shell>
 
   const isOnChildRoute = location.pathname !== `/projects/${projectId}` && !location.pathname.includes('/settings')
-  const showPanel = activeTab === 'chat' || activeTab === 'share'
+  const isSettings = location.pathname.includes('/settings')
 
-  // Switch bar rendered in the topbar
+  // Switch bar in the topbar
   const switchBar = (
     <div className={styles.switchBar}>
       {NAV_ITEMS.map((item) => (
@@ -143,11 +167,31 @@ export function ProjectDetail(): React.ReactElement {
           </div>
         </aside>
 
-        <div className={`${styles.contentArea} ${showPanel ? styles.contentSplit : ''}`}>
-          <div className={isOnChildRoute || activeTab === 'settings' ? styles.content : styles.emptyContent}>
-            {isOnChildRoute ? (
-              <Outlet context={{ project, pages, refetchPages: fetchData }} />
-            ) : activeTab === 'settings' ? (
+        <div className={styles.contentArea}>
+          {/* Overlay panels — drop down from top */}
+          {overlay && (
+            <>
+              <div className={styles.overlayBackdrop} onClick={() => { setOverlay(null); setActiveTab('pages') }} />
+              <div className={styles.overlayPanel}>
+                <div className={styles.overlayHeader}>
+                  <span className={styles.overlayTitle}>
+                    {overlay === 'chat' ? 'Chat with docs' : 'Share & Integrate'}
+                  </span>
+                  <button className={styles.overlayClose} onClick={() => { setOverlay(null); setActiveTab('pages') }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                  </button>
+                </div>
+                <div className={styles.overlayBody}>
+                  {overlay === 'chat' && <ChatPanel projectId={projectId!} projectName={project.name} onClose={() => { setOverlay(null); setActiveTab('pages') }} inline />}
+                  {overlay === 'share' && <SharePanel project={project} onClose={() => { setOverlay(null); setActiveTab('pages') }} inline />}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Main content */}
+          <div className={isOnChildRoute || isSettings ? styles.content : styles.emptyContent}>
+            {isOnChildRoute || isSettings ? (
               <Outlet context={{ project, pages, refetchPages: fetchData }} />
             ) : (
               <EmptyState
@@ -161,13 +205,6 @@ export function ProjectDetail(): React.ReactElement {
               />
             )}
           </div>
-
-          {showPanel && (
-            <div className={styles.sidePanel}>
-              {activeTab === 'chat' && <ChatPanel projectId={projectId!} projectName={project.name} onClose={() => handleTab('pages')} inline />}
-              {activeTab === 'share' && <SharePanel project={project} onClose={() => handleTab('pages')} inline />}
-            </div>
-          )}
         </div>
       </div>
     </Shell>

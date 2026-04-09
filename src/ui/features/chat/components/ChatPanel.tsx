@@ -112,10 +112,12 @@ export function ChatPanel({
     <>
       {!inline && <div className={styles.overlay} onClick={onClose} />}
       <div className={panelClass}>
-        <div className={styles.header}>
-          <span className={styles.title}>Chat with docs</span>
-          {!inline && <button className={styles.closeBtn} onClick={onClose}>&times;</button>}
-        </div>
+        {!inline && (
+          <div className={styles.header}>
+            <span className={styles.title}>Chat with docs</span>
+            <button className={styles.closeBtn} onClick={onClose}>&times;</button>
+          </div>
+        )}
 
         {indexing ? (
           <div className={styles.emptyState}>

@@ -26,10 +26,12 @@ export function SharePanel({
     <>
       {!inline && <div className={styles.overlay} onClick={onClose} />}
       <div className={inline ? styles.panelInline : styles.panel}>
-        <div className={styles.panelHeader}>
-          <span className={styles.panelTitle}>Share &amp; Integrate</span>
-          {!inline && <button className={styles.closeBtn} onClick={onClose}>&times;</button>}
-        </div>
+        {!inline && (
+          <div className={styles.panelHeader}>
+            <span className={styles.panelTitle}>Share &amp; Integrate</span>
+            <button className={styles.closeBtn} onClick={onClose}>&times;</button>
+          </div>
+        )}
         <div className={styles.tabs}>
           {tabs.map((t) => (
             <button

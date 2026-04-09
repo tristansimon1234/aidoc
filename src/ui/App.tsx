@@ -32,8 +32,8 @@ export function App(): React.ReactElement {
         <Route path="/projects/:projectId" element={<ProjectDetail />}>
           <Route path="pages/new" element={<NewPage />} />
           <Route path="pages/:pageId" element={<PageView />} />
+          <Route path="settings" element={<ProjectSettings />} />
         </Route>
-        <Route path="/projects/:projectId/settings" element={<ProjectSettings />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
