@@ -36,7 +36,7 @@
   color: var(--color-fg);
 }
 
-/* Switch bar — flat tab buttons (Linear-style) */
+/* Switch bar — icon-only, label on active */
 .switchBar {
   display: flex;
   align-items: center;
@@ -47,7 +47,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 6px 8px;
   border: none;
   border-radius: 8px;
   background: none;
@@ -68,6 +68,7 @@
 .switchItemActive {
   color: var(--color-primary);
   background: var(--color-accent);
+  padding: 6px 12px;
 }
 
 .switchItemActive:hover {
@@ -136,7 +137,6 @@
 /* Content area */
 .contentArea {
   flex: 1;
-  position: relative;
   overflow: hidden;
 }
 
@@ -151,105 +151,6 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-}
-
-/* --- Overlay panels (Notion-style drop from top) --- */
-.overlayBackdrop {
-  position: absolute;
-  inset: 0;
-  background: oklch(0 0 0 / 0.15);
-  z-index: 20;
-  animation: fadeIn 0.2s ease;
-}
-
-[data-theme="dark"] .overlayBackdrop {
-  background: oklch(0 0 0 / 0.4);
-}
-
-.overlayPanel {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(520px, calc(100% - 48px));
-  max-height: calc(100% - 24px);
-  margin-top: 12px;
-  z-index: 30;
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: 12px;
-  box-shadow:
-    0 16px 48px oklch(0 0 0 / 0.12),
-    0 4px 12px oklch(0 0 0 / 0.06),
-    0 0 0 1px oklch(0 0 0 / 0.03);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: dropDown 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-[data-theme="dark"] .overlayPanel {
-  box-shadow:
-    0 16px 48px oklch(0 0 0 / 0.4),
-    0 4px 12px oklch(0 0 0 / 0.2),
-    0 0 0 1px oklch(1 0 0 / 0.06);
-}
-
-.overlayHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
-.overlayTitle {
-  font-family: var(--font-sans);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--color-fg);
-}
-
-.overlayClose {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: var(--color-muted-fg);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.overlayClose:hover {
-  background: var(--color-secondary);
-  color: var(--color-fg);
-}
-
-.overlayBody {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-@keyframes dropDown {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(-8px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
-  }
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
 }
 
 .loadingState {
@@ -272,9 +173,5 @@
   }
   .content {
     padding: var(--space-md);
-  }
-  .overlayPanel {
-    width: calc(100% - 16px);
-    margin-top: 8px;
   }
 }

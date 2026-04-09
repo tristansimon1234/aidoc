@@ -9,6 +9,8 @@ import { NewPage } from './features/page/pages/NewPage.js'
 import { PageView } from './features/page/pages/PageView.js'
 import { ProjectSettings } from './features/project/pages/ProjectSettings.js'
 import { ProjectDesign } from './features/project/pages/ProjectDesign.js'
+import { ChatPage } from './features/chat/pages/ChatPage.js'
+import { SharePage } from './features/page/pages/SharePage.js'
 import { PublicDocs } from './features/docs/pages/PublicDocs.js'
 
 export function App(): React.ReactElement {
@@ -41,6 +43,8 @@ export function App(): React.ReactElement {
             <Route path="/projects/:projectId" element={<ProjectDetail />}>
               <Route path="pages/new" element={<NewPage />} />
               <Route path="pages/:pageId" element={<PageView />} />
+              <Route path="chat" element={<ChatPage />} />
+              <Route path="share" element={<SharePage />} />
               <Route path="design" element={<ProjectDesign />} />
               <Route path="settings" element={<ProjectSettings />} />
             </Route>

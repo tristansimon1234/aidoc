@@ -76,12 +76,26 @@ export async function findPagesByProjectId(projectId: string): Promise<DocPage[]
 }
 
 export async function findPublicPagesByProjectId(projectId: string): Promise<DocPage[]> {
+  // Try is_public first; fall back to status='published' if column missing
   const { data, error } = await supabase
     .from('doc_pages')
     .select('*')
     .eq('project_id', projectId)
     .eq('is_public', true)
     .order('sort_order', { ascending: true })
+
+  if (error && error.message.includes('is_public')) {
+    // Column doesn't exist yet — fall back
+    const fallback = await supabase
+      .from('doc_pages')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('status', 'published')
+      .order('sort_order', { ascending: true })
+    if (fallback.error) throw new DatabaseError(fallback.error.message)
+    return (fallback.data as PageRow[]).map(mapToPage)
+  }
+
   if (error) throw new DatabaseError(error.message)
   return (data as PageRow[]).map(mapToPage)
 }

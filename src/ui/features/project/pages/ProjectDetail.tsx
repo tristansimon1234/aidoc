@@ -5,11 +5,11 @@ import { Button, Spinner, EmptyState } from '../../../design-system/components/i
 import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
-import { ChatPanel } from '../../chat/components/ChatPanel.js'
-import { SharePanel } from '../../page/components/SharePanel.js'
 import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'settings'
+
+const ROUTE_TABS: NavTab[] = ['chat', 'share', 'design', 'settings']
 
 /* Proper Lucide-quality multi-path icons */
 const NAV_ICONS: Record<NavTab, React.ReactNode> = {
@@ -60,6 +60,13 @@ const NAV_ITEMS: { id: NavTab; label: string }[] = [
   { id: 'settings', label: 'Settings' },
 ]
 
+function tabFromPath(pathname: string): NavTab | null {
+  for (const tab of ROUTE_TABS) {
+    if (pathname.includes(`/${tab}`)) return tab
+  }
+  return null
+}
+
 export function ProjectDetail(): React.ReactElement {
   const { projectId, pageId } = useParams<{ projectId: string; pageId?: string }>()
   const navigate = useNavigate()
@@ -68,7 +75,6 @@ export function ProjectDetail(): React.ReactElement {
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>('pages')
-  const [overlay, setOverlay] = useState<'chat' | 'share' | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -82,45 +88,19 @@ export function ProjectDetail(): React.ReactElement {
 
   useEffect(() => { void fetchData() }, [fetchData])
 
-  // Sync tab with route
+  // Sync tab from URL
   useEffect(() => {
-    if (location.pathname.includes('/settings')) {
-      setActiveTab('settings')
-      setOverlay(null)
-    } else if (location.pathname.includes('/design')) {
-      setActiveTab('design')
-      setOverlay(null)
-    } else if (activeTab === 'settings' || activeTab === 'design') {
-      setActiveTab('pages')
-    }
+    const tab = tabFromPath(location.pathname)
+    if (tab) setActiveTab(tab)
+    else setActiveTab('pages')
   }, [location.pathname])
 
   const handleTab = (tab: NavTab): void => {
-    if (tab === 'chat' || tab === 'share') {
-      // Toggle overlay
-      if (overlay === tab) {
-        setOverlay(null)
-        setActiveTab('pages')
-      } else {
-        setOverlay(tab)
-        setActiveTab(tab)
-        // Navigate back from route tabs if needed
-        if (location.pathname.includes('/settings') || location.pathname.includes('/design')) {
-          navigate(`/projects/${projectId}`)
-        }
-      }
-      return
-    }
-
-    // Close overlay when switching to pages/design/settings
-    setOverlay(null)
-
-    if (tab === 'settings') {
-      navigate(`/projects/${projectId}/settings`)
-    } else if (tab === 'design') {
-      navigate(`/projects/${projectId}/design`)
-    } else if (activeTab === 'settings' || activeTab === 'design') {
-      navigate(`/projects/${projectId}`)
+    if (ROUTE_TABS.includes(tab)) {
+      navigate(`/projects/${projectId}/${tab}`)
+    } else {
+      // "pages" — go back to project root
+      if (activeTab !== 'pages') navigate(`/projects/${projectId}`)
     }
     setActiveTab(tab)
   }
@@ -128,10 +108,11 @@ export function ProjectDetail(): React.ReactElement {
   if (loading) return <Shell fullWidth><div className={styles.loadingState}><Spinner size="lg" /></div></Shell>
   if (!project) return <Shell fullWidth><EmptyState title="Project not found" /></Shell>
 
-  const isOnChildRoute = location.pathname !== `/projects/${projectId}` && !location.pathname.includes('/settings') && !location.pathname.includes('/design')
-  const isRouteTab = location.pathname.includes('/settings') || location.pathname.includes('/design')
+  const routeTab = tabFromPath(location.pathname)
+  const isOnChildRoute = !routeTab && location.pathname !== `/projects/${projectId}`
+  const showOutlet = isOnChildRoute || routeTab !== null
 
-  // Switch bar in the topbar
+  // Switch bar
   const switchBar = (
     <div className={styles.switchBar}>
       {NAV_ITEMS.map((item) => (
@@ -139,9 +120,10 @@ export function ProjectDetail(): React.ReactElement {
           key={item.id}
           className={`${styles.switchItem} ${activeTab === item.id ? styles.switchItemActive : ''}`}
           onClick={() => handleTab(item.id)}
+          title={item.label}
         >
           {NAV_ICONS[item.id]}
-          <span className={styles.switchLabel}>{item.label}</span>
+          {activeTab === item.id && <span className={styles.switchLabel}>{item.label}</span>}
         </button>
       ))}
     </div>
@@ -183,30 +165,8 @@ export function ProjectDetail(): React.ReactElement {
         </aside>
 
         <div className={styles.contentArea}>
-          {/* Overlay panels — drop down from top */}
-          {overlay && (
-            <>
-              <div className={styles.overlayBackdrop} onClick={() => { setOverlay(null); setActiveTab('pages') }} />
-              <div className={styles.overlayPanel}>
-                <div className={styles.overlayHeader}>
-                  <span className={styles.overlayTitle}>
-                    {overlay === 'chat' ? 'Chat with docs' : 'Share & Integrate'}
-                  </span>
-                  <button className={styles.overlayClose} onClick={() => { setOverlay(null); setActiveTab('pages') }}>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
-                  </button>
-                </div>
-                <div className={styles.overlayBody}>
-                  {overlay === 'chat' && <ChatPanel projectId={projectId!} projectName={project.name} onClose={() => { setOverlay(null); setActiveTab('pages') }} inline />}
-                  {overlay === 'share' && <SharePanel project={project} onClose={() => { setOverlay(null); setActiveTab('pages') }} inline />}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Main content */}
-          <div className={isOnChildRoute || isRouteTab ? styles.content : styles.emptyContent}>
-            {isOnChildRoute || isRouteTab ? (
+          <div className={showOutlet ? styles.content : styles.emptyContent}>
+            {showOutlet ? (
               <Outlet context={{ project, setProject, pages, refetchPages: fetchData }} />
             ) : (
               <EmptyState
