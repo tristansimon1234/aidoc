@@ -1,17 +1,4 @@
-/* Full-page theme override from project design */
-.themed {
-  --color-primary: var(--doc-accent);
-  --color-primary-hover: var(--doc-accent);
-  --color-bg: var(--doc-bg);
-  --color-fg: var(--doc-text);
-  --color-card: color-mix(in oklch, var(--doc-bg) 92%, var(--doc-text));
-  --color-secondary: color-mix(in oklch, var(--doc-bg) 88%, var(--doc-text));
-  --color-border: color-mix(in oklch, var(--doc-bg) 84%, var(--doc-text));
-  --color-muted-fg: color-mix(in oklch, var(--doc-text) 55%, var(--doc-bg));
-  --color-accent: color-mix(in oklch, var(--doc-accent) 12%, var(--doc-bg));
-  --font-sans: var(--doc-font);
-  --font-heading: var(--doc-font);
-}
+/* Theme vars are set inline via computeThemeVars() */
 
 .layout {
   display: flex;

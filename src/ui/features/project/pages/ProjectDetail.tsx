@@ -5,6 +5,8 @@ import { Button, Spinner, EmptyState } from '../../../design-system/components/i
 import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
+import { computeThemeVars } from '../../../shared/theme/computeTheme.js'
+import { useTheme } from '../../../shared/hooks/useTheme.js'
 import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'settings'
@@ -112,14 +114,9 @@ export function ProjectDetail(): React.ReactElement {
   const isOnChildRoute = !routeTab && location.pathname !== `/projects/${projectId}`
   const showOutlet = isOnChildRoute || routeTab !== null
 
-  // Project design → override CSS vars for entire page
+  const { theme } = useTheme()
   const design = project.design
-  const themeStyle: React.CSSProperties | undefined = design ? {
-    '--doc-accent': design.accentColor,
-    '--doc-bg': design.bgColor,
-    '--doc-text': design.textColor,
-    '--doc-font': design.font,
-  } as React.CSSProperties : undefined
+  const themeStyle = design ? computeThemeVars(design, theme === 'dark') : undefined
 
   // Switch bar
   const switchBar = (
@@ -139,7 +136,7 @@ export function ProjectDetail(): React.ReactElement {
   )
 
   return (
-    <div className={design ? styles.themed : undefined} style={themeStyle}>
+    <div style={themeStyle}>
     <Shell
       fullWidth
       actions={

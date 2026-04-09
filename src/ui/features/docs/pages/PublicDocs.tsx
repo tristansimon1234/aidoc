@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Spinner, EmptyState } from '../../../design-system/components/index.js'
 import { MarkdownRenderer } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO } from '../../../shared/api/client.js'
+import { computeThemeVars } from '../../../shared/theme/computeTheme.js'
 import styles from './PublicDocs.module.css'
 
 interface PublicPage {
@@ -60,15 +61,10 @@ export function PublicDocs(): React.ReactElement {
   }
 
   const design = project.design
-  const themeVars: React.CSSProperties | undefined = design ? {
-    '--doc-accent': design.accentColor,
-    '--doc-bg': design.bgColor,
-    '--doc-text': design.textColor,
-    '--doc-font': design.font,
-  } as React.CSSProperties : undefined
+  const themeStyle = design ? computeThemeVars(design) : undefined
 
   return (
-    <div className={`${styles.shell} ${design ? styles.themed : ''}`} style={themeVars}>
+    <div className={styles.shell} style={themeStyle}>
       <header className={styles.topbar}>
         <span className={styles.logo}>{project.name}</span>
         <span className={styles.badge}>Documentation</span>
