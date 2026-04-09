@@ -9,6 +9,7 @@ import { NewPage } from './features/page/pages/NewPage.js'
 import { PageView } from './features/page/pages/PageView.js'
 import { ProjectSettings } from './features/project/pages/ProjectSettings.js'
 import { ProjectDesign } from './features/project/pages/ProjectDesign.js'
+import { PublicDocs } from './features/docs/pages/PublicDocs.js'
 
 export function App(): React.ReactElement {
   const { user, loading, signIn, signUp, signOut } = useAuth()
@@ -21,23 +22,32 @@ export function App(): React.ReactElement {
     )
   }
 
-  if (!user) {
-    return <Login onSignIn={signIn} onSignUp={signUp} />
-  }
-
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<ProjectList onSignOut={signOut} />} />
-        <Route path="/projects/new" element={<NewProject />} />
-        <Route path="/projects/:projectId" element={<ProjectDetail />}>
-          <Route path="pages/new" element={<NewPage />} />
-          <Route path="pages/:pageId" element={<PageView />} />
-          <Route path="design" element={<ProjectDesign />} />
-          <Route path="settings" element={<ProjectSettings />} />
-        </Route>
-        <Route path="/login" element={<Navigate to="/" replace />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* Public — no auth */}
+        <Route path="/docs/:projectId" element={<PublicDocs />} />
+
+        {/* Auth gate */}
+        {!user ? (
+          <>
+            <Route path="/login" element={<Login onSignIn={signIn} onSignUp={signUp} />} />
+            <Route path="*" element={<Login onSignIn={signIn} onSignUp={signUp} />} />
+          </>
+        ) : (
+          <>
+            <Route path="/" element={<ProjectList onSignOut={signOut} />} />
+            <Route path="/projects/new" element={<NewProject />} />
+            <Route path="/projects/:projectId" element={<ProjectDetail />}>
+              <Route path="pages/new" element={<NewPage />} />
+              <Route path="pages/:pageId" element={<PageView />} />
+              <Route path="design" element={<ProjectDesign />} />
+              <Route path="settings" element={<ProjectSettings />} />
+            </Route>
+            <Route path="/login" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </>
+        )}
       </Routes>
     </BrowserRouter>
   )

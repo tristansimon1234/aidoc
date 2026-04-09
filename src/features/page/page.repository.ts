@@ -75,6 +75,17 @@ export async function findPagesByProjectId(projectId: string): Promise<DocPage[]
   return (data as PageRow[]).map(mapToPage)
 }
 
+export async function findPublicPagesByProjectId(projectId: string): Promise<DocPage[]> {
+  const { data, error } = await supabase
+    .from('doc_pages')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('is_public', true)
+    .order('sort_order', { ascending: true })
+  if (error) throw new DatabaseError(error.message)
+  return (data as PageRow[]).map(mapToPage)
+}
+
 export async function updatePage(id: string, input: UpdatePageInput): Promise<DocPage> {
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (input.title !== undefined) updates.title = input.title
