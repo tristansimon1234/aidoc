@@ -28,10 +28,14 @@ interface ActivityEntry {
 export function PageView(): React.ReactElement {
   const { projectId, pageId } = useParams<{ projectId: string; pageId: string }>()
   const context = useOutletContext<PageContext>()
-  const [page, setPage] = useState<DocPageDTO | null>(null)
+
+  // Instant page lookup from sidebar data — no flash on page switch
+  const cachedPage = context.pages.find((p) => p.id === pageId) ?? null
+
+  const [page, setPage] = useState<DocPageDTO | null>(cachedPage)
   const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
   const [latestRun, setLatestRun] = useState<RunDTO | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!cachedPage)
   const [exploring, setExploring] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
@@ -42,11 +46,32 @@ export function PageView(): React.ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'doc' | 'exploration'>('doc')
   const [genMethod, setGenMethod] = useState<'video' | 'explore'>('video')
+  const prevPageIdRef = useRef(pageId)
+
+  // Sync page instantly when pageId changes (no async gap)
+  if (pageId !== prevPageIdRef.current) {
+    prevPageIdRef.current = pageId
+    if (cachedPage) {
+      setPage(cachedPage)
+      setLoading(false)
+    } else {
+      setPage(null)
+      setLoading(true)
+    }
+    setDoc(null)
+    setLatestRun(null)
+    setError(null)
+    setActivity([])
+    setLiveUrl(null)
+    setExploring(false)
+    setGenerating(false)
+    setStatusMessage(null)
+    setActiveTab('doc')
+  }
 
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
     try {
-      // Direct Supabase query — no Vercel cold start
       const { page: pageData, latestRun: runData, doc: docData } = await fetchPageFull(pageId)
       setPage(pageData)
       setDoc(docData)
@@ -65,15 +90,6 @@ export function PageView(): React.ReactElement {
   }, [projectId, pageId])
 
   useEffect(() => {
-    // Only show full spinner on very first load — keep previous page visible during transition
-    if (!page) setLoading(true)
-    setError(null)
-    setActivity([])
-    setLiveUrl(null)
-    setExploring(false)
-    setGenerating(false)
-    setStatusMessage(null)
-    setActiveTab('doc')
     void fetchData()
   }, [fetchData])
 
