@@ -11,6 +11,13 @@ import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'settings'
 
+const NAV_ITEMS: { id: NavTab; label: string; d: string }[] = [
+  { id: 'pages', label: 'Pages', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' },
+  { id: 'chat', label: 'Chat', d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
+  { id: 'share', label: 'Share', d: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13' },
+  { id: 'settings', label: 'Settings', d: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z' },
+]
+
 export function ProjectDetail(): React.ReactElement {
   const { projectId, pageId } = useParams<{ projectId: string; pageId?: string }>()
   const navigate = useNavigate()
@@ -38,21 +45,22 @@ export function ProjectDetail(): React.ReactElement {
   useEffect(() => {
     if (!switchRef.current) return
     const el = switchRef.current.querySelector(`[data-tab="${activeTab}"]`) as HTMLElement | null
-    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth })
+    if (el) {
+      const rect = el.getBoundingClientRect()
+      const parentRect = switchRef.current.getBoundingClientRect()
+      setPill({ left: rect.left - parentRect.left, width: rect.width })
+    }
   }, [activeTab])
 
-  // Sync with route
+  // Sync settings route
   useEffect(() => {
     if (location.pathname.includes('/settings')) setActiveTab('settings')
     else if (activeTab === 'settings') setActiveTab('pages')
   }, [location.pathname])
 
   const handleTab = (tab: NavTab): void => {
-    if (tab === 'settings') {
-      navigate(`/projects/${projectId}/settings`)
-    } else if (activeTab === 'settings') {
-      navigate(`/projects/${projectId}`)
-    }
+    if (tab === 'settings') navigate(`/projects/${projectId}/settings`)
+    else if (activeTab === 'settings') navigate(`/projects/${projectId}`)
     setActiveTab(tab)
   }
 
@@ -60,78 +68,69 @@ export function ProjectDetail(): React.ReactElement {
   if (!project) return <Shell fullWidth><EmptyState title="Project not found" /></Shell>
 
   const isOnChildRoute = location.pathname !== `/projects/${projectId}` && !location.pathname.includes('/settings')
-  const showSidePanel = activeTab === 'chat' || activeTab === 'share'
+  const showPanel = activeTab === 'chat' || activeTab === 'share'
+
+  // Switch bar rendered in the topbar
+  const switchBar = (
+    <div className={styles.switchBar} ref={switchRef}>
+      <div className={styles.switchPill} style={{ left: pill.left, width: pill.width }} />
+      {NAV_ITEMS.map((item) => (
+        <button
+          key={item.id}
+          data-tab={item.id}
+          className={`${styles.switchItem} ${activeTab === item.id ? styles.switchItemActive : ''}`}
+          onClick={() => handleTab(item.id)}
+          title={item.label}
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d={item.d} />
+          </svg>
+          {activeTab === item.id && <span className={styles.switchLabel}>{item.label}</span>}
+        </button>
+      ))}
+    </div>
+  )
 
   return (
     <Shell
       fullWidth
       actions={
-        <Link to="/" className={styles.breadcrumb}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-          Projects
-        </Link>
+        <div className={styles.topbarActions}>
+          <Link to="/" className={styles.breadcrumb}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Projects
+          </Link>
+          <span className={styles.breadcrumbSep}>/</span>
+          <span className={styles.breadcrumbProject}>{project.name}</span>
+          {switchBar}
+        </div>
       }
     >
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
-          {/* Header with project name + switch bar */}
-          <div className={styles.sidebarTop}>
-            <span className={styles.projectName}>{project.name}</span>
-
-            <div className={styles.switchBar} ref={switchRef}>
-              <div className={styles.switchPill} style={{ left: pill.left, width: pill.width }} />
-              {([
-                { id: 'pages' as const, label: 'Pages', d: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z' },
-                { id: 'chat' as const, label: 'Chat', d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' },
-                { id: 'share' as const, label: 'Share', d: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8M16 6l-4-4-4 4M12 2v13' },
-                { id: 'settings' as const, label: 'Settings', d: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z' },
-              ]).map((item) => (
-                <button
-                  key={item.id}
-                  data-tab={item.id}
-                  className={`${styles.switchItem} ${activeTab === item.id ? styles.switchItemActive : ''}`}
-                  onClick={() => handleTab(item.id)}
-                  title={item.label}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d={item.d} />
-                  </svg>
-                  {activeTab === item.id && <span className={styles.switchLabel}>{item.label}</span>}
-                </button>
-              ))}
-            </div>
+          <div className={styles.sidebarActions}>
+            <button className={styles.actionBtn} onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New page
+            </button>
           </div>
-
-          {/* Sidebar content — only show page tree when on pages tab */}
-          {(activeTab === 'pages' || activeTab === 'settings') && (
-            <>
-              <div className={styles.sidebarActions}>
-                <button className={styles.actionBtn} onClick={() => navigate(`/projects/${projectId}/pages/new`)}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                  New page
-                </button>
+          <div className={styles.pageList}>
+            {pages.length > 0 ? (
+              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
+            ) : (
+              <div className={styles.emptyPages}>
+                <span>No pages yet</span>
+                <Button size="sm" onClick={() => navigate(`/projects/${projectId}/pages/new`)}>Create first page</Button>
               </div>
-              <div className={styles.sidebarLabel}>Pages</div>
-              <div className={styles.pageList}>
-                {pages.length > 0 ? (
-                  <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
-                ) : (
-                  <div className={styles.emptyPages}>
-                    <span>No pages yet</span>
-                    <Button size="sm" onClick={() => navigate(`/projects/${projectId}/pages/new`)}>Create first page</Button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
+            )}
+          </div>
         </aside>
 
-        {/* Main content area */}
-        <div className={`${styles.contentArea} ${showSidePanel ? styles.contentSplit : ''}`}>
+        <div className={`${styles.contentArea} ${showPanel ? styles.contentSplit : ''}`}>
           <div className={isOnChildRoute || activeTab === 'settings' ? styles.content : styles.emptyContent}>
-            {activeTab === 'settings' ? (
+            {isOnChildRoute ? (
               <Outlet context={{ project, pages, refetchPages: fetchData }} />
-            ) : isOnChildRoute ? (
+            ) : activeTab === 'settings' ? (
               <Outlet context={{ project, pages, refetchPages: fetchData }} />
             ) : (
               <EmptyState
@@ -146,15 +145,10 @@ export function ProjectDetail(): React.ReactElement {
             )}
           </div>
 
-          {/* Half-screen side panel */}
-          {showSidePanel && (
+          {showPanel && (
             <div className={styles.sidePanel}>
-              {activeTab === 'chat' && (
-                <ChatPanel projectId={projectId!} projectName={project.name} onClose={() => handleTab('pages')} />
-              )}
-              {activeTab === 'share' && (
-                <SharePanel project={project} onClose={() => handleTab('pages')} />
-              )}
+              {activeTab === 'chat' && <ChatPanel projectId={projectId!} projectName={project.name} onClose={() => handleTab('pages')} inline />}
+              {activeTab === 'share' && <SharePanel project={project} onClose={() => handleTab('pages')} inline />}
             </div>
           )}
         </div>
