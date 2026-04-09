@@ -76,7 +76,7 @@ function ShareTabContent(): React.ReactElement {
 function PublishTabContent({ project }: { project: ProjectDTO }): React.ReactElement {
   const [copied, setCopied] = useState(false)
 
-  const publicUrl = `${window.location.origin}/docs/${project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+  const publicUrl = `${window.location.origin}/docs/${project.id}`
 
   return (
     <div>
