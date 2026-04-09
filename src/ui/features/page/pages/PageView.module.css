@@ -50,17 +50,42 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* Project design applied to doc area */
+.docDesign {
+  background: var(--doc-bg, transparent);
+  color: var(--doc-text, var(--color-fg));
+  font-family: var(--doc-font, var(--font-sans));
+  border-radius: 12px;
+  padding: var(--space-lg);
+  transition: background 0.3s, color 0.3s;
+}
+
+/* Override design-system vars inside docDesign so children inherit */
+.docDesign [class*="bn-editor"] {
+  color: var(--doc-text, var(--color-fg)) !important;
+  font-family: var(--doc-font, inherit) !important;
+}
+
+.docDesign a,
+.docDesign [data-content-type="link"] {
+  color: var(--doc-accent, var(--color-primary)) !important;
+}
+
+.docDesign blockquote {
+  border-left-color: var(--doc-accent, var(--color-primary)) !important;
+}
+
 /* Page title */
 .pageTitle {
   background: none;
   border: none;
   outline: none;
-  font-family: var(--font-heading);
+  font-family: var(--doc-font, var(--font-heading));
   font-stretch: var(--heading-stretch);
   font-size: var(--text-xl);
   font-weight: 600;
   letter-spacing: var(--heading-tracking);
-  color: var(--color-fg);
+  color: var(--doc-text, var(--color-fg));
   width: 100%;
   margin-bottom: var(--space-md);
 }

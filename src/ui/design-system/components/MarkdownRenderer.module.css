@@ -5,6 +5,23 @@
   line-height: 1.7;
 }
 
+/* When project design tokens are applied */
+.themed {
+  font-family: var(--doc-font, var(--font-sans));
+  color: var(--doc-text, var(--color-fg));
+  background: var(--doc-bg, transparent);
+  border-radius: 12px;
+  padding: var(--space-lg);
+}
+
+.themed a { color: var(--doc-accent, var(--color-primary)); }
+.themed blockquote { border-left-color: var(--doc-accent, var(--color-primary)); }
+.themed strong { color: var(--doc-text, var(--color-fg)); }
+.themed h1, .themed h2, .themed h3, .themed h4 {
+  font-family: var(--doc-font, var(--font-heading));
+  color: var(--doc-text, var(--color-fg));
+}
+
 .article h1 {
   font-family: var(--font-heading);
   font-stretch: var(--heading-stretch);
