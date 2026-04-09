@@ -100,6 +100,7 @@ export async function updateProject(id: string, body: Record<string, unknown>): 
   if (body.context !== undefined) updates.context = body.context
   if (body.credentials !== undefined) updates.credentials = body.credentials
   if (body.discoveredContext !== undefined) updates.discovered_context = body.discoveredContext
+  if (body.design !== undefined) updates.design = body.design
 
   const { data, error } = await supabase.from('projects').update(updates).eq('id', id).select('*').single()
   if (error) throw new Error(error.message)
@@ -187,6 +188,7 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     description: (row.description as string) ?? null,
     context: (row.context as ProjectDTO['context']) ?? null,
     discoveredContext: (row.discovered_context as ProjectDTO['discoveredContext']) ?? null,
+    design: (row.design as ProjectDTO['design']) ?? null,
     widgetApiKey: (row.widget_api_key as string) ?? null,
     widgetEnabled: (row.widget_enabled as boolean) ?? false,
     createdAt: row.created_at as string,

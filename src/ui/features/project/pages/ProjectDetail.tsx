@@ -9,7 +9,7 @@ import { ChatPanel } from '../../chat/components/ChatPanel.js'
 import { SharePanel } from '../../page/components/SharePanel.js'
 import styles from './ProjectDetail.module.css'
 
-type NavTab = 'pages' | 'chat' | 'share' | 'settings'
+type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'settings'
 
 /* Proper Lucide-quality multi-path icons */
 const NAV_ICONS: Record<NavTab, React.ReactNode> = {
@@ -35,6 +35,15 @@ const NAV_ICONS: Record<NavTab, React.ReactNode> = {
       <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
     </svg>
   ),
+  design: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+    </svg>
+  ),
   settings: (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
@@ -47,6 +56,7 @@ const NAV_ITEMS: { id: NavTab; label: string }[] = [
   { id: 'pages', label: 'Pages' },
   { id: 'chat', label: 'Chat' },
   { id: 'share', label: 'Share' },
+  { id: 'design', label: 'Design' },
   { id: 'settings', label: 'Settings' },
 ]
 
@@ -77,7 +87,10 @@ export function ProjectDetail(): React.ReactElement {
     if (location.pathname.includes('/settings')) {
       setActiveTab('settings')
       setOverlay(null)
-    } else if (activeTab === 'settings') {
+    } else if (location.pathname.includes('/design')) {
+      setActiveTab('design')
+      setOverlay(null)
+    } else if (activeTab === 'settings' || activeTab === 'design') {
       setActiveTab('pages')
     }
   }, [location.pathname])
@@ -91,20 +104,22 @@ export function ProjectDetail(): React.ReactElement {
       } else {
         setOverlay(tab)
         setActiveTab(tab)
-        // Navigate back from settings if needed
-        if (location.pathname.includes('/settings')) {
+        // Navigate back from route tabs if needed
+        if (location.pathname.includes('/settings') || location.pathname.includes('/design')) {
           navigate(`/projects/${projectId}`)
         }
       }
       return
     }
 
-    // Close overlay when switching to pages/settings
+    // Close overlay when switching to pages/design/settings
     setOverlay(null)
 
     if (tab === 'settings') {
       navigate(`/projects/${projectId}/settings`)
-    } else if (activeTab === 'settings') {
+    } else if (tab === 'design') {
+      navigate(`/projects/${projectId}/design`)
+    } else if (activeTab === 'settings' || activeTab === 'design') {
       navigate(`/projects/${projectId}`)
     }
     setActiveTab(tab)
@@ -113,8 +128,8 @@ export function ProjectDetail(): React.ReactElement {
   if (loading) return <Shell fullWidth><div className={styles.loadingState}><Spinner size="lg" /></div></Shell>
   if (!project) return <Shell fullWidth><EmptyState title="Project not found" /></Shell>
 
-  const isOnChildRoute = location.pathname !== `/projects/${projectId}` && !location.pathname.includes('/settings')
-  const isSettings = location.pathname.includes('/settings')
+  const isOnChildRoute = location.pathname !== `/projects/${projectId}` && !location.pathname.includes('/settings') && !location.pathname.includes('/design')
+  const isRouteTab = location.pathname.includes('/settings') || location.pathname.includes('/design')
 
   // Switch bar in the topbar
   const switchBar = (
@@ -190,8 +205,8 @@ export function ProjectDetail(): React.ReactElement {
           )}
 
           {/* Main content */}
-          <div className={isOnChildRoute || isSettings ? styles.content : styles.emptyContent}>
-            {isOnChildRoute || isSettings ? (
+          <div className={isOnChildRoute || isRouteTab ? styles.content : styles.emptyContent}>
+            {isOnChildRoute || isRouteTab ? (
               <Outlet context={{ project, pages, refetchPages: fetchData }} />
             ) : (
               <EmptyState

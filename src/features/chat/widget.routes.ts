@@ -83,6 +83,7 @@ widgetRouter.get('/:widgetKey/config', (req: Request, res: Response, next: NextF
         projectName: project.name,
         enabled: project.widgetEnabled,
         suggestions,
+        design: project.design ?? null,
       })
     } catch (err) {
       next(err)

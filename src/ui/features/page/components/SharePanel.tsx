@@ -112,17 +112,6 @@ function PublishTabContent({ project }: { project: ProjectDTO }): React.ReactEle
 
 // --- Widget tab (with customization + test) ---
 
-const COLOR_PRESETS = [
-  { label: 'Indigo', value: '#635BFF' },
-  { label: 'Blue', value: '#2563EB' },
-  { label: 'Emerald', value: '#059669' },
-  { label: 'Rose', value: '#E11D48' },
-  { label: 'Amber', value: '#D97706' },
-  { label: 'Violet', value: '#7C3AED' },
-  { label: 'Slate', value: '#475569' },
-  { label: 'Black', value: '#18181B' },
-]
-
 function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElement {
   const [generating, setGenerating] = useState(false)
   const [widgetKey, setWidgetKey] = useState(project.widgetApiKey)
@@ -130,8 +119,7 @@ function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElem
   const [copied, setCopied] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
 
-  // Customization state
-  const [accentColor, setAccentColor] = useState('#635BFF')
+  // Widget-specific settings (position + greeting)
   const [position, setPosition] = useState<'right' | 'left'>('right')
   const [greeting, setGreeting] = useState('')
 
@@ -159,7 +147,6 @@ function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElem
     script.id = 'aidoc-widget-test'
     script.src = `${window.location.origin}/widget.js`
     script.setAttribute('data-key', widgetKey)
-    script.setAttribute('data-color', accentColor)
     script.setAttribute('data-position', position)
     if (greeting) script.setAttribute('data-greeting', greeting)
     document.body.appendChild(script)
@@ -178,7 +165,6 @@ function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElem
   const buildSnippet = (): string => {
     if (!widgetKey) return ''
     const attrs = [`  data-key="${widgetKey}"`]
-    if (accentColor !== '#635BFF') attrs.push(`  data-color="${accentColor}"`)
     if (position !== 'right') attrs.push(`  data-position="${position}"`)
     if (greeting) attrs.push(`  data-greeting="${greeting}"`)
     return `<script src="${origin}/widget.js"\n${attrs.join('\n')}\n></script>`
@@ -240,34 +226,10 @@ function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElem
         </span>
       </div>
 
-      {/* Customization */}
+      {/* Widget-specific settings */}
       <div className={styles.widgetCustom}>
-        <span className={styles.widgetCustomTitle}>Customize</span>
-
-        {/* Color */}
-        <div className={styles.customField}>
-          <label className={styles.customLabel}>Accent color</label>
-          <div className={styles.colorRow}>
-            {COLOR_PRESETS.map((c) => (
-              <button
-                key={c.value}
-                className={`${styles.colorSwatch} ${accentColor === c.value ? styles.colorSwatchActive : ''}`}
-                style={{ background: c.value }}
-                onClick={() => setAccentColor(c.value)}
-                title={c.label}
-              />
-            ))}
-            <label className={styles.colorCustom}>
-              <input
-                type="color"
-                value={accentColor}
-                onChange={(e) => setAccentColor(e.target.value)}
-                className={styles.colorInput}
-              />
-              <span className={styles.colorCustomLabel}>Custom</span>
-            </label>
-          </div>
-        </div>
+        <span className={styles.widgetCustomTitle}>Widget settings</span>
+        <p className={styles.customHint} style={{ marginTop: '-4px' }}>Colors and fonts are configured in the <strong>Design</strong> tab.</p>
 
         {/* Position */}
         <div className={styles.customField}>

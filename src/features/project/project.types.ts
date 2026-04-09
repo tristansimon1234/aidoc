@@ -10,6 +10,13 @@ export interface ProjectCredential {
   password: string
 }
 
+export interface ProjectDesign {
+  accentColor: string
+  bgColor: string
+  textColor: string
+  font: string
+}
+
 export interface Project {
   id: string
   userId: string
@@ -19,6 +26,7 @@ export interface Project {
   context: ProjectContext | null
   credentials: ProjectCredential[] | null
   discoveredContext: DiscoveredContext | null
+  design: ProjectDesign | null
   widgetApiKey: string | null
   widgetEnabled: boolean
   createdAt: Date
@@ -49,4 +57,5 @@ export interface UpdateProjectInput {
   context?: ProjectContext
   credentials?: ProjectCredential[]
   discoveredContext?: DiscoveredContext
+  design?: ProjectDesign
 }

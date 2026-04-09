@@ -39,12 +39,19 @@
 
   var dynamicSuggestions = [];
 
-  // --- Fetch config + suggestions ---
+  // --- Fetch config + suggestions + design ---
   fetch(API_BASE + '/' + API_KEY + '/config')
     .then(function (r) { return r.json(); })
     .then(function (cfg) {
       projectName = cfg.projectName || 'this product';
       if (cfg.suggestions && cfg.suggestions.length > 0) dynamicSuggestions = cfg.suggestions;
+      // Apply server-side design (data-* attrs override)
+      if (cfg.design) {
+        if (!script.getAttribute('data-color') && cfg.design.accentColor) applyAccent(cfg.design.accentColor);
+        if (cfg.design.bgColor) applyBg(cfg.design.bgColor);
+        if (cfg.design.textColor) applyText(cfg.design.textColor);
+        if (cfg.design.font) applyFont(cfg.design.font);
+      }
     })
     .catch(function () {});
 
@@ -229,6 +236,29 @@
         renderMessages();
         inputEl.focus();
       });
+  }
+
+  // --- Dynamic style updates from server design ---
+  function applyAccent(color) {
+    var r = parseInt(color.slice(1,3),16), g = parseInt(color.slice(3,5),16), b = parseInt(color.slice(5,7),16);
+    var tint = 'rgba('+r+','+g+','+b+',0.1)';
+    var el = document.getElementById('aidoc-widget-btn');
+    if (el) el.style.background = color;
+    document.querySelectorAll('.aidoc-msg-user').forEach(function(e){ e.style.background = color; });
+    document.querySelectorAll('.aidoc-source').forEach(function(e){ e.style.color = color; e.style.background = tint; });
+    var inp = document.querySelector('#aidoc-widget-input button');
+    if (inp) { inp.style.background = color; }
+  }
+  function applyBg(color) {
+    var panel = document.getElementById('aidoc-widget-panel');
+    if (panel) panel.style.background = color;
+  }
+  function applyText(color) {
+    document.querySelectorAll('#aidoc-widget-header span, .aidoc-msg-bot, .aidoc-welcome h3').forEach(function(e){ e.style.color = color; });
+  }
+  function applyFont(font) {
+    var panel = document.getElementById('aidoc-widget-panel');
+    if (panel) panel.style.fontFamily = font;
   }
 
   // Minimal markdown → HTML (bold, links, images, code, lists)

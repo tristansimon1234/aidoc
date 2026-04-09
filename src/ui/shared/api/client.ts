@@ -109,6 +109,13 @@ export interface DiscoveredContextDTO {
   summary: string
 }
 
+export interface ProjectDesignDTO {
+  accentColor: string
+  bgColor: string
+  textColor: string
+  font: string
+}
+
 export interface ProjectDTO {
   id: string
   userId: string
@@ -117,6 +124,7 @@ export interface ProjectDTO {
   description: string | null
   context: ProjectContextDTO | null
   discoveredContext: DiscoveredContextDTO | null
+  design: ProjectDesignDTO | null
   widgetApiKey: string | null
   widgetEnabled: boolean
   createdAt: string

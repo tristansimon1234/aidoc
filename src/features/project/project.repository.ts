@@ -1,6 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
-import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential, ProjectContext, DiscoveredContext } from './project.types.js'
+import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential, ProjectContext, DiscoveredContext, ProjectDesign } from './project.types.js'
 
 interface ProjectRow {
   id: string
@@ -11,6 +11,7 @@ interface ProjectRow {
   context: ProjectContext | null
   credentials: ProjectCredential[] | null
   discovered_context: DiscoveredContext | null
+  design: ProjectDesign | null
   widget_api_key: string | null
   widget_enabled: boolean
   created_at: string
@@ -27,6 +28,7 @@ function mapToProject(row: ProjectRow): Project {
     context: row.context,
     credentials: row.credentials,
     discoveredContext: row.discovered_context,
+    design: row.design,
     widgetApiKey: row.widget_api_key,
     widgetEnabled: row.widget_enabled,
     createdAt: new Date(row.created_at),
@@ -76,6 +78,7 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   if (input.context !== undefined) updates.context = input.context
   if (input.credentials !== undefined) updates.credentials = input.credentials
   if (input.discoveredContext !== undefined) updates.discovered_context = input.discoveredContext
+  if (input.design !== undefined) updates.design = input.design
 
   const { data, error } = await supabase
     .from('projects')
