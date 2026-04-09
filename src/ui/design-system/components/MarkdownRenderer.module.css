@@ -5,13 +5,10 @@
   line-height: 1.7;
 }
 
-/* When project design tokens are applied */
+/* When project design tokens are applied — inherits from parent docArea */
 .themed {
   font-family: var(--doc-font, var(--font-sans));
   color: var(--doc-text, var(--color-fg));
-  background: var(--doc-bg, transparent);
-  border-radius: 12px;
-  padding: var(--space-lg);
 }
 
 .themed a { color: var(--doc-accent, var(--color-primary)); }

@@ -89,18 +89,20 @@ export function PublicDocs(): React.ReactElement {
           </nav>
         </aside>
 
-        <main className={styles.content}>
-          {activePage && (
-            <>
-              <h1 className={styles.pageTitle}>{activePage.title}</h1>
-              {activePage.content ? (
-                <MarkdownRenderer content={activePage.content} design={design} />
-              ) : (
-                <p className={styles.empty}>This page has no content yet.</p>
-              )}
-            </>
-          )}
-        </main>
+        <div className={styles.contentWrapper}>
+          <div className={styles.content}>
+            {activePage && (
+              <div className={styles.docArea}>
+                <h1 className={styles.pageTitle}>{activePage.title}</h1>
+                {activePage.content ? (
+                  <MarkdownRenderer content={activePage.content} />
+                ) : (
+                  <p className={styles.empty}>This page has no content yet.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

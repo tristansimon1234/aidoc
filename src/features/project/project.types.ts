@@ -15,6 +15,8 @@ export interface ProjectDesign {
   bgColor: string
   textColor: string
   font: string
+  widgetPosition?: string
+  widgetGreeting?: string
 }
 
 export interface Project {

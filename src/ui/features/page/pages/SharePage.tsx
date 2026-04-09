@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
 import { type ProjectDTO } from '../../../shared/api/client.js'
 import { api } from '../../../shared/api/client.js'
+import { updateProject } from '../../../shared/api/db.js'
 import styles from './SharePage.module.css'
 
 type ShareTab = 'publish' | 'widget' | 'team'
@@ -14,7 +15,7 @@ const TABS: { id: ShareTab; label: string; desc: string }[] = [
 ]
 
 export function SharePage(): React.ReactElement {
-  const { project } = useOutletContext<{ project: ProjectDTO }>()
+  const { project, setProject } = useOutletContext<{ project: ProjectDTO; setProject: (p: ProjectDTO) => void }>()
   const [activeTab, setActiveTab] = useState<ShareTab>('publish')
 
   return (
@@ -38,7 +39,7 @@ export function SharePage(): React.ReactElement {
 
       <div className={styles.tabContent}>
         {activeTab === 'publish' && <PublishSection project={project} />}
-        {activeTab === 'widget' && <WidgetSection project={project} />}
+        {activeTab === 'widget' && <WidgetSection project={project} setProject={setProject} />}
         {activeTab === 'team' && <TeamSection />}
       </div>
     </div>
@@ -84,14 +85,19 @@ function PublishSection({ project }: { project: ProjectDTO }): React.ReactElemen
 
 // --- Widget ---
 
-function WidgetSection({ project }: { project: ProjectDTO }): React.ReactElement {
+function WidgetSection({ project, setProject }: { project: ProjectDTO; setProject: (p: ProjectDTO) => void }): React.ReactElement {
   const [generating, setGenerating] = useState(false)
   const [widgetKey, setWidgetKey] = useState(project.widgetApiKey)
   const [widgetEnabled, setWidgetEnabled] = useState(project.widgetEnabled)
   const [copied, setCopied] = useState<string | null>(null)
-  const [position, setPosition] = useState<'right' | 'left'>('right')
-  const [greeting, setGreeting] = useState('')
+  const [position, setPosition] = useState<'right' | 'left'>((project.design?.widgetPosition as 'right' | 'left') ?? 'right')
+  const [greeting, setGreeting] = useState(project.design?.widgetGreeting ?? '')
   const [testing, setTesting] = useState(false)
+  const saveWidgetConfig = async (pos: string, greet: string): Promise<void> => {
+    const design = { ...(project.design ?? { accentColor: '#635BFF', bgColor: '#0C0C0E', textColor: '#E5E5E5', font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }), widgetPosition: pos, widgetGreeting: greet }
+    const updated = await updateProject(project.id, { design })
+    setProject(updated)
+  }
 
   const handleGenerate = async (): Promise<void> => {
     setGenerating(true)
@@ -182,17 +188,17 @@ function WidgetSection({ project }: { project: ProjectDTO }): React.ReactElement
         <div className={styles.field}>
           <label className={styles.label}>Position</label>
           <div className={styles.positionRow}>
-            <button className={`${styles.positionBtn} ${position === 'left' ? styles.positionBtnActive : ''}`} onClick={() => setPosition('left')}>
+            <button className={`${styles.positionBtn} ${position === 'left' ? styles.positionBtnActive : ''}`} onClick={() => { setPosition('left'); void saveWidgetConfig('left', greeting) }}>
               Bottom left
             </button>
-            <button className={`${styles.positionBtn} ${position === 'right' ? styles.positionBtnActive : ''}`} onClick={() => setPosition('right')}>
+            <button className={`${styles.positionBtn} ${position === 'right' ? styles.positionBtnActive : ''}`} onClick={() => { setPosition('right'); void saveWidgetConfig('right', greeting) }}>
               Bottom right
             </button>
           </div>
         </div>
         <div className={styles.field}>
           <label className={styles.label}>Greeting</label>
-          <input className={styles.fieldInput} value={greeting} onChange={(e) => setGreeting(e.target.value)} placeholder="Hi! Ask me anything." />
+          <input className={styles.fieldInput} value={greeting} onChange={(e) => setGreeting(e.target.value)} onBlur={() => void saveWidgetConfig(position, greeting)} placeholder="Hi! Ask me anything." />
         </div>
       </div>
 

@@ -84,6 +84,8 @@ widgetRouter.get('/:widgetKey/config', (req: Request, res: Response, next: NextF
         enabled: project.widgetEnabled,
         suggestions,
         design: project.design ?? null,
+        widgetPosition: project.design?.widgetPosition ?? 'right',
+        widgetGreeting: project.design?.widgetGreeting ?? '',
       })
     } catch (err) {
       next(err)

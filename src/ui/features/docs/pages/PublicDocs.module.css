@@ -10,9 +10,9 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--doc-bg, var(--color-bg));
-  color: var(--doc-text, var(--color-fg));
-  font-family: var(--doc-font, var(--font-sans));
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
 }
 
 .topbar {
@@ -22,14 +22,14 @@
   padding: 0 var(--space-lg);
   height: 48px;
   border-bottom: 1px solid var(--color-border);
-  background: var(--doc-bg, var(--color-card));
+  background: var(--color-card);
   flex-shrink: 0;
 }
 
 .logo {
   font-weight: 600;
   font-size: var(--text-sm);
-  color: var(--doc-text, var(--color-fg));
+  color: var(--color-fg);
   letter-spacing: -0.02em;
 }
 
@@ -52,6 +52,7 @@
   width: 240px;
   flex-shrink: 0;
   border-right: 1px solid var(--color-border);
+  background: var(--color-card);
   padding: var(--space-sm);
   overflow-y: auto;
 }
@@ -70,7 +71,7 @@
   border: none;
   border-radius: 8px;
   background: none;
-  color: var(--doc-text, var(--color-muted-fg));
+  color: var(--color-muted-fg);
   font-size: var(--text-sm);
   font-family: inherit;
   cursor: pointer;
@@ -78,25 +79,43 @@
 }
 
 .navItem:hover {
-  background: oklch(from var(--doc-accent, var(--color-primary)) l c h / 0.06);
-  color: var(--doc-text, var(--color-fg));
+  background: var(--color-secondary);
+  color: var(--color-fg);
 }
 
 .navItemActive {
-  background: oklch(from var(--doc-accent, var(--color-primary)) l c h / 0.1);
+  background: var(--color-accent);
   color: var(--doc-accent, var(--color-primary));
   font-weight: 500;
 }
 
-.content {
+/* Content — centered like the editor */
+.contentWrapper {
   flex: 1;
-  padding: var(--space-xl) var(--space-2xl);
   overflow-y: auto;
+  display: flex;
+  justify-content: center;
+}
+
+.content {
+  width: 100%;
   max-width: 800px;
+  padding: var(--space-xl) var(--space-2xl);
+}
+
+/* Doc design wrapper — matches PageView .docDesign exactly */
+.docArea {
+  background: var(--doc-bg, transparent);
+  color: var(--doc-text, var(--color-fg));
+  font-family: var(--doc-font, var(--font-sans));
+  border-radius: 12px;
+  padding: var(--space-lg);
+  transition: background 0.3s, color 0.3s;
 }
 
 .pageTitle {
   font-family: var(--doc-font, var(--font-heading));
+  font-stretch: var(--heading-stretch);
   font-size: var(--text-xl);
   font-weight: 600;
   color: var(--doc-text, var(--color-fg));

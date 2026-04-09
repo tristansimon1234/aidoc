@@ -114,6 +114,8 @@ export interface ProjectDesignDTO {
   bgColor: string
   textColor: string
   font: string
+  widgetPosition?: string
+  widgetGreeting?: string
 }
 
 export interface ProjectDTO {

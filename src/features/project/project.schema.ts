@@ -35,6 +35,8 @@ const DesignSchema = z.object({
   bgColor: z.string(),
   textColor: z.string(),
   font: z.string(),
+  widgetPosition: z.string().optional(),
+  widgetGreeting: z.string().optional(),
 })
 
 export const UpdateProjectSchema = z.object({
