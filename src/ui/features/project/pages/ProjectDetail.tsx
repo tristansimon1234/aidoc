@@ -77,6 +77,7 @@ export function ProjectDetail(): React.ReactElement {
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>('pages')
+  const { theme } = useTheme()
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -114,7 +115,6 @@ export function ProjectDetail(): React.ReactElement {
   const isOnChildRoute = !routeTab && location.pathname !== `/projects/${projectId}`
   const showOutlet = isOnChildRoute || routeTab !== null
 
-  const { theme } = useTheme()
   const design = project.design
   const themeStyle = design ? computeThemeVars(design, theme === 'dark') : undefined
 
