@@ -6,7 +6,6 @@ import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
 import { computeThemeVars } from '../../../shared/theme/computeTheme.js'
-import { useTheme } from '../../../shared/hooks/useTheme.js'
 import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'settings'
@@ -77,7 +76,6 @@ export function ProjectDetail(): React.ReactElement {
   const [pages, setPages] = useState<DocPageDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>('pages')
-  const { theme } = useTheme()
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -116,7 +114,7 @@ export function ProjectDetail(): React.ReactElement {
   const showOutlet = isOnChildRoute || routeTab !== null
 
   const design = project.design
-  const themeStyle = design ? computeThemeVars(design, theme === 'dark') : undefined
+  const themeStyle = design ? computeThemeVars(design) : undefined
 
   // Switch bar
   const switchBar = (

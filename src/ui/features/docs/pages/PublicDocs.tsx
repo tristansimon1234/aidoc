@@ -64,7 +64,7 @@ export function PublicDocs(): React.ReactElement {
   const themeStyle = design ? computeThemeVars(design) : undefined
 
   return (
-    <div className={styles.shell} style={themeStyle}>
+    <div className={styles.shell} style={themeStyle} data-theme="light">
       <header className={styles.topbar}>
         <span className={styles.logo}>{project.name}</span>
         <span className={styles.badge}>Documentation</span>

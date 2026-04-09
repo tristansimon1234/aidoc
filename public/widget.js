@@ -43,7 +43,7 @@
     var pos = C.position !== 'left' ? 'right' : 'left';
 
     return [
-      '#aidoc-widget-btn{position:fixed;bottom:24px;' + pos + ':24px;z-index:99999;width:56px;height:56px;border-radius:50%;background:' + C.accent + ';border:none;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;transition:transform .15s,box-shadow .15s,opacity .3s;opacity:0}',
+      '#aidoc-widget-btn{position:fixed;bottom:24px;' + pos + ':24px;z-index:99999;width:56px;height:56px;border-radius:50%;background:' + C.accent + ';border:none;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;transition:transform .15s,box-shadow .15s,background .3s}',
       '#aidoc-widget-btn:hover{transform:scale(1.08);box-shadow:0 6px 20px rgba(0,0,0,.35)}',
       '#aidoc-widget-btn svg{width:26px;height:26px;fill:white}',
       '#aidoc-widget-panel{position:fixed;bottom:96px;' + pos + ':24px;z-index:99999;width:400px;max-width:calc(100vw - 48px);height:560px;max-height:calc(100vh - 120px);border-radius:16px;background:' + C.bg + ';border:1px solid ' + border + ';display:none;flex-direction:column;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,' + (isDark ? '.5' : '.15') + ');font-family:' + C.font + ';color:' + C.text + '}',
@@ -117,24 +117,10 @@
         }
       }
 
-      // Show button now that design is applied
-      var b = document.getElementById('aidoc-widget-btn');
-      if (b) b.style.opacity = '1';
-
       // Re-render welcome if panel is open and empty
       if (isOpen && messages.length === 0) renderMessages();
     })
-    .catch(function () {
-      // Show button even if config fails
-      var b = document.getElementById('aidoc-widget-btn');
-      if (b) b.style.opacity = '1';
-    });
-
-  // Fallback: show button after 2s even if config hasn't loaded
-  setTimeout(function () {
-    var b = document.getElementById('aidoc-widget-btn');
-    if (b && b.style.opacity === '0') b.style.opacity = '1';
-  }, 2000);
+    .catch(function () {});
 
   // --- Button ---
   var btn = document.createElement('button');
