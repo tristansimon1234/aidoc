@@ -113,13 +113,17 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     const newIndex = ids.indexOf(over.id as string)
     if (oldIndex === -1 || newIndex === -1) return
 
+    const overItem = flatItems[newIndex]
+    if (!overItem) return
+
+    // If dropping onto a page with children (or non-leaf), nest as child
+    const dropAsChild = overItem.hasChildren && !collapsed.has(overItem.page.id)
+    const newParentId = dropAsChild ? overItem.page.id : overItem.page.parentId
+
     const reordered = [...flatItems]
     const [moved] = reordered.splice(oldIndex, 1)
     if (!moved) return
     reordered.splice(newIndex, 0, moved)
-
-    const targetItem = flatItems[newIndex]
-    const newParentId = targetItem ? targetItem.page.parentId : null
 
     const updates = reordered.map((item, i) => ({
       id: item.page.id,

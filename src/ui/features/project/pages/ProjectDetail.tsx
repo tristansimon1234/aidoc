@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Outlet, useLocation, Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import { Button, Spinner, EmptyState } from '../../../design-system/components/index.js'
@@ -11,14 +11,13 @@ type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'settings'
 
 const ROUTE_TABS: NavTab[] = ['chat', 'share', 'design', 'settings']
 
-/* Proper Lucide-quality multi-path icons */
+/* Lucide icons */
 const NAV_ICONS: Record<NavTab, React.ReactNode> = {
   pages: (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
       <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-      <path d="M10 13h4" />
-      <path d="M10 17h4" />
+      <path d="M10 13h4" /><path d="M10 17h4" />
     </svg>
   ),
   chat: (
@@ -28,19 +27,14 @@ const NAV_ICONS: Record<NavTab, React.ReactNode> = {
   ),
   share: (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="18" cy="5" r="3" />
-      <circle cx="6" cy="12" r="3" />
-      <circle cx="18" cy="19" r="3" />
-      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+      <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
     </svg>
   ),
   design: (
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
-      <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
-      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
-      <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+      <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" /><circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" /><circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
       <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
     </svg>
   ),
@@ -67,6 +61,27 @@ function tabFromPath(pathname: string): NavTab | null {
   return null
 }
 
+// --- Search helper: search titles + content ---
+interface SearchResult { page: DocPageDTO; snippet: string }
+
+function searchPages(pages: DocPageDTO[], query: string): SearchResult[] {
+  if (!query || query.length < 2) return []
+  const q = query.toLowerCase()
+  const results: SearchResult[] = []
+  for (const p of pages) {
+    if (p.title.toLowerCase().includes(q)) {
+      results.push({ page: p, snippet: p.title })
+    } else if (p.content?.toLowerCase().includes(q)) {
+      const idx = p.content.toLowerCase().indexOf(q)
+      const start = Math.max(0, idx - 40)
+      const end = Math.min(p.content.length, idx + query.length + 40)
+      const raw = p.content.slice(start, end).replace(/[#*_\[\]]/g, '')
+      results.push({ page: p, snippet: (start > 0 ? '...' : '') + raw + (end < p.content.length ? '...' : '') })
+    }
+  }
+  return results.slice(0, 8)
+}
+
 export function ProjectDetail(): React.ReactElement {
   const { projectId, pageId } = useParams<{ projectId: string; pageId?: string }>()
   const navigate = useNavigate()
@@ -76,6 +91,8 @@ export function ProjectDetail(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>('pages')
   const [search, setSearch] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
 
   const fetchData = useCallback(async () => {
     if (!projectId) return
@@ -96,11 +113,22 @@ export function ProjectDetail(): React.ReactElement {
     else setActiveTab('pages')
   }, [location.pathname])
 
+  // Close search on outside click
+  useEffect(() => {
+    if (!searchFocused) return
+    const handler = (e: MouseEvent): void => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchFocused(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [searchFocused])
+
   const handleTab = (tab: NavTab): void => {
     if (ROUTE_TABS.includes(tab)) {
       navigate(`/projects/${projectId}/${tab}`)
     } else {
-      // "pages" — go back to project root
       if (activeTab !== 'pages') navigate(`/projects/${projectId}`)
     }
     setActiveTab(tab)
@@ -112,6 +140,7 @@ export function ProjectDetail(): React.ReactElement {
   const routeTab = tabFromPath(location.pathname)
   const isOnChildRoute = !routeTab && location.pathname !== `/projects/${projectId}`
   const showOutlet = isOnChildRoute || routeTab !== null
+  const searchResults = searchPages(pages, search)
 
   // Switch bar
   const switchBar = (
@@ -141,27 +170,62 @@ export function ProjectDetail(): React.ReactElement {
           </Link>
           <span className={styles.breadcrumbSep}>/</span>
           <span className={styles.breadcrumbProject}>{project.name}</span>
+
+          {/* Search in topbar */}
+          <div className={styles.searchWrapper} ref={searchRef}>
+            <div className={`${styles.searchBar} ${searchFocused ? styles.searchBarFocused : ''}`}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+              <input
+                className={styles.searchInput}
+                placeholder="Search docs..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onFocus={() => setSearchFocused(true)}
+              />
+              {search && (
+                <button className={styles.searchClear} onClick={() => { setSearch(''); setSearchFocused(false) }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                </button>
+              )}
+            </div>
+            {searchFocused && search.length >= 2 && (
+              <div className={styles.searchDropdown}>
+                {searchResults.length === 0 ? (
+                  <div className={styles.searchEmpty}>No results</div>
+                ) : (
+                  searchResults.map((r) => (
+                    <button
+                      key={r.page.id}
+                      className={styles.searchResult}
+                      onClick={() => {
+                        navigate(`/projects/${projectId}/pages/${r.page.id}`)
+                        setSearch('')
+                        setSearchFocused(false)
+                      }}
+                    >
+                      <span className={styles.searchResultTitle}>{r.page.title}</span>
+                      <span className={styles.searchResultSnippet}>{r.snippet}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
         </div>
       }
       navBar={switchBar}
     >
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
-          <div className={styles.sidebarSearch}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={styles.searchIcon}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-            <input
-              className={styles.searchInput}
-              placeholder="Search pages..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <div className={styles.sidebarHeader}>
+            <span className={styles.sidebarTitle}>Pages</span>
             <button className={styles.newPageBtn} onClick={() => navigate(`/projects/${projectId}/pages/new`)} title="New page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
             </button>
           </div>
           <div className={styles.pageList}>
             {pages.length > 0 ? (
-              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} searchQuery={search} />
+              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
             ) : (
               <div className={styles.emptyPages}>
                 <span>No pages yet</span>

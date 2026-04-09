@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { Spinner, EmptyState } from '../../../design-system/components/index.js'
 import { MarkdownRenderer } from '../../../design-system/components/index.js'
@@ -30,6 +30,18 @@ export function PublicDocs(): React.ReactElement {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+
+  // Close search on outside click
+  useEffect(() => {
+    if (!searchFocused) return
+    const handler = (e: MouseEvent): void => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) setSearchFocused(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [searchFocused])
 
   useEffect(() => {
     if (!projectId) return
@@ -69,16 +81,38 @@ export function PublicDocs(): React.ReactElement {
       <header className={styles.topbar}>
         <span className={styles.logo}>{project.name}</span>
         <span className={styles.badge}>Documentation</span>
+        <div className={styles.searchWrapper} ref={searchRef}>
+          <div className={`${styles.searchBar} ${searchFocused ? styles.searchBarFocused : ''}`}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+            <input className={styles.searchInput} placeholder="Search docs..." value={search} onChange={(e) => setSearch(e.target.value)} onFocus={() => setSearchFocused(true)} />
+            {search && (
+              <button className={styles.searchClear} onClick={() => { setSearch(''); setSearchFocused(false) }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+              </button>
+            )}
+          </div>
+          {searchFocused && search.length >= 2 && (() => {
+            const q = search.toLowerCase()
+            const results = pages.filter((p) => p.title.toLowerCase().includes(q) || p.content?.toLowerCase().includes(q)).slice(0, 8)
+            return (
+              <div className={styles.searchDropdown}>
+                {results.length === 0 ? (
+                  <div className={styles.searchEmpty}>No results</div>
+                ) : results.map((p) => (
+                  <button key={p.id} className={styles.searchResult} onClick={() => { setActivePage(p); setSearch(''); setSearchFocused(false) }}>
+                    {p.title}
+                  </button>
+                ))}
+              </div>
+            )
+          })()}
+        </div>
       </header>
 
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
-          <div className={styles.sidebarSearch}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-            <input className={styles.searchInput} placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
           <nav className={styles.nav}>
-            {pages.filter((p) => !search || p.title.toLowerCase().includes(search.toLowerCase())).map((p) => (
+            {pages.map((p) => (
               <button
                 key={p.id}
                 className={`${styles.navItem} ${activePage?.id === p.id ? styles.navItemActive : ''}`}

@@ -42,30 +42,27 @@
   border-radius: 6px;
 }
 
-.layout {
-  display: flex;
-  flex: 1;
-  min-height: 0;
+/* --- Topbar search --- */
+.searchWrapper {
+  position: relative;
+  margin-left: auto;
+  width: 280px;
 }
 
-.sidebar {
-  width: 240px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--color-border);
-  background: var(--color-card);
-  padding: var(--space-sm);
-  overflow-y: auto;
-}
-
-.sidebarSearch {
+.searchBar {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  margin-bottom: var(--space-xs);
-  background: var(--color-secondary);
+  padding: 5px 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   color: var(--color-muted-fg);
+  transition: border-color 0.15s;
+}
+
+.searchBarFocused {
+  border-color: var(--color-primary);
 }
 
 .searchInput {
@@ -83,6 +80,82 @@
   color: var(--color-muted-fg);
 }
 
+.searchClear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--color-muted-fg);
+  cursor: pointer;
+}
+
+.searchDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 100;
+  padding: 4px;
+  animation: dropIn 0.15s ease;
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.searchEmpty {
+  padding: 16px;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+}
+
+.searchResult {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: var(--color-fg);
+  transition: background 0.1s;
+}
+
+.searchResult:hover {
+  background: var(--color-secondary);
+}
+
+/* --- Layout --- */
+.layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg);
+  padding: var(--space-sm);
+  overflow-y: auto;
+}
+
 .nav {
   display: flex;
   flex-direction: column;
@@ -95,7 +168,7 @@
   text-align: left;
   padding: 8px 12px;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   background: none;
   color: var(--color-muted-fg);
   font-size: var(--text-sm);
@@ -115,7 +188,7 @@
   font-weight: 500;
 }
 
-/* Content — centered */
+/* --- Content centered --- */
 .contentWrapper {
   flex: 1;
   overflow-y: auto;
@@ -157,5 +230,8 @@
   }
   .content {
     padding: var(--space-lg);
+  }
+  .searchWrapper {
+    display: none;
   }
 }
