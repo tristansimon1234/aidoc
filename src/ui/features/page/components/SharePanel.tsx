@@ -110,7 +110,18 @@ function PublishTabContent({ project }: { project: ProjectDTO }): React.ReactEle
   )
 }
 
-// --- Widget tab (with test button) ---
+// --- Widget tab (with customization + test) ---
+
+const COLOR_PRESETS = [
+  { label: 'Indigo', value: '#635BFF' },
+  { label: 'Blue', value: '#2563EB' },
+  { label: 'Emerald', value: '#059669' },
+  { label: 'Rose', value: '#E11D48' },
+  { label: 'Amber', value: '#D97706' },
+  { label: 'Violet', value: '#7C3AED' },
+  { label: 'Slate', value: '#475569' },
+  { label: 'Black', value: '#18181B' },
+]
 
 function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElement {
   const [generating, setGenerating] = useState(false)
@@ -118,6 +129,11 @@ function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElem
   const [widgetEnabled, setWidgetEnabled] = useState(project.widgetEnabled)
   const [copied, setCopied] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
+
+  // Customization state
+  const [accentColor, setAccentColor] = useState('#635BFF')
+  const [position, setPosition] = useState<'right' | 'left'>('right')
+  const [greeting, setGreeting] = useState('')
 
   const handleGenerate = async (): Promise<void> => {
     setGenerating(true)
@@ -137,15 +153,16 @@ function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElem
   const handleTest = (): void => {
     if (!widgetKey) return
     setTesting(true)
-    // Inject the real widget script into the page
     const existing = document.getElementById('aidoc-widget-test')
     if (existing) { existing.remove(); setTesting(false); return }
     const script = document.createElement('script')
     script.id = 'aidoc-widget-test'
     script.src = `${window.location.origin}/widget.js`
     script.setAttribute('data-key', widgetKey)
+    script.setAttribute('data-color', accentColor)
+    script.setAttribute('data-position', position)
+    if (greeting) script.setAttribute('data-greeting', greeting)
     document.body.appendChild(script)
-    // Auto-open after script loads
     script.onload = () => {
       setTimeout(() => {
         const btn = document.getElementById('aidoc-widget-btn') as HTMLButtonElement | null
@@ -156,39 +173,137 @@ function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElem
   }
 
   const origin = window.location.origin
-  const snippet = widgetKey
-    ? `<script src="${origin}/widget.js"\n  data-key="${widgetKey}"\n></script>`
-    : ''
+
+  // Build snippet with customization attrs
+  const buildSnippet = (): string => {
+    if (!widgetKey) return ''
+    const attrs = [`  data-key="${widgetKey}"`]
+    if (accentColor !== '#635BFF') attrs.push(`  data-color="${accentColor}"`)
+    if (position !== 'right') attrs.push(`  data-position="${position}"`)
+    if (greeting) attrs.push(`  data-greeting="${greeting}"`)
+    return `<script src="${origin}/widget.js"\n${attrs.join('\n')}\n></script>`
+  }
+
+  const snippet = buildSnippet()
 
   if (!widgetKey) {
     return (
-      <div style={{ textAlign: 'center', padding: 'var(--space-md) 0' }}>
-        <div className={styles.widgetIntro}>
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
-          </svg>
-          <p className={styles.widgetIntroTitle}>Embed an AI chat widget</p>
-          <p className={styles.widgetIntroDesc}>
-            Your users ask questions about your product — the widget answers from your published documentation.
-          </p>
+      <div>
+        {/* About section */}
+        <div className={styles.widgetAbout}>
+          <div className={styles.widgetAboutHeader}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+            </svg>
+            <div>
+              <p className={styles.widgetAboutTitle}>AI Chat Widget</p>
+              <p className={styles.widgetAboutDesc}>An embeddable chatbot that answers questions from your documentation.</p>
+            </div>
+          </div>
+
+          <div className={styles.featureList}>
+            <div className={styles.featureItem}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+              <span>Answers from your published docs via RAG</span>
+            </div>
+            <div className={styles.featureItem}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+              <span>Auto-generated suggestions based on your content</span>
+            </div>
+            <div className={styles.featureItem}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+              <span>Personalized answers with user context (name, plan)</span>
+            </div>
+            <div className={styles.featureItem}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+              <span>Single <code>&lt;script&gt;</code> tag — works on any website</span>
+            </div>
+          </div>
         </div>
-        <Button onClick={() => void handleGenerate()} disabled={generating}>
-          {generating ? 'Generating...' : 'Enable Widget'}
-        </Button>
+
+        <div style={{ textAlign: 'center', marginTop: 'var(--space-md)' }}>
+          <Button onClick={() => void handleGenerate()} disabled={generating}>
+            {generating ? 'Generating...' : 'Enable Widget'}
+          </Button>
+        </div>
       </div>
     )
   }
 
   return (
     <div className={styles.widgetSection}>
-      <div className={styles.field}>
-        <label className={styles.label}>
-          Status {widgetEnabled
-            ? <span className={styles.statusActive}>active</span>
-            : <span className={styles.statusDisabled}>disabled</span>}
-        </label>
+      {/* Status */}
+      <div className={styles.widgetStatusRow}>
+        <span className={styles.label}>Status</span>
+        <span className={widgetEnabled ? styles.statusActive : styles.statusDisabled}>
+          {widgetEnabled ? 'Active' : 'Disabled'}
+        </span>
       </div>
 
+      {/* Customization */}
+      <div className={styles.widgetCustom}>
+        <span className={styles.widgetCustomTitle}>Customize</span>
+
+        {/* Color */}
+        <div className={styles.customField}>
+          <label className={styles.customLabel}>Accent color</label>
+          <div className={styles.colorRow}>
+            {COLOR_PRESETS.map((c) => (
+              <button
+                key={c.value}
+                className={`${styles.colorSwatch} ${accentColor === c.value ? styles.colorSwatchActive : ''}`}
+                style={{ background: c.value }}
+                onClick={() => setAccentColor(c.value)}
+                title={c.label}
+              />
+            ))}
+            <label className={styles.colorCustom}>
+              <input
+                type="color"
+                value={accentColor}
+                onChange={(e) => setAccentColor(e.target.value)}
+                className={styles.colorInput}
+              />
+              <span className={styles.colorCustomLabel}>Custom</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Position */}
+        <div className={styles.customField}>
+          <label className={styles.customLabel}>Position</label>
+          <div className={styles.positionRow}>
+            <button
+              className={`${styles.positionBtn} ${position === 'left' ? styles.positionBtnActive : ''}`}
+              onClick={() => setPosition('left')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8" cy="16" r="2" /></svg>
+              Bottom left
+            </button>
+            <button
+              className={`${styles.positionBtn} ${position === 'right' ? styles.positionBtnActive : ''}`}
+              onClick={() => setPosition('right')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="16" cy="16" r="2" /></svg>
+              Bottom right
+            </button>
+          </div>
+        </div>
+
+        {/* Greeting */}
+        <div className={styles.customField}>
+          <label className={styles.customLabel}>Greeting message</label>
+          <input
+            className={styles.customInput}
+            value={greeting}
+            onChange={(e) => setGreeting(e.target.value)}
+            placeholder="Hi! Ask me anything."
+          />
+          <span className={styles.customHint}>Leave blank for the default greeting</span>
+        </div>
+      </div>
+
+      {/* Embed code */}
       <div className={styles.field}>
         <label className={styles.label}>Embed code</label>
         <div className={styles.codeBlock}>
@@ -202,6 +317,7 @@ function WidgetTabContent({ project }: { project: ProjectDTO }): React.ReactElem
         </p>
       </div>
 
+      {/* Actions */}
       <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
         <Button size="sm" onClick={handleTest} disabled={testing}>
           {testing ? 'Loading...' : 'Test Widget'}
