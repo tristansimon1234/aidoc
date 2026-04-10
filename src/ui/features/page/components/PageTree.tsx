@@ -126,7 +126,9 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
       setNestTarget(null)
       return
     }
-    // When the pointer is shifted right beyond the threshold, signal nesting
+    // When the pointer is shifted right beyond the threshold, signal nesting.
+    // delta.x is the cumulative horizontal movement from drag start —
+    // a positive value means the user is deliberately dragging right.
     if (delta.x > NEST_THRESHOLD_PX) {
       setNestTarget(over.id as string)
     } else {
@@ -139,7 +141,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     setDragId(null)
     setNestTarget(null)
 
-    const { active, over } = event
+    const { active, over, delta } = event
     if (!over || active.id === over.id) return
 
     const oldIndex = ids.indexOf(active.id as string)
@@ -152,12 +154,19 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     const activeItem = flatItems[oldIndex]
     if (!activeItem) return
 
-    // Determine whether to nest as child of the over item:
-    // 1. If the user shifted right beyond the threshold (nestTarget is set), OR
-    // 2. If the over item has visible children (expanded parent)
-    const wantsNest = currentNestTarget === overItem.page.id
+    // Determine whether to nest as child of the over item.
+    //
+    // Nesting is triggered when ANY of these conditions is true:
+    //   1. The user shifted right > NEST_THRESHOLD_PX during drag (nestTarget set
+    //      via onDragOver) — this allows nesting into ANY page, including leaves.
+    //   2. The final delta.x at drop time exceeds the threshold (covers the case
+    //      where onDragOver state was stale due to fast pointer movement).
+    //   3. The over item is an expanded parent (has visible children) — in that case
+    //      the intuitive behavior is to insert as the first child.
+    const wantsNestFromState = currentNestTarget === overItem.page.id
+    const wantsNestFromDelta = delta.x > NEST_THRESHOLD_PX
     const expandedParent = overItem.hasChildren && !collapsed.has(overItem.page.id)
-    const dropAsChild = wantsNest || expandedParent
+    const dropAsChild = wantsNestFromState || wantsNestFromDelta || expandedParent
 
     // Prevent nesting a page inside itself or its own descendants
     const wouldCycle = dropAsChild && (
@@ -166,6 +175,17 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     )
 
     const newParentId = (dropAsChild && !wouldCycle) ? overItem.page.id : overItem.page.parentId
+
+    // If we just nested into a collapsed (or leaf) page, auto-expand it so the
+    // user can immediately see the newly nested child.
+    if (dropAsChild && !wouldCycle) {
+      setCollapsed((prev) => {
+        if (!prev.has(overItem.page.id)) return prev
+        const next = new Set(prev)
+        next.delete(overItem.page.id)
+        return next
+      })
+    }
 
     const reordered = [...flatItems]
     const [moved] = reordered.splice(oldIndex, 1)
