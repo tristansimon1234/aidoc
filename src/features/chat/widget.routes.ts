@@ -34,6 +34,20 @@ setInterval(() => {
   }
 }, 300_000)
 
+// --- In-memory suggestions cache (1h TTL) ---
+const suggestionsCache = new Map<string, { suggestions: string[]; expiresAt: number }>()
+const SUGGESTIONS_TTL_MS = 3_600_000 // 1 hour
+
+function getCachedSuggestions(projectId: string): string[] | null {
+  const entry = suggestionsCache.get(projectId)
+  if (!entry || Date.now() > entry.expiresAt) return null
+  return entry.suggestions
+}
+
+function setCachedSuggestions(projectId: string, suggestions: string[]): void {
+  suggestionsCache.set(projectId, { suggestions, expiresAt: Date.now() + SUGGESTIONS_TTL_MS })
+}
+
 // Public chat endpoint — API key auth, no Supabase JWT
 widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
@@ -76,8 +90,18 @@ widgetRouter.get('/:widgetKey/config', (req: Request, res: Response, next: NextF
       const project = await findProjectByWidgetKey(widgetKey)
       if (!project) throw new NotFoundError('Widget not found or disabled')
 
-      // Fetch dynamic suggestions
-      const suggestions = await chatService.getSuggestions(project.id)
+      // Use cached suggestions — never block config on AI generation
+      let suggestions = getCachedSuggestions(project.id)
+      if (suggestions === null) {
+        // Return empty now, generate in background for next request
+        suggestions = []
+        void chatService.getSuggestions(project.id).then((s) => {
+          setCachedSuggestions(project.id, s)
+        }).catch(() => {})
+      }
+
+      // Cache at edge for 5 minutes — avoids cold starts on repeat loads
+      res.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600')
 
       res.status(200).json({
         projectName: project.name,
