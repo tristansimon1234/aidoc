@@ -2,10 +2,15 @@
   min-height: 400px;
 }
 
-/* Match editor background to page background */
+/* Match editor background to page background — force ALL BlockNote layers transparent */
 .editor [class*="bn-editor"],
-.editor [class*="bn-container"] {
+.editor [class*="bn-container"],
+.editor [class*="bn-block-group"],
+.editor [class*="mantine"],
+.editor > div,
+.editor > div > div {
   background-color: transparent !important;
+  background: transparent !important;
 }
 
 /* Heading styling */
