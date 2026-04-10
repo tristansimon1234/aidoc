@@ -100,6 +100,9 @@ export function PublicDocs(): React.ReactElement {
   return (
     <div className={styles.shell} style={themeStyle} data-theme="light">
       <header className={styles.topbar}>
+        {project.design?.logoUrl ? (
+          <img src={project.design.logoUrl} alt={project.name} className={styles.logoImg} />
+        ) : null}
         <span className={styles.logo}>{project.name}</span>
         <span className={styles.badge}>Documentation</span>
         <div className={styles.searchWrapper} ref={searchRef}>

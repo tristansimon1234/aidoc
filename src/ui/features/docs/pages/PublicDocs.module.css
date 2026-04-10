@@ -26,6 +26,13 @@
   flex-shrink: 0;
 }
 
+.logoImg {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
 .logo {
   font-weight: 600;
   font-size: var(--text-sm);

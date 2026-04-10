@@ -221,3 +221,36 @@
   color: var(--color-destructive);
   background: var(--color-status-failed-bg);
 }
+
+/* --- Nest-target highlight during drag --- */
+.nodeRowNestTarget {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+
+/* --- Menu separator --- */
+.menuSep {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 0;
+}
+
+/* --- Move-inside sub-list --- */
+.menuSubList {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.menuSubItem {
+  font-size: var(--text-xs);
+}
+
+.menuSubLabel {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

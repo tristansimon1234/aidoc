@@ -7,6 +7,7 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragOverEvent,
   DragOverlay,
 } from '@dnd-kit/core'
 import {
@@ -26,6 +27,9 @@ interface PageTreeProps {
   onRefresh: () => Promise<void>
   searchQuery?: string
 }
+
+/** Horizontal drag offset (px) past which a drop is treated as "nest inside". */
+const NEST_THRESHOLD_PX = 30
 
 function buildTree(pages: DocPageDTO[]): DocPageDTO[] {
   const map = new Map<string, DocPageDTO & { children: DocPageDTO[] }>()
@@ -63,9 +67,21 @@ function matchesSearch(page: DocPageDTO, query: string): boolean {
   return page.title.toLowerCase().includes(query.toLowerCase())
 }
 
+/** Check whether `candidateChildId` is a descendant of `parentId`. */
+function isDescendantOf(pages: DocPageDTO[], candidateChildId: string, parentId: string): boolean {
+  const byId = new Map(pages.map((p) => [p.id, p]))
+  let current = byId.get(candidateChildId)
+  while (current) {
+    if (current.parentId === parentId) return true
+    current = current.parentId ? byId.get(current.parentId) : undefined
+  }
+  return false
+}
+
 export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuery = '' }: PageTreeProps): React.ReactElement {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [dragId, setDragId] = useState<string | null>(null)
+  const [nestTarget, setNestTarget] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -104,8 +120,25 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     setDragId(event.active.id as string)
   }
 
+  const handleDragOver = (event: DragOverEvent): void => {
+    const { active, over, delta } = event
+    if (!over || active.id === over.id) {
+      setNestTarget(null)
+      return
+    }
+    // When the pointer is shifted right beyond the threshold, signal nesting
+    if (delta.x > NEST_THRESHOLD_PX) {
+      setNestTarget(over.id as string)
+    } else {
+      setNestTarget(null)
+    }
+  }
+
   const handleDragEnd = async (event: DragEndEvent): Promise<void> => {
+    const currentNestTarget = nestTarget
     setDragId(null)
+    setNestTarget(null)
+
     const { active, over } = event
     if (!over || active.id === over.id) return
 
@@ -116,9 +149,23 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     const overItem = flatItems[newIndex]
     if (!overItem) return
 
-    // If dropping onto a page with children (or non-leaf), nest as child
-    const dropAsChild = overItem.hasChildren && !collapsed.has(overItem.page.id)
-    const newParentId = dropAsChild ? overItem.page.id : overItem.page.parentId
+    const activeItem = flatItems[oldIndex]
+    if (!activeItem) return
+
+    // Determine whether to nest as child of the over item:
+    // 1. If the user shifted right beyond the threshold (nestTarget is set), OR
+    // 2. If the over item has visible children (expanded parent)
+    const wantsNest = currentNestTarget === overItem.page.id
+    const expandedParent = overItem.hasChildren && !collapsed.has(overItem.page.id)
+    const dropAsChild = wantsNest || expandedParent
+
+    // Prevent nesting a page inside itself or its own descendants
+    const wouldCycle = dropAsChild && (
+      overItem.page.id === activeItem.page.id ||
+      isDescendantOf(pages, overItem.page.id, activeItem.page.id)
+    )
+
+    const newParentId = (dropAsChild && !wouldCycle) ? overItem.page.id : overItem.page.parentId
 
     const reordered = [...flatItems]
     const [moved] = reordered.splice(oldIndex, 1)
@@ -137,6 +184,19 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     } catch { /* revert handled by onRefresh */ }
   }
 
+  const handleMove = async (pageId: string, newParentId: string | null): Promise<void> => {
+    // Find the highest sort order among the new parent's current children
+    const siblings = pages.filter((p) => p.parentId === newParentId)
+    const maxSort = siblings.reduce((max, p) => Math.max(max, p.sortOrder), -1)
+
+    await reorderPages(projectId, [{
+      id: pageId,
+      parentId: newParentId,
+      sortOrder: maxSort + 1,
+    }])
+    await onRefresh()
+  }
+
   const draggedItem = dragId ? flatItems.find((i) => i.page.id === dragId) : null
 
   return (
@@ -144,6 +204,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={(e) => void handleDragEnd(e)}
     >
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
@@ -152,6 +213,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
             <SortablePageNode
               key={page.id}
               page={page}
+              allPages={pages}
               depth={searchQuery ? 0 : depth}
               hasChildren={hasChildren}
               isCollapsed={collapsed.has(page.id)}
@@ -159,11 +221,13 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
               projectId={projectId}
               isActive={page.id === activePageId}
               isDragging={page.id === dragId}
+              isNestTarget={nestTarget === page.id}
               menuOpen={menuOpenId === page.id}
               onMenuToggle={() => setMenuOpenId(menuOpenId === page.id ? null : page.id)}
               menuRef={menuOpenId === page.id ? menuRef : undefined}
               onRefresh={onRefresh}
               onMenuClose={() => setMenuOpenId(null)}
+              onMove={handleMove}
             />
           ))}
         </div>
@@ -183,6 +247,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
 
 function SortablePageNode({
   page,
+  allPages,
   depth,
   hasChildren,
   isCollapsed,
@@ -190,13 +255,16 @@ function SortablePageNode({
   projectId,
   isActive,
   isDragging,
+  isNestTarget,
   menuOpen,
   onMenuToggle,
   menuRef,
   onRefresh,
   onMenuClose,
+  onMove,
 }: {
   page: DocPageDTO
+  allPages: DocPageDTO[]
   depth: number
   hasChildren: boolean
   isCollapsed: boolean
@@ -204,13 +272,16 @@ function SortablePageNode({
   projectId: string
   isActive: boolean
   isDragging: boolean
+  isNestTarget: boolean
   menuOpen: boolean
   onMenuToggle: () => void
   menuRef?: React.RefObject<HTMLDivElement | null>
   onRefresh: () => Promise<void>
   onMenuClose: () => void
+  onMove: (pageId: string, newParentId: string | null) => Promise<void>
 }): React.ReactElement {
   const navigate = useNavigate()
+  const [showMoveList, setShowMoveList] = useState(false)
 
   const {
     attributes,
@@ -234,11 +305,30 @@ function SortablePageNode({
     navigate(`/projects/${projectId}`)
   }
 
+  const handleMoveInside = async (targetId: string): Promise<void> => {
+    onMenuClose()
+    setShowMoveList(false)
+    await onMove(page.id, targetId)
+  }
+
+  const handleMoveToRoot = async (): Promise<void> => {
+    onMenuClose()
+    setShowMoveList(false)
+    await onMove(page.id, null)
+  }
+
+  // Build list of valid move targets (exclude self and descendants)
+  const moveTargets = allPages.filter((p) => {
+    if (p.id === page.id) return false
+    // Prevent moving inside own descendants
+    return !isDescendantOf(allPages, p.id, page.id)
+  })
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`${styles.nodeRow} ${isActive ? styles.nodeRowActive : ''}`}
+      className={`${styles.nodeRow} ${isActive ? styles.nodeRowActive : ''} ${isNestTarget ? styles.nodeRowNestTarget : ''}`}
     >
       {/* Collapse toggle or spacer */}
       {hasChildren ? (
@@ -282,7 +372,7 @@ function SortablePageNode({
       {/* Menu button */}
       <button
         className={styles.menuBtn}
-        onClick={(e) => { e.stopPropagation(); onMenuToggle() }}
+        onClick={(e) => { e.stopPropagation(); onMenuToggle(); setShowMoveList(false) }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="12" cy="6" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="18" r="1.5" />
@@ -292,10 +382,52 @@ function SortablePageNode({
       {/* Context menu */}
       {menuOpen && (
         <div className={styles.menu} ref={menuRef as React.RefObject<HTMLDivElement>}>
-          <button className={`${styles.menuItem} ${styles.danger}`} onClick={() => void handleDelete()}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-            Delete
-          </button>
+          {!showMoveList ? (
+            <>
+              {/* Move inside */}
+              {moveTargets.length > 0 && (
+                <button className={styles.menuItem} onClick={() => setShowMoveList(true)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+                  Move inside...
+                </button>
+              )}
+
+              {/* Move to root */}
+              {page.parentId && (
+                <button className={styles.menuItem} onClick={() => void handleMoveToRoot()}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+                  Move to root
+                </button>
+              )}
+
+              {/* Separator */}
+              <div className={styles.menuSep} />
+
+              {/* Delete */}
+              <button className={`${styles.menuItem} ${styles.danger}`} onClick={() => void handleDelete()}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
+                Delete
+              </button>
+            </>
+          ) : (
+            <div className={styles.menuSubList}>
+              <button className={styles.menuItem} onClick={() => setShowMoveList(false)}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+                Back
+              </button>
+              <div className={styles.menuSep} />
+              {moveTargets.map((target) => (
+                <button
+                  key={target.id}
+                  className={`${styles.menuItem} ${styles.menuSubItem}`}
+                  onClick={() => void handleMoveInside(target.id)}
+                >
+                  <span className={`${styles.statusDot} ${styles[target.status]}`} />
+                  <span className={styles.menuSubLabel}>{target.title}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

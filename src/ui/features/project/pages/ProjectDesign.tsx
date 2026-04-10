@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
 import { type ProjectDTO, type ProjectDesignDTO } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
+import { supabase } from '../../../shared/api/supabase.js'
 import styles from './ProjectDesign.module.css'
 
 const DEFAULTS: ProjectDesignDTO = {
@@ -75,6 +76,28 @@ export function ProjectDesign(): React.ReactElement {
     } finally { setSaving(false) }
   }
 
+  const logoInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const path = `projects/${project.id}/logo`
+      await supabase.storage.from('artifacts').upload(path, file, { upsert: true, contentType: file.type })
+      const { data: urlData } = supabase.storage.from('artifacts').getPublicUrl(path)
+      update({ logoUrl: urlData.publicUrl })
+    } finally {
+      setUploading(false)
+      if (logoInputRef.current) logoInputRef.current.value = ''
+    }
+  }
+
+  const handleLogoRemove = (): void => {
+    update({ logoUrl: undefined })
+  }
+
   const handleReset = (): void => {
     setDesign(DEFAULTS)
     setSaved(false)
@@ -94,6 +117,30 @@ export function ProjectDesign(): React.ReactElement {
       <div className={styles.grid}>
         {/* Left — Controls */}
         <div className={styles.controls}>
+
+          {/* Logo */}
+          <div className={styles.section}>
+            <label className={styles.label}>Logo</label>
+            <p className={styles.hint}>Displayed in the public docs topbar</p>
+            <div className={styles.logoRow}>
+              {design.logoUrl && (
+                <img src={design.logoUrl} alt="Logo" className={styles.logoPreview} />
+              )}
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => void handleLogoUpload(e)}
+                hidden
+              />
+              <Button size="sm" variant="ghost" onClick={() => logoInputRef.current?.click()} disabled={uploading}>
+                {uploading ? 'Uploading...' : design.logoUrl ? 'Change' : 'Upload'}
+              </Button>
+              {design.logoUrl && (
+                <Button size="sm" variant="ghost" onClick={handleLogoRemove}>Remove</Button>
+              )}
+            </div>
+          </div>
 
           {/* Accent color */}
           <div className={styles.section}>

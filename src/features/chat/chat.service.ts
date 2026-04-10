@@ -94,6 +94,30 @@ export async function indexProject(projectId: string): Promise<number> {
   return total
 }
 
+// --- Greeting / small-talk detection ---
+
+function needsDocSearch(message: string, _history: ChatMessage[]): boolean {
+  const msg = message.trim().toLowerCase()
+
+  // Short messages that are clearly greetings/acknowledgments
+  const SKIP_PATTERNS = [
+    /^(hi|hello|hey|coucou|salut|bonjour|bonsoir|yo|sup)\b/,
+    /^(merci|thanks?|thank you|thx|ty)\b/,
+    /^(ok|okay|oui|yes|yep|yeah|non|no|nope|nah)\b/,
+    /^(cool|nice|great|super|parfait|genial|top)\b/,
+    /^(bye|goodbye|au revoir|a\+|ciao)\b/,
+    /^(lol|haha|mdr|ptdr)\b/,
+  ]
+
+  // If message is very short and matches a skip pattern, no search needed
+  if (msg.length < 20 && SKIP_PATTERNS.some((p) => p.test(msg))) return false
+
+  // "continue", "go on", "next" — use context from history, no new search
+  if (msg.length < 15 && /^(continue|go on|next|suite|la suite|encore|more)\b/.test(msg)) return false
+
+  return true
+}
+
 // --- RAG Chat ---
 
 export async function chat(
@@ -102,13 +126,14 @@ export async function chat(
   history: ChatMessage[],
   userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
 ): Promise<ChatResponse> {
-  // 1. Embed the user query
-  const queryEmbedding = await embedText(message)
+  // 1. Embed the user query and search — skip for greetings/small talk
+  let chunks: DocChunk[] = []
+  if (needsDocSearch(message, history)) {
+    const queryEmbedding = await embedText(message)
+    chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
+  }
 
-  // 2. Search for relevant chunks
-  const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
-
-  // 3. Fetch project context (name, description, knowledge base)
+  // 2. Fetch project context (name, description, knowledge base)
   const { findProjectById } = await import('../project/project.repository.js')
   const project = await findProjectById(projectId)
 
@@ -131,7 +156,9 @@ export async function chat(
     }
   }
 
-  if (chunks.length === 0) {
+  const didSearch = needsDocSearch(message, history)
+
+  if (didSearch && chunks.length === 0) {
     return {
       answer: productContext.length > 0
         ? "I don't have a specific article about that, but I'd be happy to help! Could you rephrase your question or ask about a specific feature?"
@@ -141,10 +168,10 @@ export async function chat(
     }
   }
 
-  // 4. Build context from chunks
-  const context = buildContextFromChunks(chunks)
+  // 3. Build context from chunks
+  const context = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
 
-  // 5. Build conversation with history
+  // 4. Build conversation with history
   const conversationHistory = history
     .slice(-10)
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
@@ -196,11 +223,9 @@ export async function chat(
 - If the docs don't cover something, say so briefly and suggest what to try
 - For complex issues beyond the docs, suggest contacting support`
 
-  const userPrompt = `## Documentation Context
+  const contextBlock = context ? `## Documentation Context\n\n${context}\n\n` : ''
 
-${context}
-
-${conversationHistory ? `## Conversation History\n\n${conversationHistory}\n\n` : ''}## User's Question
+  const userPrompt = `${contextBlock}${conversationHistory ? `## Conversation History\n\n${conversationHistory}\n\n` : ''}## User's Question
 
 ${message}`
 

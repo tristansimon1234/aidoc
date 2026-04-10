@@ -60,6 +60,22 @@
   margin: 0;
 }
 
+/* Logo */
+.logoRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: 4px;
+}
+
+.logoPreview {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+}
+
 /* Swatches */
 .swatchRow {
   display: flex;
