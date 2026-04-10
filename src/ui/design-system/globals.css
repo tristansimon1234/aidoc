@@ -219,3 +219,17 @@ code, pre {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* BlockNote editor — force transparent background on all internal layers */
+.bn-editor,
+.bn-container,
+.bn-block-group,
+.bn-block-outer,
+.bn-block,
+.bn-block-content,
+[class*="bn-editor"],
+[class*="bn-container"],
+[class*="bn-block-group"] {
+  background-color: transparent !important;
+  background: transparent !important;
+}
