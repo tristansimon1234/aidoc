@@ -12,7 +12,7 @@
   var USER_PLAN = script.getAttribute('data-user-plan') || '';
   var USER_CONTEXT = script.getAttribute('data-user-context') || '';
 
-  // Defaults — overridden by config endpoint
+  // Defaults — overridden by data-cfg, localStorage cache, or config endpoint
   var C = {
     accent: script.getAttribute('data-color') || '#635BFF',
     bg: '#0C0C0E',
@@ -21,6 +21,20 @@
     position: script.getAttribute('data-position') || 'right',
     greeting: script.getAttribute('data-greeting') || '',
   };
+
+  // Inline design from data-cfg — instant theme, zero fetch needed
+  try {
+    var inlineCfg = script.getAttribute('data-cfg');
+    if (inlineCfg) {
+      var d = JSON.parse(inlineCfg);
+      if (d.accentColor) C.accent = d.accentColor;
+      if (d.bgColor) C.bg = d.bgColor;
+      if (d.textColor) C.text = d.textColor;
+      if (d.font) C.font = d.font;
+      if (d.widgetPosition) C.position = d.widgetPosition;
+      if (d.widgetGreeting) C.greeting = d.widgetGreeting;
+    }
+  } catch (e) {}
 
   function getCurrentPage() { return window.location.href; }
 

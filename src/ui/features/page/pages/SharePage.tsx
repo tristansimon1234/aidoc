@@ -114,6 +114,20 @@ function WidgetSection({ project, setProject }: { project: ProjectDTO; setProjec
     setTimeout(() => setCopied(null), 2000)
   }
 
+  // Build design config JSON for data-cfg attribute
+  const buildDesignCfg = (): string | null => {
+    const d = project.design
+    if (!d) return null
+    const cfg: Record<string, string> = {}
+    if (d.accentColor) cfg.accentColor = d.accentColor
+    if (d.bgColor) cfg.bgColor = d.bgColor
+    if (d.textColor) cfg.textColor = d.textColor
+    if (d.font) cfg.font = d.font
+    if (position) cfg.widgetPosition = position
+    if (greeting) cfg.widgetGreeting = greeting
+    return JSON.stringify(cfg)
+  }
+
   const handleTest = (): void => {
     if (!widgetKey) return
     setTesting(true)
@@ -125,6 +139,8 @@ function WidgetSection({ project, setProject }: { project: ProjectDTO; setProjec
     script.setAttribute('data-key', widgetKey)
     script.setAttribute('data-position', position)
     if (greeting) script.setAttribute('data-greeting', greeting)
+    const cfg = buildDesignCfg()
+    if (cfg) script.setAttribute('data-cfg', cfg)
     document.body.appendChild(script)
     script.onload = () => {
       setTimeout(() => {
@@ -141,6 +157,8 @@ function WidgetSection({ project, setProject }: { project: ProjectDTO; setProjec
     const attrs = [`  data-key="${widgetKey}"`]
     if (position !== 'right') attrs.push(`  data-position="${position}"`)
     if (greeting) attrs.push(`  data-greeting="${greeting}"`)
+    const cfg = buildDesignCfg()
+    if (cfg) attrs.push(`  data-cfg='${cfg}'`)
     return `<script src="${origin}/widget.js"\n${attrs.join('\n')}\n></script>`
   }
 
