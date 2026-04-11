@@ -340,10 +340,12 @@ function SortablePageNode({
       ref={setNodeRef}
       style={style}
       className={`${styles.nodeRow} ${isActive ? styles.nodeRowActive : ''}`}
+      {...attributes}
+      {...listeners}
     >
       {/* Collapse toggle or spacer */}
       {hasChildren ? (
-        <button className={styles.collapseBtn} onClick={onToggleCollapse}>
+        <button className={styles.collapseBtn} onClick={onToggleCollapse} onPointerDown={(e) => e.stopPropagation()}>
           <svg
             width="12"
             height="12"
@@ -362,15 +364,6 @@ function SortablePageNode({
         <span className={styles.collapseSpacer} />
       )}
 
-      {/* Drag handle */}
-      <span className={styles.dragHandle} {...attributes} {...listeners}>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-          <circle cx="8" cy="6" r="2" /><circle cx="16" cy="6" r="2" />
-          <circle cx="8" cy="12" r="2" /><circle cx="16" cy="12" r="2" />
-          <circle cx="8" cy="18" r="2" /><circle cx="16" cy="18" r="2" />
-        </svg>
-      </span>
-
       {/* Page link */}
       <Link
         to={`/projects/${projectId}/pages/${page.id}`}
@@ -383,6 +376,7 @@ function SortablePageNode({
       {/* Menu button */}
       <button
         className={styles.menuBtn}
+        onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => { e.stopPropagation(); onMenuToggle(); setShowMoveList(false) }}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">

@@ -4,14 +4,21 @@
   gap: 1px;
 }
 
-/* --- Node row --- */
+/* --- Node row — entire row is draggable --- */
 .nodeRow {
   display: flex;
   align-items: center;
   position: relative;
   border-radius: 6px;
   height: 30px;
+  cursor: grab;
+  user-select: none;
   transition: background-color 0.1s ease;
+  touch-action: none;
+}
+
+.nodeRow:active {
+  cursor: grabbing;
 }
 
 .nodeRow:hover {
@@ -57,33 +64,6 @@
 .collapseSpacer {
   width: 20px;
   flex-shrink: 0;
-}
-
-/* --- Drag handle --- */
-.dragHandle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  cursor: grab;
-  color: var(--color-muted-fg);
-  opacity: 0;
-  flex-shrink: 0;
-  user-select: none;
-  transition: opacity 0.1s;
-}
-
-.nodeRow:hover .dragHandle {
-  opacity: 0.5;
-}
-
-.dragHandle:hover {
-  opacity: 1 !important;
-  color: var(--color-fg);
-}
-
-.dragHandle:active {
-  cursor: grabbing;
 }
 
 /* --- Drag overlay --- */
