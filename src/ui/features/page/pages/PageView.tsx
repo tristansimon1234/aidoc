@@ -219,6 +219,38 @@ export function PageView(): React.ReactElement {
     abortRef.current?.abort()
   }
 
+  const handleTryDoc = async (): Promise<void> => {
+    if (!projectId || !pageId || !page?.content) return
+    const startUrl = page.startUrl ?? context.project.baseUrl
+
+    const tryDocPrompt = `You are a documentation tester. Your job is to follow the documentation below step by step and verify that each step works correctly in the actual application.
+
+## Documentation to verify:
+
+${page.content}
+
+## Instructions:
+- Navigate to the application's start URL
+- Follow EACH step described in the documentation exactly as written
+- For each step, verify that:
+  1. The UI elements described actually exist
+  2. The actions described produce the expected results
+  3. The screenshots/descriptions match what you see
+- If a step fails or doesn't match the documentation, note what's different
+- Take a screenshot after completing each step for comparison
+- At the end, provide a summary of which steps passed and which failed`
+
+    const run = await api.runs.create({
+      featureName: `[Test] ${page.title}`,
+      startUrl,
+      goal: `Verify documentation accuracy for "${page.title}"`,
+      docPageId: pageId,
+    })
+
+    setActiveTab('exploration')
+    await runExploration(run.id, tryDocPrompt)
+  }
+
   // Debounced page metadata update — flushes on unmount to prevent data loss
   const pageUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingUpdatesRef = useRef<Record<string, unknown> | null>(null)
@@ -272,21 +304,32 @@ export function PageView(): React.ReactElement {
           <StatusIndicator status={statusMap[page.status] ?? 'pending'} label={page.status} />
           {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
         </div>
-        <Button
-          size="sm"
-          variant={page.isPublic ? 'secondary' : 'ghost'}
-          onClick={() => {
-            const newVal = !page.isPublic
-            setPage({ ...page, isPublic: newVal })
-            void dbUpdatePage(projectId!, pageId!, { isPublic: newVal })
-          }}
-        >
-          {page.isPublic ? (
-            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg> Published</>
-          ) : (
-            <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Draft</>
-          )}
-        </Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!page.content || exploring || generating}
+            onClick={() => void handleTryDoc()}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m9 15 2 2 4-4" /></svg>
+            Try doc
+          </Button>
+          <Button
+            size="sm"
+            variant={page.isPublic ? 'secondary' : 'ghost'}
+            onClick={() => {
+              const newVal = !page.isPublic
+              setPage({ ...page, isPublic: newVal })
+              void dbUpdatePage(projectId!, pageId!, { isPublic: newVal })
+            }}
+          >
+            {page.isPublic ? (
+              <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg> Published</>
+            ) : (
+              <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Draft</>
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className={styles.tabBar}>
