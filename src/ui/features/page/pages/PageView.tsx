@@ -45,8 +45,10 @@ export function PageView(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration'>('doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'tryresult'>('doc')
   const [genMethod, setGenMethod] = useState<'video' | 'explore'>('video')
+  const [tryRunning, setTryRunning] = useState(false)
+  const [trySteps, setTrySteps] = useState<{ text: string; timestamp: number }[]>([])
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -223,32 +225,72 @@ export function PageView(): React.ReactElement {
     if (!projectId || !pageId || !page?.content) return
     const startUrl = page.startUrl ?? context.project.baseUrl
 
-    const tryDocPrompt = `You are a documentation tester. Your job is to follow the documentation below step by step and verify that each step works correctly in the actual application.
+    const tryDocPrompt = `You are a documentation verifier. Your ONLY job is to follow the documentation below step by step in the real application and report what works and what doesn't.
 
 ## Documentation to verify:
 
 ${page.content}
 
 ## Instructions:
-- Navigate to the application's start URL
+- Navigate to: ${startUrl}
 - Follow EACH step described in the documentation exactly as written
-- For each step, verify that:
-  1. The UI elements described actually exist
-  2. The actions described produce the expected results
-  3. The screenshots/descriptions match what you see
-- If a step fails or doesn't match the documentation, note what's different
-- Take a screenshot after completing each step for comparison
-- At the end, provide a summary of which steps passed and which failed`
+- For each step, report in your reasoning:
+  - PASS: if the step works as documented
+  - FAIL: if something doesn't match, explain what's different
+  - MISSING: if a UI element or feature described doesn't exist
+- Take a screenshot after each major step
+- Be thorough but concise in your observations
+- At the end, give a final verdict: how many steps passed vs failed
 
-    const run = await api.runs.create({
-      featureName: `[Test] ${page.title}`,
-      startUrl,
-      goal: `Verify documentation accuracy for "${page.title}"`,
-      docPageId: pageId,
-    })
+DO NOT generate new documentation. Only verify the existing one.`
 
-    setActiveTab('exploration')
-    await runExploration(run.id, tryDocPrompt)
+    setTryRunning(true)
+    setTrySteps([])
+    setLiveUrl(null)
+    setActiveTab('tryresult')
+    setStatusMessage('Launching browser...')
+
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      const run = await api.runs.create({
+        featureName: `[Test] ${page.title}`,
+        startUrl,
+        goal: `Verify documentation for "${page.title}"`,
+        docPageId: pageId,
+      })
+
+      await api.runs.exploreStream(
+        run.id,
+        (event: StepEventDTO) => {
+          switch (event.type) {
+            case 'live': setLiveUrl(event.liveUrl ?? null); break
+            case 'status':
+            case 'step':
+              if (event.message && event.message.length > 10) {
+                setTrySteps((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
+              }
+              setStatusMessage(event.message ?? null)
+              break
+            case 'done': setStatusMessage('Verification complete'); break
+            case 'error': setStatusMessage(event.message ?? 'Error'); break
+          }
+        },
+        tryDocPrompt,
+        controller.signal,
+      )
+      // No doc generation — just stop here
+      setStatusMessage('Verification complete')
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        setError((err as Error).message)
+      }
+    } finally {
+      abortRef.current = null
+      setTryRunning(false)
+      setLiveUrl(null)
+    }
   }
 
   // Debounced page metadata update — flushes on unmount to prevent data loss
@@ -617,6 +659,69 @@ ${page.content}
           )}
 
           {error && <EmptyState title="Error" description={error} />}
+        </div>
+      )}
+
+      {/* ===== TRY DOC RESULTS ===== */}
+      {activeTab === 'tryresult' && (
+        <div className={styles.tabContent}>
+          <div className={styles.tryHeader}>
+            <div className={styles.tryTitleRow}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m9 15 2 2 4-4" /></svg>
+              <h2 className={styles.tryTitle}>Documentation Test</h2>
+              {tryRunning && <Spinner size="sm" />}
+            </div>
+            <p className={styles.trySubtitle}>
+              {tryRunning
+                ? statusMessage ?? 'AI is following your documentation steps...'
+                : trySteps.length > 0
+                  ? 'Verification complete — review the results below'
+                  : 'No test results yet'}
+            </p>
+          </div>
+
+          {/* Live browser during test */}
+          {tryRunning && liveUrl && (
+            <div className={styles.replayContainer} style={{ marginBottom: 'var(--space-md)' }}>
+              <div className={styles.replayHeader}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-success)', animation: 'pulse 2s infinite' }} />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>live</span>
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => abortRef.current?.abort()}>Stop</Button>
+              </div>
+              <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
+            </div>
+          )}
+
+          {/* Results log */}
+          {trySteps.length > 0 && (
+            <div className={styles.tryResults}>
+              {trySteps.map((step, i) => {
+                const isPass = /\bpass/i.test(step.text)
+                const isFail = /\b(fail|missing|error|doesn't|does not|incorrect)/i.test(step.text)
+                return (
+                  <div key={i} className={`${styles.tryStep} ${isPass ? styles.tryStepPass : ''} ${isFail ? styles.tryStepFail : ''}`}>
+                    <span className={styles.tryStepIcon}>
+                      {isPass ? '✓' : isFail ? '✗' : '·'}
+                    </span>
+                    <span className={styles.tryStepText}>{step.text}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {!tryRunning && trySteps.length > 0 && (
+            <div className={styles.tryActions}>
+              <Button size="sm" variant="ghost" onClick={() => setActiveTab('doc')}>
+                Back to doc
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void handleTryDoc()}>
+                Run again
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
