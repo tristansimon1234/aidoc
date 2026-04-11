@@ -164,17 +164,17 @@ export async function reorderPages(
   _projectId: string,
   items: { id: string; parentId: string | null; sortOrder: number }[],
 ): Promise<void> {
-  for (const item of items) {
-    const { error } = await supabase
+  // Fire all updates in parallel — much faster than sequential
+  const now = new Date().toISOString()
+  const promises = items.map((item) =>
+    supabase
       .from('doc_pages')
-      .update({
-        parent_id: item.parentId,
-        sort_order: item.sortOrder,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', item.id)
-    if (error) throw new Error(error.message)
-  }
+      .update({ parent_id: item.parentId, sort_order: item.sortOrder, updated_at: now })
+      .eq('id', item.id),
+  )
+  const results = await Promise.all(promises)
+  const failed = results.find((r) => r.error)
+  if (failed?.error) throw new Error(failed.error.message)
 }
 
 // --- snake_case → camelCase mappers ---

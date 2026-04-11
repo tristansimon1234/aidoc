@@ -87,11 +87,6 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
   // Use optimistic pages if available, otherwise use prop pages
   const effectivePages = optimisticPages ?? pages
 
-  // Clear optimistic state when pages prop changes (after server refresh)
-  useEffect(() => {
-    setOptimisticPages(null)
-  }, [pages])
-
   // Close menu on outside click
   useEffect(() => {
     if (!menuOpenId) return
@@ -161,7 +156,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
       sortOrder: i,
     }))
 
-    // Optimistic update — apply reorder instantly before DB save
+    // Optimistic update — apply reorder instantly, save to DB in background
     const updatedPages = effectivePages.map((p) => {
       const update = updates.find((u) => u.id === p.id)
       if (!update) return p
@@ -169,12 +164,11 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     })
     setOptimisticPages(updatedPages)
 
-    try {
-      await reorderPages(projectId, updates)
-      await onRefresh()
-    } catch {
+    // Save in background — no onRefresh() to avoid re-render flash
+    void reorderPages(projectId, updates).catch(() => {
       setOptimisticPages(null)
-    }
+      void onRefresh()
+    })
   }
 
   const handleMove = async (pageId: string, newParentId: string | null): Promise<void> => {
@@ -197,16 +191,14 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     const siblings = effectivePages.filter((p) => p.parentId === newParentId)
     const maxSort = siblings.reduce((max, p) => Math.max(max, p.sortOrder), -1)
 
-    try {
-      await reorderPages(projectId, [{
-        id: pageId,
-        parentId: newParentId,
-        sortOrder: maxSort + 1,
-      }])
-      await onRefresh()
-    } catch {
+    void reorderPages(projectId, [{
+      id: pageId,
+      parentId: newParentId,
+      sortOrder: maxSort + 1,
+    }]).catch(() => {
       setOptimisticPages(null)
-    }
+      void onRefresh()
+    })
   }
 
   return (
