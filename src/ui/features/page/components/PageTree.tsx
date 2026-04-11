@@ -7,7 +7,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  type DragOverEvent,
   DragOverlay,
 } from '@dnd-kit/core'
 import {
@@ -27,9 +26,6 @@ interface PageTreeProps {
   onRefresh: () => Promise<void>
   searchQuery?: string
 }
-
-/** Horizontal drag offset (px) past which a drop is treated as "nest inside". */
-const NEST_THRESHOLD_PX = 30
 
 function buildTree(pages: DocPageDTO[]): DocPageDTO[] {
   const map = new Map<string, DocPageDTO & { children: DocPageDTO[] }>()
@@ -81,13 +77,21 @@ function isDescendantOf(pages: DocPageDTO[], candidateChildId: string, parentId:
 export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuery = '' }: PageTreeProps): React.ReactElement {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [dragId, setDragId] = useState<string | null>(null)
-  const [nestTarget, setNestTarget] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  const [optimisticPages, setOptimisticPages] = useState<DocPageDTO[] | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   )
+
+  // Use optimistic pages if available, otherwise use prop pages
+  const effectivePages = optimisticPages ?? pages
+
+  // Clear optimistic state when pages prop changes (after server refresh)
+  useEffect(() => {
+    setOptimisticPages(null)
+  }, [pages])
 
   // Close menu on outside click
   useEffect(() => {
@@ -110,9 +114,9 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     })
   }, [])
 
-  const tree = buildTree(pages)
+  const tree = buildTree(effectivePages)
   const flatItems = searchQuery
-    ? pages.filter((p) => matchesSearch(p, searchQuery)).map((p) => ({ page: p, depth: 0, hasChildren: false }))
+    ? effectivePages.filter((p) => matchesSearch(p, searchQuery)).map((p) => ({ page: p, depth: 0, hasChildren: false }))
     : flattenTree(tree, collapsed)
   const ids = flatItems.map((item) => item.page.id)
 
@@ -120,28 +124,10 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     setDragId(event.active.id as string)
   }
 
-  const handleDragOver = (event: DragOverEvent): void => {
-    const { active, over, delta } = event
-    if (!over || active.id === over.id) {
-      setNestTarget(null)
-      return
-    }
-    // When the pointer is shifted right beyond the threshold, signal nesting.
-    // delta.x is the cumulative horizontal movement from drag start —
-    // a positive value means the user is deliberately dragging right.
-    if (delta.x > NEST_THRESHOLD_PX) {
-      setNestTarget(over.id as string)
-    } else {
-      setNestTarget(null)
-    }
-  }
-
   const handleDragEnd = async (event: DragEndEvent): Promise<void> => {
-    const currentNestTarget = nestTarget
     setDragId(null)
-    setNestTarget(null)
 
-    const { active, over, delta } = event
+    const { active, over } = event
     if (!over || active.id === over.id) return
 
     const oldIndex = ids.indexOf(active.id as string)
@@ -154,38 +140,16 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     const activeItem = flatItems[oldIndex]
     if (!activeItem) return
 
-    // Determine whether to nest as child of the over item.
-    //
-    // Nesting is triggered when ANY of these conditions is true:
-    //   1. The user shifted right > NEST_THRESHOLD_PX during drag (nestTarget set
-    //      via onDragOver) — this allows nesting into ANY page, including leaves.
-    //   2. The final delta.x at drop time exceeds the threshold (covers the case
-    //      where onDragOver state was stale due to fast pointer movement).
-    //   3. The over item is an expanded parent (has visible children) — in that case
-    //      the intuitive behavior is to insert as the first child.
-    const wantsNestFromState = currentNestTarget === overItem.page.id
-    const wantsNestFromDelta = delta.x > NEST_THRESHOLD_PX
-    const expandedParent = overItem.hasChildren && !collapsed.has(overItem.page.id)
-    const dropAsChild = wantsNestFromState || wantsNestFromDelta || expandedParent
+    // Keep same parent level — just reorder
+    const newParentId = overItem.page.parentId
 
     // Prevent nesting a page inside itself or its own descendants
-    const wouldCycle = dropAsChild && (
-      overItem.page.id === activeItem.page.id ||
-      isDescendantOf(pages, overItem.page.id, activeItem.page.id)
+    const wouldCycle = newParentId !== null && (
+      newParentId === activeItem.page.id ||
+      isDescendantOf(effectivePages, overItem.page.id, activeItem.page.id)
     )
 
-    const newParentId = (dropAsChild && !wouldCycle) ? overItem.page.id : overItem.page.parentId
-
-    // If we just nested into a collapsed (or leaf) page, auto-expand it so the
-    // user can immediately see the newly nested child.
-    if (dropAsChild && !wouldCycle) {
-      setCollapsed((prev) => {
-        if (!prev.has(overItem.page.id)) return prev
-        const next = new Set(prev)
-        next.delete(overItem.page.id)
-        return next
-      })
-    }
+    const finalParentId = wouldCycle ? activeItem.page.parentId : newParentId
 
     const reordered = [...flatItems]
     const [moved] = reordered.splice(oldIndex, 1)
@@ -194,27 +158,56 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
 
     const updates = reordered.map((item, i) => ({
       id: item.page.id,
-      parentId: item.page.id === (active.id as string) ? newParentId : item.page.parentId,
+      parentId: item.page.id === (active.id as string) ? finalParentId : item.page.parentId,
       sortOrder: i,
     }))
+
+    // Optimistic update — apply reorder instantly before DB save
+    const updatedPages = effectivePages.map((p) => {
+      const update = updates.find((u) => u.id === p.id)
+      if (!update) return p
+      return { ...p, parentId: update.parentId, sortOrder: update.sortOrder }
+    })
+    setOptimisticPages(updatedPages)
 
     try {
       await reorderPages(projectId, updates)
       await onRefresh()
-    } catch { /* revert handled by onRefresh */ }
+    } catch {
+      setOptimisticPages(null)
+    }
   }
 
   const handleMove = async (pageId: string, newParentId: string | null): Promise<void> => {
-    // Find the highest sort order among the new parent's current children
-    const siblings = pages.filter((p) => p.parentId === newParentId)
+    // Optimistic: update the page's parentId instantly
+    const updatedPages = effectivePages.map((p) =>
+      p.id === pageId ? { ...p, parentId: newParentId, sortOrder: 999 } : p,
+    )
+    setOptimisticPages(updatedPages)
+
+    // Auto-expand parent if nesting
+    if (newParentId) {
+      setCollapsed((prev) => {
+        if (!prev.has(newParentId)) return prev
+        const next = new Set(prev)
+        next.delete(newParentId)
+        return next
+      })
+    }
+
+    const siblings = effectivePages.filter((p) => p.parentId === newParentId)
     const maxSort = siblings.reduce((max, p) => Math.max(max, p.sortOrder), -1)
 
-    await reorderPages(projectId, [{
-      id: pageId,
-      parentId: newParentId,
-      sortOrder: maxSort + 1,
-    }])
-    await onRefresh()
+    try {
+      await reorderPages(projectId, [{
+        id: pageId,
+        parentId: newParentId,
+        sortOrder: maxSort + 1,
+      }])
+      await onRefresh()
+    } catch {
+      setOptimisticPages(null)
+    }
   }
 
   const draggedItem = dragId ? flatItems.find((i) => i.page.id === dragId) : null
@@ -224,7 +217,6 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
       onDragEnd={(e) => void handleDragEnd(e)}
     >
       <SortableContext items={ids} strategy={verticalListSortingStrategy}>
@@ -233,7 +225,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
             <SortablePageNode
               key={page.id}
               page={page}
-              allPages={pages}
+              allPages={effectivePages}
               depth={searchQuery ? 0 : depth}
               hasChildren={hasChildren}
               isCollapsed={collapsed.has(page.id)}
@@ -241,7 +233,6 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
               projectId={projectId}
               isActive={page.id === activePageId}
               isDragging={page.id === dragId}
-              isNestTarget={nestTarget === page.id}
               menuOpen={menuOpenId === page.id}
               onMenuToggle={() => setMenuOpenId(menuOpenId === page.id ? null : page.id)}
               menuRef={menuOpenId === page.id ? menuRef : undefined}
@@ -253,7 +244,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
         </div>
       </SortableContext>
 
-      <DragOverlay dropAnimation={{ duration: 200, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}>
+      <DragOverlay dropAnimation={{ duration: 150, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}>
         {draggedItem && (
           <div className={styles.dragOverlay}>
             <span className={`${styles.statusDot} ${styles[draggedItem.page.status]}`} />
@@ -275,7 +266,6 @@ function SortablePageNode({
   projectId,
   isActive,
   isDragging,
-  isNestTarget,
   menuOpen,
   onMenuToggle,
   menuRef,
@@ -292,7 +282,6 @@ function SortablePageNode({
   projectId: string
   isActive: boolean
   isDragging: boolean
-  isNestTarget: boolean
   menuOpen: boolean
   onMenuToggle: () => void
   menuRef?: React.RefObject<HTMLDivElement | null>
@@ -311,8 +300,11 @@ function SortablePageNode({
     transition,
   } = useSortable({ id: page.id })
 
+  // Only translate Y — prevent horizontal jumping
+  const yOnly = transform ? { ...transform, x: 0 } : null
+
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Transform.toString(yOnly),
     transition,
     paddingLeft: `${depth * 20 + 4}px`,
     opacity: isDragging ? 0.3 : 1,
@@ -340,7 +332,6 @@ function SortablePageNode({
   // Build list of valid move targets (exclude self and descendants)
   const moveTargets = allPages.filter((p) => {
     if (p.id === page.id) return false
-    // Prevent moving inside own descendants
     return !isDescendantOf(allPages, p.id, page.id)
   })
 
@@ -348,7 +339,7 @@ function SortablePageNode({
     <div
       ref={setNodeRef}
       style={style}
-      className={`${styles.nodeRow} ${isActive ? styles.nodeRowActive : ''} ${isNestTarget ? styles.nodeRowNestTarget : ''}`}
+      className={`${styles.nodeRow} ${isActive ? styles.nodeRowActive : ''}`}
     >
       {/* Collapse toggle or spacer */}
       {hasChildren ? (
