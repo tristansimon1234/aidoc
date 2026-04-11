@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
-import { Spinner, EmptyState } from '../../../design-system/components/index.js'
-import { MarkdownRenderer } from '../../../design-system/components/index.js'
+import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
 import styles from './PublicDocs.module.css'
@@ -53,6 +52,7 @@ export function PublicDocs(): React.ReactElement {
   const [search, setSearch] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   // Close search on outside click
   useEffect(() => {
@@ -148,7 +148,7 @@ export function PublicDocs(): React.ReactElement {
           </nav>
         </aside>
 
-        <div className={styles.contentWrapper}>
+        <div className={styles.contentWrapper} ref={contentRef}>
           <div className={styles.content}>
             {activePage && (
               <>
@@ -176,6 +176,9 @@ export function PublicDocs(): React.ReactElement {
               </>
             )}
           </div>
+          {activePage?.content && (
+            <TableOfContents content={activePage.content} scrollContainer={contentRef.current} />
+          )}
         </div>
       </div>
     </div>

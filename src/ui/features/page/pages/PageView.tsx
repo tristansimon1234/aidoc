@@ -7,6 +7,7 @@ import {
   StatusIndicator,
   BlockEditor,
   EmptyState,
+  TableOfContents,
 } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage } from '../../../shared/api/db.js'
@@ -336,6 +337,7 @@ export function PageView(): React.ReactElement {
               </div>
             )
           })()}
+          {page.content && <TableOfContents content={page.content} />}
         </div>
       )}
 
