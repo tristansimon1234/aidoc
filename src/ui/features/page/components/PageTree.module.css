@@ -66,15 +66,18 @@
   flex-shrink: 0;
 }
 
-/* --- Page link --- */
+/* --- Page button --- */
 .node {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 4px 6px;
+  border: none;
+  background: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: var(--text-sm);
+  font-family: var(--font-sans);
   color: var(--color-muted-fg);
   text-decoration: none;
   flex: 1;

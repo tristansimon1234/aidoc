@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
   closestCenter,
@@ -353,14 +353,14 @@ function SortablePageNode({
         <span className={styles.collapseSpacer} />
       )}
 
-      {/* Page link */}
-      <Link
-        to={`/projects/${projectId}/pages/${page.id}`}
+      {/* Page link — use onClick with navigate to avoid interfering with drag */}
+      <button
         className={`${styles.node} ${isActive ? styles.active : ''}`}
+        onClick={() => navigate(`/projects/${projectId}/pages/${page.id}`)}
       >
         <span className={`${styles.statusDot} ${styles[page.status]}`} />
         <span className={styles.label}>{page.title}</span>
-      </Link>
+      </button>
 
       {/* Menu button */}
       <button
