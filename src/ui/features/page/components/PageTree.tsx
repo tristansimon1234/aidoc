@@ -285,7 +285,6 @@ function SortablePageNode({
     listeners,
     setNodeRef,
     transform,
-    transition,
   } = useSortable({ id: page.id })
 
   // Only translate Y — prevent horizontal jumping
@@ -293,7 +292,7 @@ function SortablePageNode({
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(yOnly),
-    transition,
+    // No transition — items snap instantly, zero delay
     paddingLeft: `${depth * 20 + 4}px`,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10 : undefined,

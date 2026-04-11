@@ -79,6 +79,7 @@
   font-size: var(--text-sm);
   font-family: var(--font-sans);
   color: var(--color-muted-fg);
+  text-align: left;
   text-decoration: none;
   flex: 1;
   min-width: 0;
