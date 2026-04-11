@@ -491,9 +491,7 @@ ${page.content}
                     </Button>
                   )}
                   {!page.briefing?.objective && (
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-                      Add an objective for better results
-                    </span>
+                    <span className={styles.methodHint}>Add an objective for better results</span>
                   )}
                 </div>
               </div>
@@ -691,208 +689,123 @@ function BriefingSection({
   // Count filled fields for the summary badge
   const filledCount = [page.goal, page.startUrl, briefing.objective, briefing.knowledge].filter(Boolean).length + briefing.resources.length
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: 'var(--space-sm)',
-    fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)',
-    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
-    borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none',
-  }
-
-  const textareaStyle: React.CSSProperties = {
-    ...inputStyle, resize: 'vertical', minHeight: '60px',
-  }
-
   return (
     <div className={styles.section}>
-      {/* Header — clickable to toggle */}
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-          padding: 0, margin: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-            Agent Briefing
-          </span>
-          <span style={{
-            fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-            padding: '1px 6px', borderRadius: 'var(--radius-sm)',
-            backgroundColor: filledCount > 2 ? 'rgba(61,214,140,0.15)' : 'rgba(245,166,35,0.15)',
-            color: filledCount > 2 ? 'var(--color-accent-green)' : 'var(--color-accent-amber)',
-          }}>
-            {filledCount > 2 ? 'ready' : `${filledCount}/4 filled`}
+      <button type="button" onClick={() => setOpen(!open)} className={styles.briefingHeader}>
+        <div className={styles.briefingTitle}>
+          <span className={styles.briefingTitleText}>Agent Briefing</span>
+          <span className={`${styles.briefingBadge} ${filledCount > 2 ? styles.briefingBadgeReady : styles.briefingBadgePartial}`}>
+            {filledCount > 2 ? 'ready' : `${filledCount}/4`}
           </span>
         </div>
-        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-          &#9662;
-        </span>
+        <span className={`${styles.briefingChevron} ${open ? styles.briefingChevronOpen : ''}`}>&#9662;</span>
       </button>
 
       {!open && (
-        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: 'var(--space-xs) 0 0' }}>
+        <p className={styles.briefingPreview}>
           {briefing.objective ? briefing.objective.slice(0, 80) + (briefing.objective.length > 80 ? '...' : '') : 'No objective set — click to expand'}
         </p>
       )}
 
-      {/* Expanded content */}
       {open && (
-        <div style={{ marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5 }}>
-            The more precise your briefing, the better the documentation — and the less you&apos;ll need to re-run.
+        <div className={styles.briefingBody}>
+          <p className={styles.briefingHint}>
+            The more precise your briefing, the better the documentation.
           </p>
 
           {/* Step 1: Goal + URL */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+            <div className={styles.briefingStepHeader}>
               <span className={styles.stepNumber}>1</span>
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Where to explore</span>
+              <span className={styles.briefingStepTitle}>Where to explore</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+            <div className={styles.briefingGrid}>
               <div>
-                <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Start URL</label>
-                <input
-                  type="text"
-                  value={page.startUrl ?? ''}
-                  onChange={(e) => onPageUpdate({ startUrl: e.target.value })}
-                  placeholder="e.g. /pricing or https://app.com/settings"
-                  style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
-                />
+                <label className={styles.briefingFieldLabel}>Start URL</label>
+                <input type="text" value={page.startUrl ?? ''} onChange={(e) => onPageUpdate({ startUrl: e.target.value })}
+                  placeholder="e.g. /pricing" className={`${styles.briefingInput} ${styles.briefingInputMono}`} />
               </div>
               <div>
-                <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Goal</label>
-                <input
-                  type="text"
-                  value={page.goal ?? ''}
-                  onChange={(e) => onPageUpdate({ goal: e.target.value })}
-                  placeholder="e.g. Document the pricing and upgrade flow"
-                  style={inputStyle}
-                />
+                <label className={styles.briefingFieldLabel}>Goal</label>
+                <input type="text" value={page.goal ?? ''} onChange={(e) => onPageUpdate({ goal: e.target.value })}
+                  placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
               </div>
             </div>
           </div>
 
           {/* Step 2: Objective */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+            <div className={styles.briefingStepBetween}>
+              <div className={styles.briefingStepHeader} style={{ marginBottom: 0 }}>
                 <span className={styles.stepNumber}>2</span>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>What to document</span>
+                <span className={styles.briefingStepTitle}>What to document</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowExample(!showExample)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)', fontFamily: 'var(--font-mono)' }}
-              >
+              <button type="button" onClick={() => setShowExample(!showExample)} className={styles.briefingExampleToggle}>
                 {showExample ? 'hide example' : 'see example'}
               </button>
             </div>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
-              What should the user learn from this page? Be specific — the agent follows this closely.
+            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
+              What should the user learn from this page? Be specific.
             </p>
             {showExample && (
-              <div style={{
-                fontSize: 'var(--text-xs)', lineHeight: 1.5, padding: 'var(--space-sm)',
-                marginBottom: 'var(--space-sm)', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)',
-              }}>
-                <p style={{ color: 'var(--color-accent-red)', margin: '0 0 4px' }}>Bad: &quot;Document pricing&quot;</p>
-                <p style={{ color: 'var(--color-accent-green)', margin: 0 }}>Good: &quot;Document the pricing page: compare plans, show the upgrade flow from free to pro, and explain what happens when the trial expires&quot;</p>
+              <div className={styles.briefingExample}>
+                <p className={styles.briefingExampleBad}>Bad: &quot;Document pricing&quot;</p>
+                <p className={styles.briefingExampleGood}>Good: &quot;Document the pricing page: compare plans, show upgrade flow from free to pro&quot;</p>
               </div>
             )}
-            <textarea
-              value={briefing.objective}
-              onChange={(e) => update({ objective: e.target.value })}
-              placeholder="e.g. Document how a new user creates an account, verifies their email, and completes onboarding"
-              rows={3}
-              style={textareaStyle}
-            />
+            <textarea value={briefing.objective} onChange={(e) => update({ objective: e.target.value })}
+              placeholder="e.g. Document how a new user creates an account and completes onboarding" rows={3} className={styles.briefingTextarea} />
           </div>
 
           {/* Step 3: Domain knowledge */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+            <div className={styles.briefingStepHeader}>
               <span className={styles.stepNumber}>3</span>
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>What the agent can&apos;t see</span>
+              <span className={styles.briefingStepTitle}>What the agent can&apos;t see</span>
             </div>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
-              Business rules, edge cases, hidden behaviors — anything not obvious from the UI.
+            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
+              Business rules, edge cases, hidden behaviors.
             </p>
-            <textarea
-              value={briefing.knowledge}
-              onChange={(e) => update({ knowledge: e.target.value })}
-              placeholder="e.g. Free trial users can't access billing. The 'Export' button only appears after 3 entries."
-              rows={3}
-              style={textareaStyle}
-            />
+            <textarea value={briefing.knowledge} onChange={(e) => update({ knowledge: e.target.value })}
+              placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries." rows={3} className={styles.briefingTextarea} />
           </div>
 
           {/* Step 4: Resources */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+            <div className={styles.briefingStepBetween}>
+              <div className={styles.briefingStepHeader} style={{ marginBottom: 0 }}>
                 <span className={styles.stepNumber}>4</span>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Resources</span>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+                <span className={styles.briefingStepTitle}>Resources</span>
+                <span className={styles.briefingHint}>optional</span>
               </div>
-              <button type="button" onClick={addResource} style={{
-                background: 'none', border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)',
-                padding: '2px 8px',
-              }}>
-                + add
-              </button>
+              <button type="button" onClick={addResource} className={styles.briefingAddBtn}>+ add</button>
             </div>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
-              Files the agent can upload into the app, or reference URLs. Credentials go in Project Settings.
+            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
+              Files the agent can upload, or reference URLs.
             </p>
-            {uploadError && (
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-red)', margin: '0 0 var(--space-sm)' }}>{uploadError}</p>
-            )}
+            {uploadError && <p className={styles.briefingError}>{uploadError}</p>}
             {briefing.resources.map((r, i) => (
-              <div key={i} style={{
-                display: 'grid', gridTemplateColumns: 'auto 1fr 2fr auto',
-                gap: 'var(--space-xs)', marginBottom: 'var(--space-xs)', alignItems: 'center',
-              }}>
-                <select
-                  value={r.type}
-                  onChange={(e) => updateResource(i, 'type', e.target.value)}
-                  style={{
-                    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
-                    borderRadius: 'var(--radius-sm)', padding: '4px 6px',
-                    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)',
-                  }}
-                >
+              <div key={i} className={styles.briefingResourceRow}>
+                <select value={r.type} onChange={(e) => updateResource(i, 'type', e.target.value)} className={styles.briefingResourceSelect}>
                   {RESOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
                 <input type="text" value={r.label} onChange={(e) => updateResource(i, 'label', e.target.value)}
-                  placeholder="label" style={{ ...inputStyle, padding: '4px 8px', fontSize: 'var(--text-xs)' }} />
+                  placeholder="label" className={styles.briefingResourceSmallInput} />
                 {r.type === 'file' ? (
                   r.value ? (
-                    <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)', padding: '4px 0' }}>
-                      {r.value.split('/').pop()}
-                    </span>
+                    <span className={styles.briefingHint}>{r.value.split('/').pop()}</span>
                   ) : (
-                    <input type="file" accept={ALLOWED_FILE_EXTENSIONS.join(',')}
-                      onChange={(e) => void handleFileUpload(i, e)}
-                      style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }} />
+                    <input type="file" accept={ALLOWED_FILE_EXTENSIONS.join(',')} onChange={(e) => void handleFileUpload(i, e)}
+                      className={styles.briefingHint} />
                   )
                 ) : (
                   <input type="text" value={r.value} onChange={(e) => updateResource(i, 'value', e.target.value)}
-                    placeholder="value" style={{ ...inputStyle, padding: '4px 8px', fontSize: 'var(--text-xs)' }} />
+                    placeholder="value" className={styles.briefingResourceSmallInput} />
                 )}
-                <button type="button" onClick={() => removeResource(i)} style={{
-                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-                }}>x</button>
+                <button type="button" onClick={() => removeResource(i)} className={styles.briefingResourceRemove}>x</button>
               </div>
             ))}
-            {briefing.resources.length === 0 && (
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontStyle: 'italic', margin: 0 }}>
-                No resources added
-              </p>
-            )}
+            {briefing.resources.length === 0 && <p className={styles.briefingEmpty}>No resources added</p>}
           </div>
         </div>
       )}
