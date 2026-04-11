@@ -164,11 +164,14 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     })
     setOptimisticPages(updatedPages)
 
-    // Save in background — no onRefresh() to avoid re-render flash
-    void reorderPages(projectId, updates).catch(() => {
-      setOptimisticPages(null)
-      void onRefresh()
-    })
+    // Save in background, then silently refresh parent data
+    void reorderPages(projectId, updates)
+      .then(() => onRefresh())
+      .then(() => setOptimisticPages(null))
+      .catch(() => {
+        setOptimisticPages(null)
+        void onRefresh()
+      })
   }
 
   const handleMove = async (pageId: string, newParentId: string | null): Promise<void> => {
@@ -195,10 +198,13 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
       id: pageId,
       parentId: newParentId,
       sortOrder: maxSort + 1,
-    }]).catch(() => {
-      setOptimisticPages(null)
-      void onRefresh()
-    })
+    }])
+      .then(() => onRefresh())
+      .then(() => setOptimisticPages(null))
+      .catch(() => {
+        setOptimisticPages(null)
+        void onRefresh()
+      })
   }
 
   return (

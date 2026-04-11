@@ -94,6 +94,36 @@ projectRouter.delete('/:id/widget-key', (req: Request, res: Response, next: Next
   })()
 })
 
+// Upload project logo
+projectRouter.post('/:id/logo', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const chunks: Buffer[] = []
+      req.on('data', (chunk: Buffer) => chunks.push(chunk))
+      await new Promise<void>((resolve) => req.on('end', resolve))
+      const body = Buffer.concat(chunks)
+
+      if (body.length === 0) throw new ValidationError('No file uploaded')
+      if (body.length > 5_000_000) throw new ValidationError('File too large (max 5MB)')
+
+      const contentType = req.headers['content-type'] ?? 'image/png'
+      const ext = contentType.includes('svg') ? 'svg' : contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
+      const path = `projects/${params.data.id}/logo.${ext}`
+
+      const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
+      await uploadToStorage('artifacts', path, body, contentType)
+      const logoUrl = getPublicUrl('artifacts', path)
+
+      res.status(200).json({ logoUrl })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 projectRouter.delete('/:id', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {

@@ -3,7 +3,6 @@ import { useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
 import { type ProjectDTO, type ProjectDesignDTO } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
-import { supabase } from '../../../shared/api/supabase.js'
 import styles from './ProjectDesign.module.css'
 
 const DEFAULTS: ProjectDesignDTO = {
@@ -84,10 +83,14 @@ export function ProjectDesign(): React.ReactElement {
     if (!file) return
     setUploading(true)
     try {
-      const path = `projects/${project.id}/logo`
-      await supabase.storage.from('artifacts').upload(path, file, { upsert: true, contentType: file.type })
-      const { data: urlData } = supabase.storage.from('artifacts').getPublicUrl(path)
-      update({ logoUrl: urlData.publicUrl })
+      const res = await fetch(`/api/projects/${project.id}/logo`, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      const data = await res.json() as { logoUrl: string | null }
+      if (data.logoUrl) update({ logoUrl: data.logoUrl })
     } finally {
       setUploading(false)
       if (logoInputRef.current) logoInputRef.current.value = ''
