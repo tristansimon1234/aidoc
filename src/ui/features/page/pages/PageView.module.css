@@ -318,3 +318,37 @@
   font-family: var(--font-mono);
   flex-shrink: 0;
 }
+
+/* --- Child page links (Notion-style) --- */
+.childPages {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-xl);
+  padding-top: var(--space-md);
+}
+
+.childPageLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 8px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.childPageLink:hover {
+  background: var(--color-secondary);
+  border-color: var(--color-primary);
+  text-decoration: none;
+}
+
+.childPageLink svg {
+  color: var(--color-muted-fg);
+  flex-shrink: 0;
+}

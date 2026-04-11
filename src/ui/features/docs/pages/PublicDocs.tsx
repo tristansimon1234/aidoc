@@ -158,6 +158,21 @@ export function PublicDocs(): React.ReactElement {
                 ) : (
                   <p className={styles.empty}>This page has no content yet.</p>
                 )}
+                {/* Notion-style child page links */}
+                {(() => {
+                  const children = pages.filter((p) => p.parentId === activePage.id)
+                  if (children.length === 0) return null
+                  return (
+                    <div className={styles.childPages}>
+                      {children.map((child) => (
+                        <button key={child.id} className={styles.childPageLink} onClick={() => setActivePage(child)}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
+                          {child.title}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })()}
               </>
             )}
           </div>
