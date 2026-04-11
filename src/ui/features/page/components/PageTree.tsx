@@ -244,7 +244,7 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
         </div>
       </SortableContext>
 
-      <DragOverlay dropAnimation={{ duration: 150, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}>
+      <DragOverlay dropAnimation={null}>
         {draggedItem && (
           <div className={styles.dragOverlay}>
             <span className={`${styles.statusDot} ${styles[draggedItem.page.status]}`} />
