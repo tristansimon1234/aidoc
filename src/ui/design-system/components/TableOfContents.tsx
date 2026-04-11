@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import styles from './TableOfContents.module.css'
 
 interface TocItem {
-  id: string
+  index: number
   text: string
   level: number
 }
@@ -17,55 +17,71 @@ interface TableOfContentsProps {
 function extractHeadings(markdown: string): TocItem[] {
   const lines = markdown.split('\n')
   const headings: TocItem[] = []
+  let idx = 0
   for (const line of lines) {
     const match = line.match(/^(#{1,3})\s+(.+)/)
     if (match) {
       const level = match[1]!.length
       const text = match[2]!.replace(/[*_`\[\]]/g, '').trim()
-      const id = text.toLowerCase().replace(/[^a-z0-9\u00C0-\u024F]+/gi, '-').replace(/^-|-$/g, '')
-      headings.push({ id, text, level })
+      headings.push({ index: idx, text, level })
+      idx++
     }
   }
   return headings
 }
 
+/** Find all h1/h2/h3 elements inside a container (works with both MarkdownRenderer and BlockNote) */
+function findHeadingElements(container: Element): Element[] {
+  return Array.from(container.querySelectorAll('h1, h2, h3')).filter((el) => {
+    // Skip the page title input (if it exists)
+    if (el.tagName === 'INPUT') return false
+    // Only include headings with actual text content
+    const text = el.textContent?.trim()
+    return text && text.length > 0
+  })
+}
+
 export function TableOfContents({ content, scrollContainer }: TableOfContentsProps): React.ReactElement | null {
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [hovered, setHovered] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const headingElsRef = useRef<Element[]>([])
 
   const headings = useMemo(() => extractHeadings(content), [content])
 
-  // Observe which heading is currently in view
+  // Find and observe heading elements in the DOM
   useEffect(() => {
     if (headings.length === 0) return
 
-    const container = scrollContainer ?? document.querySelector('[class*="content"]')
-    if (!container) return
+    // Small delay to let the DOM render (BlockNote is async)
+    const timer = setTimeout(() => {
+      const container = scrollContainer ?? document.querySelector('[class*="contentArea"]') ?? document.querySelector('[class*="contentWrapper"]')
+      if (!container) return
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActiveId(entry.target.id)
+      const els = findHeadingElements(container)
+      headingElsRef.current = els
+
+      if (els.length === 0) return
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              const idx = els.indexOf(entry.target)
+              if (idx !== -1) setActiveIndex(idx)
+            }
           }
-        }
-      },
-      { root: container as Element, rootMargin: '-10% 0px -80% 0px', threshold: 0 },
-    )
+        },
+        { rootMargin: '-10% 0px -80% 0px', threshold: 0 },
+      )
 
-    // Find heading elements in the DOM
-    const elements: Element[] = []
-    for (const h of headings) {
-      const el = container.querySelector(`#${CSS.escape(h.id)}`)
-      if (el) {
-        observer.observe(el)
-        elements.push(el)
-      }
-    }
+      for (const el of els) observer.observe(el)
 
-    return () => observer.disconnect()
-  }, [headings, scrollContainer])
+      return () => observer.disconnect()
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [headings, scrollContainer, content])
 
   const handleMouseEnter = (): void => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
@@ -76,15 +92,13 @@ export function TableOfContents({ content, scrollContainer }: TableOfContentsPro
     timeoutRef.current = setTimeout(() => setHovered(false), 300)
   }
 
-  const handleClick = (id: string): void => {
-    const container = scrollContainer ?? document.querySelector('[class*="content"]')
-    if (!container) return
-    const el = container.querySelector(`#${CSS.escape(id)}`)
+  const handleClick = useCallback((index: number): void => {
+    const el = headingElsRef.current[index]
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-      setActiveId(id)
+      setActiveIndex(index)
     }
-  }
+  }, [])
 
   if (headings.length < 2) return null
 
@@ -94,7 +108,7 @@ export function TableOfContents({ content, scrollContainer }: TableOfContentsPro
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Collapsed indicator — two small lines */}
+      {/* Collapsed indicator */}
       <div className={`${styles.indicator} ${hovered ? styles.indicatorHidden : ''}`}>
         <span className={styles.indicatorLine} />
         <span className={`${styles.indicatorLine} ${styles.indicatorLineShort}`} />
@@ -106,10 +120,10 @@ export function TableOfContents({ content, scrollContainer }: TableOfContentsPro
         <nav className={styles.nav}>
           {headings.map((h) => (
             <button
-              key={h.id}
-              className={`${styles.tocItem} ${activeId === h.id ? styles.tocItemActive : ''}`}
+              key={h.index}
+              className={`${styles.tocItem} ${activeIndex === h.index ? styles.tocItemActive : ''}`}
               style={{ paddingLeft: `${(h.level - 1) * 12 + 8}px` }}
-              onClick={() => handleClick(h.id)}
+              onClick={() => handleClick(h.index)}
             >
               {h.text}
             </button>

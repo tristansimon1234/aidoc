@@ -183,11 +183,47 @@
   gap: 1px;
 }
 
+.navRow {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  border-radius: 6px;
+  transition: background-color 0.1s;
+}
+
+.navRow:hover {
+  background-color: var(--color-secondary);
+}
+
+.navChevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--color-muted-fg);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.navChevron:hover {
+  color: var(--color-fg);
+}
+
+.navSpacer {
+  width: 20px;
+  flex-shrink: 0;
+}
+
 .navItem {
-  display: block;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
-  padding: 8px 12px;
+  padding: 4px 8px;
   border: none;
   border-radius: 6px;
   background: none;

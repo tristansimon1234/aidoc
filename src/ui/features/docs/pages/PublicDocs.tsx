@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'react-router-dom'
 import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO } from '../../../shared/api/client.js'
@@ -40,6 +40,80 @@ function searchPages(pages: PublicPage[], query: string): SearchResult[] {
     }
   }
   return results.slice(0, 8)
+}
+
+interface TreePage extends PublicPage {
+  children: TreePage[]
+}
+
+function buildPageTree(pages: PublicPage[]): TreePage[] {
+  const map = new Map<string, TreePage>()
+  const roots: TreePage[] = []
+  for (const p of pages) map.set(p.id, { ...p, children: [] })
+  for (const p of pages) {
+    const node = map.get(p.id)!
+    if (p.parentId && map.has(p.parentId)) {
+      map.get(p.parentId)!.children.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+  return roots
+}
+
+function NavTree({ items, activePage, onSelect, depth = 0 }: {
+  items: TreePage[]
+  activePage: PublicPage | null
+  onSelect: (page: PublicPage) => void
+  depth?: number
+}): React.ReactElement {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  const toggle = useCallback((id: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  return (
+    <>
+      {items.map((p) => {
+        const hasChildren = p.children.length > 0
+        const isCollapsed = collapsed.has(p.id)
+        return (
+          <div key={p.id}>
+            <div className={styles.navRow} style={{ paddingLeft: `${depth * 14 + 4}px` }}>
+              {hasChildren ? (
+                <button className={styles.navChevron} onClick={() => toggle(p.id)}>
+                  <svg
+                    width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ transform: isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 0.15s' }}
+                  >
+                    <path d="m9 18 6-6-6-6" />
+                  </svg>
+                </button>
+              ) : (
+                <span className={styles.navSpacer} />
+              )}
+              <button
+                className={`${styles.navItem} ${activePage?.id === p.id ? styles.navItemActive : ''}`}
+                onClick={() => onSelect(p)}
+              >
+                {p.title}
+              </button>
+            </div>
+            {hasChildren && !isCollapsed && (
+              <NavTree items={p.children} activePage={activePage} onSelect={onSelect} depth={depth + 1} />
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
 }
 
 export function PublicDocs(): React.ReactElement {
@@ -136,15 +210,7 @@ export function PublicDocs(): React.ReactElement {
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
           <nav className={styles.nav}>
-            {pages.map((p) => (
-              <button
-                key={p.id}
-                className={`${styles.navItem} ${activePage?.id === p.id ? styles.navItemActive : ''}`}
-                onClick={() => setActivePage(p)}
-              >
-                {p.title}
-              </button>
-            ))}
+            <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={setActivePage} />
           </nav>
         </aside>
 
