@@ -7,7 +7,6 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
-  DragOverlay,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -210,8 +209,6 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     }
   }
 
-  const draggedItem = dragId ? flatItems.find((i) => i.page.id === dragId) : null
-
   return (
     <DndContext
       sensors={sensors}
@@ -243,15 +240,6 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
           ))}
         </div>
       </SortableContext>
-
-      <DragOverlay dropAnimation={null}>
-        {draggedItem && (
-          <div className={styles.dragOverlay}>
-            <span className={`${styles.statusDot} ${styles[draggedItem.page.status]}`} />
-            <span className={styles.label}>{draggedItem.page.title}</span>
-          </div>
-        )}
-      </DragOverlay>
     </DndContext>
   )
 }
@@ -307,7 +295,8 @@ function SortablePageNode({
     transform: CSS.Transform.toString(yOnly),
     transition,
     paddingLeft: `${depth * 20 + 4}px`,
-    opacity: isDragging ? 0.3 : 1,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
   }
 
   const handleDelete = async (): Promise<void> => {
