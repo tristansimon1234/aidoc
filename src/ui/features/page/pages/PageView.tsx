@@ -1,5 +1,5 @@
 import { type ChangeEvent, useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useOutletContext, useNavigate, Link } from 'react-router-dom'
+import { useParams, useOutletContext, Link } from 'react-router-dom'
 import {
   Button,
   Badge,
@@ -9,10 +9,10 @@ import {
   EmptyState,
   TableOfContents,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
-import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
+import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
+import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
-import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
+import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
 import styles from './PageView.module.css'
 
@@ -20,11 +20,6 @@ interface PageContext {
   project: ProjectDTO
   pages: DocPageDTO[]
   refetchPages: () => Promise<void>
-}
-
-interface ActivityEntry {
-  text: string
-  timestamp: number
 }
 
 export function PageView(): React.ReactElement {
@@ -35,23 +30,17 @@ export function PageView(): React.ReactElement {
   const cachedPage = context.pages.find((p) => p.id === pageId) ?? null
 
   const [page, setPage] = useState<DocPageDTO | null>(cachedPage)
-  const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
-  const [latestRun, setLatestRun] = useState<RunDTO | null>(null)
   const [loading, setLoading] = useState(!cachedPage)
-  const [exploring, setExploring] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [activity, setActivity] = useState<ActivityEntry[]>([])
   const abortRef = useRef<AbortController | null>(null)
-  const runIdRef = useRef<string | null>(null)
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'test'>('doc')
-  const [genMethod, setGenMethod] = useState<'video' | 'explore'>('video')
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -64,13 +53,8 @@ export function PageView(): React.ReactElement {
       setPage(null)
       setLoading(true)
     }
-    setDoc(null)
-    setLatestRun(null)
     setError(null)
-    setActivity([])
     setLiveUrl(null)
-    setExploring(false)
-    setGenerating(false)
     setStatusMessage(null)
     setActiveTab('doc')
   }
@@ -84,9 +68,11 @@ export function PageView(): React.ReactElement {
       ])
       const { page: pageData, latestRun: runData, doc: docData } = fullData
       setPage(pageData)
-      setDoc(docData)
-      setLatestRun(runData)
       setTryReport(testReport)
+
+      // Extract voiceover URL from latest run summary
+      const voiceover = (runData?.summaryJson as Record<string, unknown> | null)?.voiceover as { audioUrl?: string } | undefined
+      setVoiceoverUrl(voiceover?.audioUrl ?? null)
 
       // If doc exists but page.content is empty, copy it over
       if (docData?.markdownContent && !pageData.content) {
@@ -103,131 +89,6 @@ export function PageView(): React.ReactElement {
   useEffect(() => {
     void fetchData()
   }, [fetchData])
-
-  const runExploration = async (runId: string, customPrompt?: string): Promise<void> => {
-    setExploring(true)
-    setError(null)
-    setActivity([])
-    setLiveUrl(null)
-    setStatusMessage('Launching browser...')
-
-    const controller = new AbortController()
-    abortRef.current = controller
-    runIdRef.current = runId
-
-    try {
-      await api.runs.exploreStream(
-        runId,
-        (event: StepEventDTO) => {
-          switch (event.type) {
-            case 'live': setLiveUrl(event.liveUrl ?? null); break
-            case 'status':
-              if (event.message && event.message.length > 15) {
-                setActivity((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
-              }
-              setStatusMessage(event.message ?? null)
-              break
-            case 'step':
-              if (event.message && event.message.length > 15) {
-                setActivity((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
-              }
-              break
-            case 'done': setStatusMessage(event.message ?? 'Exploration complete'); break
-            case 'blocked': setStatusMessage(event.message ?? 'Agent needs help'); break
-            case 'cancelled': setStatusMessage('Exploration stopped'); break
-            case 'error': setStatusMessage(event.message ?? 'Error'); break
-          }
-        },
-        customPrompt,
-        controller.signal,
-      )
-
-      // Stream ended — generate doc from whatever we have (skip if cancelled)
-      if (controller.signal.aborted) {
-        await fetchData()
-        await context.refetchPages()
-        return
-      }
-
-      setLiveUrl(null)
-      const updatedRun = await api.runs.get(runId)
-
-      // If Vercel killed the function mid-exploration, the run is stuck as 'running'.
-      // Mark it as failed so we can still generate doc from partial data.
-      if (updatedRun.status === 'running' || updatedRun.status === 'pending') {
-        try {
-          await dbUpdatePage(projectId!, pageId!, { status: 'draft' })
-          await fetchData()
-          await context.refetchPages()
-          setStatusMessage('Exploration timed out — you can retry or generate doc from what was captured')
-          return
-        } catch {
-          // ignore
-        }
-      }
-
-      if (updatedRun.status === 'completed' || updatedRun.status === 'blocked' || updatedRun.status === 'failed') {
-        setStatusMessage('Generating documentation...')
-        setGenerating(true)
-
-        try {
-          const generatedDoc = await api.runs.generateDoc(runId)
-          setDoc(generatedDoc)
-          await dbUpdatePage(projectId!, pageId!, { status: 'published' })
-        } catch (genErr) {
-          console.error('Doc generation failed:', genErr)
-        }
-
-        if (updatedRun.status === 'blocked') {
-          setStatusMessage('Exploration paused — you can continue anytime')
-        } else if (updatedRun.status === 'failed') {
-          setStatusMessage('Exploration stopped — partial doc generated')
-        } else {
-          setStatusMessage(null)
-        }
-      }
-
-      await fetchData()
-      await context.refetchPages()
-    } catch (err) {
-      // AbortError is expected when user cancels — not a real error
-      if ((err as Error).name !== 'AbortError') {
-        setError((err as Error).message)
-      }
-    } finally {
-      abortRef.current = null
-      runIdRef.current = null
-      setExploring(false)
-      setGenerating(false)
-    }
-  }
-
-  const handleNewExploration = async (mode: 'complete' | 'replace' = 'replace'): Promise<void> => {
-    if (!projectId || !pageId || !page) return
-    const startUrl = page.startUrl ?? context.project.baseUrl
-    const run = await api.runs.create({
-      featureName: page.title,
-      startUrl,
-      goal: page.goal ?? `Document the "${page.title}" feature`,
-      docPageId: pageId,
-    })
-    await dbUpdatePage(projectId, pageId, { status: 'exploring' })
-
-    // In "complete" mode, pass existing doc as context so the agent fills gaps
-    let exploreContext: string | undefined
-    if (mode === 'complete' && page.content) {
-      exploreContext = `## Existing Documentation (DO NOT repeat — focus on gaps and missing sections)\n\n${page.content}`
-    }
-
-    await runExploration(run.id, exploreContext)
-  }
-
-  const handleCancel = async (): Promise<void> => {
-    if (runIdRef.current) {
-      await api.runs.cancel(runIdRef.current).catch(() => {})
-    }
-    abortRef.current?.abort()
-  }
 
   const handleTryDoc = async (): Promise<void> => {
     if (!projectId || !pageId || !page?.content) return
@@ -344,11 +205,6 @@ DO NOT generate new documentation. Only verify the existing one.`
     }
   }, [projectId, pageId])
 
-  // Auto-switch to exploration tab when agent is active
-  useEffect(() => {
-    if (exploring || generating) setActiveTab('exploration')
-  }, [exploring, generating])
-
   const handleSaveContent = async (markdown: string): Promise<void> => {
     if (!projectId || !pageId) return
     await dbUpdatePage(projectId, pageId, { content: markdown })
@@ -402,7 +258,6 @@ DO NOT generate new documentation. Only verify the existing one.`
           onClick={() => setActiveTab('exploration')}
         >
           Generate
-          {(exploring || generating) && <Spinner size="sm" />}
         </button>
         <button
           className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`}
@@ -432,6 +287,21 @@ DO NOT generate new documentation. Only verify the existing one.`
               void debouncedPageUpdate({ title: e.target.value })
             }}
           />
+          {voiceoverUrl && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
+              padding: 'var(--space-sm) var(--space-md)',
+              background: 'var(--color-card)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-lg)',
+              marginBottom: 'var(--space-md)',
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--color-primary)' }}>
+                <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+              </svg>
+              <audio controls preload="none" src={voiceoverUrl} style={{ flex: 1, height: 32 }} />
+            </div>
+          )}
           <BlockEditor
             key={pageId}
             content={page.content ?? ''}
@@ -456,16 +326,15 @@ DO NOT generate new documentation. Only verify the existing one.`
         </div>
       )}
 
-      {/* ===== EXPLORATION TAB ===== */}
+      {/* ===== GENERATE TAB ===== */}
       {activeTab === 'exploration' && (
         <div className={styles.tabContent}>
 
-          {/* Briefing config — collapsible during exploration */}
           <BriefingSection
             page={page}
             pageId={pageId!}
             briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
-            collapsed={exploring || generating}
+            collapsed={false}
             onPageUpdate={(updates) => {
               setPage({ ...page, ...updates })
               void debouncedPageUpdate(updates)
@@ -476,217 +345,16 @@ DO NOT generate new documentation. Only verify the existing one.`
             }}
           />
 
-          {/* Generation methods — segmented control + content */}
-          {!exploring && !generating && (
-            <>
-            <div className={styles.methodToggle}>
-              <button
-                className={`${styles.methodOption} ${genMethod === 'video' ? styles.methodOptionActive : ''}`}
-                onClick={() => setGenMethod('video')}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
-                Screen recording
-                <Badge color="green">recommended</Badge>
-              </button>
-              <button
-                className={`${styles.methodOption} ${genMethod === 'explore' ? styles.methodOptionActive : ''}`}
-                onClick={() => setGenMethod('explore')}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
-                Auto-exploration
-                <Badge color="amber">beta</Badge>
-              </button>
-            </div>
-
-            {genMethod === 'video' && (
-              <div className={styles.methodContent}>
-                <div className={styles.methodInfo}>
-                  <div className={styles.methodInfoText}>
-                    <p className={styles.methodInfoDesc}>
-                      Upload a screen recording of your product workflow. AI watches every click, extracts screenshots at key moments, and writes step-by-step documentation automatically.
-                    </p>
-                    <div className={styles.methodInfoTags}>
-                      <span className={styles.methodTag}>.mp4, .webm, .mov</span>
-                      <span className={styles.methodTag}>up to 500MB</span>
-                      <span className={styles.methodTag}>Best for: tutorials, onboarding flows</span>
-                    </div>
-                  </div>
-                </div>
-                <VideoUploader
-                  projectId={projectId!}
-                  pageId={pageId!}
-                  page={page}
-                  onComplete={async () => {
-                    await fetchData()
-                    await context.refetchPages()
-                    setActiveTab('doc')
-                  }}
-                />
-              </div>
-            )}
-
-            {genMethod === 'explore' && (
-              <div className={styles.methodContent}>
-                <div className={styles.methodInfo}>
-                  <div className={styles.methodInfoText}>
-                    <p className={styles.methodInfoDesc}>
-                      An AI agent opens your app in a cloud browser, navigates autonomously, captures screenshots, and generates documentation — no recording needed.
-                    </p>
-                    <div className={styles.methodInfoTags}>
-                      <span className={styles.methodTag}>Requires Anthropic + Browserbase keys</span>
-                      <span className={styles.methodTag}>Best for: full site coverage</span>
-                    </div>
-                  </div>
-                </div>
-                <div className={styles.methodActions}>
-                  {latestRun && page.content ? (
-                    <>
-                      <Button
-                        variant={page.briefing?.objective ? undefined : 'secondary'}
-                        onClick={() => void handleNewExploration('complete')}
-                      >
-                        Complete documentation
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => void handleNewExploration('replace')}
-                      >
-                        Start from scratch
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant={page.briefing?.objective ? undefined : 'secondary'}
-                      onClick={() => void handleNewExploration('replace')}
-                    >
-                      Explore & Document
-                    </Button>
-                  )}
-                  {!page.briefing?.objective && (
-                    <span className={styles.methodHint}>Add an objective for better results</span>
-                  )}
-                </div>
-              </div>
-            )}
-            </>
-          )}
-
-          {/* Live exploration feed — activity left, video right */}
-          {(exploring || generating) && (
-            <div>
-              <div className={styles.liveFeedHeader}>
-                <Spinner size="sm" />
-                <span className={styles.liveFeedStatus} style={{ color: generating ? 'var(--color-accent-green)' : 'var(--color-accent-blue)' }}>
-                  {statusMessage}
-                </span>
-                {exploring && !generating && (
-                  <Button size="sm" variant="ghost" onClick={() => void handleCancel()}>Stop</Button>
-                )}
-              </div>
-
-              <div className={styles.liveLayout}>
-                <div className={styles.activityLog}>
-                  <div className={styles.activityHeader}>
-                    reasoning ({activity.length})
-                  </div>
-                  {activity.map((entry, i) => (
-                    <div key={i} className={styles.activityEntry}>
-                      {entry.text}
-                    </div>
-                  ))}
-                </div>
-
-                {liveUrl ? (
-                  <div className={styles.replayContainer}>
-                    <div className={styles.replayHeader}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: 'var(--radius-full)', backgroundColor: 'var(--color-accent-green)', animation: 'pulse 2s infinite' }} />
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>live</span>
-                      </span>
-                    </div>
-                    <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
-                  </div>
-                ) : (
-                  <div className={styles.section} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '300px' }}>
-                    <Spinner size="lg" />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Reasoning persists after exploration */}
-          {!exploring && !generating && activity.length > 0 && (
-            <div className={styles.activityLog} style={{ maxHeight: '200px', marginBottom: 'var(--space-md)' }}>
-              <div className={styles.activityHeader}>
-                exploration reasoning ({activity.length})
-              </div>
-              {activity.map((entry, i) => (
-                <div key={i} className={styles.activityEntry}>
-                  {entry.text}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Post-exploration dashboard */}
-          {!exploring && !generating && latestRun && (
-            <div>
-              {/* Completeness bar — full width on top */}
-              {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
-                <CompletenessBar assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment} />
-              )}
-
-              {/* Two columns: exploration status (left) + gaps (right) */}
-              <div className={styles.dashboardGrid}>
-                <div>
-                  <ExplorationAssistant
-                    run={latestRun}
-                    onContinue={async (ctx) => {
-                      if (!latestRun || !projectId || !pageId) return
-                      await dbUpdatePage(projectId, pageId, { status: 'exploring' })
-                      await runExploration(latestRun.id, ctx)
-                    }}
-                    onSkipAndGenerate={async () => {
-                      if (!latestRun) return
-                      try {
-                        const generatedDoc = await api.runs.generateDoc(latestRun.id)
-                        setDoc(generatedDoc)
-                        if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
-                        await fetchData()
-                        await context.refetchPages()
-                      } catch (err) {
-                        setError((err as Error).message)
-                      }
-                    }}
-                    onReExplore={() => handleNewExploration('replace')}
-                  />
-                </div>
-
-                <div>
-                  {/* Gaps */}
-                  {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
-                    <GapsPanel gaps={((doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment).gaps} />
-                  )}
-
-                  {/* Session replay */}
-                  <SessionReplay runId={latestRun.id} />
-                </div>
-              </div>
-
-              {/* Suggested next pages — full width */}
-              {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
-                <NextPagesPanel
-                  nextSteps={((doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment).nextSteps}
-                  projectId={projectId!}
-                  onPageCreated={async () => {
-                    await fetchData()
-                    await context.refetchPages()
-                  }}
-                />
-              )}
-            </div>
-          )}
+          <ScreenRecorder
+            projectId={projectId!}
+            pageId={pageId!}
+            page={page}
+            onComplete={async () => {
+              await fetchData()
+              await context.refetchPages()
+              setActiveTab('doc')
+            }}
+          />
 
           {error && <EmptyState title="Error" description={error} />}
         </div>
@@ -768,10 +436,6 @@ DO NOT generate new documentation. Only verify the existing one.`
       )}
     </div>
   )
-}
-
-function hasSelfAssessment(json: Record<string, unknown>): boolean {
-  return json.selfAssessment != null && typeof json.selfAssessment === 'object'
 }
 
 // --- Briefing Section (collapsible, numbered steps) ---
@@ -960,333 +624,3 @@ function BriefingSection({
   )
 }
 
-// --- Session Replay ---
-
-function SessionReplay({ runId }: { runId: string }): React.ReactElement {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
-
-  useEffect(() => {
-    let cancelled = false
-
-    const loadRecording = async (): Promise<void> => {
-      try {
-        // Get public URL for the recording
-        const { data } = supabase.storage.from('artifacts').getPublicUrl(`runs/${runId}/recording.json`)
-        if (!data.publicUrl) { setStatus('empty'); return }
-
-        const res = await fetch(data.publicUrl)
-        if (!res.ok) { setStatus('empty'); return }
-
-        const events = await res.json() as unknown[]
-        if (cancelled || !containerRef.current || events.length === 0) { setStatus('empty'); return }
-
-        // Dynamic import to avoid bundling rrweb for all pages
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const rrweb = await import('rrweb') as any
-        containerRef.current.innerHTML = ''
-        new rrweb.Replayer(events, {
-          root: containerRef.current,
-          skipInactive: true,
-          showWarning: false,
-          showDebug: false,
-          blockClass: 'rr-block',
-          speed: 1,
-        })
-        setStatus('ready')
-      } catch {
-        if (!cancelled) setStatus('error')
-      }
-    }
-
-    void loadRecording()
-    return () => { cancelled = true }
-  }, [runId])
-
-  if (status === 'empty') return <></>
-
-  return (
-    <div className={styles.section}>
-      <p style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)' }}>
-        session replay
-      </p>
-      {status === 'loading' && <Spinner size="sm" />}
-      {status === 'error' && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Recording unavailable</span>}
-      <div ref={containerRef} className={styles.replayContainer} />
-    </div>
-  )
-}
-
-// --- Self-Assessment + Suggestions Panel ---
-
-interface SelfAssessment {
-  overallCompleteness: number
-  gaps: { area: string; reason: string; severity: string }[]
-  nextSteps: { suggestion: string; reason: string; priority: string }[]
-}
-
-// --- Video Uploader ---
-
-function VideoUploader({
-  projectId,
-  pageId,
-  page,
-  onComplete,
-}: {
-  projectId: string
-  pageId: string
-  page: DocPageDTO
-  onComplete: () => Promise<void>
-}): React.ReactElement {
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'analyzing' | 'generating' | 'extracting'>('idle')
-  const [error, setError] = useState<string | null>(null)
-
-  const handleVideoUpload = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setError(null)
-
-    if (file.size > 500 * 1024 * 1024) {
-      setError('Video too large (max 500MB)')
-      return
-    }
-
-    try {
-      // 1. Create a run
-      const run = await api.runs.create({
-        featureName: page.title,
-        startUrl: page.startUrl ?? '',
-        goal: page.goal || 'Document from screen recording',
-        docPageId: pageId,
-      })
-
-      // 2. Upload video directly to Supabase via signed URL
-      setStatus('uploading')
-      const videoPath = `runs/${run.id}/video${file.name.substring(file.name.lastIndexOf('.'))}`
-      const { signedUrl } = await api.runs.getSignedUploadUrl(run.id, videoPath)
-      const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-      if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
-
-      // 3. Analyze with Gemini — returns timestamps for each step
-      setStatus('analyzing')
-      const { timestamps } = await api.runs.analyzeVideo(run.id, videoPath)
-
-      // 4. Extract frames at exact Gemini timestamps and upload as screenshots
-      setStatus('extracting')
-      await extractAndUploadFrames(file, run.id, timestamps)
-
-      // 5. Generate doc
-      setStatus('generating')
-      await api.runs.generateDoc(run.id)
-      await dbUpdatePage(projectId, pageId, { status: 'published' })
-
-      await onComplete()
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setStatus('idle')
-    }
-  }
-
-  if (status !== 'idle') {
-    return (
-      <div className={styles.methodProgress}>
-        <Spinner size="sm" />
-        <span>
-          {status === 'uploading' && 'Uploading video...'}
-          {status === 'analyzing' && 'Analyzing video with AI — this may take a minute...'}
-          {status === 'extracting' && 'Extracting screenshots...'}
-          {status === 'generating' && 'Generating documentation...'}
-        </span>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <label className={styles.dropZone}>
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary)', marginBottom: 'var(--space-sm)' }}>
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" />
-        </svg>
-        <span className={styles.dropZoneTitle}>Drop a screen recording here</span>
-        <span className={styles.dropZoneHint}>or click to browse — .mp4, .webm, .mov up to 500MB</span>
-        <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleVideoUpload(e)}
-          style={{ display: 'none' }} />
-      </label>
-      {error && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-red)', marginTop: 'var(--space-sm)' }}>{error}</p>}
-    </div>
-  )
-}
-
-// Extract frames from video at exact Gemini timestamps and upload via backend
-async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
-  if (timestamps.length === 0) return
-
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (!ctx) { resolve(); return }
-
-    video.onloadedmetadata = () => {
-      canvas.width = Math.min(video.videoWidth, 1280)
-      canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
-
-      let i = 0
-
-      const extractNext = (): void => {
-        if (i >= timestamps.length) { resolve(); return }
-        video.currentTime = timestamps[i]!
-      }
-
-      video.onseeked = () => {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const stepIndex = i
-        canvas.toBlob(async (blob) => {
-          if (blob) {
-            const path = `runs/${runId}/frame-${stepIndex}.jpg`
-            const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
-            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-            await api.runs.updateStepScreenshot(runId, stepIndex, path)
-          }
-          i++
-          extractNext()
-        }, 'image/jpeg', 0.8)
-      }
-
-      video.onerror = () => reject(new Error('Failed to load video'))
-      extractNext()
-    }
-
-    video.onerror = () => reject(new Error('Failed to load video'))
-    video.src = URL.createObjectURL(videoFile)
-  })
-}
-
-function getCompletenessColor(pct: number): string {
-  if (pct >= 70) return 'var(--color-accent-green)'
-  if (pct >= 40) return 'var(--color-accent-amber)'
-  return 'var(--color-accent-red)'
-}
-
-function CompletenessBar({ assessment }: { assessment: SelfAssessment }): React.ReactElement {
-  const color = getCompletenessColor(assessment.overallCompleteness)
-  return (
-    <div style={{
-      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-      marginBottom: 'var(--space-md)',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
-        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>Documentation Completeness</span>
-        <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, fontFamily: 'var(--font-mono)', color }}>{assessment.overallCompleteness}%</span>
-      </div>
-      <div style={{ height: '6px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${assessment.overallCompleteness}%`, backgroundColor: color, borderRadius: 'var(--radius-full)', transition: 'width 0.5s ease' }} />
-      </div>
-    </div>
-  )
-}
-
-function GapsPanel({ gaps }: { gaps: SelfAssessment['gaps'] }): React.ReactElement {
-  if (gaps.length === 0) return <></>
-  return (
-    <div style={{
-      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-      marginBottom: 'var(--space-md)',
-    }}>
-      <h3 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-sm)', color: 'var(--color-accent-amber)', margin: '0 0 var(--space-sm)' }}>
-        Gaps ({gaps.length})
-      </h3>
-      {gaps.map((gap, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)', marginBottom: 'var(--space-xs)' }}>
-          <span style={{
-            fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', padding: '1px 6px',
-            borderRadius: 'var(--radius-sm)', flexShrink: 0,
-            backgroundColor: gap.severity === 'major' ? 'rgba(255,77,77,0.15)' : 'rgba(245,166,35,0.15)',
-            color: gap.severity === 'major' ? 'var(--color-accent-red)' : 'var(--color-accent-amber)',
-          }}>
-            {gap.severity}
-          </span>
-          <div>
-            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)' }}>{gap.area}</span>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>{gap.reason}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function NextPagesPanel({
-  nextSteps,
-  projectId,
-  onPageCreated,
-}: {
-  nextSteps: SelfAssessment['nextSteps']
-  projectId: string
-  onPageCreated: () => Promise<void>
-}): React.ReactElement {
-  const [creatingIndex, setCreatingIndex] = useState<number | null>(null)
-  const navigate = useNavigate()
-
-  if (nextSteps.length === 0) return <></>
-
-  const handleCreatePage = async (ns: { suggestion: string; reason: string }, index: number): Promise<void> => {
-    setCreatingIndex(index)
-    try {
-      const slug = ns.suggestion.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
-      const newPage = await dbCreatePage(projectId, {
-        title: ns.suggestion,
-        slug: slug || `page-${Date.now()}`,
-        goal: ns.reason,
-      })
-      await onPageCreated()
-      navigate(`/projects/${projectId}/pages/${newPage.id}`)
-    } catch {
-      // ignore
-    } finally {
-      setCreatingIndex(null)
-    }
-  }
-
-  return (
-    <div style={{
-      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-    }}>
-      <h3 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-md)', color: 'var(--color-accent-blue)', margin: '0 0 var(--space-md)' }}>
-        Suggested Next Pages
-      </h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-        {nextSteps.map((ns, i) => (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
-            padding: 'var(--space-sm) var(--space-md)',
-            backgroundColor: 'var(--color-bg-elevated)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-border-subtle)',
-          }}>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)', margin: 0, fontWeight: 500 }}>
-                {ns.suggestion}
-              </p>
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
-                {ns.reason}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={creatingIndex === i}
-              onClick={() => void handleCreatePage(ns, i)}
-            >
-              {creatingIndex === i ? '...' : 'Create Page'}
-            </Button>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}

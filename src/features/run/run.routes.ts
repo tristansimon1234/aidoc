@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { ValidationError } from '../../shared/middleware/error.middleware.js'
+import { ValidationError, AppError } from '../../shared/middleware/error.middleware.js'
 import { CreateRunSchema, RunIdParamSchema } from './run.schema.js'
 import * as runService from './run.service.js'
 
@@ -150,6 +150,42 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
       if (!params.success) throw new ValidationError(params.error.flatten())
       const doc = await runService.generateDoc(params.data.id)
       res.status(200).json(doc)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Generate voice-over narration from documentation
+runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { voiceId?: string; language?: string }
+      const { generateVoiceover } = await import('../documentation/voiceover.service.js')
+
+      // Get the doc content for this run
+      const { findDocByRunId } = await import('../documentation/documentation.repository.js')
+      const doc = await findDocByRunId(params.data.id)
+      if (!doc?.markdownContent) {
+        throw new AppError('No documentation found for this run', 'DOC_NOT_FOUND', 404)
+      }
+
+      const result = await generateVoiceover(params.data.id, doc.markdownContent, {
+        voiceId: body.voiceId,
+        language: body.language,
+      })
+
+      // Store voiceover info in run summary
+      const run = await runService.getRun(params.data.id)
+      if (run) {
+        const summary = run.summaryJson ?? {}
+        const { updateRunSummary } = await import('./run.repository.js')
+        await updateRunSummary(params.data.id, { ...summary, voiceover: result })
+      }
+
+      res.status(200).json(result)
     } catch (err) {
       next(err)
     }

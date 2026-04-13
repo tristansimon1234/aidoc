@@ -173,63 +173,6 @@
   color: var(--color-primary);
 }
 
-/* Dashboard grid */
-.dashboardGrid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-md);
-  margin-bottom: var(--space-md);
-}
-
-.dashboardFull {
-  grid-column: 1 / -1;
-}
-
-/* Action bar */
-.actions {
-  display: flex;
-  gap: var(--space-sm);
-  margin-bottom: var(--space-md);
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-/* Segmented control — method selector */
-.methodToggle {
-  display: inline-flex;
-  background: var(--color-secondary);
-  border-radius: var(--radius-lg);
-  padding: 3px;
-  gap: 3px;
-  margin-bottom: var(--space-lg);
-}
-
-.methodOption {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--space-sm) var(--space-md);
-  border-radius: calc(var(--radius-lg) - 3px);
-  font-size: var(--text-sm);
-  font-weight: 500;
-  font-family: var(--font-sans);
-  color: var(--color-muted-fg);
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.methodOption:hover {
-  color: var(--color-fg);
-}
-
-.methodOptionActive {
-  background: var(--color-card);
-  color: var(--color-fg);
-  box-shadow: var(--shadow-sm);
-}
-
 .methodContent {
   animation: tabFadeIn 0.2s ease;
 }
@@ -578,12 +521,6 @@
   margin: 0 0 var(--space-sm);
 }
 
-/* --- Method hint text --- */
-.methodHint {
-  font-size: var(--text-xs);
-  color: var(--color-muted-fg);
-  margin-top: var(--space-sm);
-}
 
 /* --- Try Doc results --- */
 .tryHeader {

@@ -196,8 +196,6 @@ export const api = {
       request(`/projects/${projectId}/pages/${pageId}/doc`),
     latestRun: (projectId: string, pageId: string): Promise<RunDTO | null> =>
       request<RunDTO>(`/projects/${projectId}/pages/${pageId}/run`).catch(() => null),
-    autoGenerate: (projectId: string): Promise<DocPageDTO[]> =>
-      request(`/projects/${projectId}/pages/auto-generate`, { method: 'POST' }),
     reorder: (projectId: string, items: { id: string; parentId: string | null; sortOrder: number }[]): Promise<void> =>
       request(`/projects/${projectId}/pages/reorder`, { method: 'PUT', body: JSON.stringify(items) }),
   },
@@ -265,6 +263,8 @@ export const api = {
     },
     generateDoc: (id: string): Promise<GeneratedDocDTO> =>
       request(`/runs/${id}/generate-doc`, { method: 'POST' }),
+    generateVoiceover: (id: string, options?: { voiceId?: string; language?: string }): Promise<{ audioPath: string; audioUrl: string; duration: number }> =>
+      request(`/runs/${id}/generate-voiceover`, { method: 'POST', body: JSON.stringify(options ?? {}) }),
     analyzeTry: (id: string, pageContent: string, pageTitle: string, pageId: string): Promise<TryDocReportDTO> =>
       request(`/runs/${id}/analyze-try`, { method: 'POST', body: JSON.stringify({ pageContent, pageTitle, pageId }) }),
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),
