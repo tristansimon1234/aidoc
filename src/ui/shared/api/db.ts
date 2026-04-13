@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js'
-import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO, ProjectContextDTO } from './client.js'
+import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO, ProjectContextDTO, TryDocReportDTO } from './client.js'
 
 // Direct Supabase queries — bypass Vercel serverless
 
@@ -175,6 +175,22 @@ export async function reorderPages(
   const results = await Promise.all(promises)
   const failed = results.find((r) => r.error)
   if (failed?.error) throw new Error(failed.error.message)
+}
+
+export async function fetchLatestTestReport(pageId: string): Promise<TryDocReportDTO | null> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('summary_json')
+    .eq('doc_page_id', pageId)
+    .like('feature_name', '[Test]%')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (error || !data) return null
+  const summary = data.summary_json as Record<string, unknown> | null
+  if (!summary?.tryDocReport) return null
+  return summary.tryDocReport as TryDocReportDTO
 }
 
 // --- snake_case → camelCase mappers ---

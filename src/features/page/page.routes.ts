@@ -184,6 +184,25 @@ pageRouter.put('/:pageId', (req: Request, res: Response, next: NextFunction) => 
   })()
 })
 
+// Get the latest test report for a page (Try Doc analysis)
+pageRouter.get('/:pageId/test-report', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = PageParams.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { findLatestTestRunByPageId } = await import('../run/run.repository.js')
+      const run = await findLatestTestRunByPageId(params.data.pageId)
+      if (!run?.summaryJson?.tryDocReport) {
+        res.status(404).json({ error: 'No test report found', code: 'TEST_REPORT_NOT_FOUND' })
+        return
+      }
+      res.status(200).json(run.summaryJson.tryDocReport)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 pageRouter.delete('/:pageId', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {

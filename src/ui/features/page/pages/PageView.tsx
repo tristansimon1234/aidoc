@@ -9,10 +9,11 @@ import {
   EmptyState,
   TableOfContents,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO } from '../../../shared/api/client.js'
-import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage } from '../../../shared/api/db.js'
+import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
+import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
+import { TryDocReport } from '../components/TryDocReport.js'
 import styles from './PageView.module.css'
 
 interface PageContext {
@@ -45,10 +46,12 @@ export function PageView(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'tryresult'>('doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'test'>('doc')
   const [genMethod, setGenMethod] = useState<'video' | 'explore'>('video')
   const [tryRunning, setTryRunning] = useState(false)
-  const [trySteps, setTrySteps] = useState<{ text: string; timestamp: number }[]>([])
+  const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
+  const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -75,10 +78,15 @@ export function PageView(): React.ReactElement {
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
     try {
-      const { page: pageData, latestRun: runData, doc: docData } = await fetchPageFull(pageId)
+      const [fullData, testReport] = await Promise.all([
+        fetchPageFull(pageId),
+        fetchLatestTestReport(pageId),
+      ])
+      const { page: pageData, latestRun: runData, doc: docData } = fullData
       setPage(pageData)
       setDoc(docData)
       setLatestRun(runData)
+      setTryReport(testReport)
 
       // If doc exists but page.content is empty, copy it over
       if (docData?.markdownContent && !pageData.content) {
@@ -225,34 +233,39 @@ export function PageView(): React.ReactElement {
     if (!projectId || !pageId || !page?.content) return
     const startUrl = page.startUrl ?? context.project.baseUrl
 
-    const tryDocPrompt = `You are a documentation verifier. Your ONLY job is to follow the documentation below step by step in the real application and report what works and what doesn't.
+    const tryDocPrompt = `You are simulating a NAIVE USER who has ONLY the documentation below. You have never used this product before. You know NOTHING about it except what the documentation tells you.
 
 ## Documentation to verify:
 
 ${page.content}
 
-## Instructions:
-- Navigate to: ${startUrl}
-- Follow EACH step described in the documentation exactly as written
-- For each step, report in your reasoning:
-  - PASS: if the step works as documented
-  - FAIL: if something doesn't match, explain what's different
-  - MISSING: if a UI element or feature described doesn't exist
+## Your task:
+1. Navigate to: ${startUrl}
+2. Follow EACH step in the documentation IN ORDER, exactly as written
+3. For EVERY step, report your experience clearly:
+   - PASS: if the step works exactly as documented
+   - FAIL: if something doesn't match — explain what's different
+   - AMBIGUOUS: if the instruction is vague or could be interpreted multiple ways
+
+NAIVE USER RULES:
+- Do NOT fill in gaps in the documentation with your own knowledge
+- If the doc says "click Settings" and you see "Preferences" — that is a FAIL
+- If the doc assumes you know something it never explained — note it
+- If the product shows an error — note the exact error message
 - Take a screenshot after each major step
-- Be thorough but concise in your observations
-- At the end, give a final verdict: how many steps passed vs failed
 
 DO NOT generate new documentation. Only verify the existing one.`
 
     setTryRunning(true)
-    setTrySteps([])
+    setTryStreamSteps([])
+    setTryReport(null)
+    setAnalyzing(false)
     setLiveUrl(null)
-    setActiveTab('tryresult')
+    setActiveTab('test')
     setStatusMessage('Launching browser...')
 
     const controller = new AbortController()
     abortRef.current = controller
-
     try {
       const run = await api.runs.create({
         featureName: `[Test] ${page.title}`,
@@ -261,6 +274,7 @@ DO NOT generate new documentation. Only verify the existing one.`
         docPageId: pageId,
       })
 
+      // Phase 1: Explore with naive user prompt
       await api.runs.exploreStream(
         run.id,
         (event: StepEventDTO) => {
@@ -269,19 +283,29 @@ DO NOT generate new documentation. Only verify the existing one.`
             case 'status':
             case 'step':
               if (event.message && event.message.length > 10) {
-                setTrySteps((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
+                setTryStreamSteps((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
               }
               setStatusMessage(event.message ?? null)
               break
-            case 'done': setStatusMessage('Verification complete'); break
+            case 'done': setStatusMessage('Exploration complete — analyzing results...'); break
             case 'error': setStatusMessage(event.message ?? 'Error'); break
           }
         },
         tryDocPrompt,
         controller.signal,
       )
-      // No doc generation — just stop here
-      setStatusMessage('Verification complete')
+
+      if (controller.signal.aborted) return
+
+      // Phase 2: Analyze with Gemini → structured report
+      setTryRunning(false)
+      setLiveUrl(null)
+      setAnalyzing(true)
+      setStatusMessage('Generating test report...')
+
+      const report = await api.runs.analyzeTry(run.id, page.content, page.title, pageId)
+      setTryReport(report)
+      setStatusMessage(null)
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         setError((err as Error).message)
@@ -289,6 +313,7 @@ DO NOT generate new documentation. Only verify the existing one.`
     } finally {
       abortRef.current = null
       setTryRunning(false)
+      setAnalyzing(false)
       setLiveUrl(null)
     }
   }
@@ -349,15 +374,6 @@ DO NOT generate new documentation. Only verify the existing one.`
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
           <Button
             size="sm"
-            variant="ghost"
-            disabled={!page.content || exploring || generating}
-            onClick={() => void handleTryDoc()}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m9 15 2 2 4-4" /></svg>
-            Try doc
-          </Button>
-          <Button
-            size="sm"
             variant={page.isPublic ? 'secondary' : 'ghost'}
             onClick={() => {
               const newVal = !page.isPublic
@@ -387,6 +403,20 @@ DO NOT generate new documentation. Only verify the existing one.`
         >
           Generate
           {(exploring || generating) && <Spinner size="sm" />}
+        </button>
+        <button
+          className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`}
+          onClick={() => setActiveTab('test')}
+        >
+          Test
+          {(tryRunning || analyzing) && <Spinner size="sm" />}
+          {!tryRunning && !analyzing && tryReport && (
+            <span className={`${styles.tabDot} ${
+              tryReport.summary.overallVerdict === 'pass' ? styles.tabDotPass :
+              tryReport.summary.overallVerdict === 'fail' ? styles.tabDotFail :
+              styles.tabDotPartial
+            }`} />
+          )}
         </button>
       </div>
 
@@ -662,22 +692,31 @@ DO NOT generate new documentation. Only verify the existing one.`
         </div>
       )}
 
-      {/* ===== TRY DOC RESULTS ===== */}
-      {activeTab === 'tryresult' && (
+      {/* ===== TEST TAB ===== */}
+      {activeTab === 'test' && (
         <div className={styles.tabContent}>
           <div className={styles.tryHeader}>
             <div className={styles.tryTitleRow}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m9 15 2 2 4-4" /></svg>
               <h2 className={styles.tryTitle}>Documentation Test</h2>
-              {tryRunning && <Spinner size="sm" />}
+              {(tryRunning || analyzing) && <Spinner size="sm" />}
             </div>
-            <p className={styles.trySubtitle}>
-              {tryRunning
-                ? statusMessage ?? 'AI is following your documentation steps...'
-                : trySteps.length > 0
-                  ? 'Verification complete — review the results below'
-                  : 'No test results yet'}
-            </p>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <p className={styles.trySubtitle}>
+                {tryRunning
+                  ? statusMessage ?? 'AI is following your documentation steps...'
+                  : analyzing
+                    ? 'Analyzing results with Gemini...'
+                    : tryReport
+                      ? `Last tested ${new Date(tryReport.executedAt).toLocaleDateString()}`
+                      : 'Verify your documentation against the live application'}
+              </p>
+              {!tryRunning && !analyzing && (
+                <Button size="sm" onClick={() => void handleTryDoc()} disabled={!page.content}>
+                  {tryReport ? 'Re-test' : 'Run Test'}
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Live browser during test */}
@@ -694,33 +733,36 @@ DO NOT generate new documentation. Only verify the existing one.`
             </div>
           )}
 
-          {/* Results log */}
-          {trySteps.length > 0 && (
-            <div className={styles.tryResults}>
-              {trySteps.map((step, i) => {
-                const isPass = /\bpass/i.test(step.text)
-                const isFail = /\b(fail|missing|error|doesn't|does not|incorrect)/i.test(step.text)
-                return (
-                  <div key={i} className={`${styles.tryStep} ${isPass ? styles.tryStepPass : ''} ${isFail ? styles.tryStepFail : ''}`}>
-                    <span className={styles.tryStepIcon}>
-                      {isPass ? '✓' : isFail ? '✗' : '·'}
-                    </span>
-                    <span className={styles.tryStepText}>{step.text}</span>
-                  </div>
-                )
-              })}
+          {/* Live streaming steps */}
+          {tryRunning && tryStreamSteps.length > 0 && (
+            <div className={styles.activityLog} style={{ maxHeight: '300px', marginBottom: 'var(--space-md)' }}>
+              <div className={styles.activityHeader}>verification steps ({tryStreamSteps.length})</div>
+              {tryStreamSteps.map((step, i) => (
+                <div key={i} className={styles.activityEntry}>{step.text}</div>
+              ))}
             </div>
           )}
 
-          {!tryRunning && trySteps.length > 0 && (
-            <div className={styles.tryActions}>
-              <Button size="sm" variant="ghost" onClick={() => setActiveTab('doc')}>
-                Back to doc
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => void handleTryDoc()}>
-                Run again
-              </Button>
+          {/* Analyzing state */}
+          {analyzing && (
+            <div className={styles.section} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px', gap: 'var(--space-md)' }}>
+              <Spinner size="lg" />
+              <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--text-sm)' }}>Generating structured test report...</span>
             </div>
+          )}
+
+          {/* Structured report */}
+          {!tryRunning && !analyzing && tryReport && (
+            <TryDocReport report={tryReport} />
+          )}
+
+          {/* Empty state */}
+          {!tryRunning && !analyzing && !tryReport && (
+            <EmptyState
+              title="No test results yet"
+              description="Run a test to verify your documentation against the live application. The AI will follow each step as a naive user and report what works and what doesn't."
+              action={<Button onClick={() => void handleTryDoc()} disabled={!page.content}>Run Test</Button>}
+            />
           )}
         </div>
       )}
