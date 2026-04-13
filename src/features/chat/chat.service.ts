@@ -373,14 +373,35 @@ export async function generateWalkthrough(
     maxTokens: 1024,
   })
 
-  // 3. Parse and validate single-step JSON response
+  // 3. Parse single-step JSON response (tolerant of Gemini quirks)
   let jsonStr = response.text.trim()
+  // Strip markdown fences
   if (jsonStr.startsWith('```')) {
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   }
+  // Extract JSON object if Gemini added text around it
+  const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+  if (jsonMatch) jsonStr = jsonMatch[0]
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(jsonStr) as Record<string, unknown>
+  } catch (parseErr) {
+    console.error('[walkthrough] JSON parse failed:', (parseErr as Error).message, '| raw:', jsonStr.slice(0, 300))
+    return { done: true, step: null, stepNumber: 0, hint: null }
+  }
+
+  // Normalize Gemini output — coerce empty strings to null for nullable fields
+  if (parsed.step && typeof parsed.step === 'object') {
+    const step = parsed.step as Record<string, unknown>
+    if (step.elementRef === '' || step.elementRef === undefined) step.elementRef = null
+    if (step.fallbackSelector === '' || step.fallbackSelector === undefined) step.fallbackSelector = null
+    if (step.typeValue === '' || step.typeValue === undefined) step.typeValue = null
+  }
+  if (parsed.hint === '' || parsed.hint === undefined) parsed.hint = null
+  if (parsed.stepNumber === undefined) parsed.stepNumber = (request.completedSteps?.length ?? 0) + 1
 
   try {
-    const parsed: unknown = JSON.parse(jsonStr)
     const validated = WalkthroughResponseSchema.parse(parsed)
     return {
       done: validated.done,
@@ -388,9 +409,8 @@ export async function generateWalkthrough(
       stepNumber: validated.stepNumber,
       hint: validated.hint,
     }
-  } catch {
-    // Gemini returned invalid/truncated JSON — signal done to avoid broken state
-    console.error('[walkthrough] Failed to parse AI response:', jsonStr.slice(0, 200))
+  } catch (zodErr) {
+    console.error('[walkthrough] Zod validation failed:', (zodErr as Error).message, '| parsed:', JSON.stringify(parsed).slice(0, 300))
     return { done: true, step: null, stepNumber: 0, hint: null }
   }
 }
