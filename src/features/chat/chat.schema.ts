@@ -46,7 +46,7 @@ export const DomSnapshotSchema = z.object({
     width: z.number().positive(),
     height: z.number().positive(),
   }),
-  elements: z.array(DomElementSchema).max(200),
+  elements: z.array(DomElementSchema).max(80),
 })
 
 export const CompletedStepSchema = z.object({

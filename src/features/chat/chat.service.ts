@@ -335,14 +335,29 @@ Generate 6 highly specific questions that users of THIS product would actually a
 
 // --- Progressive walkthrough generation (one step at a time) ---
 
+// Cache RAG context — same question always produces same doc chunks
+const walkthroughContextCache = new Map<string, { docContext: string; expiresAt: number }>()
+const WT_CONTEXT_TTL_MS = 600_000 // 10 minutes
+
+async function getWalkthroughDocContext(projectId: string, message: string): Promise<string> {
+  const cacheKey = `${projectId}:${message}`
+  const cached = walkthroughContextCache.get(cacheKey)
+  if (cached && Date.now() < cached.expiresAt) return cached.docContext
+
+  const queryEmbedding = await embedText(message)
+  const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
+  const docContext = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
+
+  walkthroughContextCache.set(cacheKey, { docContext, expiresAt: Date.now() + WT_CONTEXT_TTL_MS })
+  return docContext
+}
+
 export async function generateWalkthrough(
   projectId: string,
   request: WalkthroughRequest,
 ): Promise<WalkthroughResponse> {
-  // 1. RAG search
-  const queryEmbedding = await embedText(request.message)
-  const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
-  const docContext = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
+  // 1. RAG search (cached — same message always returns same chunks)
+  const docContext = await getWalkthroughDocContext(projectId, request.message)
 
   // 2. Build prompt with completed steps context
   const userPrompt = buildWalkthroughPrompt(
@@ -355,7 +370,7 @@ export async function generateWalkthrough(
   const response = await generateText({
     systemPrompt: WALKTHROUGH_SYSTEM_PROMPT,
     userPrompt,
-    maxTokens: 1024,
+    maxTokens: 512,
   })
 
   // 3. Parse and validate single-step JSON response

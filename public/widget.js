@@ -373,7 +373,7 @@
       var db = Math.abs(b.rect.x + b.rect.w / 2 - cx) + Math.abs(b.rect.y + b.rect.h / 2 - cy);
       return da - db;
     });
-    elements = elements.slice(0, 200);
+    elements = elements.slice(0, 80);
 
     return {
       url: window.location.origin + window.location.pathname, // Strip query params and hash
