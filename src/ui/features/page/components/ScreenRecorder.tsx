@@ -6,6 +6,8 @@ import styles from '../pages/PageView.module.css'
 
 type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 'generating'
 
+const MAX_RECORDING_SECONDS = 300 // 5 minutes max
+
 /** DOM event captured by the Chrome extension's content script */
 interface DomEvent {
   type: 'click' | 'input' | 'navigation' | 'scroll' | 'load'
@@ -221,7 +223,16 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
       recorder.start(1000) // Collect data every second
       setStatus('recording')
       setElapsed(0)
-      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000)
+      timerRef.current = setInterval(() => {
+        setElapsed((e) => {
+          const next = e + 1
+          // Auto-stop at max duration
+          if (next >= MAX_RECORDING_SECONDS) {
+            mediaRecorderRef.current?.stop()
+          }
+          return next
+        })
+      }, 1000)
     } catch (err) {
       // User cancelled the screen picker — not an error
       if ((err as Error).name !== 'NotAllowedError') {
@@ -272,8 +283,8 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
             <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-fg)', fontWeight: 500 }}>
               Recording...
             </span>
-            <span style={{ fontSize: 'var(--text-lg)', fontFamily: 'var(--font-mono)', color: 'var(--color-fg)', fontWeight: 600 }}>
-              {formatTime(elapsed)}
+            <span style={{ fontSize: 'var(--text-lg)', fontFamily: 'var(--font-mono)', color: elapsed >= MAX_RECORDING_SECONDS - 30 ? 'var(--color-destructive)' : 'var(--color-fg)', fontWeight: 600 }}>
+              {formatTime(elapsed)} / {formatTime(MAX_RECORDING_SECONDS)}
             </span>
             {hasExtension && (
               <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-success)', padding: '2px 6px', background: 'rgba(0,200,0,0.1)', borderRadius: 'var(--radius-sm)' }}>

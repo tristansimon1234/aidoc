@@ -181,14 +181,31 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         throw new AppError('No steps found for this run', 'NO_STEPS', 404)
       }
 
-      // Build narration text for each step from observation (screen description)
+      // Build narration script from step descriptions using Gemini
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const stepDescriptions = runSteps.map((s) =>
-        `Step ${s.stepIndex + 1}: ${s.action ?? ''}\n${s.observation ?? ''}`,
+        `Step ${s.stepIndex + 1}: ${s.action ?? ''}\nScreen: ${s.observation ?? ''}`,
       ).join('\n\n')
 
       const narrationResult = await generateText({
-        userPrompt: `Convert these screen recording step descriptions into a short, natural voice-over narration. Write 1-2 sentences per step, as if narrating a tutorial video. Be concise and conversational.\n\nSteps:\n${stepDescriptions}\n\nReturn one line per step, prefixed with the step number:\n1. First step narration\n2. Second step narration\netc.`,
+        userPrompt: `You are a professional tutorial narrator. Write a voice-over script for a screen recording walkthrough.
+
+For each step below, write a clear, engaging narration (1-2 sentences). The narration should:
+- Guide the viewer through what's happening on screen
+- Use "you" to address the viewer directly ("Click on...", "You'll see...")
+- Be smooth and natural when read aloud — avoid jargon or robotic phrasing
+- Flow naturally from one step to the next (use transitions like "Next...", "Now...", "From here...")
+- NOT describe UI elements in technical detail — focus on what the USER is doing and WHY
+
+Steps:
+${stepDescriptions}
+
+Return EXACTLY one line per step, prefixed with the step number:
+1. Welcome to the dashboard. Let's walk through the setup process.
+2. Click on "Settings" in the top-right corner to configure your account.
+etc.
+
+Write ${runSteps.length} lines total.`,
         maxTokens: 4096,
       })
 
