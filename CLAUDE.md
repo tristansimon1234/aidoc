@@ -8,7 +8,7 @@
 
 ## Project Overview
 
-AiDoc is a **project-based documentation platform** that generates user-facing product guides and deploys them as **embeddable AI chat widgets** on client apps.
+AiDoc is a **project-based documentation platform** that generates user-facing product guides and deploys them as **embeddable AI chat widgets** on client apps. A **Try Doc** feature lets users test their documentation against the live product — an AI agent follows the doc steps as a naive user and generates a structured quality report.
 
 **Two generation methods**:
 1. **Screen recording (recommended)** — User uploads a video → Gemini analyzes every action → extracts screenshots at key moments → Gemini generates structured documentation
@@ -26,7 +26,7 @@ AiDoc is a **project-based documentation platform** that generates user-facing p
 |---|---|
 | Runtime | Node.js 20+ / TypeScript 5.9 (strict: true) |
 | Backend | Express 5 (serverless on Vercel) |
-| Browser Automation | Stagehand 3 (Browserbase cloud browsers) — beta exploration only |
+| Browser Automation | Stagehand 3 (Browserbase cloud browsers) — beta exploration + doc testing |
 | AI (primary) | Gemini 2.5 Flash — doc generation, structure gen, context enrichment, chat, video analysis |
 | AI (exploration) | Claude Sonnet 4 via Stagehand (`STAGEHAND_MODEL`) — beta only |
 | AI (embeddings) | Gemini embedding model (auto-discovered via ListModels API) — 768-dim vectors |
@@ -110,7 +110,9 @@ src/
       tokens.ts             # Color, spacing, font, shadow tokens
       globals.css            # CSS variables mapped to tokens
       components/            # Button, Badge, Card, StatusIndicator, CodeBlock,
-                             # MarkdownRenderer, Field, Spinner, EmptyState
+                             # MarkdownRenderer, Field, Spinner, EmptyState,
+                             # ImageLightbox (click-to-fullscreen image overlay),
+                             # TableOfContents (floating TOC with heading tracking)
                              # Each: Component.tsx + Component.module.css
                              # Barrel export in index.ts (only allowed barrel)
     features/
@@ -119,6 +121,8 @@ src/
       page/
         pages/               # NewPage, PageView (with edit mode + live exploration + video upload)
         components/           # PageTree (sidebar tree with move/reorder/delete)
+                             # TryDocReport (7-section test report view)
+                             # TableOfContents (Notion-style floating TOC)
       chat/
         components/           # ChatPanel (slide-out RAG chat with dynamic suggestions)
       run/
@@ -172,6 +176,7 @@ docs/
 - **Context enrichment**: Gemini 2.5 Flash — fire-and-forget (in `run.service.ts`)
 - **Chat (RAG)**: Gemini 2.5 Flash with pgvector-retrieved context
 - **Embeddings**: Auto-discovered Gemini embedding model, 768-dim output
+- **Try Doc analysis**: Gemini 2.5 Flash — analyzes Stagehand test results into structured JSON report (7 sections)
 - **Stagehand (beta exploration)**: `STAGEHAND_MODEL` constant (`anthropic/claude-sonnet-4-20250514`) — requires `ANTHROPIC_API_KEY`
 
 ### Prompt rules
@@ -238,6 +243,13 @@ See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 15 mig
 /api/projects/:pid/chat/index              # POST: Index/re-index doc embeddings
 /api/projects/:pid/chat/suggestions        # GET: Dynamic suggestions (cached 1h)
 
+# Try Doc
+/api/runs/:id/analyze-try                  # POST: Gemini analysis of test run
+/api/projects/:pid/pages/:id/test-report   # GET: latest test report for page
+
+# Project assets
+/api/projects/:pid/logo                    # POST: upload project logo
+
 # Widget (public — API key auth, no JWT)
 /api/widget/:key/chat                      # POST: Public chat (rate limited 30/min)
 /api/widget/:key/config                    # GET: Widget config + suggestions
@@ -266,6 +278,8 @@ HTTP status codes: 200, 201, 400, 401, 404, 422, 500.
 - Status always uses the status color tokens
 - `MarkdownRenderer` for rich doc display (react-markdown)
 - `CodeBlock` for raw code display
+- `TableOfContents` — floating side indicator, expands on hover to show headings
+- `ImageLightbox` (via `useImageLightbox` hook) — click any doc image to fullscreen
 
 ### Frontend patterns
 - Feature-first organization mirrors backend
@@ -315,10 +329,12 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [ ] No pagination on list endpoints
 - [ ] Legacy RunDashboard/NewRun pages still exist (pre-project model)
 - [ ] Widget: no domain restriction (Origin header check) — API key is public
-- [ ] Chat suggestions cache is in-memory (lost on redeploy) — should be in DB
+- [x] ~~Chat suggestions cache is in-memory~~ — widget endpoint has in-memory cache + edge caching
 - [ ] No usage analytics/logging for widget chat messages
+- [ ] Try Doc report could include screenshots from Stagehand steps
+- [x] ~~Widget config slow~~ — edge caching + inline data-cfg attribute
 
 ---
 
-*Last updated: 2026-04-08*
+*Last updated: 2026-04-13*
 *Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19*

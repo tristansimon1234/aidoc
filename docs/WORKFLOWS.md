@@ -27,10 +27,12 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 1. `POST /chat/index` — checks if embeddings exist, indexes if not
 2. `GET /chat/suggestions` — Gemini generates 6 project-specific questions (cached 1h)
 3. User sends message → `POST /chat`
-4. Query embedded with Gemini embedding model → pgvector cosine search → top 10 chunks
-5. Gemini generates answer with project context (name, audience, features, knowledge base)
-6. Response includes: answer, source pages (clickable), follow-up suggestions (clickable)
-7. Step-by-step: for "how do I" questions, gives 2-3 steps then proposes to continue
+4. Smart RAG: `needsDocSearch()` skips embedding search for greetings, small talk, and continuation messages
+5. Query embedded with Gemini embedding model → pgvector cosine search → top 10 chunks
+6. Gemini generates answer with project context (name, audience, features, knowledge base)
+7. Response includes: answer, source pages (clickable), follow-up suggestions (clickable)
+8. Step-by-step: for "how do I" questions, gives 2-3 steps then proposes to continue
+9. Admin chat checks embeddings directly via Supabase (bypasses Vercel cold start)
 
 ## Embeddable Widget
 
@@ -46,10 +48,13 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 ```
 **Runtime**:
 1. Widget loads config from `GET /api/widget/:key/config` (project name + suggestions)
-2. Auto-detects current URL (`window.location.href`) for page-aware suggestions
-3. Messages sent to `POST /api/widget/:key/chat` (rate limited 30 req/min)
-4. Same RAG pipeline as internal chat, with user context for personalization
-5. Floating button (bottom-right) + popup panel, dark theme, mobile responsive
+2. Widget config includes inline design via `data-cfg` attribute for instant theming (no flash)
+3. Config endpoint uses edge caching (`Cache-Control: s-maxage=300`)
+4. Auto-detects current URL (`window.location.href`) for page-aware suggestions
+5. Messages sent to `POST /api/widget/:key/chat` (rate limited 30 req/min)
+6. Same RAG pipeline as internal chat, with user context for personalization
+7. Suggestions cached in-memory with 1h TTL
+8. Floating button (bottom-right) + popup panel, dark theme, mobile responsive
 
 ## 1. Project Creation
 
@@ -78,7 +83,7 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 
 ## 3. Page Exploration
 
-**Trigger**: User clicks "Explore & Document" on a page
+**Trigger**: User clicks "Explore & Document" on a page (also used for Try Doc testing — see section 10)
 **Flow**:
 1. `POST /api/runs` → creates run linked to page (`docPageId`)
 2. `GET /api/runs/:id/explore` → SSE stream begins
@@ -183,10 +188,13 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 ## 8. Page Organization
 
 **In sidebar**:
+- Sidebar supports drag-and-drop reorder with optimistic updates
 - `[...]` menu on hover → Move up, Move down, Move to parent, Delete
+- Context menu for nesting pages (Move inside... / Move to root)
 - Move up/down: swap `sortOrder` with sibling
 - Move to parent: update `parentId` via `PUT /api/projects/:pid/pages/:id`
 - Delete: `DELETE /api/projects/:pid/pages/:id`
+- Child page links shown at bottom of page content (Notion-style)
 
 ## 9. Self-Assessment + Suggestions
 
@@ -207,6 +215,18 @@ Frontend renders:
 - Gaps list with severity badges
 - "Suggested Next Pages" with [Create Page] buttons
 - Structural suggestions (merge, split, move, rename)
+
+## 10. Try Doc (Documentation Testing)
+
+1. User clicks "Test" tab on a page → clicks "Run Test"
+2. System creates a run with `[Test]` prefix and naive-user prompt
+3. Stagehand agent opens the app in a cloud browser
+4. Agent follows documentation steps exactly as a naive user (no gap-filling)
+5. SSE events stream live progress (steps + browser iframe)
+6. After exploration: Gemini 2.5 Flash analyzes all steps vs doc content
+7. Generates structured 7-section report: summary, step results, failures (doc vs product), doc issues, UX insights, recommendations, scores
+8. Report stored in `runs.summary_json.tryDocReport`
+9. Test tab shows persisted report with verdict badge (green/red/amber)
 
 ## Cost Per Run
 

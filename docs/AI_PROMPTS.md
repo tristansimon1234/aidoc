@@ -12,6 +12,8 @@
 | Chat suggestions | Gemini 2.5 Flash | ~$0.001/call | `chat.service.ts` → `getSuggestions()` |
 | Embeddings | Gemini embedding (auto-discovered) | ~$0.0001/chunk | `gemini.client.ts` → `embedTexts()` via REST API |
 | Browser exploration (beta) | Claude Sonnet 4 via Stagehand | ~$0.01/step | `exploration.service.ts` via `STAGEHAND_MODEL` |
+| Try Doc analysis | Gemini 2.5 Flash | ~$0.005/report | `prompt.builder.ts` → `buildTryDocAnalysisPrompt()` |
+| Smart RAG filter | Heuristic (no AI) | $0 | `chat.service.ts` → `needsDocSearch()` |
 
 ## Exploration Agent Instruction
 
@@ -95,7 +97,7 @@
 **Location**: `src/shared/ai/prompt.builder.ts` → `buildContextEnrichmentPrompt()`
 
 **When**: Called after each documentation generation
-**Model**: Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — cheap, ~$0.01 per call
+**Model**: Gemini 2.5 Flash — cheap, ~$0.001 per call
 
 **Input**:
 - `existingContext`: current `projects.discovered_context` (or null for first time)
@@ -117,6 +119,26 @@
 **Key instruction**: "Merge with existing knowledge — don't replace it."
 
 **Effect**: Each exploration enriches the project context. Future explorations are more informed about the product.
+
+## Try Doc Analysis Prompt
+
+After Stagehand exploration, Gemini analyzes the raw step data against the original documentation.
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `TRY_DOC_ANALYSIS_SYSTEM_PROMPT` + `buildTryDocAnalysisPrompt()`
+
+**System prompt** instructs Gemini to judge as a naive user:
+- "Click Create" but button says "New" → DOC issue
+- Product errors out → PRODUCT issue
+- Doc assumes knowledge never explained → implicit assumption
+
+**Output**: Structured JSON with 7 sections:
+1. Summary (pass/fail/ambiguous counts, overall verdict)
+2. Step-by-step results (instruction vs actual, issue type)
+3. Failures & root causes (doc vs product, severity, suggestion)
+4. Documentation issues (clarity score 1-10, missing/ambiguous/implicit)
+5. UX insights (friction, missing feedback, unnecessary steps)
+6. Recommendations (fix-doc, fix-product, improve-ux with priority)
+7. Global scores (doc quality, test pass rate, UX clarity — each 1-10)
 
 ## Prompt Improvement Guidelines
 

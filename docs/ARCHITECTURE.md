@@ -12,8 +12,9 @@ AiDoc is an AI-powered documentation tool that automatically explores web applic
 | Backend | Express 5 (serverless on Vercel) |
 | Browser | Stagehand 3 (Browserbase cloud) |
 | AI (exploration) | Claude Sonnet 4 (reliable, via Stagehand `STAGEHAND_MODEL`) |
-| AI (doc generation) | Claude Sonnet 4 (quality, direct API) |
-| Database | Supabase (Postgres + Auth + Storage + RLS) |
+| AI (doc generation) | Gemini 2.5 Flash (doc generation, chat, analysis) |
+| AI (embeddings) | Gemini embedding model (768-dim vectors) |
+| Database | Supabase (Postgres + Auth + Storage + RLS + pgvector) |
 | Frontend | React 19 + Vite 8 + React Router 7 |
 | Validation | Zod 4 |
 | Deployment | Vercel (serverless + static) |
@@ -22,9 +23,9 @@ AiDoc is an AI-powered documentation tool that automatically explores web applic
 
 ```
 User (Supabase Auth)
-  └─ Project (name, baseUrl, context{audience,workflow,quirks}, credentials[])  ← RLS by user_id
+  └─ Project (name, baseUrl, context{audience,workflow,quirks}, credentials[], design{logoUrl})  ← RLS by user_id
        └─ DocPage (title, slug, parentId, sortOrder, content, briefing{objective,knowledge,resources[]}, status)
-            └─ Run (featureName, startUrl, goal, status, tokenUsage)
+            └─ Run (featureName, startUrl, goal, status, tokenUsage, summary_json{tryDocReport})
                  ├─ RunStep (action, observation, screenshotPath)
                  ├─ RunQuestion (question, answer)
                  └─ GeneratedDoc (markdownContent, jsonContent)
@@ -36,6 +37,8 @@ User (Supabase Auth)
 src/features/
   project/          # User workspace CRUD
   page/             # Doc page hierarchy + auto-generate
+                    #   components/TryDocReport.tsx (7-section test report view)
+                    #   components/TableOfContents.tsx (design-system)
   run/              # Exploration run lifecycle
   exploration/      # Stagehand agent + browser automation
   documentation/    # Doc generation (prompt + Claude call)
@@ -85,6 +88,15 @@ interface RunDeps {
 ### Prompt Centralization
 All AI prompts live in `shared/ai/prompt.builder.ts`. The exploration instruction is the exception (built inline in `exploration.service.ts` because it's dynamic).
 
+### Try Doc
+Try Doc: Stagehand exploration → Gemini structured analysis → persisted JSON report
+
+### Optimistic Updates
+Optimistic updates: sidebar drag-and-drop applies changes instantly, syncs to DB in background
+
+### Smart RAG
+Smart RAG: greetings/small talk skip embedding search (`needsDocSearch` heuristic)
+
 ### Error Handling
 ```typescript
 AppError → { error: string, code: string, details?: unknown }
@@ -113,6 +125,9 @@ AppError → { error: string, code: string, details?: unknown }
 /api/runs/:id/questions                        GET
 /api/runs/:id/questions/:qid/answer            POST
 /api/runs/:id/doc                              GET
+/api/runs/:id/analyze-try                      POST
+/api/projects/:pid/pages/:id/test-report       GET
+/api/projects/:pid/logo                        POST
 ```
 
 ## Deployment

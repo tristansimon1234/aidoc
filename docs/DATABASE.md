@@ -48,11 +48,12 @@ status                   text NOT NULL DEFAULT 'pending'  -- pending | running |
 token_usage              integer DEFAULT 0
 browserbase_session_id   text                -- Browserbase session for resume
 doc_page_id              uuid FK → doc_pages(id) SET NULL
-summary_json             jsonb               -- structured exploration summary (sections, blockers)
+summary_json             jsonb               -- structured exploration summary (sections, blockers, tryDocReport)
 created_at               timestamptz DEFAULT now()
 updated_at               timestamptz DEFAULT now()
 ```
 **Index**: `idx_runs_doc_page_id`
+**Note**: `summary_json.tryDocReport` stores the 7-section Try Doc analysis report (via `POST /runs/:id/analyze-try`)
 
 ### run_steps
 ```sql
@@ -123,6 +124,7 @@ created_at        timestamptz DEFAULT now()
 ```sql
 widget_api_key    text UNIQUE                 -- API key for embeddable widget
 widget_enabled    boolean NOT NULL DEFAULT false
+design            jsonb                       -- widget design config {logoUrl?: string, ...}
 ```
 **Index**: `idx_projects_widget_api_key`
 

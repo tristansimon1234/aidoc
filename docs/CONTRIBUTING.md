@@ -25,6 +25,8 @@
    - `my-feature.routes.ts` — Express routes
 3. Mount routes in `src/app.ts` AND `api/index.ts`
 4. Add frontend pages in `src/ui/features/my-feature/`
+5. If adding AI analysis, put prompts in `shared/ai/prompt.builder.ts`
+6. If adding Zod validation for AI output, put schemas in the feature's `*.schema.ts`
 
 ## Adding a New API Endpoint
 
@@ -65,9 +67,14 @@ Frontend (Vite prefix): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 ## Known Technical Debt
 
 - [ ] Exploration instruction built inline in `exploration.service.ts` (should be in `prompt.builder.ts`)
-- [ ] Stagehand model hardcoded in 2 places (should use env var or constant)
+- [x] ~~Stagehand model hardcoded in 2 places~~ — now uses `STAGEHAND_MODEL` constant
 - [ ] `run.service.ts` imports `questions.repository` directly (cross-feature)
 - [ ] No tests written (Vitest configured but unused)
-- [ ] No rate limiting on API endpoints
+- [x] ~~No rate limiting~~ — widget endpoint has 30 req/min per API key
 - [ ] No pagination on list endpoints
 - [ ] RunDashboard and NewRun pages are legacy (pre-project model)
+- [ ] Try Doc screenshots not yet linked to report steps
+- [ ] Widget: no domain restriction (API key is public)
+- [ ] No usage analytics for widget chat
+- [x] ~~Widget config slow~~ — edge caching + data-cfg
+- [x] ~~Chat admin slow~~ — direct Supabase embedding check
