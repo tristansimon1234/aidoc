@@ -316,6 +316,16 @@
 
   // --- DOM Snapshot Capture ---
 
+  // Redact PII patterns from text before sending to backend
+  function redactPii(str) {
+    if (!str) return str;
+    return str
+      .replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, '[email]')
+      .replace(/\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b/g, '[card]')
+      .replace(/\b[0-9a-f]{32,}\b/gi, '[token]')
+      .replace(/\b(sk|pk|api|key|token|secret|password)[_\-]?[a-zA-Z0-9]{16,}\b/gi, '[key]');
+  }
+
   function captureDomSnapshot() {
     var INTERACTIVE = 'button,a,input,select,textarea,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[onclick],[data-testid]';
     var els = document.querySelectorAll(INTERACTIVE);
@@ -341,11 +351,11 @@
       if (el.closest('#aidoc-widget-btn,#aidoc-widget-panel,#aidoc-wt-overlay,#aidoc-wt-ring,#aidoc-wt-tooltip')) continue;
 
       var ref = el.getAttribute('data-testid') || el.id || ('el-' + el.tagName.toLowerCase() + '-' + i);
-      var text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+      var text = redactPii((el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100));
       var tag = el.tagName.toLowerCase();
       var role = el.getAttribute('role') || inferRole(tag);
-      var ariaLabel = el.getAttribute('aria-label') || '';
-      var placeholder = el.getAttribute('placeholder') || '';
+      var ariaLabel = redactPii((el.getAttribute('aria-label') || '').slice(0, 100));
+      var placeholder = redactPii((el.getAttribute('placeholder') || '').slice(0, 100));
 
       // Build a short selector
       var selector = tag;
@@ -376,7 +386,7 @@
     elements = elements.slice(0, 200);
 
     return {
-      url: window.location.href,
+      url: window.location.origin + window.location.pathname, // Strip query params and hash
       title: document.title,
       viewport: { width: vw, height: vh },
       elements: elements,
@@ -390,12 +400,26 @@
 
   // --- Permission Flow ---
 
+  var DOM_PERM_TTL = 30 * 60 * 1000; // 30 minutes
+
   function checkDomPermission() {
-    try { return sessionStorage.getItem('aidoc_dom_permission') === 'granted'; } catch (e) { return false; }
+    try {
+      if (sessionStorage.getItem('aidoc_dom_permission') !== 'granted') return false;
+      var expiry = parseInt(sessionStorage.getItem('aidoc_dom_perm_expiry') || '0', 10);
+      if (Date.now() > expiry) {
+        sessionStorage.removeItem('aidoc_dom_permission');
+        sessionStorage.removeItem('aidoc_dom_perm_expiry');
+        return false;
+      }
+      return true;
+    } catch (e) { return false; }
   }
 
   function grantDomPermission() {
-    try { sessionStorage.setItem('aidoc_dom_permission', 'granted'); } catch (e) {}
+    try {
+      sessionStorage.setItem('aidoc_dom_permission', 'granted');
+      sessionStorage.setItem('aidoc_dom_perm_expiry', String(Date.now() + DOM_PERM_TTL));
+    } catch (e) {}
   }
 
   function showPermissionDialog(onAllow, onDeny) {
@@ -458,6 +482,7 @@
     wtSteps = data.steps;
     wtCurrentStep = 0;
     wtActive = true;
+    startDomObserver();
     renderWalkthroughPanel();
     highlightStep(wtSteps[0]);
   }
@@ -466,6 +491,7 @@
     wtActive = false;
     wtSteps = [];
     wtCurrentStep = -1;
+    stopDomObserver();
     removeHighlight();
     renderMessages();
   }
@@ -527,8 +553,8 @@
       if (byId) return byId;
     }
 
-    // 2. Try fallback selector
-    if (step.fallbackSelector) {
+    // 2. Try fallback selector (validate to prevent ReDoS / selector injection)
+    if (step.fallbackSelector && step.fallbackSelector.length <= 150 && /^[a-zA-Z0-9#.\-_\[\]=":,>\s\(\)]+$/.test(step.fallbackSelector)) {
       try {
         var bySel = document.querySelector(step.fallbackSelector);
         if (bySel) return bySel;
@@ -705,35 +731,44 @@
   window.addEventListener('hashchange', onPageChange);
 
   // Observe DOM mutations — re-position highlight when DOM changes significantly
-  // (e.g. modal opened, dropdown expanded, content loaded via AJAX)
+  // Only active during walkthrough mode to avoid unnecessary overhead
   var wtMutationTimer;
-  var wtObserver = new MutationObserver(function () {
-    if (!wtActive) return;
+  var wtObserver = null;
+
+  function startDomObserver() {
+    if (wtObserver) return;
+    wtObserver = new MutationObserver(function () {
+      if (!wtActive) return;
+      clearTimeout(wtMutationTimer);
+      wtMutationTimer = setTimeout(function () {
+        if (!wtActive || !wtSteps[wtCurrentStep]) return;
+        var el = wtHighlightedEl || matchElement(wtSteps[wtCurrentStep]);
+        if (!el) return;
+        var ring = document.getElementById('aidoc-wt-ring');
+        var overlay = document.getElementById('aidoc-wt-overlay');
+        if (!ring || !overlay) return;
+        var rect = el.getBoundingClientRect();
+        var pad = 6;
+        var cx = rect.left - pad;
+        var cy = rect.top - pad;
+        var cw = rect.width + pad * 2;
+        var ch = rect.height + pad * 2;
+        ring.style.left = cx + 'px';
+        ring.style.top = cy + 'px';
+        ring.style.width = cw + 'px';
+        ring.style.height = ch + 'px';
+        overlay.style.clipPath = 'polygon(0% 0%,0% 100%,100% 100%,100% 0%,' +
+          cx + 'px 0,' + cx + 'px ' + (cy + ch) + 'px,' + (cx + cw) + 'px ' + (cy + ch) + 'px,' +
+          (cx + cw) + 'px ' + cy + 'px,' + cx + 'px ' + cy + 'px,' + cx + 'px 0)';
+      }, 300);
+    });
+    wtObserver.observe(document.body, { childList: true, subtree: true, attributes: false });
+  }
+
+  function stopDomObserver() {
+    if (wtObserver) { wtObserver.disconnect(); wtObserver = null; }
     clearTimeout(wtMutationTimer);
-    wtMutationTimer = setTimeout(function () {
-      if (!wtActive || !wtSteps[wtCurrentStep]) return;
-      // Only reposition — don't remove/re-add click listeners, just update overlay position
-      var el = wtHighlightedEl || matchElement(wtSteps[wtCurrentStep]);
-      if (!el) return;
-      var ring = document.getElementById('aidoc-wt-ring');
-      var overlay = document.getElementById('aidoc-wt-overlay');
-      if (!ring || !overlay) return;
-      var rect = el.getBoundingClientRect();
-      var pad = 6;
-      var cx = rect.left - pad;
-      var cy = rect.top - pad;
-      var cw = rect.width + pad * 2;
-      var ch = rect.height + pad * 2;
-      ring.style.left = cx + 'px';
-      ring.style.top = cy + 'px';
-      ring.style.width = cw + 'px';
-      ring.style.height = ch + 'px';
-      overlay.style.clipPath = 'polygon(0% 0%,0% 100%,100% 100%,100% 0%,' +
-        cx + 'px 0,' + cx + 'px ' + (cy + ch) + 'px,' + (cx + cw) + 'px ' + (cy + ch) + 'px,' +
-        (cx + cw) + 'px ' + cy + 'px,' + cx + 'px ' + cy + 'px,' + cx + 'px 0)';
-    }, 200);
-  });
-  wtObserver.observe(document.body, { childList: true, subtree: true, attributes: false });
+  }
 
   // Reposition on resize (debounced)
   var resizeTimer;
@@ -746,10 +781,23 @@
     }, 200);
   });
 
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
   function simpleMarkdown(md) {
-    return md
-      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+    // Escape HTML first to prevent XSS, then apply markdown formatting
+    var safe = escapeHtml(md);
+    return safe
+      .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, function (_, alt, url) {
+        // Only allow http/https image URLs
+        if (/^https?:\/\//i.test(url)) return '<img src="' + url + '" alt="' + alt + '" />';
+        return alt;
+      })
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, function (_, text, url) {
+        if (/^https?:\/\//i.test(url)) return '<a href="' + url + '" target="_blank" rel="noopener">' + text + '</a>';
+        return text;
+      })
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/`([^`]+)`/g, '<code style="background:rgba(128,128,128,.15);padding:1px 4px;border-radius:3px;font-size:12px">$1</code>')
       .replace(/\n/g, '<br>');

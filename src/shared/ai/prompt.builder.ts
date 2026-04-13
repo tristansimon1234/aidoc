@@ -287,16 +287,36 @@ export const WALKTHROUGH_SYSTEM_PROMPT = `You are an interactive guide assistant
 - Use fallbackSelector as a CSS selector that would uniquely identify the element
 - If multiple elements match, prefer the one closest to the expected position in the workflow`
 
+/** Server-side PII redaction — defense in depth (widget also redacts client-side) */
+function sanitizeForPrompt(text: string): string {
+  if (!text) return text
+  return text
+    .replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, '[email]')
+    .replace(/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, '[card]')
+    .replace(/\b[0-9a-f]{32,}\b/gi, '[token]')
+    .replace(/\b(?:sk|pk|api|key|token|secret|password)[_-]?[a-zA-Z0-9]{16,}\b/gi, '[key]')
+}
+
+/** Strip query params and fragment from URL */
+function sanitizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.origin + parsed.pathname
+  } catch {
+    return url.split('?')[0]!.split('#')[0]!
+  }
+}
+
 function formatDomElements(snapshot: DomSnapshot): string {
   if (snapshot.elements.length === 0) return 'No interactive elements found on this page.'
 
   return snapshot.elements
     .map((el) => {
       const parts = [`ref="${el.ref}"`, `tag=${el.tag}`]
-      if (el.text) parts.push(`text="${el.text}"`)
+      if (el.text) parts.push(`text="${sanitizeForPrompt(el.text)}"`)
       if (el.role) parts.push(`role=${el.role}`)
-      if (el.ariaLabel) parts.push(`aria="${el.ariaLabel}"`)
-      if (el.placeholder) parts.push(`placeholder="${el.placeholder}"`)
+      if (el.ariaLabel) parts.push(`aria="${sanitizeForPrompt(el.ariaLabel)}"`)
+      if (el.placeholder) parts.push(`placeholder="${sanitizeForPrompt(el.placeholder)}"`)
       parts.push(`pos=(${Math.round(el.rect.x)},${Math.round(el.rect.y)})`)
       parts.push(`selector="${el.selector}"`)
       return `- [${parts.join(' | ')}]`
@@ -311,12 +331,13 @@ export function buildWalkthroughPrompt(
   conversationHistory?: string,
 ): string {
   const elementsBlock = formatDomElements(domSnapshot)
+  const safeUrl = sanitizeUrl(domSnapshot.url)
 
   return `## Documentation Context
 ${docContext || 'No documentation context available.'}
 
 ## Current Page
-URL: ${domSnapshot.url}
+URL: ${safeUrl}
 Title: ${domSnapshot.title}
 Viewport: ${domSnapshot.viewport.width}x${domSnapshot.viewport.height}
 

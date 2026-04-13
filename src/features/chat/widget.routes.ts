@@ -6,23 +6,31 @@ import * as chatService from './chat.service.js'
 
 export const widgetRouter = Router()
 
-// --- In-memory rate limiter per API key ---
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT_MAX = 30 // max requests per window
+// --- In-memory rate limiter per API key (separate buckets for chat vs walkthrough) ---
+const rateLimitMap = new Map<string, { chatCount: number; walkthroughCount: number; resetAt: number }>()
+const CHAT_RATE_LIMIT = 30 // max chat requests per window
+const WALKTHROUGH_RATE_LIMIT = 10 // max walkthrough requests per window (more expensive)
 const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
 
-function checkRateLimit(key: string): void {
+function checkRateLimit(key: string, type: 'chat' | 'walkthrough'): void {
   const now = Date.now()
-  const entry = rateLimitMap.get(key)
+  let entry = rateLimitMap.get(key)
 
   if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
-    return
+    entry = { chatCount: 0, walkthroughCount: 0, resetAt: now + RATE_LIMIT_WINDOW_MS }
+    rateLimitMap.set(key, entry)
   }
 
-  entry.count++
-  if (entry.count > RATE_LIMIT_MAX) {
-    throw new AppError('Rate limit exceeded. Try again in a minute.', 'RATE_LIMITED', 429)
+  if (type === 'chat') {
+    entry.chatCount++
+    if (entry.chatCount > CHAT_RATE_LIMIT) {
+      throw new AppError('Rate limit exceeded. Try again in a minute.', 'RATE_LIMITED', 429)
+    }
+  } else {
+    entry.walkthroughCount++
+    if (entry.walkthroughCount > WALKTHROUGH_RATE_LIMIT) {
+      throw new AppError('Walkthrough rate limit exceeded. Try again in a minute.', 'RATE_LIMITED', 429)
+    }
   }
 }
 
@@ -55,7 +63,7 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       const widgetKey = req.params.widgetKey as string
       if (!widgetKey) throw new ValidationError('Widget key is required')
 
-      checkRateLimit(widgetKey)
+      checkRateLimit(widgetKey, 'chat')
 
       // Validate API key → find project
       const { findProjectByWidgetKey } = await import('../project/project.repository.js')
@@ -126,7 +134,7 @@ widgetRouter.post('/:widgetKey/walkthrough', largeJsonParser, (req: Request, res
       const widgetKey = req.params.widgetKey as string
       if (!widgetKey) throw new ValidationError('Widget key is required')
 
-      checkRateLimit(widgetKey)
+      checkRateLimit(widgetKey, 'walkthrough')
 
       const { findProjectByWidgetKey } = await import('../project/project.repository.js')
       const project = await findProjectByWidgetKey(widgetKey)

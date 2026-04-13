@@ -60,11 +60,11 @@ export type WalkthroughRequestInput = z.infer<typeof WalkthroughRequestSchema>
 
 export const WalkthroughStepSchema = z.object({
   stepNumber: z.number().int().positive(),
-  instruction: z.string(),
+  instruction: z.string().max(500),
   action: z.enum(['click', 'type', 'select', 'scroll', 'observe', 'navigate']),
-  elementRef: z.string().nullable(),
-  fallbackSelector: z.string().nullable(),
-  typeValue: z.string().nullable(),
+  elementRef: z.string().max(100).nullable(),
+  fallbackSelector: z.string().max(200).nullable(),
+  typeValue: z.string().max(1000).nullable(),
   notFound: z.boolean(),
 })
 
