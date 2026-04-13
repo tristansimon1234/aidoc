@@ -4,7 +4,7 @@ import { api, type DocPageDTO } from '../../../shared/api/client.js'
 import { updatePage as dbUpdatePage } from '../../../shared/api/db.js'
 import styles from '../pages/PageView.module.css'
 
-type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 'generating' | 'voiceover'
+type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 'generating'
 
 /** DOM event captured by the Chrome extension's content script */
 interface DomEvent {
@@ -130,12 +130,6 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
       setStatus('generating')
       await api.runs.generateDoc(run.id)
       await dbUpdatePage(projectId, pageId, { status: 'published' })
-
-      // 6. Generate voice-over (fire-and-forget — don't block the flow)
-      setStatus('voiceover')
-      await api.runs.generateVoiceover(run.id).catch(() => {
-        // Voice-over is optional — don't fail the whole flow
-      })
 
       await onComplete()
     } catch (err) {
@@ -306,7 +300,6 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
             {status === 'analyzing' && 'Analyzing video with AI \u2014 this may take a minute...'}
             {status === 'extracting' && 'Extracting screenshots...'}
             {status === 'generating' && 'Generating documentation...'}
-            {status === 'voiceover' && 'Generating voice-over...'}
           </span>
         </div>
       </div>

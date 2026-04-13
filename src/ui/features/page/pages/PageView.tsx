@@ -43,6 +43,7 @@ export function PageView(): React.ReactElement {
   const [analyzing, setAnalyzing] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [latestRunId, setLatestRunId] = useState<string | null>(null)
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -72,8 +73,11 @@ export function PageView(): React.ReactElement {
       setPage(pageData)
       setTryReport(testReport)
 
+      // Track latest run ID for voiceover generation
+      setLatestRunId(runData?.id ?? null)
+
       // Extract voiceover + video URLs from latest run summary
-      // Uses public URLs (artifacts bucket is public after migration)
+      // Uses public URLs (artifacts bucket is public)
       const summary = runData?.summaryJson as Record<string, unknown> | null
       const voiceover = summary?.voiceover as { audioPath?: string } | undefined
       if (voiceover?.audioPath) {
@@ -317,8 +321,18 @@ DO NOT generate new documentation. Only verify the existing one.`
               void debouncedPageUpdate({ title: e.target.value })
             }}
           />
-          {(voiceoverUrl || videoUrl) && (
-            <NarratedPlayer videoUrl={videoUrl} audioUrl={voiceoverUrl} />
+          {(voiceoverUrl || videoUrl || latestRunId) && (
+            <NarratedPlayer
+              videoUrl={videoUrl}
+              audioUrl={voiceoverUrl}
+              onGenerateVoiceover={latestRunId && page.content ? async () => {
+                const result = await api.runs.generateVoiceover(latestRunId)
+                if (result.audioPath) {
+                  const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                  setVoiceoverUrl(data?.publicUrl ?? null)
+                }
+              } : undefined}
+            />
           )}
           <BlockEditor
             key={pageId}
