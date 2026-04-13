@@ -558,6 +558,31 @@
     };
   }
 
+  function renderWalkthroughBarManual(step) {
+    removeWalkthroughBar();
+
+    var bar = document.createElement('div');
+    bar.id = 'aidoc-wt-bar';
+    bar.style.borderColor = '#f59e0b';
+    bar.innerHTML = [
+      '<span class="aidoc-wt-bar-step">' + wtStepNumber + '</span>',
+      '<span class="aidoc-wt-bar-text">' + escapeHtml(step.instruction) + '</span>',
+      '<button data-wt="done">Done</button>',
+      '<button data-wt="skip">Skip</button>',
+      '<button class="aidoc-wt-bar-exit" data-wt="exit">&times;</button>',
+    ].join('');
+    document.body.appendChild(bar);
+
+    bar.querySelectorAll('button[data-wt]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var action = b.getAttribute('data-wt');
+        if (action === 'done' || action === 'skip') { onStepCompleted(); }
+        else if (action === 'exit') { exitWalkthrough(); }
+      };
+    });
+  }
+
   // --- Highlight Engine ---
 
   function matchElement(step) {
@@ -604,7 +629,8 @@
 
     var el = matchElement(step);
     if (!el) {
-      showFloatingTooltip(step, null);
+      // Element not found — show instruction in the bar with manual mode
+      renderWalkthroughBarManual(step);
       return;
     }
 
