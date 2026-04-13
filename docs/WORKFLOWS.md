@@ -75,11 +75,11 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 1. `POST /api/projects/:id/pages/auto-generate`
 2. Stagehand launches browser → navigates to project `baseUrl`
 3. `session.extract()` gets raw page text (no AI call)
-4. Claude Sonnet analyzes content → proposes 5-15 pages with hierarchy
+4. Gemini 2.5 Flash analyzes content → proposes 5-15 pages with hierarchy
 5. Pages created in DB: top-level first, then children
 6. Frontend refreshes sidebar tree
 
-**AI call**: 1x Sonnet (structure proposal)
+**AI call**: 1x Gemini 2.5 Flash (structure proposal)
 
 ## 3. Page Exploration
 
@@ -103,7 +103,7 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
    - `step`: append to live feed
    - `done/blocked/error`: exploration ended
 
-**AI calls**: ~25x Haiku (one per agent step)
+**AI calls**: ~25x Claude Sonnet 4 via Stagehand (one per agent step)
 
 ## 4. Documentation Generation
 
@@ -114,13 +114,13 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
    a. Fetch run + steps + questions + project context + page siblings
    b. Resolve screenshot signed URLs from Supabase Storage
    c. Build rich prompt with step data, screenshots, cross-page context
-   d. Call Claude Sonnet with `max_tokens: 16384`
+   d. Call Gemini 2.5 Flash with `max_tokens: 16384`
    e. Parse response: markdown + `---JSON---` + self-assessment
    f. Save to `generated_docs` table
    g. Copy markdown to `doc_pages.content` (editable copy)
 3. Frontend refreshes page → shows rendered markdown
 
-**AI call**: 1x Sonnet (doc generation)
+**AI call**: 1x Gemini 2.5 Flash (doc generation)
 
 ## 5. Cross-Page Awareness
 
@@ -132,13 +132,13 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 - `credentials`: test login credentials as Stagehand variables
 - `customPrompt`: user's page-specific instructions
 
-**Effect**: Claude can reference other pages (`See [Login Guide](/login)`) and avoid duplicating content.
+**Effect**: Gemini can reference other pages (`See [Login Guide](/login)`) and avoid duplicating content.
 
 ## 5b. Context Learning (Auto-Enrichment)
 
 **When**: After each documentation generation
 **Flow**:
-1. After doc gen, a lightweight Haiku call analyzes the generated markdown
+1. After doc gen, a lightweight Gemini 2.5 Flash call analyzes the generated markdown
 2. Extracts structured knowledge: site structure, navigation, terminology, features
 3. Merges with existing `projects.discovered_context` (enrichment, not replacement)
 4. Future explorations receive this enriched context in their prompts
@@ -155,7 +155,7 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 }
 ```
 
-**Cost**: ~$0.01 per enrichment (Haiku, small prompt)
+**Cost**: ~$0.001 per enrichment (Gemini 2.5 Flash, small prompt)
 **Effect**: The more you document, the smarter the agent gets about your product.
 
 ## 6. Resume Exploration
@@ -232,8 +232,8 @@ Frontend renders:
 
 | Phase | Model | Approx Cost |
 |---|---|---|
-| Exploration (25 steps) | Haiku 4.5 | ~$0.09 |
-| Doc generation | Sonnet 4 | ~$0.08 |
+| Exploration (25 steps) | Claude Sonnet 4 via Stagehand | ~$0.09 |
+| Doc generation | Gemini 2.5 Flash | ~$0.08 |
 | **Total per page** | | **~$0.17** |
 
 Auto-generate structure: ~$0.03 (one-time per project)

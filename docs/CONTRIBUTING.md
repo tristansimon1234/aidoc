@@ -10,7 +10,7 @@
 6. **One migration file per schema change** — never edit existing migrations.
 7. **No business logic in routes** — routes validate input, call services, return responses.
 8. **Always close browser in `finally`** — avoid Browserbase billing.
-9. **Track token usage** — increment on every Anthropic call.
+9. **Track token usage** — increment on every AI call.
 10. **Errors propagate, not silently catch** — data-critical operations must throw. Only supplementary operations (enrichment, analytics) can catch and log.
 11. **Update docs/** — when changing architecture, workflows, schema, or prompts.
 
@@ -58,8 +58,12 @@
 
 All validated at startup via Zod in `src/shared/config/env.ts`:
 ```
+# Required
 NODE_ENV, PORT, SUPABASE_URL, SUPABASE_SERVICE_KEY,
-ANTHROPIC_API_KEY, BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
+GEMINI_API_KEY, BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
+
+# Optional
+ANTHROPIC_API_KEY    # Only needed for beta auto-exploration (Stagehand)
 ```
 
 Frontend (Vite prefix): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
