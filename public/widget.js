@@ -550,6 +550,10 @@
     return null;
   }
 
+  // Track the currently highlighted DOM element for click detection
+  var wtHighlightedEl = null;
+  var wtClickHandler = null;
+
   function highlightStep(step) {
     removeHighlight();
     if (!step) return;
@@ -559,6 +563,31 @@
       showFloatingTooltip(step, null);
       return;
     }
+
+    wtHighlightedEl = el;
+
+    // Listen for user clicking the highlighted element — auto-advance after DOM settles
+    wtClickHandler = function () {
+      if (!wtActive) return;
+      // Remove listener immediately
+      el.removeEventListener('click', wtClickHandler);
+      wtClickHandler = null;
+      wtHighlightedEl = null;
+
+      // Wait for DOM to settle after click (animations, navigation, modals)
+      setTimeout(function () {
+        if (!wtActive) return;
+        if (wtCurrentStep < wtSteps.length - 1) {
+          wtCurrentStep++;
+          removeHighlight();
+          renderWalkthroughPanel();
+          highlightStep(wtSteps[wtCurrentStep]);
+        } else {
+          exitWalkthrough();
+        }
+      }, 600);
+    };
+    el.addEventListener('click', wtClickHandler);
 
     // Scroll into view
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -645,6 +674,13 @@
   }
 
   function removeHighlight() {
+    // Clean up click listener on previous element
+    if (wtHighlightedEl && wtClickHandler) {
+      wtHighlightedEl.removeEventListener('click', wtClickHandler);
+    }
+    wtHighlightedEl = null;
+    wtClickHandler = null;
+
     var overlay = document.getElementById('aidoc-wt-overlay');
     var ring = document.getElementById('aidoc-wt-ring');
     var tooltip = document.getElementById('aidoc-wt-tooltip');
@@ -653,9 +689,51 @@
     if (tooltip) tooltip.remove();
   }
 
-  // Clean up highlights on page navigation
-  window.addEventListener('popstate', function () { if (wtActive) removeHighlight(); });
-  window.addEventListener('hashchange', function () { if (wtActive) removeHighlight(); });
+  // Re-scan after page navigation — DOM has changed, re-match current step
+  function onPageChange() {
+    if (!wtActive) return;
+    removeHighlight();
+    // Wait for new page to render, then re-highlight current step (client-side only, no API call)
+    setTimeout(function () {
+      if (wtActive && wtSteps[wtCurrentStep]) {
+        highlightStep(wtSteps[wtCurrentStep]);
+      }
+    }, 500);
+  }
+
+  window.addEventListener('popstate', onPageChange);
+  window.addEventListener('hashchange', onPageChange);
+
+  // Observe DOM mutations — re-position highlight when DOM changes significantly
+  // (e.g. modal opened, dropdown expanded, content loaded via AJAX)
+  var wtMutationTimer;
+  var wtObserver = new MutationObserver(function () {
+    if (!wtActive) return;
+    clearTimeout(wtMutationTimer);
+    wtMutationTimer = setTimeout(function () {
+      if (!wtActive || !wtSteps[wtCurrentStep]) return;
+      // Only reposition — don't remove/re-add click listeners, just update overlay position
+      var el = wtHighlightedEl || matchElement(wtSteps[wtCurrentStep]);
+      if (!el) return;
+      var ring = document.getElementById('aidoc-wt-ring');
+      var overlay = document.getElementById('aidoc-wt-overlay');
+      if (!ring || !overlay) return;
+      var rect = el.getBoundingClientRect();
+      var pad = 6;
+      var cx = rect.left - pad;
+      var cy = rect.top - pad;
+      var cw = rect.width + pad * 2;
+      var ch = rect.height + pad * 2;
+      ring.style.left = cx + 'px';
+      ring.style.top = cy + 'px';
+      ring.style.width = cw + 'px';
+      ring.style.height = ch + 'px';
+      overlay.style.clipPath = 'polygon(0% 0%,0% 100%,100% 100%,100% 0%,' +
+        cx + 'px 0,' + cx + 'px ' + (cy + ch) + 'px,' + (cx + cw) + 'px ' + (cy + ch) + 'px,' +
+        (cx + cw) + 'px ' + cy + 'px,' + cx + 'px ' + cy + 'px,' + cx + 'px 0)';
+    }, 200);
+  });
+  wtObserver.observe(document.body, { childList: true, subtree: true, attributes: false });
 
   // Reposition on resize (debounced)
   var resizeTimer;
