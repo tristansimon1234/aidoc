@@ -220,6 +220,11 @@ export async function chat(
   ["How do I invite team members?", "What are the different plans?"]
 - ALWAYS include the ---FOLLOWUPS--- separator and array, even if it's just one question
 
+## Interactive guide flag
+- If your answer describes steps the user could perform in their app's UI (clicking buttons, filling forms, navigating pages), add "---WALKTHROUGH---" on its own line BEFORE the ---FOLLOWUPS--- line
+- ONLY add this flag when the answer contains concrete UI actions (click, type, select, navigate). Do NOT add it for conceptual explanations, FAQs, or answers that don't involve interacting with the UI
+- This flag enables a "Guide me" button that highlights UI elements on the user's screen
+
 ## Boundaries
 - Base your answers on the documentation context — don't invent features
 - Do NOT fabricate screenshot URLs — only use images that appear in the context
@@ -246,10 +251,18 @@ ${message}`
     }
   }
 
-  // Parse follow-ups from response
+  // Parse walkthrough flag and follow-ups from response
   let answer = response.text
   let followUps: string[] = []
-  // Match various formats Gemini might use: ---FOLLOWUPS---, FOLLOWUPS, ---FOLLOWUPS, etc.
+  let walkthroughAvailable = false
+
+  // Check for ---WALKTHROUGH--- flag (AI signals this answer is guidable)
+  if (/---?\s*WALKTHROUGH\s*---?/i.test(answer)) {
+    walkthroughAvailable = true
+    answer = answer.replace(/---?\s*WALKTHROUGH\s*---?\n?/gi, '').trim()
+  }
+
+  // Parse follow-ups
   const followUpSplit = answer.split(/---?\s*FOLLOWUPS\s*---?/i)
   if (followUpSplit.length > 1) {
     answer = followUpSplit[0]!.trim()
@@ -260,8 +273,6 @@ ${message}`
       if (Array.isArray(parsed)) followUps = parsed.slice(0, 2)
     } catch { /* keep empty */ }
   }
-
-  const walkthroughAvailable = isProcedural(answer)
 
   return {
     answer,
@@ -320,14 +331,6 @@ Generate 6 highly specific questions that users of THIS product would actually a
   } catch {
     return []
   }
-}
-
-// --- Walkthrough detection ---
-
-function isProcedural(answer: string): boolean {
-  const hasNumberedSteps = /(?:^|\n)\s*\d+[\.\)]\s/m.test(answer)
-  const actionVerbs = /\b(click|tap|select|navigate|open|go to|type|enter|fill|press|drag|toggle|cliquez|tapez|sélectionnez|ouvrez|allez)\b/i
-  return hasNumberedSteps && actionVerbs.test(answer)
 }
 
 // --- Walkthrough generation ---

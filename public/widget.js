@@ -109,14 +109,14 @@
       '.aidoc-permission-actions button{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;border:1px solid ' + border + ';transition:all .15s}',
       '.aidoc-perm-allow{background:' + C.accent + ';color:white;border-color:' + C.accent + '}',
       '.aidoc-perm-deny{background:transparent;color:' + mutedText + '}',
-      '.aidoc-wt-panel{padding:12px 16px;display:flex;flex-direction:column;gap:8px;flex:1;overflow-y:auto}',
-      '.aidoc-wt-step{font-size:13px;color:' + C.text + ';line-height:1.5}',
-      '.aidoc-wt-step-num{font-size:11px;color:' + mutedText + ';margin-bottom:4px}',
-      '.aidoc-wt-instruction{font-size:13px;font-weight:500}',
-      '.aidoc-wt-nav{display:flex;gap:8px;padding:12px 16px;border-top:1px solid ' + border + '}',
-      '.aidoc-wt-nav button{flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;border:1px solid ' + border + ';transition:all .15s;background:transparent;color:' + C.text + '}',
-      '.aidoc-wt-nav button:hover{border-color:' + C.accent + ';color:' + C.accent + '}',
-      '.aidoc-wt-nav .aidoc-wt-exit{color:' + mutedText + '}',
+      // Mini bar — replaces the full panel during walkthrough
+      '#aidoc-wt-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100001;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:' + C.bg + ';border:1px solid ' + border + ';box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:' + C.font + ';color:' + C.text + ';font-size:12px;white-space:nowrap}',
+      '#aidoc-wt-bar .aidoc-wt-bar-step{color:' + mutedText + ';font-size:11px}',
+      '#aidoc-wt-bar .aidoc-wt-bar-text{font-weight:500;max-width:280px;overflow:hidden;text-overflow:ellipsis}',
+      '#aidoc-wt-bar button{padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid ' + border + ';background:transparent;color:' + C.text + ';transition:all .15s}',
+      '#aidoc-wt-bar button:hover{border-color:' + C.accent + ';color:' + C.accent + '}',
+      '#aidoc-wt-bar .aidoc-wt-bar-exit{color:' + mutedText + ';border-color:transparent}',
+      '#aidoc-wt-bar .aidoc-wt-bar-exit:hover{color:#f87171}',
       '#aidoc-wt-overlay{position:fixed;inset:0;z-index:99998;pointer-events:none}',
       '#aidoc-wt-ring{position:fixed;z-index:100000;pointer-events:none;border:2px solid ' + C.accent + ';border-radius:4px;transition:all .3s ease;box-shadow:0 0 0 0 ' + hexToRgba(C.accent, 0.4) + ';animation:aidoc-pulse 2s infinite}',
       '#aidoc-wt-tooltip{position:fixed;z-index:100001;max-width:280px;padding:12px 16px;border-radius:10px;background:' + C.bg + ';border:1px solid ' + border + ';box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:' + C.font + ';color:' + C.text + ';font-size:12px;line-height:1.5}',
@@ -205,21 +205,10 @@
   function togglePanel() {
     isOpen = !isOpen;
     panel.classList.toggle('open', isOpen);
-    if (isOpen) {
-      if (wtActive) { renderWalkthroughPanel(); } else { renderMessages(); }
-      inputEl.focus();
-    } else {
-      removeHighlight();
-    }
+    if (isOpen) { renderMessages(); inputEl.focus(); }
   }
 
   function renderMessages() {
-    // Restore input area if exiting walkthrough
-    var inputArea = panel.querySelector('#aidoc-widget-input');
-    if (inputArea) inputArea.style.display = 'flex';
-    var oldNav = panel.querySelector('.aidoc-wt-nav');
-    if (oldNav) oldNav.remove();
-
     if (messages.length === 0) {
       var greetingText = C.greeting || (USER_NAME ? 'Hi ' + USER_NAME + '!' : 'Hi! Ask me anything.');
       msgContainer.innerHTML = [
@@ -482,8 +471,11 @@
     wtSteps = data.steps;
     wtCurrentStep = 0;
     wtActive = true;
+    // Collapse the chat panel — walkthrough uses a mini bar instead
+    panel.classList.remove('open');
+    isOpen = false;
     startDomObserver();
-    renderWalkthroughPanel();
+    renderWalkthroughBar();
     highlightStep(wtSteps[0]);
   }
 
@@ -493,51 +485,40 @@
     wtCurrentStep = -1;
     stopDomObserver();
     removeHighlight();
-    renderMessages();
+    removeWalkthroughBar();
   }
 
-  function renderWalkthroughPanel() {
+  function removeWalkthroughBar() {
+    var bar = document.getElementById('aidoc-wt-bar');
+    if (bar) bar.remove();
+  }
+
+  function renderWalkthroughBar() {
     var step = wtSteps[wtCurrentStep];
     if (!step) { exitWalkthrough(); return; }
 
-    var actionIcons = {
-      click: '&#128433;', type: '&#9000;', select: '&#9745;',
-      scroll: '&#8597;', observe: '&#128065;', navigate: '&#10132;',
-    };
+    removeWalkthroughBar();
 
-    msgContainer.innerHTML = [
-      '<div class="aidoc-wt-panel">',
-      '<div class="aidoc-wt-step">',
-      '<div class="aidoc-wt-step-num">Step ' + step.stepNumber + ' of ' + wtSteps.length + '</div>',
-      '<div class="aidoc-wt-instruction">' + (actionIcons[step.action] || '') + ' ' + simpleMarkdown(step.instruction) + '</div>',
-      step.notFound ? '<div style="color:#f59e0b;font-size:11px;margin-top:4px">Element not found on this page — follow the instruction manually</div>' : '',
-      '</div>',
-      '</div>',
+    var bar = document.createElement('div');
+    bar.id = 'aidoc-wt-bar';
+    bar.innerHTML = [
+      '<span class="aidoc-wt-bar-step">' + step.stepNumber + '/' + wtSteps.length + '</span>',
+      '<span class="aidoc-wt-bar-text">' + escapeHtml(step.instruction) + '</span>',
+      (wtCurrentStep > 0 ? '<button data-wt="prev">&larr;</button>' : ''),
+      (wtCurrentStep < wtSteps.length - 1 ? '<button data-wt="next">&rarr;</button>' : '<button data-wt="done">Done</button>'),
+      '<button class="aidoc-wt-bar-exit" data-wt="exit">&times;</button>',
     ].join('');
+    document.body.appendChild(bar);
 
-    // Replace input area with nav
-    var inputArea = panel.querySelector('#aidoc-widget-input');
-    var navDiv = document.createElement('div');
-    navDiv.className = 'aidoc-wt-nav';
-    navDiv.innerHTML = [
-      '<button class="aidoc-wt-prev"' + (wtCurrentStep === 0 ? ' disabled style="opacity:.4;cursor:not-allowed"' : '') + '>Prev</button>',
-      '<button class="aidoc-wt-next">' + (wtCurrentStep < wtSteps.length - 1 ? 'Next' : 'Done') + '</button>',
-      '<button class="aidoc-wt-exit">Exit</button>',
-    ].join('');
-    inputArea.style.display = 'none';
-    // Remove old nav if exists
-    var oldNav = panel.querySelector('.aidoc-wt-nav');
-    if (oldNav) oldNav.remove();
-    inputArea.parentNode.insertBefore(navDiv, inputArea);
-
-    navDiv.querySelector('.aidoc-wt-prev').onclick = function () {
-      if (wtCurrentStep > 0) { wtCurrentStep--; removeHighlight(); renderWalkthroughPanel(); highlightStep(wtSteps[wtCurrentStep]); }
-    };
-    navDiv.querySelector('.aidoc-wt-next').onclick = function () {
-      if (wtCurrentStep < wtSteps.length - 1) { wtCurrentStep++; removeHighlight(); renderWalkthroughPanel(); highlightStep(wtSteps[wtCurrentStep]); }
-      else { exitWalkthrough(); }
-    };
-    navDiv.querySelector('.aidoc-wt-exit').onclick = function () { exitWalkthrough(); };
+    bar.querySelectorAll('button[data-wt]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var action = b.getAttribute('data-wt');
+        if (action === 'prev' && wtCurrentStep > 0) { wtCurrentStep--; removeHighlight(); renderWalkthroughBar(); highlightStep(wtSteps[wtCurrentStep]); }
+        else if (action === 'next' && wtCurrentStep < wtSteps.length - 1) { wtCurrentStep++; removeHighlight(); renderWalkthroughBar(); highlightStep(wtSteps[wtCurrentStep]); }
+        else if (action === 'done' || action === 'exit') { exitWalkthrough(); }
+      };
+    });
   }
 
   // --- Highlight Engine ---
@@ -606,7 +587,7 @@
         if (wtCurrentStep < wtSteps.length - 1) {
           wtCurrentStep++;
           removeHighlight();
-          renderWalkthroughPanel();
+          renderWalkthroughBar();
           highlightStep(wtSteps[wtCurrentStep]);
         } else {
           exitWalkthrough();
@@ -692,8 +673,8 @@
       b.onclick = function (e) {
         e.stopPropagation();
         var action = b.getAttribute('data-wt');
-        if (action === 'prev' && wtCurrentStep > 0) { wtCurrentStep--; removeHighlight(); renderWalkthroughPanel(); highlightStep(wtSteps[wtCurrentStep]); }
-        else if (action === 'next' && wtCurrentStep < wtSteps.length - 1) { wtCurrentStep++; removeHighlight(); renderWalkthroughPanel(); highlightStep(wtSteps[wtCurrentStep]); }
+        if (action === 'prev' && wtCurrentStep > 0) { wtCurrentStep--; removeHighlight(); renderWalkthroughBar(); highlightStep(wtSteps[wtCurrentStep]); }
+        else if (action === 'next' && wtCurrentStep < wtSteps.length - 1) { wtCurrentStep++; removeHighlight(); renderWalkthroughBar(); highlightStep(wtSteps[wtCurrentStep]); }
         else if (action === 'done' || action === 'exit') { exitWalkthrough(); }
       };
     });

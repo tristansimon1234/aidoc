@@ -266,26 +266,18 @@ ${stepsText}
 
 // --- Walkthrough (AI-guided DOM highlighting) ---
 
-export const WALKTHROUGH_SYSTEM_PROMPT = `You are an interactive guide assistant. Given documentation about a product feature and a snapshot of the user's current page DOM, produce step-by-step walkthrough instructions that map to specific elements on the page.
+export const WALKTHROUGH_SYSTEM_PROMPT = `You map documentation steps to live DOM elements. Output ONLY valid JSON.
 
-## Rules
-- Output ONLY valid JSON (no markdown fences, no extra text)
-- Each step must reference an elementRef from the DOM list when the target element is visible
-- If an element is not on the current page, set elementRef to null and notFound to true
-- Keep instructions concise (under 80 characters each)
-- action must be one of: click, type, select, scroll, observe, navigate
-- For "type" actions, include typeValue with the suggested input
-- Order steps logically as a user would perform them
-- Maximum 15 steps per response
-- If the guide spans multiple pages, include a pageNote explaining which steps require navigation
-- Match the user's language (French → French, English → English)
-- Think about prerequisite actions (e.g., open a dropdown before selecting an item)
-
-## Matching Strategy
-- Match elements by their visible text, aria-label, role, and tag
-- Prefer elements with data-testid or id for elementRef
-- Use fallbackSelector as a CSS selector that would uniquely identify the element
-- If multiple elements match, prefer the one closest to the expected position in the workflow`
+RULES:
+1. Match each doc step to a DOM element by text, aria-label, or role
+2. Use elementRef = the element's ref value from the DOM list
+3. Use fallbackSelector = a short CSS selector as backup
+4. Set notFound: true if the element is not in the DOM list
+5. Keep instruction under 80 chars, in the user's language
+6. action: click | type | select | scroll | observe | navigate
+7. For type actions, set typeValue
+8. Max 10 steps. Include prerequisite actions (open dropdown before selecting)
+9. If steps span multiple pages, set pageNote`
 
 /** Server-side PII redaction — defense in depth (widget also redacts client-side) */
 function sanitizeForPrompt(text: string): string {
@@ -333,35 +325,16 @@ export function buildWalkthroughPrompt(
   const elementsBlock = formatDomElements(domSnapshot)
   const safeUrl = sanitizeUrl(domSnapshot.url)
 
-  return `## Documentation Context
-${docContext || 'No documentation context available.'}
+  return `DOCS:
+${docContext || 'None'}
 
-## Current Page
-URL: ${safeUrl}
-Title: ${domSnapshot.title}
-Viewport: ${domSnapshot.viewport.width}x${domSnapshot.viewport.height}
+PAGE: ${safeUrl} (${domSnapshot.viewport.width}x${domSnapshot.viewport.height})
 
-## Interactive Elements on Page (${domSnapshot.elements.length} elements)
+DOM ELEMENTS:
 ${elementsBlock}
 
-${conversationHistory ? `## Conversation History\n${conversationHistory}\n` : ''}## User's Question
-${message}
+${conversationHistory ? `HISTORY:\n${conversationHistory}\n` : ''}QUESTION: ${message}
 
-## Output Format
-Respond with a JSON object matching this exact structure:
-{
-  "steps": [
-    {
-      "stepNumber": 1,
-      "instruction": "Click the 'Create Project' button",
-      "action": "click",
-      "elementRef": "ref-value-from-dom-list",
-      "fallbackSelector": "button.create-project",
-      "typeValue": null,
-      "notFound": false
-    }
-  ],
-  "totalSteps": 5,
-  "pageNote": null
-}`
+OUTPUT JSON:
+{"steps":[{"stepNumber":1,"instruction":"...","action":"click","elementRef":"ref-from-dom","fallbackSelector":"button.x","typeValue":null,"notFound":false}],"totalSteps":N,"pageNote":null}`
 }
