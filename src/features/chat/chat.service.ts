@@ -370,7 +370,7 @@ export async function generateWalkthrough(
   const response = await generateText({
     systemPrompt: WALKTHROUGH_SYSTEM_PROMPT,
     userPrompt,
-    maxTokens: 512,
+    maxTokens: 1024,
   })
 
   // 3. Parse and validate single-step JSON response
@@ -379,14 +379,19 @@ export async function generateWalkthrough(
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   }
 
-  const parsed: unknown = JSON.parse(jsonStr)
-  const validated = WalkthroughResponseSchema.parse(parsed)
-
-  return {
-    done: validated.done,
-    step: validated.step,
-    stepNumber: validated.stepNumber,
-    hint: validated.hint,
+  try {
+    const parsed: unknown = JSON.parse(jsonStr)
+    const validated = WalkthroughResponseSchema.parse(parsed)
+    return {
+      done: validated.done,
+      step: validated.step,
+      stepNumber: validated.stepNumber,
+      hint: validated.hint,
+    }
+  } catch {
+    // Gemini returned invalid/truncated JSON — signal done to avoid broken state
+    console.error('[walkthrough] Failed to parse AI response:', jsonStr.slice(0, 200))
+    return { done: true, step: null, stepNumber: 0, hint: null }
   }
 }
 
