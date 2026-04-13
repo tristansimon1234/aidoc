@@ -163,6 +163,13 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
       const body = req.body as { voiceId?: string; language?: string }
+
+      // Check ElevenLabs is configured before attempting
+      const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
+      if (!isElevenLabsConfigured()) {
+        throw new AppError('Voice-over requires ELEVENLABS_API_KEY to be configured', 'ELEVENLABS_NOT_CONFIGURED', 400)
+      }
+
       const { generateVoiceover } = await import('../documentation/voiceover.service.js')
 
       // Get the doc content for this run

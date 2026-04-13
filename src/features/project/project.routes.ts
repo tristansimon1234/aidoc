@@ -113,9 +113,9 @@ projectRouter.post('/:id/logo', (req: Request, res: Response, next: NextFunction
       const ext = contentType.includes('svg') ? 'svg' : contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
       const path = `projects/${params.data.id}/logo.${ext}`
 
-      const { uploadToStorage, getSignedUrl } = await import('../../shared/db/storage.repository.js')
+      const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
       await uploadToStorage('artifacts', path, body, contentType)
-      const logoUrl = await getSignedUrl('artifacts', path)
+      const logoUrl = getPublicUrl('artifacts', path)
 
       res.status(200).json({ logoUrl })
     } catch (err) {

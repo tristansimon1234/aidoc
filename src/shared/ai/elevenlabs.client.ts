@@ -5,7 +5,10 @@ const DEFAULT_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL' // "Sarah" — clear, profession
 const DEFAULT_MODEL_ID = 'eleven_multilingual_v2'
 
 function getApiKey(): string {
-  if (!env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY is not configured')
+  if (!env.ELEVENLABS_API_KEY) {
+    console.error('[elevenlabs] ELEVENLABS_API_KEY is not set. Available env keys:', Object.keys(env).join(', '))
+    throw new Error('ELEVENLABS_API_KEY is not configured. Add it to your Vercel environment variables and redeploy.')
+  }
   return env.ELEVENLABS_API_KEY
 }
 

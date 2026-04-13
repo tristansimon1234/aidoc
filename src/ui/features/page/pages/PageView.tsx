@@ -73,16 +73,17 @@ export function PageView(): React.ReactElement {
       setTryReport(testReport)
 
       // Extract voiceover + video URLs from latest run summary
+      // Uses public URLs (artifacts bucket is public after migration)
       const summary = runData?.summaryJson as Record<string, unknown> | null
-      const voiceover = summary?.voiceover as { audioPath?: string; audioUrl?: string } | undefined
+      const voiceover = summary?.voiceover as { audioPath?: string } | undefined
       if (voiceover?.audioPath) {
-        const { data: audioData } = await supabase.storage.from('artifacts').createSignedUrl(voiceover.audioPath, 86400)
-        setVoiceoverUrl(audioData?.signedUrl ?? voiceover.audioUrl ?? null)
+        const { data: audioData } = supabase.storage.from('artifacts').getPublicUrl(voiceover.audioPath)
+        setVoiceoverUrl(audioData?.publicUrl ?? null)
       } else {
-        setVoiceoverUrl(voiceover?.audioUrl ?? null)
+        setVoiceoverUrl(null)
       }
 
-      // Try to find the video URL — check summaryJson.videoPath, then try common paths
+      // Find the video URL — check summaryJson.videoPath, then try common paths
       if (runData?.id) {
         const vPath = (summary?.videoPath as string | undefined) ?? null
         const pathsToTry = vPath
@@ -91,11 +92,11 @@ export function PageView(): React.ReactElement {
 
         let foundVideoUrl: string | null = null
         for (const p of pathsToTry) {
-          const { data } = await supabase.storage.from('artifacts').createSignedUrl(p, 86400)
-          if (data?.signedUrl) {
+          const { data } = supabase.storage.from('artifacts').getPublicUrl(p)
+          if (data?.publicUrl) {
             // Verify the file actually exists with a HEAD request
-            const check = await fetch(data.signedUrl, { method: 'HEAD' }).catch(() => null)
-            if (check?.ok) { foundVideoUrl = data.signedUrl; break }
+            const check = await fetch(data.publicUrl, { method: 'HEAD' }).catch(() => null)
+            if (check?.ok) { foundVideoUrl = data.publicUrl; break }
           }
         }
         setVideoUrl(foundVideoUrl)

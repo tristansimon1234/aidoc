@@ -362,7 +362,9 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     await runRepo.updateRunStatus(runId, 'completed')
 
-    return { timestamps: sortedSteps.map((s) => s.timestamp) }
+    // Add small offset to each timestamp to ensure we capture the RESULT state
+    // (Gemini sometimes returns the moment of click, not the loaded result)
+    return { timestamps: sortedSteps.map((s) => s.timestamp + 0.8) }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')
@@ -406,7 +408,7 @@ export async function analyzeTryDoc(
 
   const steps = await runRepo.findStepsByRunId(runId)
 
-  const { getSignedUrl } = await import('../../shared/db/storage.repository.js')
+  const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
 
   const stepSummaries = steps.map((s) => ({
     stepIndex: s.stepIndex,
@@ -436,16 +438,14 @@ export async function analyzeTryDoc(
   const { TryDocReportSchema } = await import('./run.schema.js')
   const parsed = TryDocReportSchema.parse(JSON.parse(jsonStr))
 
-  // Attach screenshot signed URLs to step results
-  const stepsWithScreenshots = await Promise.all(
-    parsed.steps.map(async (stepResult) => {
-      const matchingStep = steps.find((s) => s.stepIndex === stepResult.stepIndex)
-      const screenshotUrl = matchingStep?.screenshotPath
-        ? await getSignedUrl('artifacts', matchingStep.screenshotPath)
-        : null
-      return { ...stepResult, screenshotPath: screenshotUrl }
-    }),
-  )
+  // Attach screenshot URLs to step results
+  const stepsWithScreenshots = parsed.steps.map((stepResult) => {
+    const matchingStep = steps.find((s) => s.stepIndex === stepResult.stepIndex)
+    const screenshotUrl = matchingStep?.screenshotPath
+      ? getPublicUrl('artifacts', matchingStep.screenshotPath)
+      : null
+    return { ...stepResult, screenshotPath: screenshotUrl }
+  })
 
   const report: TryDocReport = {
     version: 1,

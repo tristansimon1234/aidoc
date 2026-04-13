@@ -1,7 +1,7 @@
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 import * as docRepo from './documentation.repository.js'
 import { generateDocumentation } from './documentation.generator.js'
-import { getSignedUrl } from '../../shared/db/storage.repository.js'
+import { getPublicUrl } from '../../shared/db/storage.repository.js'
 import type { GeneratedDoc } from './documentation.types.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
@@ -55,20 +55,15 @@ export async function generateAndSaveDoc(
     return !noiseTools.has(toolType)
   })
 
-  // Resolve screenshot paths to signed URLs (works with private buckets)
-  const stepSummaries: StepSummary[] = await Promise.all(
-    filteredSteps.map(async (s) => {
-      const screenshotUrl = s.screenshotPath
-        ? await getSignedUrl('artifacts', s.screenshotPath)
-        : null
-      return {
-        url: s.url ?? '',
-        action: s.action ?? '',
-        observation: (s.observation ?? '').slice(0, 500),
-        screenshotUrl,
-      }
-    }),
-  )
+  const stepSummaries: StepSummary[] = filteredSteps.map((s) => {
+    const screenshotUrl = s.screenshotPath ? getPublicUrl('artifacts', s.screenshotPath) : null
+    return {
+      url: s.url ?? '',
+      action: s.action ?? '',
+      observation: (s.observation ?? '').slice(0, 500),
+      screenshotUrl,
+    }
+  })
 
   const result = await generateDocumentation({
     featureName: run.featureName,
