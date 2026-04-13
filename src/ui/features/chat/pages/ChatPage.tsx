@@ -3,6 +3,7 @@ import { useOutletContext, useNavigate } from 'react-router-dom'
 import { Spinner } from '../../../design-system/components/index.js'
 import { MarkdownRenderer } from '../../../design-system/components/index.js'
 import { api, type ProjectDTO, type ChatResponseDTO } from '../../../shared/api/client.js'
+import { supabase } from '../../../shared/api/supabase.js'
 import styles from './ChatPage.module.css'
 
 interface ChatMessage {
@@ -42,6 +43,28 @@ export function ChatPage(): React.ReactElement {
   const checkAndIndex = async (): Promise<void> => {
     try {
       setIndexing(true)
+
+      // Fast check via direct Supabase — no Vercel cold start
+      const { count, error } = await supabase
+        .from('doc_embeddings')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', project.id)
+
+      if (error) throw new Error(error.message)
+      const hasEmbeddings = (count ?? 0) > 0
+
+      if (hasEmbeddings) {
+        // Already indexed — show chat instantly
+        setIndexed(true)
+        setIndexing(false)
+        // Load suggestions in background (non-blocking)
+        api.chat.suggestions(project.id)
+          .then((r) => { if (r.suggestions.length > 0) setSuggestions(r.suggestions) })
+          .catch(() => {})
+        return
+      }
+
+      // No embeddings yet — trigger indexation via API
       const result = await api.chat.index(project.id)
       setIndexed(result.indexed > 0)
       if (result.indexed > 0) {
