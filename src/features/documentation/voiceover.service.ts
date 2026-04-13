@@ -1,5 +1,5 @@
 import { synthesizeSpeech, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
-import { uploadToStorage, getPublicUrl } from '../../shared/db/storage.repository.js'
+import { uploadToStorage, getSignedUrl } from '../../shared/db/storage.repository.js'
 
 const MAX_CHUNK_LENGTH = 4500 // ElevenLabs limit ~5000 chars, leave margin
 
@@ -133,7 +133,7 @@ export async function generateVoiceover(
   await uploadToStorage('artifacts', audioPath, combinedBuffer, 'audio/mpeg')
 
   // 7. Get public URL
-  const audioUrl = getPublicUrl('artifacts', audioPath) ?? ''
+  const audioUrl = await getSignedUrl('artifacts', audioPath) ?? ''
 
   return { audioPath, audioUrl, duration: estimatedDuration }
 }

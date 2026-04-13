@@ -74,12 +74,31 @@ export function PageView(): React.ReactElement {
 
       // Extract voiceover + video URLs from latest run summary
       const summary = runData?.summaryJson as Record<string, unknown> | null
-      const voiceover = summary?.voiceover as { audioUrl?: string } | undefined
-      setVoiceoverUrl(voiceover?.audioUrl ?? null)
-      const vPath = summary?.videoPath as string | undefined
-      if (vPath) {
-        const { data } = supabase.storage.from('artifacts').getPublicUrl(vPath)
-        setVideoUrl(data?.publicUrl ?? null)
+      const voiceover = summary?.voiceover as { audioPath?: string; audioUrl?: string } | undefined
+      if (voiceover?.audioPath) {
+        const { data: audioData } = await supabase.storage.from('artifacts').createSignedUrl(voiceover.audioPath, 86400)
+        setVoiceoverUrl(audioData?.signedUrl ?? voiceover.audioUrl ?? null)
+      } else {
+        setVoiceoverUrl(voiceover?.audioUrl ?? null)
+      }
+
+      // Try to find the video URL — check summaryJson.videoPath, then try common paths
+      if (runData?.id) {
+        const vPath = (summary?.videoPath as string | undefined) ?? null
+        const pathsToTry = vPath
+          ? [vPath]
+          : [`runs/${runData.id}/video.webm`, `runs/${runData.id}/video.mp4`, `runs/${runData.id}/video.mov`]
+
+        let foundVideoUrl: string | null = null
+        for (const p of pathsToTry) {
+          const { data } = await supabase.storage.from('artifacts').createSignedUrl(p, 86400)
+          if (data?.signedUrl) {
+            // Verify the file actually exists with a HEAD request
+            const check = await fetch(data.signedUrl, { method: 'HEAD' }).catch(() => null)
+            if (check?.ok) { foundVideoUrl = data.signedUrl; break }
+          }
+        }
+        setVideoUrl(foundVideoUrl)
       } else {
         setVideoUrl(null)
       }

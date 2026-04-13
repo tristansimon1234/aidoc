@@ -33,3 +33,22 @@ export function getPublicUrl(bucket: string, path: string): string | null {
     return null
   }
 }
+
+/**
+ * Get a signed URL for a storage object (works for private buckets).
+ * Default expiry: 1 year (31536000 seconds).
+ */
+export async function getSignedUrl(
+  bucket: string,
+  path: string,
+  expiresIn = 31536000,
+): Promise<string | null> {
+  if (!path) return null
+  try {
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn)
+    if (error || !data?.signedUrl) return null
+    return data.signedUrl
+  } catch {
+    return null
+  }
+}

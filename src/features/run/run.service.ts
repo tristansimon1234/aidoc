@@ -406,7 +406,7 @@ export async function analyzeTryDoc(
 
   const steps = await runRepo.findStepsByRunId(runId)
 
-  const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
+  const { getSignedUrl } = await import('../../shared/db/storage.repository.js')
 
   const stepSummaries = steps.map((s) => ({
     stepIndex: s.stepIndex,
@@ -436,14 +436,16 @@ export async function analyzeTryDoc(
   const { TryDocReportSchema } = await import('./run.schema.js')
   const parsed = TryDocReportSchema.parse(JSON.parse(jsonStr))
 
-  // Attach screenshot public URLs to step results
-  const stepsWithScreenshots = parsed.steps.map((stepResult) => {
-    const matchingStep = steps.find((s) => s.stepIndex === stepResult.stepIndex)
-    const screenshotPath = matchingStep?.screenshotPath
-      ? getPublicUrl('artifacts', matchingStep.screenshotPath)
-      : null
-    return { ...stepResult, screenshotPath }
-  })
+  // Attach screenshot signed URLs to step results
+  const stepsWithScreenshots = await Promise.all(
+    parsed.steps.map(async (stepResult) => {
+      const matchingStep = steps.find((s) => s.stepIndex === stepResult.stepIndex)
+      const screenshotUrl = matchingStep?.screenshotPath
+        ? await getSignedUrl('artifacts', matchingStep.screenshotPath)
+        : null
+      return { ...stepResult, screenshotPath: screenshotUrl }
+    }),
+  )
 
   const report: TryDocReport = {
     version: 1,
