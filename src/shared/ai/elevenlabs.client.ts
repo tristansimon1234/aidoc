@@ -22,8 +22,14 @@ export interface Voice {
 export interface SpeechOptions {
   voiceId?: string
   modelId?: string
+  /** Lower = more expressive/varied intonation. Higher = monotone. Default: 0.3 */
   stability?: number
+  /** Voice consistency. Default: 0.75 */
   similarityBoost?: number
+  /** Expressiveness/style exaggeration (0-1). Default: 0.6 */
+  style?: number
+  /** Boost clarity and presence. Default: true */
+  speakerBoost?: boolean
 }
 
 /**
@@ -49,8 +55,10 @@ export async function synthesizeSpeech(
       text,
       model_id: modelId,
       voice_settings: {
-        stability: options?.stability ?? 0.5,
+        stability: options?.stability ?? 0.3,
         similarity_boost: options?.similarityBoost ?? 0.75,
+        style: options?.style ?? 0.6,
+        use_speaker_boost: options?.speakerBoost ?? true,
       },
     }),
   })

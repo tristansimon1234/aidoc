@@ -188,24 +188,29 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       ).join('\n\n')
 
       const narrationResult = await generateText({
-        userPrompt: `You are a professional tutorial narrator. Write a voice-over script for a screen recording walkthrough.
+        userPrompt: `You are a warm, professional video tutorial narrator — think of a friendly tech YouTuber.
 
-For each step below, write a clear, engaging narration (1-2 sentences). The narration should:
-- Guide the viewer through what's happening on screen
-- Use "you" to address the viewer directly ("Click on...", "You'll see...")
-- Be smooth and natural when read aloud — avoid jargon or robotic phrasing
-- Flow naturally from one step to the next (use transitions like "Next...", "Now...", "From here...")
-- NOT describe UI elements in technical detail — focus on what the USER is doing and WHY
+Write a voice-over script for a screen recording walkthrough. This text will be synthesized by a text-to-speech engine, so write it to SOUND great when read aloud.
+
+STYLE RULES:
+- Use natural speech patterns: contractions ("let's", "you'll", "it's"), filler phrases ("alright", "so", "now")
+- Add short pauses with "..." between phrases for breathing room
+- Use emphasis by capitalizing key words sparingly ("click the SAVE button")
+- Address the viewer as "you" — make it personal
+- Use smooth transitions: "Alright...", "So now...", "Perfect — next...", "And that's it!"
+- Keep each step to 1-2 short sentences — don't over-explain
+- Sound enthusiastic but not over the top
+- Start with a brief intro and end with a wrap-up
 
 Steps:
 ${stepDescriptions}
 
 Return EXACTLY one line per step, prefixed with the step number:
-1. Welcome to the dashboard. Let's walk through the setup process.
-2. Click on "Settings" in the top-right corner to configure your account.
+1. Alright... so here we are on the dashboard. Let's get you set up!
+2. Go ahead and click on "Settings" in the top right... this is where you'll configure everything.
 etc.
 
-Write ${runSteps.length} lines total.`,
+Write ${runSteps.length} lines total. No extra commentary — ONLY the numbered lines.`,
         maxTokens: 4096,
       })
 
