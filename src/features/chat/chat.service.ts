@@ -1,6 +1,9 @@
 import { embedText, embedTexts, generateText } from '../../shared/ai/gemini.client.js'
+import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
+import { WalkthroughResponseSchema } from './chat.schema.js'
 import * as chatRepo from './chat.repository.js'
 import type { ChatMessage, ChatResponse, DocChunk } from './chat.types.js'
+import type { WalkthroughRequest, WalkthroughResponse } from './walkthrough.types.js'
 
 // --- Chunking ---
 
@@ -258,10 +261,13 @@ ${message}`
     } catch { /* keep empty */ }
   }
 
+  const walkthroughAvailable = isProcedural(answer)
+
   return {
     answer,
     sources: Array.from(sourceMap.values()),
     followUps,
+    ...(walkthroughAvailable ? { walkthroughAvailable } : {}),
   }
 }
 
@@ -313,6 +319,64 @@ Generate 6 highly specific questions that users of THIS product would actually a
     return Array.isArray(parsed) ? parsed.slice(0, 6) : []
   } catch {
     return []
+  }
+}
+
+// --- Walkthrough detection ---
+
+function isProcedural(answer: string): boolean {
+  const hasNumberedSteps = /(?:^|\n)\s*\d+[\.\)]\s/m.test(answer)
+  const actionVerbs = /\b(click|tap|select|navigate|open|go to|type|enter|fill|press|drag|toggle|cliquez|tapez|sélectionnez|ouvrez|allez)\b/i
+  return hasNumberedSteps && actionVerbs.test(answer)
+}
+
+// --- Walkthrough generation ---
+
+export async function generateWalkthrough(
+  projectId: string,
+  request: WalkthroughRequest,
+): Promise<WalkthroughResponse> {
+  // 1. RAG search — same as chat()
+  const queryEmbedding = await embedText(request.message)
+  const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
+  const docContext = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
+
+  // 2. Build conversation history
+  const conversationHistory = request.history.length > 0
+    ? request.history
+        .slice(-10)
+        .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+        .join('\n\n')
+    : undefined
+
+  // 3. Build prompt and call Gemini
+  const userPrompt = buildWalkthroughPrompt(
+    docContext,
+    request.domSnapshot,
+    request.message,
+    conversationHistory,
+  )
+
+  const response = await generateText({
+    systemPrompt: WALKTHROUGH_SYSTEM_PROMPT,
+    userPrompt,
+    maxTokens: 4096,
+  })
+
+  // 4. Parse and validate JSON response
+  let jsonStr = response.text.trim()
+  // Strip markdown fences if present
+  if (jsonStr.startsWith('```')) {
+    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+  }
+
+  const parsed: unknown = JSON.parse(jsonStr)
+  const validated = WalkthroughResponseSchema.parse(parsed)
+
+  return {
+    steps: validated.steps,
+    totalSteps: validated.totalSteps,
+    pageNote: validated.pageNote,
   }
 }
 

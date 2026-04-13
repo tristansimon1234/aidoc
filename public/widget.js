@@ -45,6 +45,12 @@
   var isSending = false;
   var dynamicSuggestions = [];
 
+  // --- Walkthrough state ---
+  var wtSteps = [];
+  var wtCurrentStep = -1;
+  var wtActive = false;
+  var wtLastMessage = '';
+
   // --- Build CSS from current config ---
   function buildCSS() {
     var isDark = isColorDark(C.bg);
@@ -93,6 +99,35 @@
       '#aidoc-widget-powered a{color:' + mutedText + ';text-decoration:none}',
       '#aidoc-widget-powered a:hover{color:' + C.accent + '}',
       '@media(max-width:480px){#aidoc-widget-panel{bottom:0;' + pos + ':0;width:100vw;height:100vh;max-height:100vh;border-radius:0}#aidoc-widget-btn{bottom:16px;' + pos + ':16px}}',
+      // Walkthrough styles
+      '.aidoc-guide-btn{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:8px 14px;background:' + tint + ';border:1px solid ' + C.accent + ';border-radius:10px;color:' + C.accent + ';font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;transition:background .15s,color .15s}',
+      '.aidoc-guide-btn:hover{background:' + C.accent + ';color:white}',
+      '.aidoc-guide-btn svg{width:14px;height:14px;fill:currentColor}',
+      '.aidoc-permission{padding:16px;text-align:center}',
+      '.aidoc-permission p{font-size:12px;color:' + mutedText + ';margin:0 0 12px;line-height:1.5}',
+      '.aidoc-permission-actions{display:flex;gap:8px;justify-content:center}',
+      '.aidoc-permission-actions button{padding:8px 16px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;border:1px solid ' + border + ';transition:all .15s}',
+      '.aidoc-perm-allow{background:' + C.accent + ';color:white;border-color:' + C.accent + '}',
+      '.aidoc-perm-deny{background:transparent;color:' + mutedText + '}',
+      '.aidoc-wt-panel{padding:12px 16px;display:flex;flex-direction:column;gap:8px;flex:1;overflow-y:auto}',
+      '.aidoc-wt-step{font-size:13px;color:' + C.text + ';line-height:1.5}',
+      '.aidoc-wt-step-num{font-size:11px;color:' + mutedText + ';margin-bottom:4px}',
+      '.aidoc-wt-instruction{font-size:13px;font-weight:500}',
+      '.aidoc-wt-nav{display:flex;gap:8px;padding:12px 16px;border-top:1px solid ' + border + '}',
+      '.aidoc-wt-nav button{flex:1;padding:8px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;border:1px solid ' + border + ';transition:all .15s;background:transparent;color:' + C.text + '}',
+      '.aidoc-wt-nav button:hover{border-color:' + C.accent + ';color:' + C.accent + '}',
+      '.aidoc-wt-nav .aidoc-wt-exit{color:' + mutedText + '}',
+      '#aidoc-wt-overlay{position:fixed;inset:0;z-index:99998;pointer-events:none}',
+      '#aidoc-wt-ring{position:fixed;z-index:100000;pointer-events:none;border:2px solid ' + C.accent + ';border-radius:4px;transition:all .3s ease;box-shadow:0 0 0 0 ' + hexToRgba(C.accent, 0.4) + ';animation:aidoc-pulse 2s infinite}',
+      '#aidoc-wt-tooltip{position:fixed;z-index:100001;max-width:280px;padding:12px 16px;border-radius:10px;background:' + C.bg + ';border:1px solid ' + border + ';box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:' + C.font + ';color:' + C.text + ';font-size:12px;line-height:1.5}',
+      '#aidoc-wt-tooltip .aidoc-wt-tip-step{font-size:10px;color:' + mutedText + ';margin-bottom:4px}',
+      '#aidoc-wt-tooltip .aidoc-wt-tip-text{font-weight:500;margin-bottom:8px}',
+      '#aidoc-wt-tooltip .aidoc-wt-tip-actions{display:flex;gap:6px}',
+      '#aidoc-wt-tooltip .aidoc-wt-tip-actions button{padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid ' + border + ';background:transparent;color:' + C.text + ';transition:all .15s}',
+      '#aidoc-wt-tooltip .aidoc-wt-tip-actions button:hover{border-color:' + C.accent + ';color:' + C.accent + '}',
+      '#aidoc-wt-tooltip.aidoc-wt-notfound{border-color:#f59e0b}',
+      '#aidoc-wt-tooltip.aidoc-wt-notfound .aidoc-wt-tip-text{color:#f59e0b}',
+      '@keyframes aidoc-pulse{0%{box-shadow:0 0 0 0 ' + hexToRgba(C.accent, 0.4) + '}70%{box-shadow:0 0 0 8px ' + hexToRgba(C.accent, 0) + '}100%{box-shadow:0 0 0 0 ' + hexToRgba(C.accent, 0) + '}}',
     ].join('\n');
   }
 
@@ -170,10 +205,21 @@
   function togglePanel() {
     isOpen = !isOpen;
     panel.classList.toggle('open', isOpen);
-    if (isOpen) { renderMessages(); inputEl.focus(); }
+    if (isOpen) {
+      if (wtActive) { renderWalkthroughPanel(); } else { renderMessages(); }
+      inputEl.focus();
+    } else {
+      removeHighlight();
+    }
   }
 
   function renderMessages() {
+    // Restore input area if exiting walkthrough
+    var inputArea = panel.querySelector('#aidoc-widget-input');
+    if (inputArea) inputArea.style.display = 'flex';
+    var oldNav = panel.querySelector('.aidoc-wt-nav');
+    if (oldNav) oldNav.remove();
+
     if (messages.length === 0) {
       var greetingText = C.greeting || (USER_NAME ? 'Hi ' + USER_NAME + '!' : 'Hi! Ask me anything.');
       msgContainer.innerHTML = [
@@ -209,6 +255,13 @@
             srcDiv.appendChild(tag);
           });
           div.appendChild(srcDiv);
+        }
+        if (m.walkthroughAvailable) {
+          var guideBtn = document.createElement('button');
+          guideBtn.className = 'aidoc-guide-btn';
+          guideBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg> Guide me';
+          guideBtn.onclick = function () { requestWalkthrough(m._originalQuestion || messages[messages.indexOf(m) - 1]?.content || ''); };
+          div.appendChild(guideBtn);
         }
       } else {
         div.textContent = m.content;
@@ -256,10 +309,364 @@
       body: JSON.stringify({ message: text, history: history.slice(0, -1), userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() } }),
     })
       .then(function (r) { return r.json(); })
-      .then(function (data) { messages.push({ role: 'assistant', content: data.answer, sources: data.sources, followUps: data.followUps || [] }); })
+      .then(function (data) { messages.push({ role: 'assistant', content: data.answer, sources: data.sources, followUps: data.followUps || [], walkthroughAvailable: data.walkthroughAvailable || false, _originalQuestion: text }); })
       .catch(function () { messages.push({ role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }); })
       .finally(function () { isSending = false; sendBtn.disabled = false; renderMessages(); inputEl.focus(); });
   }
+
+  // --- DOM Snapshot Capture ---
+
+  function captureDomSnapshot() {
+    var INTERACTIVE = 'button,a,input,select,textarea,[role="button"],[role="link"],[role="tab"],[role="menuitem"],[onclick],[data-testid]';
+    var els = document.querySelectorAll(INTERACTIVE);
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var cx = vw / 2;
+    var cy = vh / 2;
+    var elements = [];
+
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      // Skip hidden elements
+      if (el.offsetWidth === 0 && el.offsetHeight === 0) continue;
+      var style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+
+      var rect = el.getBoundingClientRect();
+      // Skip offscreen elements
+      if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) continue;
+      // Skip password fields
+      if (el.type === 'password') continue;
+      // Skip our own widget elements
+      if (el.closest('#aidoc-widget-btn,#aidoc-widget-panel,#aidoc-wt-overlay,#aidoc-wt-ring,#aidoc-wt-tooltip')) continue;
+
+      var ref = el.getAttribute('data-testid') || el.id || ('el-' + el.tagName.toLowerCase() + '-' + i);
+      var text = (el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+      var tag = el.tagName.toLowerCase();
+      var role = el.getAttribute('role') || inferRole(tag);
+      var ariaLabel = el.getAttribute('aria-label') || '';
+      var placeholder = el.getAttribute('placeholder') || '';
+
+      // Build a short selector
+      var selector = tag;
+      if (el.id) selector = '#' + el.id;
+      else if (el.className && typeof el.className === 'string') {
+        var cls = el.className.trim().split(/\s+/).slice(0, 2).join('.');
+        if (cls) selector = tag + '.' + cls;
+      }
+
+      elements.push({
+        ref: ref.slice(0, 100),
+        tag: tag,
+        text: text,
+        role: role,
+        ariaLabel: ariaLabel.slice(0, 100),
+        rect: { x: Math.round(rect.left), y: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) },
+        selector: selector.slice(0, 200),
+        placeholder: placeholder.slice(0, 100),
+      });
+    }
+
+    // Sort by proximity to viewport center, cap at 200
+    elements.sort(function (a, b) {
+      var da = Math.abs(a.rect.x + a.rect.w / 2 - cx) + Math.abs(a.rect.y + a.rect.h / 2 - cy);
+      var db = Math.abs(b.rect.x + b.rect.w / 2 - cx) + Math.abs(b.rect.y + b.rect.h / 2 - cy);
+      return da - db;
+    });
+    elements = elements.slice(0, 200);
+
+    return {
+      url: window.location.href,
+      title: document.title,
+      viewport: { width: vw, height: vh },
+      elements: elements,
+    };
+  }
+
+  function inferRole(tag) {
+    var roles = { button: 'button', a: 'link', input: 'textbox', select: 'combobox', textarea: 'textbox' };
+    return roles[tag] || '';
+  }
+
+  // --- Permission Flow ---
+
+  function checkDomPermission() {
+    try { return sessionStorage.getItem('aidoc_dom_permission') === 'granted'; } catch (e) { return false; }
+  }
+
+  function grantDomPermission() {
+    try { sessionStorage.setItem('aidoc_dom_permission', 'granted'); } catch (e) {}
+  }
+
+  function showPermissionDialog(onAllow, onDeny) {
+    msgContainer.innerHTML = [
+      '<div class="aidoc-permission">',
+      '<p>To guide you step-by-step, I need to read the interactive elements on this page.<br>No personal data is collected.</p>',
+      '<div class="aidoc-permission-actions">',
+      '<button class="aidoc-perm-allow">Allow</button>',
+      '<button class="aidoc-perm-deny">No thanks</button>',
+      '</div></div>',
+    ].join('');
+    msgContainer.querySelector('.aidoc-perm-allow').onclick = function () { grantDomPermission(); onAllow(); };
+    msgContainer.querySelector('.aidoc-perm-deny').onclick = function () { onDeny(); };
+  }
+
+  // --- Walkthrough API ---
+
+  function requestWalkthrough(text) {
+    wtLastMessage = text;
+
+    function doRequest() {
+      // Show loading in messages area
+      msgContainer.innerHTML = '<div class="aidoc-typing">Analyzing your page...</div>';
+      var snapshot = captureDomSnapshot();
+      var history = messages.map(function (m) { return { role: m.role, content: m.content }; });
+
+      fetch(API_BASE + '/' + API_KEY + '/walkthrough', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history: history,
+          domSnapshot: snapshot,
+          userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() },
+        }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.steps && data.steps.length > 0) {
+            enterWalkthroughMode(data);
+          } else {
+            renderMessages();
+          }
+        })
+        .catch(function () {
+          renderMessages();
+        });
+    }
+
+    if (checkDomPermission()) {
+      doRequest();
+    } else {
+      showPermissionDialog(doRequest, function () { renderMessages(); });
+    }
+  }
+
+  // --- Walkthrough Mode ---
+
+  function enterWalkthroughMode(data) {
+    wtSteps = data.steps;
+    wtCurrentStep = 0;
+    wtActive = true;
+    renderWalkthroughPanel();
+    highlightStep(wtSteps[0]);
+  }
+
+  function exitWalkthrough() {
+    wtActive = false;
+    wtSteps = [];
+    wtCurrentStep = -1;
+    removeHighlight();
+    renderMessages();
+  }
+
+  function renderWalkthroughPanel() {
+    var step = wtSteps[wtCurrentStep];
+    if (!step) { exitWalkthrough(); return; }
+
+    var actionIcons = {
+      click: '&#128433;', type: '&#9000;', select: '&#9745;',
+      scroll: '&#8597;', observe: '&#128065;', navigate: '&#10132;',
+    };
+
+    msgContainer.innerHTML = [
+      '<div class="aidoc-wt-panel">',
+      '<div class="aidoc-wt-step">',
+      '<div class="aidoc-wt-step-num">Step ' + step.stepNumber + ' of ' + wtSteps.length + '</div>',
+      '<div class="aidoc-wt-instruction">' + (actionIcons[step.action] || '') + ' ' + simpleMarkdown(step.instruction) + '</div>',
+      step.notFound ? '<div style="color:#f59e0b;font-size:11px;margin-top:4px">Element not found on this page — follow the instruction manually</div>' : '',
+      '</div>',
+      '</div>',
+    ].join('');
+
+    // Replace input area with nav
+    var inputArea = panel.querySelector('#aidoc-widget-input');
+    var navDiv = document.createElement('div');
+    navDiv.className = 'aidoc-wt-nav';
+    navDiv.innerHTML = [
+      '<button class="aidoc-wt-prev"' + (wtCurrentStep === 0 ? ' disabled style="opacity:.4;cursor:not-allowed"' : '') + '>Prev</button>',
+      '<button class="aidoc-wt-next">' + (wtCurrentStep < wtSteps.length - 1 ? 'Next' : 'Done') + '</button>',
+      '<button class="aidoc-wt-exit">Exit</button>',
+    ].join('');
+    inputArea.style.display = 'none';
+    // Remove old nav if exists
+    var oldNav = panel.querySelector('.aidoc-wt-nav');
+    if (oldNav) oldNav.remove();
+    inputArea.parentNode.insertBefore(navDiv, inputArea);
+
+    navDiv.querySelector('.aidoc-wt-prev').onclick = function () {
+      if (wtCurrentStep > 0) { wtCurrentStep--; removeHighlight(); renderWalkthroughPanel(); highlightStep(wtSteps[wtCurrentStep]); }
+    };
+    navDiv.querySelector('.aidoc-wt-next').onclick = function () {
+      if (wtCurrentStep < wtSteps.length - 1) { wtCurrentStep++; removeHighlight(); renderWalkthroughPanel(); highlightStep(wtSteps[wtCurrentStep]); }
+      else { exitWalkthrough(); }
+    };
+    navDiv.querySelector('.aidoc-wt-exit').onclick = function () { exitWalkthrough(); };
+  }
+
+  // --- Highlight Engine ---
+
+  function matchElement(step) {
+    if (!step || step.notFound) return null;
+
+    // 1. Try by ref (data-testid or id)
+    if (step.elementRef) {
+      var byTestId = document.querySelector('[data-testid="' + CSS.escape(step.elementRef) + '"]');
+      if (byTestId) return byTestId;
+      var byId = document.getElementById(step.elementRef);
+      if (byId) return byId;
+    }
+
+    // 2. Try fallback selector
+    if (step.fallbackSelector) {
+      try {
+        var bySel = document.querySelector(step.fallbackSelector);
+        if (bySel) return bySel;
+      } catch (e) {}
+    }
+
+    // 3. Text match on interactive elements
+    var INTERACTIVE = 'button,a,input,select,textarea,[role="button"],[role="link"],[role="tab"]';
+    var candidates = document.querySelectorAll(INTERACTIVE);
+    var instructionLower = step.instruction.toLowerCase();
+    for (var i = 0; i < candidates.length; i++) {
+      var el = candidates[i];
+      var text = (el.textContent || '').trim().toLowerCase();
+      var ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+      if (text && instructionLower.indexOf(text) !== -1) return el;
+      if (ariaLabel && instructionLower.indexOf(ariaLabel) !== -1) return el;
+    }
+
+    return null;
+  }
+
+  function highlightStep(step) {
+    removeHighlight();
+    if (!step) return;
+
+    var el = matchElement(step);
+    if (!el) {
+      showFloatingTooltip(step, null);
+      return;
+    }
+
+    // Scroll into view
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    setTimeout(function () {
+      var rect = el.getBoundingClientRect();
+
+      // Overlay with cutout
+      var overlay = document.createElement('div');
+      overlay.id = 'aidoc-wt-overlay';
+      var pad = 6;
+      var cx = rect.left - pad;
+      var cy = rect.top - pad;
+      var cw = rect.width + pad * 2;
+      var ch = rect.height + pad * 2;
+      overlay.style.background = 'rgba(0,0,0,0.4)';
+      overlay.style.clipPath = 'polygon(0% 0%,0% 100%,100% 100%,100% 0%,' +
+        cx + 'px 0,' + cx + 'px ' + (cy + ch) + 'px,' + (cx + cw) + 'px ' + (cy + ch) + 'px,' +
+        (cx + cw) + 'px ' + cy + 'px,' + cx + 'px ' + cy + 'px,' + cx + 'px 0)';
+      document.body.appendChild(overlay);
+
+      // Highlight ring
+      var ring = document.createElement('div');
+      ring.id = 'aidoc-wt-ring';
+      ring.style.left = cx + 'px';
+      ring.style.top = cy + 'px';
+      ring.style.width = cw + 'px';
+      ring.style.height = ch + 'px';
+      document.body.appendChild(ring);
+
+      // Tooltip
+      showFloatingTooltip(step, rect);
+    }, 350);
+  }
+
+  function showFloatingTooltip(step, rect) {
+    var existing = document.getElementById('aidoc-wt-tooltip');
+    if (existing) existing.remove();
+
+    var tip = document.createElement('div');
+    tip.id = 'aidoc-wt-tooltip';
+    if (!rect) tip.className = 'aidoc-wt-notfound';
+
+    tip.innerHTML = [
+      '<div class="aidoc-wt-tip-step">Step ' + step.stepNumber + ' of ' + wtSteps.length + '</div>',
+      '<div class="aidoc-wt-tip-text">' + simpleMarkdown(step.instruction) + '</div>',
+      '<div class="aidoc-wt-tip-actions">',
+      wtCurrentStep > 0 ? '<button data-wt="prev">Prev</button>' : '',
+      wtCurrentStep < wtSteps.length - 1 ? '<button data-wt="next">Next</button>' : '<button data-wt="done">Done</button>',
+      '<button data-wt="exit">Exit</button>',
+      '</div>',
+    ].join('');
+
+    document.body.appendChild(tip);
+
+    // Position tooltip
+    if (rect) {
+      var tipRect = tip.getBoundingClientRect();
+      var left = Math.max(8, Math.min(rect.left, window.innerWidth - tipRect.width - 8));
+      var top = rect.bottom + 12;
+      // Flip above if too close to bottom
+      if (top + tipRect.height > window.innerHeight - 8) {
+        top = rect.top - tipRect.height - 12;
+      }
+      tip.style.left = left + 'px';
+      tip.style.top = top + 'px';
+    } else {
+      // No element — center at top
+      tip.style.left = '50%';
+      tip.style.top = '80px';
+      tip.style.transform = 'translateX(-50%)';
+    }
+
+    // Tooltip nav handlers
+    tip.querySelectorAll('button[data-wt]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var action = b.getAttribute('data-wt');
+        if (action === 'prev' && wtCurrentStep > 0) { wtCurrentStep--; removeHighlight(); renderWalkthroughPanel(); highlightStep(wtSteps[wtCurrentStep]); }
+        else if (action === 'next' && wtCurrentStep < wtSteps.length - 1) { wtCurrentStep++; removeHighlight(); renderWalkthroughPanel(); highlightStep(wtSteps[wtCurrentStep]); }
+        else if (action === 'done' || action === 'exit') { exitWalkthrough(); }
+      };
+    });
+  }
+
+  function removeHighlight() {
+    var overlay = document.getElementById('aidoc-wt-overlay');
+    var ring = document.getElementById('aidoc-wt-ring');
+    var tooltip = document.getElementById('aidoc-wt-tooltip');
+    if (overlay) overlay.remove();
+    if (ring) ring.remove();
+    if (tooltip) tooltip.remove();
+  }
+
+  // Clean up highlights on page navigation
+  window.addEventListener('popstate', function () { if (wtActive) removeHighlight(); });
+  window.addEventListener('hashchange', function () { if (wtActive) removeHighlight(); });
+
+  // Reposition on resize (debounced)
+  var resizeTimer;
+  window.addEventListener('resize', function () {
+    if (!wtActive) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      removeHighlight();
+      if (wtSteps[wtCurrentStep]) highlightStep(wtSteps[wtCurrentStep]);
+    }, 200);
+  });
 
   function simpleMarkdown(md) {
     return md

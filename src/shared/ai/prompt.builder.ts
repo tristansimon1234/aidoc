@@ -1,5 +1,6 @@
 import type { StepSummary } from '../../features/exploration/exploration.types.js'
 import type { DiscoveredContext } from '../../features/project/project.types.js'
+import type { DomSnapshot } from '../../features/chat/walkthrough.types.js'
 
 export function buildContextEnrichmentPrompt(
   existingContext: DiscoveredContext | null,
@@ -260,5 +261,86 @@ ${stepsText}
   "uxInsights": [{ "category": "friction"|"missing-feedback"|"unnecessary-step"|"doc-behavior-mismatch"|"implicit-assumption", "description": "...", "stepIndex": number|null, "severity": "high"|"medium"|"low" }],
   "recommendations": [{ "type": "fix-doc"|"fix-product"|"improve-ux", "title": "short action", "description": "details", "priority": "high"|"medium"|"low" }],
   "scores": { "docQuality": 1-10, "testPassRate": 1-10, "uxClarity": 1-10 }
+}`
+}
+
+// --- Walkthrough (AI-guided DOM highlighting) ---
+
+export const WALKTHROUGH_SYSTEM_PROMPT = `You are an interactive guide assistant. Given documentation about a product feature and a snapshot of the user's current page DOM, produce step-by-step walkthrough instructions that map to specific elements on the page.
+
+## Rules
+- Output ONLY valid JSON (no markdown fences, no extra text)
+- Each step must reference an elementRef from the DOM list when the target element is visible
+- If an element is not on the current page, set elementRef to null and notFound to true
+- Keep instructions concise (under 80 characters each)
+- action must be one of: click, type, select, scroll, observe, navigate
+- For "type" actions, include typeValue with the suggested input
+- Order steps logically as a user would perform them
+- Maximum 15 steps per response
+- If the guide spans multiple pages, include a pageNote explaining which steps require navigation
+- Match the user's language (French → French, English → English)
+- Think about prerequisite actions (e.g., open a dropdown before selecting an item)
+
+## Matching Strategy
+- Match elements by their visible text, aria-label, role, and tag
+- Prefer elements with data-testid or id for elementRef
+- Use fallbackSelector as a CSS selector that would uniquely identify the element
+- If multiple elements match, prefer the one closest to the expected position in the workflow`
+
+function formatDomElements(snapshot: DomSnapshot): string {
+  if (snapshot.elements.length === 0) return 'No interactive elements found on this page.'
+
+  return snapshot.elements
+    .map((el) => {
+      const parts = [`ref="${el.ref}"`, `tag=${el.tag}`]
+      if (el.text) parts.push(`text="${el.text}"`)
+      if (el.role) parts.push(`role=${el.role}`)
+      if (el.ariaLabel) parts.push(`aria="${el.ariaLabel}"`)
+      if (el.placeholder) parts.push(`placeholder="${el.placeholder}"`)
+      parts.push(`pos=(${Math.round(el.rect.x)},${Math.round(el.rect.y)})`)
+      parts.push(`selector="${el.selector}"`)
+      return `- [${parts.join(' | ')}]`
+    })
+    .join('\n')
+}
+
+export function buildWalkthroughPrompt(
+  docContext: string,
+  domSnapshot: DomSnapshot,
+  message: string,
+  conversationHistory?: string,
+): string {
+  const elementsBlock = formatDomElements(domSnapshot)
+
+  return `## Documentation Context
+${docContext || 'No documentation context available.'}
+
+## Current Page
+URL: ${domSnapshot.url}
+Title: ${domSnapshot.title}
+Viewport: ${domSnapshot.viewport.width}x${domSnapshot.viewport.height}
+
+## Interactive Elements on Page (${domSnapshot.elements.length} elements)
+${elementsBlock}
+
+${conversationHistory ? `## Conversation History\n${conversationHistory}\n` : ''}## User's Question
+${message}
+
+## Output Format
+Respond with a JSON object matching this exact structure:
+{
+  "steps": [
+    {
+      "stepNumber": 1,
+      "instruction": "Click the 'Create Project' button",
+      "action": "click",
+      "elementRef": "ref-value-from-dom-list",
+      "fallbackSelector": "button.create-project",
+      "typeValue": null,
+      "notFound": false
+    }
+  ],
+  "totalSteps": 5,
+  "pageNote": null
 }`
 }

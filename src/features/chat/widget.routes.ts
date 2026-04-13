@@ -1,7 +1,7 @@
-import { Router } from 'express'
+import { Router, json } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { ValidationError, NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
-import { ChatRequestSchema } from './chat.schema.js'
+import { ChatRequestSchema, WalkthroughRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 
 export const widgetRouter = Router()
@@ -111,6 +111,41 @@ widgetRouter.get('/:widgetKey/config', (req: Request, res: Response, next: NextF
         widgetPosition: project.design?.widgetPosition ?? 'right',
         widgetGreeting: project.design?.widgetGreeting ?? '',
       })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Walkthrough endpoint — larger body limit for DOM snapshot payload
+const largeJsonParser = json({ limit: '200kb' })
+
+widgetRouter.post('/:widgetKey/walkthrough', largeJsonParser, (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const widgetKey = req.params.widgetKey as string
+      if (!widgetKey) throw new ValidationError('Widget key is required')
+
+      checkRateLimit(widgetKey)
+
+      const { findProjectByWidgetKey } = await import('../project/project.repository.js')
+      const project = await findProjectByWidgetKey(widgetKey)
+      if (!project) throw new NotFoundError('Widget not found or disabled')
+
+      const body = WalkthroughRequestSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const result = await chatService.generateWalkthrough(
+        project.id,
+        {
+          message: body.data.message,
+          history: body.data.history,
+          domSnapshot: body.data.domSnapshot,
+          userContext: body.data.userContext ?? undefined,
+        },
+      )
+
+      res.status(200).json(result)
     } catch (err) {
       next(err)
     }
