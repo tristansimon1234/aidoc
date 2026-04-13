@@ -6,6 +6,48 @@ import styles from '../pages/PageView.module.css'
 
 type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 'generating' | 'voiceover'
 
+/** DOM event captured by the Chrome extension's content script */
+interface DomEvent {
+  type: 'click' | 'input' | 'navigation' | 'scroll' | 'load'
+  timestamp: number
+  url: string
+  selector?: string
+  text?: string
+  tagName?: string
+  inputName?: string
+  pageTitle?: string
+}
+
+/** Check if the AiDoc Chrome extension is installed */
+function isExtensionInstalled(): boolean {
+  return typeof window !== 'undefined' && Boolean((window as unknown as Record<string, unknown>).__AIDOC_EXTENSION__)
+}
+
+/** Request DOM capture start from the extension */
+function extensionStartCapture(): void {
+  window.postMessage({ type: 'AIDOC_START_DOM_CAPTURE' }, '*')
+}
+
+/** Request DOM capture stop from the extension and collect events */
+function extensionStopCapture(): Promise<DomEvent[]> {
+  return new Promise((resolve) => {
+    const handler = (event: MessageEvent): void => {
+      if (event.data?.type === 'AIDOC_DOM_EVENTS') {
+        window.removeEventListener('message', handler)
+        resolve(event.data.events as DomEvent[])
+      }
+    }
+    window.addEventListener('message', handler)
+    window.postMessage({ type: 'AIDOC_STOP_DOM_CAPTURE' }, '*')
+
+    // Timeout fallback — don't block forever if extension doesn't respond
+    setTimeout(() => {
+      window.removeEventListener('message', handler)
+      resolve([])
+    }, 3000)
+  })
+}
+
 interface ScreenRecorderProps {
   projectId: string
   pageId: string
@@ -17,20 +59,37 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
+  const [hasExtension, setHasExtension] = useState(false)
+  const [micEnabled, setMicEnabled] = useState(true)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
+  const displayStreamRef = useRef<MediaStream | null>(null)
+  const micStreamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const domEventsRef = useRef<DomEvent[]>([])
+
+  // Detect extension on mount
+  useEffect(() => {
+    setHasExtension(isExtensionInstalled())
+
+    // Listen for late extension detection (extension might load after page)
+    const handler = (event: MessageEvent): void => {
+      if (event.data?.type === 'AIDOC_EXTENSION_READY') setHasExtension(true)
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
 
   // Clean up on unmount
   useEffect(() => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current)
-      streamRef.current?.getTracks().forEach((t) => t.stop())
+      displayStreamRef.current?.getTracks().forEach((t) => t.stop())
+      micStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [])
 
-  const processVideo = async (file: File | Blob, fileName: string): Promise<void> => {
+  const processVideo = async (file: File | Blob, fileName: string, domEvents?: DomEvent[]): Promise<void> => {
     setError(null)
     try {
       // 1. Create a run
@@ -49,6 +108,14 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
       const { signedUrl } = await api.runs.getSignedUploadUrl(run.id, videoPath)
       const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: file })
       if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
+
+      // Upload DOM events if captured
+      if (domEvents && domEvents.length > 0) {
+        const eventsPath = `runs/${run.id}/dom-events.json`
+        const eventsBlob = new Blob([JSON.stringify(domEvents)], { type: 'application/json' })
+        const { signedUrl: eventsSignedUrl } = await api.runs.getSignedUploadUrl(run.id, eventsPath)
+        await fetch(eventsSignedUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: eventsBlob })
+      }
 
       // 3. Analyze with Gemini
       setStatus('analyzing')
@@ -81,44 +148,81 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
   const startRecording = async (): Promise<void> => {
     setError(null)
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({
+      // 1. Screen capture (video only — mic is separate)
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: 30 },
-        audio: true,
+        audio: false,
       })
-      streamRef.current = stream
+      displayStreamRef.current = displayStream
+
+      // 2. Mic capture (separate stream)
+      let micStream: MediaStream | null = null
+      if (micEnabled) {
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+          micStreamRef.current = micStream
+        } catch {
+          // Mic denied — continue without it
+          console.warn('[ScreenRecorder] Mic access denied, recording without audio')
+        }
+      }
+
+      // 3. Combine video + mic into one stream
+      const combinedStream = new MediaStream()
+      displayStream.getVideoTracks().forEach((t) => combinedStream.addTrack(t))
+      if (micStream) {
+        micStream.getAudioTracks().forEach((t) => combinedStream.addTrack(t))
+      }
+
       chunksRef.current = []
+      domEventsRef.current = []
 
-      // Detect supported format
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : MediaRecorder.isTypeSupported('video/webm')
-          ? 'video/webm'
-          : 'video/mp4'
+      // 4. Detect supported format
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+        ? 'video/webm;codecs=vp9,opus'
+        : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+          ? 'video/webm;codecs=vp9'
+          : MediaRecorder.isTypeSupported('video/webm')
+            ? 'video/webm'
+            : 'video/mp4'
 
-      const recorder = new MediaRecorder(stream, { mimeType })
+      const recorder = new MediaRecorder(combinedStream, { mimeType })
       mediaRecorderRef.current = recorder
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data)
       }
 
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
-        stream.getTracks().forEach((t) => t.stop())
-        streamRef.current = null
+        displayStream.getTracks().forEach((t) => t.stop())
+        micStream?.getTracks().forEach((t) => t.stop())
+        displayStreamRef.current = null
+        micStreamRef.current = null
+
+        // Collect DOM events from extension
+        let domEvents: DomEvent[] = []
+        if (hasExtension) {
+          domEvents = await extensionStopCapture()
+        }
 
         const blob = new Blob(chunksRef.current, { type: mimeType })
         if (blob.size > 0) {
-          void processVideo(blob, `recording.${mimeType.includes('mp4') ? 'mp4' : 'webm'}`)
+          void processVideo(blob, `recording.${mimeType.includes('mp4') ? 'mp4' : 'webm'}`, domEvents)
         }
       }
 
       // Stop recording if the user stops sharing their screen
-      stream.getVideoTracks()[0]?.addEventListener('ended', () => {
+      displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
         if (mediaRecorderRef.current?.state === 'recording') {
           mediaRecorderRef.current.stop()
         }
       })
+
+      // 5. Start DOM capture via extension (if installed)
+      if (hasExtension) {
+        extensionStartCapture()
+      }
 
       recorder.start(1000) // Collect data every second
       setStatus('recording')
@@ -177,6 +281,11 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
             <span style={{ fontSize: 'var(--text-lg)', fontFamily: 'var(--font-mono)', color: 'var(--color-fg)', fontWeight: 600 }}>
               {formatTime(elapsed)}
             </span>
+            {hasExtension && (
+              <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-success)', padding: '2px 6px', background: 'rgba(0,200,0,0.1)', borderRadius: 'var(--radius-sm)' }}>
+                DOM
+              </span>
+            )}
           </div>
           <Button variant="secondary" onClick={stopRecording}>
             Stop & Generate
@@ -216,8 +325,30 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
             <span className={styles.methodTag}>.mp4, .webm, .mov</span>
             <span className={styles.methodTag}>up to 500MB</span>
             <span className={styles.methodTag}>auto voice-over</span>
+            {hasExtension && <span className={styles.methodTag} style={{ color: 'var(--color-success)' }}>DOM capture active</span>}
           </div>
         </div>
+      </div>
+
+      {/* Mic toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer', fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)' }}>
+          <input
+            type="checkbox"
+            checked={micEnabled}
+            onChange={(e) => setMicEnabled(e.target.checked)}
+            style={{ accentColor: 'var(--color-primary)' }}
+          />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" />
+          </svg>
+          Record microphone
+        </label>
+        {!hasExtension && (
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic' }}>
+            Install the AiDoc extension for DOM capture
+          </span>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'stretch' }}>
@@ -243,7 +374,7 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
             Record Screen
           </span>
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
-            Click to start capturing
+            {micEnabled ? 'Screen + microphone' : 'Screen only'}
           </span>
         </button>
 
