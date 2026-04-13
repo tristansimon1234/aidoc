@@ -251,16 +251,34 @@ Be thorough — capture every meaningful action.`,
 
   const text = result.response.text()
 
-  // Parse JSON response
+  // Extract JSON from Gemini response — handle markdown fences, leading/trailing text
   let jsonStr = text.trim()
-  if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
+  if (fenceMatch) {
+    jsonStr = fenceMatch[1]!
   }
 
-  const parsed = VideoAnalysisSchema.safeParse(JSON.parse(jsonStr))
+  // If still not starting with {, find the first { and last }
+  const firstBrace = jsonStr.indexOf('{')
+  const lastBrace = jsonStr.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1)
+  }
+
+  let parsed
+  try {
+    parsed = VideoAnalysisSchema.safeParse(JSON.parse(jsonStr))
+  } catch (parseErr) {
+    console.error('[gemini] JSON parse failed. Raw response (first 500 chars):', text.slice(0, 500))
+    console.error('[gemini] Extracted JSON (first 500 chars):', jsonStr.slice(0, 500))
+    throw new Error(`Failed to parse Gemini video analysis JSON: ${(parseErr as Error).message}`)
+  }
+
   if (!parsed.success) {
     console.error('[gemini] Analysis validation failed:', parsed.error.flatten())
-    throw new Error('Failed to parse video analysis')
+    throw new Error('Failed to validate video analysis response')
   }
 
   console.log(`[gemini] Analysis complete: ${parsed.data.steps.length} steps, product: "${parsed.data.productName}"`)
