@@ -21,9 +21,7 @@ export function ProjectSettings(): React.ReactElement {
   const [credentials, setCredentials] = useState<Credential[]>(
     (outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [],
   )
-  const [walkthroughEnabled, setWalkthroughEnabled] = useState(
-    (outletProject as ProjectDTO & { walkthroughEnabled?: boolean }).walkthroughEnabled ?? false,
-  )
+  const [walkthroughEnabled, setWalkthroughEnabled] = useState(outletProject.walkthroughEnabled ?? false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -34,7 +32,7 @@ export function ProjectSettings(): React.ReactElement {
     setBaseUrl(outletProject.baseUrl)
     setContext(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
     setCredentials((outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [])
-    setWalkthroughEnabled((outletProject as ProjectDTO & { walkthroughEnabled?: boolean }).walkthroughEnabled ?? false)
+    setWalkthroughEnabled(outletProject.walkthroughEnabled ?? false)
   }, [outletProject])
 
   const handleSave = async (): Promise<void> => {
