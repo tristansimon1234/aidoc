@@ -398,9 +398,13 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
   )
 }
 
-// Extract frames from video at exact timestamps and upload as screenshots
+// Extract frames from video at timestamps and upload as screenshots.
+// Sorts timestamps ascending and clamps to video duration to ensure correct ordering.
 async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
   if (timestamps.length === 0) return
+
+  // Sort timestamps ascending (Gemini may return them out of order)
+  const sorted = [...timestamps].sort((a, b) => a - b)
 
   return new Promise((resolve, reject) => {
     const video = document.createElement('video')
@@ -412,26 +416,33 @@ async function extractAndUploadFrames(videoFile: File, runId: string, timestamps
       canvas.width = Math.min(video.videoWidth, 1280)
       canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
 
+      // Clamp timestamps to video duration
+      const duration = video.duration
+      const clamped = sorted.map((t) => Math.min(t, Math.max(0, duration - 0.1)))
+
       let i = 0
 
       const extractNext = (): void => {
-        if (i >= timestamps.length) { resolve(); return }
-        video.currentTime = timestamps[i]!
+        if (i >= clamped.length) { resolve(); return }
+        video.currentTime = clamped[i]!
       }
 
       video.onseeked = () => {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const stepIndex = i
-        canvas.toBlob(async (blob) => {
-          if (blob) {
-            const path = `runs/${runId}/frame-${stepIndex}.jpg`
-            const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
-            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-            await api.runs.updateStepScreenshot(runId, stepIndex, path)
-          }
-          i++
-          extractNext()
-        }, 'image/jpeg', 0.8)
+        // Small delay after seek to let the browser decode the frame fully
+        setTimeout(() => {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const stepIndex = i
+          canvas.toBlob(async (blob) => {
+            if (blob) {
+              const path = `runs/${runId}/frame-${stepIndex}.jpg`
+              const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
+              await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
+              await api.runs.updateStepScreenshot(runId, stepIndex, path)
+            }
+            i++
+            extractNext()
+          }, 'image/jpeg', 0.85)
+        }, 150) // 150ms delay — gives browser time to decode the seeked frame
       }
 
       video.onerror = () => reject(new Error('Failed to load video'))

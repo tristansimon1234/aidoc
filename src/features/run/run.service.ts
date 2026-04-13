@@ -330,9 +330,12 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     const { analyzeVideoWithGemini } = await import('../../shared/ai/gemini.client.js')
     const analysis = await analyzeVideoWithGemini(buffer, mimeType, fileName)
 
+    // Sort steps by timestamp (ascending) — Gemini sometimes returns them out of order
+    const sortedSteps = [...analysis.steps].sort((a, b) => a.timestamp - b.timestamp)
+
     // Create RunSteps from analysis
-    for (let i = 0; i < analysis.steps.length; i++) {
-      const s = analysis.steps[i]!
+    for (let i = 0; i < sortedSteps.length; i++) {
+      const s = sortedSteps[i]!
       const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
       await runRepo.createRunStep({
         runId,
@@ -344,21 +347,22 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
       })
     }
 
-    // Build summary
+    // Build summary — include videoPath for the narrated player
     await runRepo.updateRunSummary(runId, {
       sections: [{
         url: 'video',
         label: analysis.productName || run.featureName,
         status: 'documented',
-        stepCount: analysis.steps.length,
+        stepCount: sortedSteps.length,
       }],
       blockers: [],
       agentMessage: analysis.summary,
+      videoPath,
     })
 
     await runRepo.updateRunStatus(runId, 'completed')
 
-    return { timestamps: analysis.steps.map((s) => s.timestamp) }
+    return { timestamps: sortedSteps.map((s) => s.timestamp) }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')

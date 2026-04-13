@@ -214,24 +214,30 @@ export async function analyzeVideoWithGemini(
       text: `Analyze this screen recording of a web application. For each distinct action or screen change, identify what's happening.
 
 For each step:
-1. Provide the timestamp in seconds
-2. Describe what's visible on screen (UI elements, page layout, text)
-3. Describe what the user is doing (clicking, typing, navigating, scrolling)
+1. Provide the timestamp in seconds — this MUST be the moment AFTER the action completes, showing the RESULT on screen (not the moment before the click). For example, if the user clicks a button at 5s and the new page loads at 6s, use timestamp 6.
+2. Describe what's visible on screen AFTER the action (UI elements, page layout, text)
+3. Describe what the user did (clicked, typed, navigated, scrolled)
 4. If there's narration/voiceover, transcribe what's being said at that moment
+
+IMPORTANT:
+- Steps MUST be in chronological order (timestamps ascending)
+- Each timestamp should show the RESULT state, not the initial state
+- Add 0.5-1 second after a click/navigation to capture the loaded result
+- Skip idle moments or pauses where nothing changes
 
 Return ONLY valid JSON (no markdown fences):
 {
   "steps": [
     {
-      "timestamp": 0,
+      "timestamp": 1,
       "screenDescription": "The login page with email and password fields, a 'Sign in' button, and company logo",
       "userAction": "User is viewing the login page",
       "narration": "Let me show you how to sign in to the platform"
     },
     {
-      "timestamp": 15,
-      "screenDescription": "The login form with email field filled in",
-      "userAction": "User types their email address in the email field",
+      "timestamp": 16,
+      "screenDescription": "The login form with email field filled in and cursor in password field",
+      "userAction": "User typed their email address and moved to the password field",
       "narration": null
     }
   ],
@@ -239,7 +245,7 @@ Return ONLY valid JSON (no markdown fences):
   "summary": "2-3 sentence summary of what this recording covers"
 }
 
-Be thorough — capture every meaningful action. Skip idle moments or pauses where nothing changes.`,
+Be thorough — capture every meaningful action.`,
     },
   ]))
 

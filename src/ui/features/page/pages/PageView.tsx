@@ -12,6 +12,7 @@ import {
 import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
+import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
 import styles from './PageView.module.css'
@@ -41,6 +42,7 @@ export function PageView(): React.ReactElement {
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -70,9 +72,17 @@ export function PageView(): React.ReactElement {
       setPage(pageData)
       setTryReport(testReport)
 
-      // Extract voiceover URL from latest run summary
-      const voiceover = (runData?.summaryJson as Record<string, unknown> | null)?.voiceover as { audioUrl?: string } | undefined
+      // Extract voiceover + video URLs from latest run summary
+      const summary = runData?.summaryJson as Record<string, unknown> | null
+      const voiceover = summary?.voiceover as { audioUrl?: string } | undefined
       setVoiceoverUrl(voiceover?.audioUrl ?? null)
+      const vPath = summary?.videoPath as string | undefined
+      if (vPath) {
+        const { data } = supabase.storage.from('artifacts').getPublicUrl(vPath)
+        setVideoUrl(data?.publicUrl ?? null)
+      } else {
+        setVideoUrl(null)
+      }
 
       // If doc exists but page.content is empty, copy it over
       if (docData?.markdownContent && !pageData.content) {
@@ -287,20 +297,8 @@ DO NOT generate new documentation. Only verify the existing one.`
               void debouncedPageUpdate({ title: e.target.value })
             }}
           />
-          {voiceoverUrl && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
-              padding: 'var(--space-sm) var(--space-md)',
-              background: 'var(--color-card)',
-              border: '1px solid var(--color-border)',
-              borderRadius: 'var(--radius-lg)',
-              marginBottom: 'var(--space-md)',
-            }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: 'var(--color-primary)' }}>
-                <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-              </svg>
-              <audio controls preload="none" src={voiceoverUrl} style={{ flex: 1, height: 32 }} />
-            </div>
+          {(voiceoverUrl || videoUrl) && (
+            <NarratedPlayer videoUrl={videoUrl} audioUrl={voiceoverUrl} />
           )}
           <BlockEditor
             key={pageId}
