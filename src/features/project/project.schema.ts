@@ -30,6 +30,15 @@ export const DiscoveredContextSchema = z.object({
   summary: z.string().default(''),
 })
 
+const DesignSchema = z.object({
+  accentColor: z.string(),
+  bgColor: z.string(),
+  textColor: z.string(),
+  font: z.string(),
+  widgetPosition: z.string().optional(),
+  widgetGreeting: z.string().optional(),
+})
+
 export const UpdateProjectSchema = z.object({
   name: z.string().min(1).optional(),
   baseUrl: z.string().url().optional(),
@@ -37,6 +46,7 @@ export const UpdateProjectSchema = z.object({
   context: ProjectContextSchema.optional(),
   credentials: z.array(CredentialSchema).optional(),
   discoveredContext: DiscoveredContextSchema.optional(),
+  design: DesignSchema.optional(),
 })
 
 export const ProjectIdParamSchema = UuidParamSchema

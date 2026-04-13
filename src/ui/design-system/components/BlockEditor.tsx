@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
+import { useImageLightbox } from './ImageLightbox.js'
 import styles from './BlockEditor.module.css'
 
 interface BlockEditorProps {
@@ -15,10 +16,12 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initializedRef = useRef(false)
   const lastContentRef = useRef('')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const { lightbox, openLightbox } = useImageLightbox()
 
   const getTheme = (): 'dark' | 'light' => {
-    if (typeof document === 'undefined') return 'dark'
-    return (document.documentElement.getAttribute('data-theme') as 'dark' | 'light') ?? 'dark'
+    if (typeof document === 'undefined') return 'light'
+    return (document.documentElement.getAttribute('data-theme') as 'dark' | 'light') ?? 'light'
   }
   const [theme, setTheme] = useState<'dark' | 'light'>(getTheme)
 
@@ -56,6 +59,25 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
     })()
   }, [editor, content])
 
+  // Intercept clicks on images inside the editor to open lightbox
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e: MouseEvent): void => {
+      const target = e.target as HTMLElement
+      if (target.tagName === 'IMG') {
+        const src = (target as HTMLImageElement).src
+        if (src) {
+          e.preventDefault()
+          e.stopPropagation()
+          openLightbox(src)
+        }
+      }
+    }
+    el.addEventListener('click', handler, true)
+    return () => el.removeEventListener('click', handler, true)
+  }, [openLightbox])
+
   const handleChange = useCallback(() => {
     if (readOnly) return
 
@@ -86,7 +108,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   }, [])
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div ref={containerRef} style={{ position: 'relative' }}>
       {saving && <span className={styles.saving}>Saving...</span>}
       <BlockNoteView
         editor={editor}
@@ -94,6 +116,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
         onChange={handleChange}
         theme={theme}
       />
+      {lightbox}
     </div>
   )
 }

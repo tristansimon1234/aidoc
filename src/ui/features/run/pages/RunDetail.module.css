@@ -4,13 +4,13 @@
   gap: var(--space-xs);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   text-decoration: none;
   margin-bottom: var(--space-lg);
 }
 
 .back:hover {
-  color: var(--color-text-secondary);
+  color: var(--color-muted-fg);
   text-decoration: none;
 }
 
@@ -33,7 +33,7 @@
 
 .goal {
   font-size: var(--text-base);
-  color: var(--color-text-secondary);
+  color: var(--color-muted-fg);
   margin-top: var(--space-sm);
   line-height: 1.5;
 }

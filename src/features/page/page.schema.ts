@@ -33,6 +33,7 @@ export const UpdatePageSchema = z.object({
   content: z.string().optional(),
   customPrompt: z.string().optional(),
   briefing: PageBriefingSchema.optional(),
+  isPublic: z.boolean().optional(),
 })
 
 export const ReorderSchema = z.array(z.object({

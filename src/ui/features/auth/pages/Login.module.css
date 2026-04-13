@@ -3,30 +3,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--color-bg-base);
+  background-color: var(--color-bg);
 }
 
 .card {
   width: 100%;
   max-width: 400px;
   padding: var(--space-xl);
-  background-color: var(--color-bg-surface);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
 }
 
 .logo {
-  font-family: var(--font-mono);
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
   font-size: var(--text-xl);
-  font-weight: 600;
-  color: var(--color-text-primary);
+  font-weight: 700;
+  letter-spacing: var(--heading-tracking);
+  color: var(--color-fg);
   text-align: center;
   margin-bottom: var(--space-xs);
 }
 
 .subtitle {
   text-align: center;
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   font-size: var(--text-sm);
   margin-bottom: var(--space-xl);
 }
@@ -46,19 +49,19 @@
 
 .error {
   font-size: var(--text-sm);
-  color: var(--color-accent-red);
+  color: var(--color-destructive);
   text-align: center;
 }
 
 .toggle {
   text-align: center;
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   margin-top: var(--space-md);
 }
 
 .toggleLink {
-  color: var(--color-accent-blue);
+  color: var(--color-primary);
   cursor: pointer;
   background: none;
   border: none;

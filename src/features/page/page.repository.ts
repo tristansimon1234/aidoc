@@ -14,6 +14,7 @@ interface PageRow {
   custom_prompt: string | null
   briefing: PageBriefing | null
   status: string
+  is_public: boolean
   sort_order: number
   created_at: string
   updated_at: string
@@ -32,6 +33,7 @@ function mapToPage(row: PageRow): DocPage {
     customPrompt: row.custom_prompt,
     briefing: row.briefing ?? null,
     status: row.status as DocPage['status'],
+    isPublic: row.is_public,
     sortOrder: row.sort_order,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -73,6 +75,31 @@ export async function findPagesByProjectId(projectId: string): Promise<DocPage[]
   return (data as PageRow[]).map(mapToPage)
 }
 
+export async function findPublicPagesByProjectId(projectId: string): Promise<DocPage[]> {
+  // Try is_public first; fall back to status='published' if column missing
+  const { data, error } = await supabase
+    .from('doc_pages')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('is_public', true)
+    .order('sort_order', { ascending: true })
+
+  if (error && error.message.includes('is_public')) {
+    // Column doesn't exist yet — fall back
+    const fallback = await supabase
+      .from('doc_pages')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('status', 'published')
+      .order('sort_order', { ascending: true })
+    if (fallback.error) throw new DatabaseError(fallback.error.message)
+    return (fallback.data as PageRow[]).map(mapToPage)
+  }
+
+  if (error) throw new DatabaseError(error.message)
+  return (data as PageRow[]).map(mapToPage)
+}
+
 export async function updatePage(id: string, input: UpdatePageInput): Promise<DocPage> {
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (input.title !== undefined) updates.title = input.title
@@ -85,6 +112,7 @@ export async function updatePage(id: string, input: UpdatePageInput): Promise<Do
   if (input.content !== undefined) updates.content = input.content
   if (input.customPrompt !== undefined) updates.custom_prompt = input.customPrompt
   if (input.briefing !== undefined) updates.briefing = input.briefing
+  if (input.isPublic !== undefined) updates.is_public = input.isPublic
 
   const { data, error } = await supabase
     .from('doc_pages')

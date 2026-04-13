@@ -1,5 +1,5 @@
 import { type ChangeEvent, useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useOutletContext, useNavigate } from 'react-router-dom'
+import { useParams, useOutletContext, useNavigate, Link } from 'react-router-dom'
 import {
   Button,
   Badge,
@@ -7,11 +7,13 @@ import {
   StatusIndicator,
   BlockEditor,
   EmptyState,
+  TableOfContents,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO } from '../../../shared/api/client.js'
-import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage } from '../../../shared/api/db.js'
+import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
+import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
+import { TryDocReport } from '../components/TryDocReport.js'
 import styles from './PageView.module.css'
 
 interface PageContext {
@@ -28,10 +30,14 @@ interface ActivityEntry {
 export function PageView(): React.ReactElement {
   const { projectId, pageId } = useParams<{ projectId: string; pageId: string }>()
   const context = useOutletContext<PageContext>()
-  const [page, setPage] = useState<DocPageDTO | null>(null)
+
+  // Instant page lookup from sidebar data — no flash on page switch
+  const cachedPage = context.pages.find((p) => p.id === pageId) ?? null
+
+  const [page, setPage] = useState<DocPageDTO | null>(cachedPage)
   const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
   const [latestRun, setLatestRun] = useState<RunDTO | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!cachedPage)
   const [exploring, setExploring] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [activity, setActivity] = useState<ActivityEntry[]>([])
@@ -40,16 +46,47 @@ export function PageView(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration'>('doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'test'>('doc')
+  const [genMethod, setGenMethod] = useState<'video' | 'explore'>('video')
+  const [tryRunning, setTryRunning] = useState(false)
+  const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
+  const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
+  const [analyzing, setAnalyzing] = useState(false)
+  const prevPageIdRef = useRef(pageId)
+
+  // Sync page instantly when pageId changes (no async gap)
+  if (pageId !== prevPageIdRef.current) {
+    prevPageIdRef.current = pageId
+    if (cachedPage) {
+      setPage(cachedPage)
+      setLoading(false)
+    } else {
+      setPage(null)
+      setLoading(true)
+    }
+    setDoc(null)
+    setLatestRun(null)
+    setError(null)
+    setActivity([])
+    setLiveUrl(null)
+    setExploring(false)
+    setGenerating(false)
+    setStatusMessage(null)
+    setActiveTab('doc')
+  }
 
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
     try {
-      // Direct Supabase query — no Vercel cold start
-      const { page: pageData, latestRun: runData, doc: docData } = await fetchPageFull(pageId)
+      const [fullData, testReport] = await Promise.all([
+        fetchPageFull(pageId),
+        fetchLatestTestReport(pageId),
+      ])
+      const { page: pageData, latestRun: runData, doc: docData } = fullData
       setPage(pageData)
       setDoc(docData)
       setLatestRun(runData)
+      setTryReport(testReport)
 
       // If doc exists but page.content is empty, copy it over
       if (docData?.markdownContent && !pageData.content) {
@@ -64,15 +101,6 @@ export function PageView(): React.ReactElement {
   }, [projectId, pageId])
 
   useEffect(() => {
-    setLoading(true)
-    setDoc(null)
-    setLatestRun(null)
-    setError(null)
-    setActivity([])
-    setLiveUrl(null)
-    setExploring(false)
-    setGenerating(false)
-    setStatusMessage(null)
     void fetchData()
   }, [fetchData])
 
@@ -201,6 +229,95 @@ export function PageView(): React.ReactElement {
     abortRef.current?.abort()
   }
 
+  const handleTryDoc = async (): Promise<void> => {
+    if (!projectId || !pageId || !page?.content) return
+    const startUrl = page.startUrl ?? context.project.baseUrl
+
+    const tryDocPrompt = `You are simulating a NAIVE USER who has ONLY the documentation below. You have never used this product before. You know NOTHING about it except what the documentation tells you.
+
+## Documentation to verify:
+
+${page.content}
+
+## Your task:
+1. Navigate to: ${startUrl}
+2. Follow EACH step in the documentation IN ORDER, exactly as written
+3. For EVERY step, report your experience clearly:
+   - PASS: if the step works exactly as documented
+   - FAIL: if something doesn't match — explain what's different
+   - AMBIGUOUS: if the instruction is vague or could be interpreted multiple ways
+
+NAIVE USER RULES:
+- Do NOT fill in gaps in the documentation with your own knowledge
+- If the doc says "click Settings" and you see "Preferences" — that is a FAIL
+- If the doc assumes you know something it never explained — note it
+- If the product shows an error — note the exact error message
+- Take a screenshot after each major step
+
+DO NOT generate new documentation. Only verify the existing one.`
+
+    setTryRunning(true)
+    setTryStreamSteps([])
+    setTryReport(null)
+    setAnalyzing(false)
+    setLiveUrl(null)
+    setActiveTab('test')
+    setStatusMessage('Launching browser...')
+
+    const controller = new AbortController()
+    abortRef.current = controller
+    try {
+      const run = await api.runs.create({
+        featureName: `[Test] ${page.title}`,
+        startUrl,
+        goal: `Verify documentation for "${page.title}"`,
+        docPageId: pageId,
+      })
+
+      // Phase 1: Explore with naive user prompt
+      await api.runs.exploreStream(
+        run.id,
+        (event: StepEventDTO) => {
+          switch (event.type) {
+            case 'live': setLiveUrl(event.liveUrl ?? null); break
+            case 'status':
+            case 'step':
+              if (event.message && event.message.length > 10) {
+                setTryStreamSteps((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
+              }
+              setStatusMessage(event.message ?? null)
+              break
+            case 'done': setStatusMessage('Exploration complete — analyzing results...'); break
+            case 'error': setStatusMessage(event.message ?? 'Error'); break
+          }
+        },
+        tryDocPrompt,
+        controller.signal,
+      )
+
+      if (controller.signal.aborted) return
+
+      // Phase 2: Analyze with Gemini → structured report
+      setTryRunning(false)
+      setLiveUrl(null)
+      setAnalyzing(true)
+      setStatusMessage('Generating test report...')
+
+      const report = await api.runs.analyzeTry(run.id, page.content, page.title, pageId)
+      setTryReport(report)
+      setStatusMessage(null)
+    } catch (err) {
+      if ((err as Error).name !== 'AbortError') {
+        setError((err as Error).message)
+      }
+    } finally {
+      abortRef.current = null
+      setTryRunning(false)
+      setAnalyzing(false)
+      setLiveUrl(null)
+    }
+  }
+
   // Debounced page metadata update — flushes on unmount to prevent data loss
   const pageUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingUpdatesRef = useRef<Record<string, unknown> | null>(null)
@@ -248,10 +365,29 @@ export function PageView(): React.ReactElement {
 
   return (
     <div>
-      {/* Header — status + tab bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-sm)' }}>
-        <StatusIndicator status={statusMap[page.status] ?? 'pending'} label={page.status} />
-        {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
+      {/* Header — status + publish toggle */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+          <StatusIndicator status={statusMap[page.status] ?? 'pending'} label={page.status} />
+          {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          <Button
+            size="sm"
+            variant={page.isPublic ? 'secondary' : 'ghost'}
+            onClick={() => {
+              const newVal = !page.isPublic
+              setPage({ ...page, isPublic: newVal })
+              void dbUpdatePage(projectId!, pageId!, { isPublic: newVal })
+            }}
+          >
+            {page.isPublic ? (
+              <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg> Published</>
+            ) : (
+              <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Draft</>
+            )}
+          </Button>
+        </div>
       </div>
 
       <div className={styles.tabBar}>
@@ -268,6 +404,20 @@ export function PageView(): React.ReactElement {
           Generate
           {(exploring || generating) && <Spinner size="sm" />}
         </button>
+        <button
+          className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`}
+          onClick={() => setActiveTab('test')}
+        >
+          Test
+          {(tryRunning || analyzing) && <Spinner size="sm" />}
+          {!tryRunning && !analyzing && tryReport && (
+            <span className={`${styles.tabDot} ${
+              tryReport.summary.overallVerdict === 'pass' ? styles.tabDotPass :
+              tryReport.summary.overallVerdict === 'fail' ? styles.tabDotFail :
+              styles.tabDotPartial
+            }`} />
+          )}
+        </button>
       </div>
 
       {/* ===== DOCUMENTATION TAB ===== */}
@@ -283,10 +433,26 @@ export function PageView(): React.ReactElement {
             }}
           />
           <BlockEditor
-            key={`${pageId}-${page.content ? 'has-content' : 'empty'}-${doc?.id ?? 'no-doc'}`}
+            key={pageId}
             content={page.content ?? ''}
             onSave={handleSaveContent}
           />
+          {/* Notion-style child page links */}
+          {(() => {
+            const children = context.pages.filter((p) => p.parentId === pageId)
+            if (children.length === 0) return null
+            return (
+              <div className={styles.childPages}>
+                {children.map((child) => (
+                  <Link key={child.id} to={`/projects/${projectId}/pages/${child.id}`} className={styles.childPageLink}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
+                    {child.title}
+                  </Link>
+                ))}
+              </div>
+            )
+          })()}
+          {page.content && <TableOfContents content={page.content} />}
         </div>
       )}
 
@@ -310,18 +476,42 @@ export function PageView(): React.ReactElement {
             }}
           />
 
-          {/* Generation methods — two cards side by side */}
+          {/* Generation methods — segmented control + content */}
           {!exploring && !generating && (
-            <div className={styles.methodGrid}>
-              {/* Video Recording — recommended */}
-              <div className={styles.methodCard}>
-                <div className={styles.methodHeader}>
-                  <span className={styles.methodTitle}>Screen recording</span>
-                  <Badge color="green">recommended</Badge>
+            <>
+            <div className={styles.methodToggle}>
+              <button
+                className={`${styles.methodOption} ${genMethod === 'video' ? styles.methodOptionActive : ''}`}
+                onClick={() => setGenMethod('video')}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+                Screen recording
+                <Badge color="green">recommended</Badge>
+              </button>
+              <button
+                className={`${styles.methodOption} ${genMethod === 'explore' ? styles.methodOptionActive : ''}`}
+                onClick={() => setGenMethod('explore')}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
+                Auto-exploration
+                <Badge color="amber">beta</Badge>
+              </button>
+            </div>
+
+            {genMethod === 'video' && (
+              <div className={styles.methodContent}>
+                <div className={styles.methodInfo}>
+                  <div className={styles.methodInfoText}>
+                    <p className={styles.methodInfoDesc}>
+                      Upload a screen recording of your product workflow. AI watches every click, extracts screenshots at key moments, and writes step-by-step documentation automatically.
+                    </p>
+                    <div className={styles.methodInfoTags}>
+                      <span className={styles.methodTag}>.mp4, .webm, .mov</span>
+                      <span className={styles.methodTag}>up to 500MB</span>
+                      <span className={styles.methodTag}>Best for: tutorials, onboarding flows</span>
+                    </div>
+                  </div>
                 </div>
-                <p className={styles.methodDesc}>
-                  Upload a recording of the workflow. AI analyzes every action, extracts screenshots, and generates documentation.
-                </p>
                 <VideoUploader
                   projectId={projectId!}
                   pageId={pageId!}
@@ -333,28 +523,31 @@ export function PageView(): React.ReactElement {
                   }}
                 />
               </div>
+            )}
 
-              {/* Browser exploration — beta */}
-              <div className={styles.methodCard}>
-                <div className={styles.methodHeader}>
-                  <span className={styles.methodTitle}>Auto-exploration</span>
-                  <Badge color="amber">beta</Badge>
+            {genMethod === 'explore' && (
+              <div className={styles.methodContent}>
+                <div className={styles.methodInfo}>
+                  <div className={styles.methodInfoText}>
+                    <p className={styles.methodInfoDesc}>
+                      An AI agent opens your app in a cloud browser, navigates autonomously, captures screenshots, and generates documentation — no recording needed.
+                    </p>
+                    <div className={styles.methodInfoTags}>
+                      <span className={styles.methodTag}>Requires Anthropic + Browserbase keys</span>
+                      <span className={styles.methodTag}>Best for: full site coverage</span>
+                    </div>
+                  </div>
                 </div>
-                <p className={styles.methodDesc}>
-                  An AI agent navigates your app in a cloud browser, captures screenshots, and writes the doc autonomously.
-                </p>
                 <div className={styles.methodActions}>
                   {latestRun && page.content ? (
                     <>
                       <Button
-                        size="sm"
                         variant={page.briefing?.objective ? undefined : 'secondary'}
                         onClick={() => void handleNewExploration('complete')}
                       >
                         Complete documentation
                       </Button>
                       <Button
-                        size="sm"
                         variant="ghost"
                         onClick={() => void handleNewExploration('replace')}
                       >
@@ -363,7 +556,6 @@ export function PageView(): React.ReactElement {
                     </>
                   ) : (
                     <Button
-                      size="sm"
                       variant={page.briefing?.objective ? undefined : 'secondary'}
                       onClick={() => void handleNewExploration('replace')}
                     >
@@ -371,13 +563,12 @@ export function PageView(): React.ReactElement {
                     </Button>
                   )}
                   {!page.briefing?.objective && (
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>
-                      Add an objective for better results
-                    </span>
+                    <span className={styles.methodHint}>Add an objective for better results</span>
                   )}
                 </div>
               </div>
-            </div>
+            )}
+            </>
           )}
 
           {/* Live exploration feed — activity left, video right */}
@@ -500,6 +691,81 @@ export function PageView(): React.ReactElement {
           {error && <EmptyState title="Error" description={error} />}
         </div>
       )}
+
+      {/* ===== TEST TAB ===== */}
+      {activeTab === 'test' && (
+        <div className={styles.tabContent}>
+          <div className={styles.tryHeader}>
+            <div className={styles.tryTitleRow}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m9 15 2 2 4-4" /></svg>
+              <h2 className={styles.tryTitle}>Documentation Test</h2>
+              {(tryRunning || analyzing) && <Spinner size="sm" />}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <p className={styles.trySubtitle}>
+                {tryRunning
+                  ? statusMessage ?? 'AI is following your documentation steps...'
+                  : analyzing
+                    ? 'Analyzing results with Gemini...'
+                    : tryReport
+                      ? `Last tested ${new Date(tryReport.executedAt).toLocaleDateString()}`
+                      : 'Verify your documentation against the live application'}
+              </p>
+              {!tryRunning && !analyzing && (
+                <Button size="sm" onClick={() => void handleTryDoc()} disabled={!page.content}>
+                  {tryReport ? 'Re-test' : 'Run Test'}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Live browser during test */}
+          {tryRunning && liveUrl && (
+            <div className={styles.replayContainer} style={{ marginBottom: 'var(--space-md)' }}>
+              <div className={styles.replayHeader}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-success)', animation: 'pulse 2s infinite' }} />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>live</span>
+                </span>
+                <Button size="sm" variant="ghost" onClick={() => abortRef.current?.abort()}>Stop</Button>
+              </div>
+              <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
+            </div>
+          )}
+
+          {/* Live streaming steps */}
+          {tryRunning && tryStreamSteps.length > 0 && (
+            <div className={styles.activityLog} style={{ maxHeight: '300px', marginBottom: 'var(--space-md)' }}>
+              <div className={styles.activityHeader}>verification steps ({tryStreamSteps.length})</div>
+              {tryStreamSteps.map((step, i) => (
+                <div key={i} className={styles.activityEntry}>{step.text}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Analyzing state */}
+          {analyzing && (
+            <div className={styles.section} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px', gap: 'var(--space-md)' }}>
+              <Spinner size="lg" />
+              <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--text-sm)' }}>Generating structured test report...</span>
+            </div>
+          )}
+
+          {/* Structured report */}
+          {!tryRunning && !analyzing && tryReport && (
+            <TryDocReport report={tryReport} />
+          )}
+
+          {/* Empty state */}
+          {!tryRunning && !analyzing && !tryReport && (
+            <EmptyState
+              title="No test results yet"
+              description="Run a test to verify your documentation against the live application. The AI will follow each step as a naive user and report what works and what doesn't."
+              action={<Button onClick={() => void handleTryDoc()} disabled={!page.content}>Run Test</Button>}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -570,208 +836,123 @@ function BriefingSection({
   // Count filled fields for the summary badge
   const filledCount = [page.goal, page.startUrl, briefing.objective, briefing.knowledge].filter(Boolean).length + briefing.resources.length
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: 'var(--space-sm)',
-    fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)',
-    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
-    borderRadius: 'var(--radius-md)', fontFamily: 'var(--font-sans)', outline: 'none',
-  }
-
-  const textareaStyle: React.CSSProperties = {
-    ...inputStyle, resize: 'vertical', minHeight: '60px',
-  }
-
   return (
     <div className={styles.section}>
-      {/* Header — clickable to toggle */}
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-          padding: 0, margin: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-text-primary)' }}>
-            Agent Briefing
-          </span>
-          <span style={{
-            fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-            padding: '1px 6px', borderRadius: 'var(--radius-sm)',
-            backgroundColor: filledCount > 2 ? 'rgba(61,214,140,0.15)' : 'rgba(245,166,35,0.15)',
-            color: filledCount > 2 ? 'var(--color-accent-green)' : 'var(--color-accent-amber)',
-          }}>
-            {filledCount > 2 ? 'ready' : `${filledCount}/4 filled`}
+      <button type="button" onClick={() => setOpen(!open)} className={styles.briefingHeader}>
+        <div className={styles.briefingTitle}>
+          <span className={styles.briefingTitleText}>Agent Briefing</span>
+          <span className={`${styles.briefingBadge} ${filledCount > 2 ? styles.briefingBadgeReady : styles.briefingBadgePartial}`}>
+            {filledCount > 2 ? 'ready' : `${filledCount}/4`}
           </span>
         </div>
-        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-muted)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
-          &#9662;
-        </span>
+        <span className={`${styles.briefingChevron} ${open ? styles.briefingChevronOpen : ''}`}>&#9662;</span>
       </button>
 
       {!open && (
-        <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: 'var(--space-xs) 0 0' }}>
+        <p className={styles.briefingPreview}>
           {briefing.objective ? briefing.objective.slice(0, 80) + (briefing.objective.length > 80 ? '...' : '') : 'No objective set — click to expand'}
         </p>
       )}
 
-      {/* Expanded content */}
       {open && (
-        <div style={{ marginTop: 'var(--space-md)', display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: 0, lineHeight: 1.5 }}>
-            The more precise your briefing, the better the documentation — and the less you&apos;ll need to re-run.
+        <div className={styles.briefingBody}>
+          <p className={styles.briefingHint}>
+            The more precise your briefing, the better the documentation.
           </p>
 
           {/* Step 1: Goal + URL */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+            <div className={styles.briefingStepHeader}>
               <span className={styles.stepNumber}>1</span>
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Where to explore</span>
+              <span className={styles.briefingStepTitle}>Where to explore</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+            <div className={styles.briefingGrid}>
               <div>
-                <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Start URL</label>
-                <input
-                  type="text"
-                  value={page.startUrl ?? ''}
-                  onChange={(e) => onPageUpdate({ startUrl: e.target.value })}
-                  placeholder="e.g. /pricing or https://app.com/settings"
-                  style={{ ...inputStyle, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
-                />
+                <label className={styles.briefingFieldLabel}>Start URL</label>
+                <input type="text" value={page.startUrl ?? ''} onChange={(e) => onPageUpdate({ startUrl: e.target.value })}
+                  placeholder="e.g. /pricing" className={`${styles.briefingInput} ${styles.briefingInputMono}`} />
               </div>
               <div>
-                <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'block', marginBottom: '4px' }}>Goal</label>
-                <input
-                  type="text"
-                  value={page.goal ?? ''}
-                  onChange={(e) => onPageUpdate({ goal: e.target.value })}
-                  placeholder="e.g. Document the pricing and upgrade flow"
-                  style={inputStyle}
-                />
+                <label className={styles.briefingFieldLabel}>Goal</label>
+                <input type="text" value={page.goal ?? ''} onChange={(e) => onPageUpdate({ goal: e.target.value })}
+                  placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
               </div>
             </div>
           </div>
 
           {/* Step 2: Objective */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+            <div className={styles.briefingStepBetween}>
+              <div className={styles.briefingStepHeader} style={{ marginBottom: 0 }}>
                 <span className={styles.stepNumber}>2</span>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>What to document</span>
+                <span className={styles.briefingStepTitle}>What to document</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowExample(!showExample)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-accent-blue)', fontFamily: 'var(--font-mono)' }}
-              >
+              <button type="button" onClick={() => setShowExample(!showExample)} className={styles.briefingExampleToggle}>
                 {showExample ? 'hide example' : 'see example'}
               </button>
             </div>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
-              What should the user learn from this page? Be specific — the agent follows this closely.
+            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
+              What should the user learn from this page? Be specific.
             </p>
             {showExample && (
-              <div style={{
-                fontSize: 'var(--text-xs)', lineHeight: 1.5, padding: 'var(--space-sm)',
-                marginBottom: 'var(--space-sm)', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-md)',
-              }}>
-                <p style={{ color: 'var(--color-accent-red)', margin: '0 0 4px' }}>Bad: &quot;Document pricing&quot;</p>
-                <p style={{ color: 'var(--color-accent-green)', margin: 0 }}>Good: &quot;Document the pricing page: compare plans, show the upgrade flow from free to pro, and explain what happens when the trial expires&quot;</p>
+              <div className={styles.briefingExample}>
+                <p className={styles.briefingExampleBad}>Bad: &quot;Document pricing&quot;</p>
+                <p className={styles.briefingExampleGood}>Good: &quot;Document the pricing page: compare plans, show upgrade flow from free to pro&quot;</p>
               </div>
             )}
-            <textarea
-              value={briefing.objective}
-              onChange={(e) => update({ objective: e.target.value })}
-              placeholder="e.g. Document how a new user creates an account, verifies their email, and completes onboarding"
-              rows={3}
-              style={textareaStyle}
-            />
+            <textarea value={briefing.objective} onChange={(e) => update({ objective: e.target.value })}
+              placeholder="e.g. Document how a new user creates an account and completes onboarding" rows={3} className={styles.briefingTextarea} />
           </div>
 
           {/* Step 3: Domain knowledge */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-sm)' }}>
+            <div className={styles.briefingStepHeader}>
               <span className={styles.stepNumber}>3</span>
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>What the agent can&apos;t see</span>
+              <span className={styles.briefingStepTitle}>What the agent can&apos;t see</span>
             </div>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
-              Business rules, edge cases, hidden behaviors — anything not obvious from the UI.
+            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
+              Business rules, edge cases, hidden behaviors.
             </p>
-            <textarea
-              value={briefing.knowledge}
-              onChange={(e) => update({ knowledge: e.target.value })}
-              placeholder="e.g. Free trial users can't access billing. The 'Export' button only appears after 3 entries."
-              rows={3}
-              style={textareaStyle}
-            />
+            <textarea value={briefing.knowledge} onChange={(e) => update({ knowledge: e.target.value })}
+              placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries." rows={3} className={styles.briefingTextarea} />
           </div>
 
           {/* Step 4: Resources */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+            <div className={styles.briefingStepBetween}>
+              <div className={styles.briefingStepHeader} style={{ marginBottom: 0 }}>
                 <span className={styles.stepNumber}>4</span>
-                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-text-primary)' }}>Resources</span>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>optional</span>
+                <span className={styles.briefingStepTitle}>Resources</span>
+                <span className={styles.briefingHint}>optional</span>
               </div>
-              <button type="button" onClick={addResource} style={{
-                background: 'none', border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontFamily: 'var(--font-mono)',
-                padding: '2px 8px',
-              }}>
-                + add
-              </button>
+              <button type="button" onClick={addResource} className={styles.briefingAddBtn}>+ add</button>
             </div>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)', lineHeight: 1.4 }}>
-              Files the agent can upload into the app, or reference URLs. Credentials go in Project Settings.
+            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
+              Files the agent can upload, or reference URLs.
             </p>
-            {uploadError && (
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-red)', margin: '0 0 var(--space-sm)' }}>{uploadError}</p>
-            )}
+            {uploadError && <p className={styles.briefingError}>{uploadError}</p>}
             {briefing.resources.map((r, i) => (
-              <div key={i} style={{
-                display: 'grid', gridTemplateColumns: 'auto 1fr 2fr auto',
-                gap: 'var(--space-xs)', marginBottom: 'var(--space-xs)', alignItems: 'center',
-              }}>
-                <select
-                  value={r.type}
-                  onChange={(e) => updateResource(i, 'type', e.target.value)}
-                  style={{
-                    background: 'var(--color-bg-elevated)', border: '1px solid var(--color-border-subtle)',
-                    borderRadius: 'var(--radius-sm)', padding: '4px 6px',
-                    fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)',
-                  }}
-                >
+              <div key={i} className={styles.briefingResourceRow}>
+                <select value={r.type} onChange={(e) => updateResource(i, 'type', e.target.value)} className={styles.briefingResourceSelect}>
                   {RESOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
                 <input type="text" value={r.label} onChange={(e) => updateResource(i, 'label', e.target.value)}
-                  placeholder="label" style={{ ...inputStyle, padding: '4px 8px', fontSize: 'var(--text-xs)' }} />
+                  placeholder="label" className={styles.briefingResourceSmallInput} />
                 {r.type === 'file' ? (
                   r.value ? (
-                    <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-secondary)', padding: '4px 0' }}>
-                      {r.value.split('/').pop()}
-                    </span>
+                    <span className={styles.briefingHint}>{r.value.split('/').pop()}</span>
                   ) : (
-                    <input type="file" accept={ALLOWED_FILE_EXTENSIONS.join(',')}
-                      onChange={(e) => void handleFileUpload(i, e)}
-                      style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-secondary)' }} />
+                    <input type="file" accept={ALLOWED_FILE_EXTENSIONS.join(',')} onChange={(e) => void handleFileUpload(i, e)}
+                      className={styles.briefingHint} />
                   )
                 ) : (
                   <input type="text" value={r.value} onChange={(e) => updateResource(i, 'value', e.target.value)}
-                    placeholder="value" style={{ ...inputStyle, padding: '4px 8px', fontSize: 'var(--text-xs)' }} />
+                    placeholder="value" className={styles.briefingResourceSmallInput} />
                 )}
-                <button type="button" onClick={() => removeResource(i)} style={{
-                  background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)',
-                }}>x</button>
+                <button type="button" onClick={() => removeResource(i)} className={styles.briefingResourceRemove}>x</button>
               </div>
             ))}
-            {briefing.resources.length === 0 && (
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', fontStyle: 'italic', margin: 0 }}>
-                No resources added
-              </p>
-            )}
+            {briefing.resources.length === 0 && <p className={styles.briefingEmpty}>No resources added</p>}
           </div>
         </div>
       )}
@@ -924,8 +1105,11 @@ function VideoUploader({
   return (
     <div>
       <label className={styles.dropZone}>
-        <span className={styles.dropZoneTitle}>Upload a screen recording</span>
-        <span className={styles.dropZoneHint}>.mp4, .webm, .mov — max 500MB</span>
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary)', marginBottom: 'var(--space-sm)' }}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" />
+        </svg>
+        <span className={styles.dropZoneTitle}>Drop a screen recording here</span>
+        <span className={styles.dropZoneHint}>or click to browse — .mp4, .webm, .mov up to 500MB</span>
         <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleVideoUpload(e)}
           style={{ display: 'none' }} />
       </label>

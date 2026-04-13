@@ -1,29 +1,48 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Fonts: Inter (body + headings) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..800&display=swap');
 
+/* ===== LIGHT MODE (default) ===== */
 :root {
-  /* bg */
-  --color-bg-base: #0C0C0E;
-  --color-bg-surface: #141416;
-  --color-bg-elevated: #1C1C1F;
-  --color-bg-overlay: #242428;
+  /* background */
+  --color-bg: oklch(0.974 0.005 245);            /* #F6F9FC */
+  --color-card: #FFFFFF;
+  --color-secondary: oklch(0.945 0.008 240);     /* very light gray */
+
+  /* foreground */
+  --color-fg: oklch(0.13 0.04 255);              /* #0A2540 */
+  --color-muted-fg: oklch(0.52 0.03 255);        /* #425466 */
+
+  /* primary (Stripe indigo) */
+  --color-primary: oklch(0.56 0.22 277);          /* #635BFF */
+  --color-primary-hover: oklch(0.50 0.22 277);    /* #4F46E5 */
+
+  /* semantic */
+  --color-destructive: oklch(0.51 0.19 358);      /* #CD3D64 */
+  --color-success: oklch(0.49 0.13 162);           /* #09825D */
+  --color-warning: oklch(0.685 0.182 47.6);        /* orange */
 
   /* border */
-  --color-border-subtle: #2A2A2E;
-  --color-border-default: #3A3A3F;
-  --color-border-strong: #5A5A62;
+  --color-border: oklch(0.905 0.012 245);          /* #E6EBF1 */
 
-  /* text */
-  --color-text-primary: #F2F2F4;
-  --color-text-secondary: #9898A6;
-  --color-text-muted: #5C5C6B;
-  --color-text-inverse: #0C0C0E;
+  /* accent bg */
+  --color-accent: oklch(0.95 0.025 277);           /* light indigo tint */
 
-  /* accent */
-  --color-accent-blue: #4D9CFF;
-  --color-accent-green: #3DD68C;
-  --color-accent-amber: #F5A623;
-  --color-accent-red: #FF4D4D;
-  --color-accent-purple: #A78BFA;
+  /* status (light mode) */
+  --color-status-pending-bg: #F0F0F3;
+  --color-status-pending-text: #425466;
+  --color-status-pending-border: #E6EBF1;
+  --color-status-running-bg: #EEF0FF;
+  --color-status-running-text: #635BFF;
+  --color-status-running-border: #D4D0FF;
+  --color-status-blocked-bg: #FFF5E6;
+  --color-status-blocked-text: #B87A00;
+  --color-status-blocked-border: #FFE0A3;
+  --color-status-completed-bg: #E8F7F0;
+  --color-status-completed-text: #09825D;
+  --color-status-completed-border: #B4E6D0;
+  --color-status-failed-bg: #FDE8EC;
+  --color-status-failed-text: #CD3D64;
+  --color-status-failed-border: #F9C2CE;
 
   /* spacing */
   --space-xs: 4px;
@@ -34,14 +53,19 @@
   --space-2xl: 64px;
 
   /* radius */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 10px;
   --radius-full: 9999px;
 
   /* fonts */
-  --font-sans: 'DM Sans', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --heading-stretch: 90%;
+  --heading-tracking: -0.02em;
 
   /* font sizes */
   --text-xs: 11px;
@@ -52,39 +76,75 @@
   --text-xl: 28px;
   --text-2xl: 40px;
 
-  /* shadows */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+  /* shadows (light) */
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.05);
+  --shadow-md: 0 4px 12px oklch(0 0 0 / 0.08);
+  --shadow-lg: 0 12px 40px oklch(0 0 0 / 0.12);
+
+  /* ===== Legacy aliases (backward compat — remove in Phase 4) ===== */
+  --color-bg-base: var(--color-bg);
+  --color-bg-surface: var(--color-card);
+  --color-bg-elevated: var(--color-secondary);
+  --color-bg-overlay: var(--color-secondary);
+
+  --color-border-subtle: var(--color-border);
+  --color-border-default: var(--color-border);
+  --color-border-strong: var(--color-border);
+
+  --color-text-primary: var(--color-fg);
+  --color-text-secondary: var(--color-muted-fg);
+  --color-text-muted: var(--color-muted-fg);
+  --color-text-inverse: var(--color-bg);
+
+  --color-accent-blue: var(--color-primary);
+  --color-accent-green: var(--color-success);
+  --color-accent-amber: var(--color-warning);
+  --color-accent-red: var(--color-destructive);
+  --color-accent-purple: var(--color-accent);
 }
 
-/* Light mode */
-[data-theme="light"] {
-  --color-bg-base: #FFFFFF;
-  --color-bg-surface: #F8F8FA;
-  --color-bg-elevated: #F0F0F3;
-  --color-bg-overlay: #E8E8EC;
+/* ===== DARK MODE ===== */
+[data-theme="dark"] {
+  --color-bg: oklch(0.095 0.012 255);             /* #0D1117 */
+  --color-card: oklch(0.13 0.015 255);             /* #161B22 */
+  --color-secondary: oklch(0.17 0.015 255);        /* #1C2128 */
 
-  --color-border-subtle: #E2E2E8;
-  --color-border-default: #D0D0D8;
-  --color-border-strong: #B0B0BB;
+  --color-fg: oklch(0.926 0.008 245);              /* #E6EDF3 */
+  --color-muted-fg: oklch(0.568 0.02 255);         /* #8B949E */
 
-  --color-text-primary: #1A1A1E;
-  --color-text-secondary: #5C5C6B;
-  --color-text-muted: #9898A6;
-  --color-text-inverse: #FFFFFF;
+  --color-primary: oklch(0.65 0.20 277);            /* #7C74FF */
+  --color-primary-hover: oklch(0.58 0.22 277);
 
-  --color-accent-blue: #2B7FE0;
-  --color-accent-green: #1FAD6B;
-  --color-accent-amber: #D4890A;
-  --color-accent-red: #DC3545;
-  --color-accent-purple: #7C5CBF;
+  --color-destructive: oklch(0.60 0.19 358);
+  --color-success: oklch(0.60 0.13 162);
+  --color-warning: oklch(0.75 0.15 47.6);
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+  --color-border: oklch(0.245 0.015 255);           /* #30363D */
+  --color-accent: oklch(0.20 0.03 277);
+
+  /* status (dark mode) */
+  --color-status-pending-bg: #1A1A20;
+  --color-status-pending-text: #8B949E;
+  --color-status-pending-border: #30363D;
+  --color-status-running-bg: #0D1A35;
+  --color-status-running-text: #7C74FF;
+  --color-status-running-border: #2A2560;
+  --color-status-blocked-bg: #2D1A0A;
+  --color-status-blocked-text: #F5A623;
+  --color-status-blocked-border: #4A2D10;
+  --color-status-completed-bg: #0A1F16;
+  --color-status-completed-text: #3DD68C;
+  --color-status-completed-border: #124D2C;
+  --color-status-failed-bg: #1F0A0A;
+  --color-status-failed-text: #FF4D4D;
+  --color-status-failed-border: #4D1212;
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);
+  --shadow-lg: 0 12px 40px oklch(0 0 0 / 0.5);
 }
 
+/* ===== BASE RESETS ===== */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -99,14 +159,20 @@ html {
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-bg-base);
-  color: var(--color-text-primary);
+  background-color: var(--color-bg);
+  color: var(--color-fg);
   line-height: 1.5;
   min-height: 100vh;
 }
 
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
+  letter-spacing: var(--heading-tracking);
+}
+
 a {
-  color: var(--color-accent-blue);
+  color: var(--color-primary);
   text-decoration: none;
 }
 
@@ -119,10 +185,51 @@ code, pre {
 }
 
 ::selection {
-  background: rgba(77, 156, 255, 0.25);
+  background: oklch(from var(--color-primary) l c h / 0.2);
 }
 
+/* Thin scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-fg);
+}
+
+/* Animations */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* BlockNote editor — force transparent background on all internal layers */
+.bn-editor,
+.bn-container,
+.bn-block-group,
+.bn-block-outer,
+.bn-block,
+.bn-block-content,
+[class*="bn-editor"],
+[class*="bn-container"],
+[class*="bn-block-group"] {
+  background-color: transparent !important;
+  background: transparent !important;
 }

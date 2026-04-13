@@ -21,10 +21,12 @@ export function ChatPanel({
   projectId,
   projectName,
   onClose,
+  inline = false,
 }: {
   projectId: string
   projectName: string
   onClose: () => void
+  inline?: boolean
 }): React.ReactElement {
   const navigate = useNavigate()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -104,14 +106,18 @@ export function ChatPanel({
     }
   }
 
+  const panelClass = inline ? styles.panelInline : styles.panel
+
   return (
     <>
-      <div className={styles.overlay} onClick={onClose} />
-      <div className={styles.panel}>
-        <div className={styles.header}>
-          <span className={styles.title}>Chat with docs</span>
-          <button className={styles.closeBtn} onClick={onClose}>&times;</button>
-        </div>
+      {!inline && <div className={styles.overlay} onClick={onClose} />}
+      <div className={panelClass}>
+        {!inline && (
+          <div className={styles.header}>
+            <span className={styles.title}>Chat with docs</span>
+            <button className={styles.closeBtn} onClick={onClose}>&times;</button>
+          </div>
+        )}
 
         {indexing ? (
           <div className={styles.emptyState}>

@@ -8,11 +8,15 @@
 
 ## Project Overview
 
-AiDoc is a **project-based documentation platform** that automatically explores web applications and generates user-facing product guides.
+AiDoc is a **project-based documentation platform** that generates user-facing product guides and deploys them as **embeddable AI chat widgets** on client apps. A **Try Doc** feature lets users test their documentation against the live product — an AI agent follows the doc steps as a naive user and generates a structured quality report.
 
-**Core flow**: User creates a project → AI scans the site and proposes doc structure → AI agent explores each page via a cloud browser → Claude generates structured documentation with screenshots → User reviews, edits, and organizes.
+**Two generation methods**:
+1. **Screen recording (recommended)** — User uploads a video → Gemini analyzes every action → extracts screenshots at key moments → Gemini generates structured documentation
+2. **Auto-exploration (beta)** — AI agent navigates the app autonomously via cloud browser → captures screenshots → generates docs
 
-This is NOT a chatbot. It is an autonomous agent with a project-based lifecycle.
+**Chat & Widget**: Users chat with their documentation (RAG-powered). The same chat can be embedded as a widget on client apps via a single `<script>` tag.
+
+**Core flow**: Upload video or auto-explore → AI generates doc with screenshots → User reviews/edits → Enable chat widget → Embed on client app
 
 ---
 
@@ -22,10 +26,12 @@ This is NOT a chatbot. It is an autonomous agent with a project-based lifecycle.
 |---|---|
 | Runtime | Node.js 20+ / TypeScript 5.9 (strict: true) |
 | Backend | Express 5 (serverless on Vercel) |
-| Browser Automation | Stagehand 3 (Browserbase cloud browsers) |
-| AI (exploration) | Claude Sonnet 4 (`anthropic/claude-sonnet-4-20250514` via `STAGEHAND_MODEL`) |
-| AI (doc generation) | Claude Sonnet 4 (`claude-sonnet-4-20250514` via `CLAUDE_MODEL`) |
-| Database | Supabase (Postgres + Auth + Storage + RLS) |
+| Browser Automation | Stagehand 3 (Browserbase cloud browsers) — beta exploration + doc testing |
+| AI (primary) | Gemini 2.5 Flash — doc generation, structure gen, context enrichment, chat, video analysis |
+| AI (exploration) | Claude Sonnet 4 via Stagehand (`STAGEHAND_MODEL`) — beta only |
+| AI (embeddings) | Gemini embedding model (auto-discovered via ListModels API) — 768-dim vectors |
+| Vector Search | pgvector in Supabase (HNSW index, cosine similarity) |
+| Database | Supabase (Postgres + Auth + Storage + RLS + pgvector) |
 | Frontend | React 19 + Vite 8 + React Router 7 |
 | Validation | Zod 4 |
 | Testing | Vitest (configured, not yet used) |
@@ -61,12 +67,19 @@ src/
       exploration.types.ts
       exploration.service.ts  # agent instruction, onStepFinish callback
       exploration.browser.ts  # navigateTo, captureScreenshot
-    documentation/        # Doc generation via Claude
+    documentation/        # Doc generation via Gemini
       documentation.types.ts  # GeneratedDoc, DocSelfAssessment, StructuralSuggestion
-      documentation.generator.ts  # calls Claude Sonnet, parses markdown + JSON
+      documentation.generator.ts  # calls Gemini 2.5 Flash, parses markdown + JSON
       documentation.service.ts    # orchestrates: fetch steps → resolve screenshots → generate
       documentation.repository.ts # findDocByRunId, findDocByPageId, upsertDoc
       documentation.routes.ts
+    chat/                 # RAG chat + embeddable widget
+      chat.types.ts           # ChatMessage, ChatResponse, DocChunk, UserContext
+      chat.schema.ts          # Zod schemas for chat request + user context
+      chat.repository.ts      # doc_embeddings CRUD + pgvector search
+      chat.service.ts         # chunking, indexing, RAG pipeline, suggestions
+      chat.routes.ts          # POST /chat, POST /index, GET /suggestions
+      widget.routes.ts        # Public API: POST /widget/:key/chat, GET /config
     questions/            # Blocker questions during exploration
       questions.types.ts
       questions.schema.ts
@@ -75,7 +88,8 @@ src/
       questions.routes.ts
   shared/
     ai/
-      anthropic.client.ts   # Anthropic SDK + CLAUDE_MODEL constant
+      gemini.client.ts      # Gemini SDK: generateText(), embedTexts(), analyzeVideoWithGemini()
+      anthropic.client.ts   # Anthropic SDK (optional, for Stagehand only)
       anthropic.types.ts
       prompt.builder.ts     # buildDocumentationPrompt() — ALL doc gen prompts
     browser/
@@ -83,7 +97,7 @@ src/
       browser.types.ts
     db/
       supabase.client.ts
-      storage.repository.ts # uploadToStorage(), getSignedUrl()
+      storage.repository.ts # uploadToStorage(), getSignedUrl(), createSignedUploadUrl()
     middleware/
       auth.middleware.ts     # Supabase JWT validation
       error.middleware.ts    # AppError, NotFoundError, ValidationError, DatabaseError
@@ -96,15 +110,21 @@ src/
       tokens.ts             # Color, spacing, font, shadow tokens
       globals.css            # CSS variables mapped to tokens
       components/            # Button, Badge, Card, StatusIndicator, CodeBlock,
-                             # MarkdownRenderer, Field, Spinner, EmptyState
+                             # MarkdownRenderer, Field, Spinner, EmptyState,
+                             # ImageLightbox (click-to-fullscreen image overlay),
+                             # TableOfContents (floating TOC with heading tracking)
                              # Each: Component.tsx + Component.module.css
                              # Barrel export in index.ts (only allowed barrel)
     features/
       auth/pages/            # Login.tsx
       project/pages/         # ProjectList, NewProject, ProjectDetail, ProjectSettings
       page/
-        pages/               # NewPage, PageView (with edit mode + live exploration)
+        pages/               # NewPage, PageView (with edit mode + live exploration + video upload)
         components/           # PageTree (sidebar tree with move/reorder/delete)
+                             # TryDocReport (7-section test report view)
+                             # TableOfContents (Notion-style floating TOC)
+      chat/
+        components/           # ChatPanel (slide-out RAG chat with dynamic suggestions)
       run/
         pages/               # RunDashboard, RunDetail (legacy, pre-project model)
         components/           # RunCard, StepTimeline
@@ -139,7 +159,7 @@ docs/
 4. **No `waitForTimeout`** — use `waitForLoadState('networkidle')`.
 5. **No feature imports another feature's service directly** — use dependency injection interfaces (e.g. `RunDeps`, `DocDeps`).
 6. **Always close the browser in a `finally` block** — avoid Browserbase billing.
-7. **Always track token usage** per Anthropic call and accumulate on the run.
+7. **Always track token usage** per AI call and accumulate on the run.
 8. **Zod validates all external input** — API requests, AI responses, env vars.
 9. **One migration file per schema change** — never edit existing migrations.
 10. **No business logic in routes** — routes validate input, call services, return responses.
@@ -149,10 +169,15 @@ docs/
 
 ## AI / Model Rules
 
-### Two models, two purposes
-- **Stagehand (exploration)**: `STAGEHAND_MODEL` constant (`anthropic/claude-sonnet-4-20250514`) — reliable navigation for complex UIs
-- **Doc generation**: `CLAUDE_MODEL` constant (`claude-sonnet-4-20250514`) — quality matters here
-- **Context enrichment**: `claude-haiku-4-5-20251001` — cheap, fire-and-forget (in `run.service.ts`)
+### Gemini-first stack
+- **Doc generation**: Gemini 2.5 Flash via `generateText()` in `gemini.client.ts`
+- **Video analysis**: Gemini 2.5 Flash with Files API for native video understanding
+- **Structure auto-gen**: Gemini 2.5 Flash (proposes 5-15 doc pages from site content)
+- **Context enrichment**: Gemini 2.5 Flash — fire-and-forget (in `run.service.ts`)
+- **Chat (RAG)**: Gemini 2.5 Flash with pgvector-retrieved context
+- **Embeddings**: Auto-discovered Gemini embedding model, 768-dim output
+- **Try Doc analysis**: Gemini 2.5 Flash — analyzes Stagehand test results into structured JSON report (7 sections)
+- **Stagehand (beta exploration)**: `STAGEHAND_MODEL` constant (`anthropic/claude-sonnet-4-20250514`) — requires `ANTHROPIC_API_KEY`
 
 ### Prompt rules
 - All doc generation prompts live in `shared/ai/prompt.builder.ts`
@@ -188,7 +213,7 @@ Every DB call through `*.repository.ts`. Services NEVER call Supabase directly.
 - After generation → auto-copied to `doc_pages.content`
 
 ### Full schema reference
-See `docs/DATABASE.md` — 7 tables, 8 migrations.
+See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 15 migrations.
 
 ---
 
@@ -196,15 +221,38 @@ See `docs/DATABASE.md` — 7 tables, 8 migrations.
 
 ### Route structure
 ```
+# Projects
 /api/projects                              # Project CRUD
 /api/projects/:pid/pages                   # Page hierarchy + auto-generate
 /api/projects/:pid/pages/:id/doc           # Page documentation
 /api/projects/:pid/pages/:id/run           # Latest run for page
+/api/projects/:pid/widget-key              # POST: generate key, DELETE: disable widget
+
+# Runs
 /api/runs                                  # Run CRUD
-/api/runs/:id/explore                      # SSE stream (live exploration)
-/api/runs/:id/generate-doc                 # Doc generation
+/api/runs/:id/explore                      # POST: SSE stream (live exploration)
+/api/runs/:id/analyze-video                # POST: Gemini video analysis
+/api/runs/:id/generate-doc                 # POST: Doc generation
+/api/runs/:id/signed-upload-url            # POST: Get signed URL for direct upload
+/api/runs/:id/steps/:idx/screenshot        # POST: Update step screenshot path
 /api/runs/:id/steps                        # Run steps
 /api/runs/:id/questions                    # Blocker questions
+
+# Chat (authenticated)
+/api/projects/:pid/chat                    # POST: RAG chat with documentation
+/api/projects/:pid/chat/index              # POST: Index/re-index doc embeddings
+/api/projects/:pid/chat/suggestions        # GET: Dynamic suggestions (cached 1h)
+
+# Try Doc
+/api/runs/:id/analyze-try                  # POST: Gemini analysis of test run
+/api/projects/:pid/pages/:id/test-report   # GET: latest test report for page
+
+# Project assets
+/api/projects/:pid/logo                    # POST: upload project logo
+
+# Widget (public — API key auth, no JWT)
+/api/widget/:key/chat                      # POST: Public chat (rate limited 30/min)
+/api/widget/:key/config                    # GET: Widget config + suggestions
 ```
 
 ### Error format
@@ -230,6 +278,8 @@ HTTP status codes: 200, 201, 400, 401, 404, 422, 500.
 - Status always uses the status color tokens
 - `MarkdownRenderer` for rich doc display (react-markdown)
 - `CodeBlock` for raw code display
+- `TableOfContents` — floating side indicator, expands on hover to show headings
+- `ImageLightbox` (via `useImageLightbox` hook) — click any doc image to fullscreen
 
 ### Frontend patterns
 - Feature-first organization mirrors backend
@@ -242,10 +292,14 @@ HTTP status codes: 200, 201, 400, 401, 404, 422, 500.
 
 ## Environment Variables
 
-**Backend** (validated at startup, crash if missing):
+**Backend** (validated at startup via Zod):
 ```
+# Required
 NODE_ENV, PORT, SUPABASE_URL, SUPABASE_SERVICE_KEY,
-ANTHROPIC_API_KEY, BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
+GEMINI_API_KEY, BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
+
+# Optional
+ANTHROPIC_API_KEY    # Only needed for beta auto-exploration (Stagehand)
 ```
 
 **Frontend** (Vite prefix):
@@ -269,13 +323,18 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 
 - [ ] Exploration instruction built inline (should move to prompt.builder.ts)
 - [x] ~~Stagehand model hardcoded in 2 places~~ — now uses `STAGEHAND_MODEL` constant
+- [x] ~~No rate limiting~~ — widget endpoint has 30 req/min per API key
 - [ ] `run.service.ts` imports `questions.repository` directly (cross-feature)
 - [ ] No tests (Vitest configured but unused)
-- [ ] No rate limiting on API endpoints
 - [ ] No pagination on list endpoints
 - [ ] Legacy RunDashboard/NewRun pages still exist (pre-project model)
+- [ ] Widget: no domain restriction (Origin header check) — API key is public
+- [x] ~~Chat suggestions cache is in-memory~~ — widget endpoint has in-memory cache + edge caching
+- [ ] No usage analytics/logging for widget chat messages
+- [ ] Try Doc report could include screenshots from Stagehand steps
+- [x] ~~Widget config slow~~ — edge caching + inline data-cfg attribute
 
 ---
 
-*Last updated: current session*
-*Stack: Node 20 / TS 5.9 / Stagehand 3 / Anthropic SDK 0.80 / Supabase JS 2.x / Vite 8 / React 19*
+*Last updated: 2026-04-13*
+*Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19*

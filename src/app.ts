@@ -8,6 +8,7 @@ import { questionsRouter } from './features/questions/questions.routes.js'
 import { documentationRouter } from './features/documentation/documentation.routes.js'
 import { chatRouter } from './features/chat/chat.routes.js'
 import { widgetRouter } from './features/chat/widget.routes.js'
+import { publicDocsRouter } from './features/page/public-docs.routes.js'
 import { errorHandler } from './shared/middleware/error.middleware.js'
 
 export const app = express()
@@ -15,8 +16,9 @@ export const app = express()
 app.use(cors())
 app.use(express.json())
 
-// Public widget routes — no auth
+// Public routes — no auth
 app.use('/widget', widgetRouter)
+app.use('/docs', publicDocsRouter)
 
 app.use(authMiddleware)
 

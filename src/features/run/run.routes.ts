@@ -156,6 +156,22 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
   })()
 })
 
+// Analyze Try Doc — compare exploration results against documentation
+runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { pageContent: string; pageTitle: string; pageId: string }
+      if (!body.pageContent) throw new ValidationError('pageContent is required')
+      const report = await runService.analyzeTryDoc(params.data.id, body.pageContent, body.pageTitle, body.pageId)
+      res.status(200).json(report)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 runRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {

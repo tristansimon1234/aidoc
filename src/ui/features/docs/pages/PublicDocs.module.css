@@ -1,0 +1,330 @@
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 0 var(--space-lg);
+  height: 48px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-card);
+  flex-shrink: 0;
+}
+
+.logoImg {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.logo {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  color: var(--color-fg);
+  letter-spacing: -0.02em;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-primary);
+  background: var(--color-accent);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* --- Topbar search --- */
+.searchWrapper {
+  position: relative;
+  margin-left: auto;
+  width: 280px;
+}
+
+.searchBar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-muted-fg);
+  transition: border-color 0.15s;
+}
+
+.searchBarFocused {
+  border-color: var(--color-primary);
+}
+
+.searchInput {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: var(--text-xs);
+  font-family: inherit;
+  color: var(--color-fg);
+  min-width: 0;
+}
+
+.searchInput::placeholder {
+  color: var(--color-muted-fg);
+}
+
+.searchClear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--color-muted-fg);
+  cursor: pointer;
+}
+
+.searchDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 100;
+  padding: 4px;
+  animation: dropIn 0.15s ease;
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.searchEmpty {
+  padding: 16px;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+}
+
+.searchResult {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.1s;
+}
+
+.searchResult:hover {
+  background: var(--color-secondary);
+}
+
+.searchResultTitle {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+.searchResultSnippet {
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Layout --- */
+.layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--color-border);
+  background: var(--color-bg);
+  padding: var(--space-sm);
+  overflow-y: auto;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.navRow {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  border-radius: 6px;
+  transition: background-color 0.1s;
+}
+
+.navRow:hover {
+  background-color: var(--color-secondary);
+}
+
+.navChevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--color-muted-fg);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.navChevron:hover {
+  color: var(--color-fg);
+}
+
+.navSpacer {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.navItem {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-muted-fg);
+  font-size: var(--text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.navItem:hover {
+  background: var(--color-secondary);
+  color: var(--color-fg);
+}
+
+.navItemActive {
+  background: var(--color-accent);
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+/* --- Content centered --- */
+.contentWrapper {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+}
+
+.content {
+  width: 100%;
+  max-width: 820px;
+  padding: var(--space-xl) var(--space-lg);
+}
+
+.pageTitle {
+  font-family: var(--font-heading);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--color-fg);
+  margin: 0 0 var(--space-lg);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+  letter-spacing: -0.02em;
+}
+
+.empty {
+  font-size: var(--text-sm);
+  color: var(--color-muted-fg);
+}
+
+/* --- Child page links (Notion-style) --- */
+.childPages {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-xl);
+  padding-top: var(--space-md);
+}
+
+.childPageLink {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-fg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.childPageLink:hover {
+  background: var(--color-secondary);
+  border-color: var(--color-primary);
+}
+
+.childPageLink svg {
+  color: var(--color-muted-fg);
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .layout {
+    flex-direction: column;
+  }
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    max-height: 180px;
+  }
+  .content {
+    padding: var(--space-lg);
+  }
+  .searchWrapper {
+    display: none;
+  }
+}

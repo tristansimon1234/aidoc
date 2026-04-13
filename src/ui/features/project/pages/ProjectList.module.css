@@ -6,17 +6,87 @@
 }
 
 .title {
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
   font-size: var(--text-xl);
   font-weight: 600;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--heading-tracking);
+  color: var(--color-fg);
 }
 
 .subtitle {
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--color-muted-fg);
   margin-top: var(--space-xs);
 }
 
+/* Welcome / onboarding */
+.welcome {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-2xl) 0;
+}
+
+.welcomeContent {
+  max-width: 480px;
+  text-align: center;
+}
+
+.welcomeTitle {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--space-sm);
+  color: var(--color-fg);
+}
+
+.welcomeDesc {
+  color: var(--color-muted-fg);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  margin-bottom: var(--space-xl);
+}
+
+.features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  text-align: left;
+  margin-bottom: var(--space-xl);
+}
+
+.feature {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-start;
+}
+
+.featureIcon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-secondary);
+  border-radius: var(--radius-xl);
+  flex-shrink: 0;
+}
+
+.featureTitle {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  margin: 0;
+  color: var(--color-fg);
+}
+
+.featureDesc {
+  color: var(--color-muted-fg);
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+/* Project grid */
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -24,21 +94,25 @@
 }
 
 .projectName {
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
   font-size: var(--text-md);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: var(--heading-tracking);
+  color: var(--color-fg);
   margin: 0;
 }
 
 .projectUrl {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   margin: var(--space-xs) 0 0;
 }
 
 .projectDesc {
   font-size: var(--text-sm);
-  color: var(--color-text-secondary);
+  color: var(--color-muted-fg);
   margin: var(--space-sm) 0 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;

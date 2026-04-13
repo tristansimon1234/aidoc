@@ -93,6 +93,20 @@ export async function findLatestRunByPageId(pageId: string): Promise<Run | null>
   return data ? mapToRun(data as RunRow) : null
 }
 
+export async function findLatestTestRunByPageId(pageId: string): Promise<Run | null> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('*')
+    .eq('doc_page_id', pageId)
+    .like('feature_name', '[Test]%')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+  if (error && error.code === 'PGRST116') return null
+  if (error) throw new DatabaseError(error.message)
+  return data ? mapToRun(data as RunRow) : null
+}
+
 export async function findRunById(id: string): Promise<Run | null> {
   const { data, error } = await supabase.from('runs').select('*').eq('id', id).single()
   if (error && error.code === 'PGRST116') return null

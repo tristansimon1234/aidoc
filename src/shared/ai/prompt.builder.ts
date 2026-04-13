@@ -211,3 +211,54 @@ Steps marked [KEY] are important user actions. Steps marked [supporting] are nav
 ${formatStepsRich(context.steps)}
 ${blockersSection}`
 }
+
+// --- Try Doc Analysis ---
+
+export const TRY_DOC_ANALYSIS_SYSTEM_PROMPT = `You are a documentation quality analyst. You receive the original documentation and step-by-step results from an AI agent that attempted to follow the documentation exactly as a naive user would.
+
+Your job is to produce a structured JSON analysis report.
+
+CRITICAL RULES:
+- Judge from the perspective of a NAIVE USER who only has the documentation
+- If the doc says "click Create" but the button is labeled "New" → that is a DOC issue (issueType: "doc")
+- If the doc instructions are correct but the product errors out → that is a PRODUCT issue (issueType: "product")
+- If a step requires knowledge not in the doc (e.g., "you need admin access") → that is an IMPLICIT ASSUMPTION
+- If a step is vague or could be interpreted multiple ways → that is AMBIGUOUS
+- Be honest, specific, and actionable. Vague observations are useless.
+- Scores should be realistic (not inflated). A doc with multiple failures should NOT score 8/10.
+
+Return ONLY valid JSON (no markdown fences, no extra text).`
+
+export function buildTryDocAnalysisPrompt(
+  pageContent: string,
+  pageTitle: string,
+  steps: { stepIndex: number; url: string | null; action: string | null; observation: string | null; status: string }[],
+): string {
+  const stepsText = steps.map((s) =>
+    `Step ${s.stepIndex}: [${s.status}] ${s.action ?? 'unknown action'}\nURL: ${s.url ?? 'unknown'}\nObservation: ${s.observation ?? 'none'}`,
+  ).join('\n\n---\n\n')
+
+  return `## Documentation being tested: "${pageTitle}"
+
+${pageContent}
+
+---
+
+## Exploration results (what the AI agent did when following the doc):
+
+${stepsText}
+
+---
+
+## Generate the analysis report as JSON with this exact structure:
+
+{
+  "summary": { "totalSteps": number, "passed": number, "failed": number, "ambiguous": number, "overallVerdict": "pass"|"fail"|"partial" },
+  "steps": [{ "stepIndex": number, "instruction": "what the doc said", "action": "what agent did", "pageUrl": string|null, "status": "pass"|"fail"|"ambiguous", "issueType": "doc"|"product"|null, "detail": "explanation", "screenshotPath": null }],
+  "failures": [{ "stepIndex": number, "issueType": "doc"|"product", "title": "short title", "description": "what went wrong", "severity": "critical"|"major"|"minor", "suggestion": "how to fix" }],
+  "docIssues": { "clarityScore": 1-10, "missingSections": ["..."], "ambiguousInstructions": ["..."], "implicitAssumptions": ["..."] },
+  "uxInsights": [{ "category": "friction"|"missing-feedback"|"unnecessary-step"|"doc-behavior-mismatch"|"implicit-assumption", "description": "...", "stepIndex": number|null, "severity": "high"|"medium"|"low" }],
+  "recommendations": [{ "type": "fix-doc"|"fix-product"|"improve-ux", "title": "short action", "description": "details", "priority": "high"|"medium"|"low" }],
+  "scores": { "docQuality": 1-10, "testPassRate": 1-10, "uxClarity": 1-10 }
+}`
+}

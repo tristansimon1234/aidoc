@@ -3,8 +3,58 @@
 ## Core User Journey
 
 ```
-Login → Projects → Create Project → Auto-generate Pages → Explore Pages → Edit Docs → Export
+Login → Projects → Create Project → Generate Docs (Video or Auto-explore) → 
+Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 ```
+
+## Video-to-Doc Flow (Recommended)
+
+**Trigger**: User clicks "Upload a screen recording" in the Generate tab
+**Flow**:
+1. Frontend creates a run (`POST /api/runs`)
+2. Video uploaded to Supabase Storage via signed URL (`POST /runs/:id/signed-upload-url`)
+3. Backend sends video to Gemini 2.5 Flash for analysis (`POST /runs/:id/analyze-video`)
+4. Gemini returns structured steps: timestamp, screen description, user action, narration
+5. Frontend extracts JPEG frames at exact Gemini timestamps (Canvas API, ~25 frames max)
+6. Frames uploaded to Supabase via signed URLs, linked to run steps
+7. Gemini generates documentation from enriched steps (`POST /runs/:id/generate-doc`)
+8. Doc auto-copied to `doc_pages.content`, page embeddings auto-indexed for chat
+
+## Chat with Documentation (RAG)
+
+**Trigger**: User clicks 💬 in project sidebar
+**Flow**:
+1. `POST /chat/index` — checks if embeddings exist, indexes if not
+2. `GET /chat/suggestions` — Gemini generates 6 project-specific questions (cached 1h)
+3. User sends message → `POST /chat`
+4. Smart RAG: `needsDocSearch()` skips embedding search for greetings, small talk, and continuation messages
+5. Query embedded with Gemini embedding model → pgvector cosine search → top 10 chunks
+6. Gemini generates answer with project context (name, audience, features, knowledge base)
+7. Response includes: answer, source pages (clickable), follow-up suggestions (clickable)
+8. Step-by-step: for "how do I" questions, gives 2-3 steps then proposes to continue
+9. Admin chat checks embeddings directly via Supabase (bypasses Vercel cold start)
+
+## Embeddable Widget
+
+**Setup**: Project Settings → Embed Widget → Generate API Key → Copy snippet
+**Integration**:
+```html
+<script src="https://app.aidoc.com/widget.js"
+  data-key="aidoc_xxx"
+  data-user-name="{{USER_NAME}}"
+  data-user-email="{{USER_EMAIL}}"
+  data-user-plan="{{USER_PLAN}}"
+></script>
+```
+**Runtime**:
+1. Widget loads config from `GET /api/widget/:key/config` (project name + suggestions)
+2. Widget config includes inline design via `data-cfg` attribute for instant theming (no flash)
+3. Config endpoint uses edge caching (`Cache-Control: s-maxage=300`)
+4. Auto-detects current URL (`window.location.href`) for page-aware suggestions
+5. Messages sent to `POST /api/widget/:key/chat` (rate limited 30 req/min)
+6. Same RAG pipeline as internal chat, with user context for personalization
+7. Suggestions cached in-memory with 1h TTL
+8. Floating button (bottom-right) + popup panel, dark theme, mobile responsive
 
 ## 1. Project Creation
 
@@ -25,15 +75,15 @@ Login → Projects → Create Project → Auto-generate Pages → Explore Pages 
 1. `POST /api/projects/:id/pages/auto-generate`
 2. Stagehand launches browser → navigates to project `baseUrl`
 3. `session.extract()` gets raw page text (no AI call)
-4. Claude Sonnet analyzes content → proposes 5-15 pages with hierarchy
+4. Gemini 2.5 Flash analyzes content → proposes 5-15 pages with hierarchy
 5. Pages created in DB: top-level first, then children
 6. Frontend refreshes sidebar tree
 
-**AI call**: 1x Sonnet (structure proposal)
+**AI call**: 1x Gemini 2.5 Flash (structure proposal)
 
 ## 3. Page Exploration
 
-**Trigger**: User clicks "Explore & Document" on a page
+**Trigger**: User clicks "Explore & Document" on a page (also used for Try Doc testing — see section 10)
 **Flow**:
 1. `POST /api/runs` → creates run linked to page (`docPageId`)
 2. `GET /api/runs/:id/explore` → SSE stream begins
@@ -53,7 +103,7 @@ Login → Projects → Create Project → Auto-generate Pages → Explore Pages 
    - `step`: append to live feed
    - `done/blocked/error`: exploration ended
 
-**AI calls**: ~25x Haiku (one per agent step)
+**AI calls**: ~25x Claude Sonnet 4 via Stagehand (one per agent step)
 
 ## 4. Documentation Generation
 
@@ -64,13 +114,13 @@ Login → Projects → Create Project → Auto-generate Pages → Explore Pages 
    a. Fetch run + steps + questions + project context + page siblings
    b. Resolve screenshot signed URLs from Supabase Storage
    c. Build rich prompt with step data, screenshots, cross-page context
-   d. Call Claude Sonnet with `max_tokens: 16384`
+   d. Call Gemini 2.5 Flash with `max_tokens: 16384`
    e. Parse response: markdown + `---JSON---` + self-assessment
    f. Save to `generated_docs` table
    g. Copy markdown to `doc_pages.content` (editable copy)
 3. Frontend refreshes page → shows rendered markdown
 
-**AI call**: 1x Sonnet (doc generation)
+**AI call**: 1x Gemini 2.5 Flash (doc generation)
 
 ## 5. Cross-Page Awareness
 
@@ -82,13 +132,13 @@ Login → Projects → Create Project → Auto-generate Pages → Explore Pages 
 - `credentials`: test login credentials as Stagehand variables
 - `customPrompt`: user's page-specific instructions
 
-**Effect**: Claude can reference other pages (`See [Login Guide](/login)`) and avoid duplicating content.
+**Effect**: Gemini can reference other pages (`See [Login Guide](/login)`) and avoid duplicating content.
 
 ## 5b. Context Learning (Auto-Enrichment)
 
 **When**: After each documentation generation
 **Flow**:
-1. After doc gen, a lightweight Haiku call analyzes the generated markdown
+1. After doc gen, a lightweight Gemini 2.5 Flash call analyzes the generated markdown
 2. Extracts structured knowledge: site structure, navigation, terminology, features
 3. Merges with existing `projects.discovered_context` (enrichment, not replacement)
 4. Future explorations receive this enriched context in their prompts
@@ -105,7 +155,7 @@ Login → Projects → Create Project → Auto-generate Pages → Explore Pages 
 }
 ```
 
-**Cost**: ~$0.01 per enrichment (Haiku, small prompt)
+**Cost**: ~$0.001 per enrichment (Gemini 2.5 Flash, small prompt)
 **Effect**: The more you document, the smarter the agent gets about your product.
 
 ## 6. Resume Exploration
@@ -138,10 +188,13 @@ Login → Projects → Create Project → Auto-generate Pages → Explore Pages 
 ## 8. Page Organization
 
 **In sidebar**:
+- Sidebar supports drag-and-drop reorder with optimistic updates
 - `[...]` menu on hover → Move up, Move down, Move to parent, Delete
+- Context menu for nesting pages (Move inside... / Move to root)
 - Move up/down: swap `sortOrder` with sibling
 - Move to parent: update `parentId` via `PUT /api/projects/:pid/pages/:id`
 - Delete: `DELETE /api/projects/:pid/pages/:id`
+- Child page links shown at bottom of page content (Notion-style)
 
 ## 9. Self-Assessment + Suggestions
 
@@ -163,12 +216,24 @@ Frontend renders:
 - "Suggested Next Pages" with [Create Page] buttons
 - Structural suggestions (merge, split, move, rename)
 
+## 10. Try Doc (Documentation Testing)
+
+1. User clicks "Test" tab on a page → clicks "Run Test"
+2. System creates a run with `[Test]` prefix and naive-user prompt
+3. Stagehand agent opens the app in a cloud browser
+4. Agent follows documentation steps exactly as a naive user (no gap-filling)
+5. SSE events stream live progress (steps + browser iframe)
+6. After exploration: Gemini 2.5 Flash analyzes all steps vs doc content
+7. Generates structured 7-section report: summary, step results, failures (doc vs product), doc issues, UX insights, recommendations, scores
+8. Report stored in `runs.summary_json.tryDocReport`
+9. Test tab shows persisted report with verdict badge (green/red/amber)
+
 ## Cost Per Run
 
 | Phase | Model | Approx Cost |
 |---|---|---|
-| Exploration (25 steps) | Haiku 4.5 | ~$0.09 |
-| Doc generation | Sonnet 4 | ~$0.08 |
+| Exploration (25 steps) | Claude Sonnet 4 via Stagehand | ~$0.09 |
+| Doc generation | Gemini 2.5 Flash | ~$0.08 |
 | **Total per page** | | **~$0.17** |
 
 Auto-generate structure: ~$0.03 (one-time per project)

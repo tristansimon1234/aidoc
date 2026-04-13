@@ -109,6 +109,16 @@ export interface DiscoveredContextDTO {
   summary: string
 }
 
+export interface ProjectDesignDTO {
+  accentColor: string
+  bgColor: string
+  textColor: string
+  font: string
+  logoUrl?: string
+  widgetPosition?: string
+  widgetGreeting?: string
+}
+
 export interface ProjectDTO {
   id: string
   userId: string
@@ -117,6 +127,7 @@ export interface ProjectDTO {
   description: string | null
   context: ProjectContextDTO | null
   discoveredContext: DiscoveredContextDTO | null
+  design: ProjectDesignDTO | null
   widgetApiKey: string | null
   widgetEnabled: boolean
   createdAt: string
@@ -147,6 +158,7 @@ export interface DocPageDTO {
   customPrompt: string | null
   briefing: PageBriefingDTO | null
   status: 'draft' | 'exploring' | 'published'
+  isPublic: boolean
   sortOrder: number
   createdAt: string
   updatedAt: string
@@ -252,6 +264,8 @@ export const api = {
     },
     generateDoc: (id: string): Promise<GeneratedDocDTO> =>
       request(`/runs/${id}/generate-doc`, { method: 'POST' }),
+    analyzeTry: (id: string, pageContent: string, pageTitle: string, pageId: string): Promise<TryDocReportDTO> =>
+      request(`/runs/${id}/analyze-try`, { method: 'POST', body: JSON.stringify({ pageContent, pageTitle, pageId }) }),
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),
     questions: (id: string): Promise<QuestionDTO[]> => request(`/runs/${id}/questions`),
     doc: (id: string): Promise<GeneratedDocDTO> => request(`/runs/${id}/doc`),
@@ -277,4 +291,18 @@ export interface ChatResponseDTO {
   answer: string
   sources: { pageId: string; pageTitle: string; pageSlug: string }[]
   followUps: string[]
+}
+
+export interface TryDocReportDTO {
+  version: number
+  pageId: string
+  pageTitle: string
+  executedAt: string
+  summary: { totalSteps: number; passed: number; failed: number; ambiguous: number; overallVerdict: 'pass' | 'fail' | 'partial' }
+  steps: { stepIndex: number; instruction: string; action: string; pageUrl: string | null; status: 'pass' | 'fail' | 'ambiguous'; issueType: 'doc' | 'product' | null; detail: string; screenshotPath: string | null }[]
+  failures: { stepIndex: number; issueType: 'doc' | 'product'; title: string; description: string; severity: 'critical' | 'major' | 'minor'; suggestion: string }[]
+  docIssues: { clarityScore: number; missingSections: string[]; ambiguousInstructions: string[]; implicitAssumptions: string[] }
+  uxInsights: { category: string; description: string; stepIndex: number | null; severity: 'high' | 'medium' | 'low' }[]
+  recommendations: { type: 'fix-doc' | 'fix-product' | 'improve-ux'; title: string; description: string; priority: 'high' | 'medium' | 'low' }[]
+  scores: { docQuality: number; testPassRate: number; uxClarity: number }
 }

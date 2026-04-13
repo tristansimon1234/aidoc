@@ -2,29 +2,42 @@
   min-height: 400px;
 }
 
-/* Match editor background to page background */
+/* Match editor background to page background — force ALL BlockNote layers transparent */
 .editor [class*="bn-editor"],
-.editor [class*="bn-container"] {
+.editor [class*="bn-container"],
+.editor [class*="bn-block-group"],
+.editor [class*="mantine"],
+.editor > div,
+.editor > div > div {
   background-color: transparent !important;
+  background: transparent !important;
 }
 
-/* Tone down heading sizes */
+/* Heading styling */
 .editor h1,
 .editor [data-level="1"] {
+  font-family: var(--font-heading) !important;
+  font-stretch: var(--heading-stretch) !important;
   font-size: var(--text-xl) !important;
   font-weight: 600 !important;
+  letter-spacing: var(--heading-tracking) !important;
   margin-top: var(--space-lg) !important;
 }
 
 .editor h2,
 .editor [data-level="2"] {
+  font-family: var(--font-heading) !important;
+  font-stretch: var(--heading-stretch) !important;
   font-size: var(--text-lg) !important;
   font-weight: 600 !important;
+  letter-spacing: var(--heading-tracking) !important;
   margin-top: var(--space-md) !important;
 }
 
 .editor h3,
 .editor [data-level="3"] {
+  font-family: var(--font-heading) !important;
+  font-stretch: var(--heading-stretch) !important;
   font-size: var(--text-md) !important;
   font-weight: 600 !important;
   margin-top: var(--space-sm) !important;
@@ -41,8 +54,15 @@
   margin: var(--space-lg) auto !important;
   max-width: 70% !important;
   height: auto !important;
-  border-radius: var(--radius-md) !important;
-  border: 1px solid var(--color-border-subtle) !important;
+  border-radius: var(--radius-lg) !important;
+  border: 1px solid var(--color-border) !important;
+  cursor: zoom-in !important;
+  transition: box-shadow 0.15s, transform 0.15s !important;
+}
+
+.editor img:hover {
+  box-shadow: var(--shadow-lg) !important;
+  transform: scale(1.01) !important;
 }
 
 .editor [data-content-type="image"],
@@ -58,6 +78,6 @@
   right: var(--space-md);
   font-size: var(--text-xs);
   font-family: var(--font-mono);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   z-index: 10;
 }

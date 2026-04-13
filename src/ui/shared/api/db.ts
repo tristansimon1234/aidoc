@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js'
-import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO, ProjectContextDTO } from './client.js'
+import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO, ProjectContextDTO, TryDocReportDTO } from './client.js'
 
 // Direct Supabase queries — bypass Vercel serverless
 
@@ -100,6 +100,7 @@ export async function updateProject(id: string, body: Record<string, unknown>): 
   if (body.context !== undefined) updates.context = body.context
   if (body.credentials !== undefined) updates.credentials = body.credentials
   if (body.discoveredContext !== undefined) updates.discovered_context = body.discoveredContext
+  if (body.design !== undefined) updates.design = body.design
 
   const { data, error } = await supabase.from('projects').update(updates).eq('id', id).select('*').single()
   if (error) throw new Error(error.message)
@@ -163,17 +164,33 @@ export async function reorderPages(
   _projectId: string,
   items: { id: string; parentId: string | null; sortOrder: number }[],
 ): Promise<void> {
-  for (const item of items) {
-    const { error } = await supabase
+  // Fire all updates in parallel — much faster than sequential
+  const now = new Date().toISOString()
+  const promises = items.map((item) =>
+    supabase
       .from('doc_pages')
-      .update({
-        parent_id: item.parentId,
-        sort_order: item.sortOrder,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', item.id)
-    if (error) throw new Error(error.message)
-  }
+      .update({ parent_id: item.parentId, sort_order: item.sortOrder, updated_at: now })
+      .eq('id', item.id),
+  )
+  const results = await Promise.all(promises)
+  const failed = results.find((r) => r.error)
+  if (failed?.error) throw new Error(failed.error.message)
+}
+
+export async function fetchLatestTestReport(pageId: string): Promise<TryDocReportDTO | null> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('summary_json')
+    .eq('doc_page_id', pageId)
+    .like('feature_name', '[Test]%')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (error || !data) return null
+  const summary = data.summary_json as Record<string, unknown> | null
+  if (!summary?.tryDocReport) return null
+  return summary.tryDocReport as TryDocReportDTO
 }
 
 // --- snake_case → camelCase mappers ---
@@ -187,6 +204,7 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     description: (row.description as string) ?? null,
     context: (row.context as ProjectDTO['context']) ?? null,
     discoveredContext: (row.discovered_context as ProjectDTO['discoveredContext']) ?? null,
+    design: (row.design as ProjectDTO['design']) ?? null,
     widgetApiKey: (row.widget_api_key as string) ?? null,
     widgetEnabled: (row.widget_enabled as boolean) ?? false,
     createdAt: row.created_at as string,
@@ -207,6 +225,7 @@ function mapPage(row: Record<string, unknown>): DocPageDTO {
     customPrompt: (row.custom_prompt as string) ?? null,
     briefing: (row.briefing as DocPageDTO['briefing']) ?? null,
     status: row.status as DocPageDTO['status'],
+    isPublic: (row.is_public as boolean) ?? false,
     sortOrder: row.sort_order as number,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

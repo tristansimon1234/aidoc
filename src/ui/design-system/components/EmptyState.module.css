@@ -10,12 +10,13 @@
 
 .title {
   font-size: var(--text-md);
-  font-weight: 500;
-  color: var(--color-text-primary);
+  font-weight: 600;
+  color: var(--color-fg);
 }
 
 .description {
   font-size: var(--text-sm);
-  color: var(--color-text-muted);
+  color: var(--color-muted-fg);
   max-width: 320px;
+  line-height: 1.6;
 }

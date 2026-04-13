@@ -1,5 +1,6 @@
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 import type { Run, RunStep, CreateRunInput } from './run.types.js'
+import type { TryDocReport } from '../documentation/documentation.types.js'
 import * as runRepo from './run.repository.js'
 import { exploreRun, type RunDeps } from '../exploration/exploration.service.js'
 import type { StepEvent } from '../exploration/exploration.types.js'
@@ -388,4 +389,77 @@ export async function getRunSteps(runId: string): Promise<RunStep[]> {
 export async function getQuestions(runId: string): Promise<{ id: string; question: string; answer: string | null }[]> {
   const questions = await questionRepo.findQuestionsByRunId(runId)
   return questions.map((q) => ({ id: q.id, question: q.question, answer: q.answer }))
+}
+
+export async function analyzeTryDoc(
+  runId: string,
+  pageContent: string,
+  pageTitle: string,
+  pageId: string,
+): Promise<TryDocReport> {
+  const run = await runRepo.findRunById(runId)
+  if (!run) throw new NotFoundError('Run')
+
+  const steps = await runRepo.findStepsByRunId(runId)
+
+  const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
+
+  const stepSummaries = steps.map((s) => ({
+    stepIndex: s.stepIndex,
+    url: s.url,
+    action: s.action,
+    observation: s.observation?.slice(0, 1000) ?? null,
+    status: s.status,
+  }))
+
+  const { generateText } = await import('../../shared/ai/gemini.client.js')
+  const { TRY_DOC_ANALYSIS_SYSTEM_PROMPT, buildTryDocAnalysisPrompt } = await import('../../shared/ai/prompt.builder.js')
+
+  const userPrompt = buildTryDocAnalysisPrompt(pageContent, pageTitle, stepSummaries)
+
+  const result = await generateText({
+    systemPrompt: TRY_DOC_ANALYSIS_SYSTEM_PROMPT,
+    userPrompt,
+    maxTokens: 8192,
+  })
+
+  // Parse and validate the Gemini response
+  let jsonStr = result.text.trim()
+  if (jsonStr.startsWith('```')) {
+    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+  }
+
+  const { TryDocReportSchema } = await import('./run.schema.js')
+  const parsed = TryDocReportSchema.parse(JSON.parse(jsonStr))
+
+  // Attach screenshot public URLs to step results
+  const stepsWithScreenshots = parsed.steps.map((stepResult) => {
+    const matchingStep = steps.find((s) => s.stepIndex === stepResult.stepIndex)
+    const screenshotPath = matchingStep?.screenshotPath
+      ? getPublicUrl('artifacts', matchingStep.screenshotPath)
+      : null
+    return { ...stepResult, screenshotPath }
+  })
+
+  const report: TryDocReport = {
+    version: 1,
+    pageId,
+    pageTitle,
+    executedAt: new Date().toISOString(),
+    summary: parsed.summary,
+    steps: stepsWithScreenshots,
+    failures: parsed.failures,
+    docIssues: parsed.docIssues,
+    uxInsights: parsed.uxInsights,
+    recommendations: parsed.recommendations,
+    scores: parsed.scores,
+  }
+
+  // Store the report in summary_json
+  await runRepo.updateRunSummary(runId, {
+    ...(run.summaryJson ?? {}),
+    tryDocReport: report,
+  })
+
+  return report
 }
