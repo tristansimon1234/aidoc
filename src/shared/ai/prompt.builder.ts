@@ -1,5 +1,6 @@
 import type { StepSummary } from '../../features/exploration/exploration.types.js'
 import type { DiscoveredContext } from '../../features/project/project.types.js'
+import type { DomSnapshot } from '../../features/chat/walkthrough.types.js'
 
 export function buildContextEnrichmentPrompt(
   existingContext: DiscoveredContext | null,
@@ -261,4 +262,92 @@ ${stepsText}
   "recommendations": [{ "type": "fix-doc"|"fix-product"|"improve-ux", "title": "short action", "description": "details", "priority": "high"|"medium"|"low" }],
   "scores": { "docQuality": 1-10, "testPassRate": 1-10, "uxClarity": 1-10 }
 }`
+}
+
+// --- Walkthrough (progressive AI-guided DOM highlighting) ---
+
+import type { CompletedStep } from '../../features/chat/walkthrough.types.js'
+
+export const WALKTHROUGH_SYSTEM_PROMPT = `You guide users through a product ONE STEP AT A TIME by mapping documentation to live DOM elements. Output ONLY valid JSON.
+
+Given: documentation, current page DOM elements, and steps already completed.
+Task: determine the ONE next action the user should take.
+
+RULES:
+1. Return exactly ONE step — the next logical action on the CURRENT page
+2. Match the target element by text, aria-label, or role from the DOM list
+3. elementRef = the element's "ref" from the DOM list. fallbackSelector = short CSS selector backup
+4. If all doc steps are done, set done: true and step: null
+5. instruction: under 80 chars, in the user's language
+6. action: click | type | select | scroll | observe | navigate
+7. For type: set typeValue. For navigate: instruction says where to go
+8. hint: optional short note about what comes next (under 100 chars)
+9. Think about prerequisite actions (open dropdown before selecting an item)`
+
+/** Server-side PII redaction — defense in depth (widget also redacts client-side) */
+function sanitizeForPrompt(text: string): string {
+  if (!text) return text
+  return text
+    .replace(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g, '[email]')
+    .replace(/\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/g, '[card]')
+    .replace(/\b[0-9a-f]{32,}\b/gi, '[token]')
+    .replace(/\b(?:sk|pk|api|key|token|secret|password)[_-]?[a-zA-Z0-9]{16,}\b/gi, '[key]')
+}
+
+/** Strip query params and fragment from URL */
+function sanitizeUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    return parsed.origin + parsed.pathname
+  } catch {
+    return url.split('?')[0]!.split('#')[0]!
+  }
+}
+
+function formatDomElements(snapshot: DomSnapshot): string {
+  if (snapshot.elements.length === 0) return 'No interactive elements found on this page.'
+
+  return snapshot.elements
+    .map((el) => {
+      const parts = [`ref="${el.ref}"`, `tag=${el.tag}`]
+      if (el.text) parts.push(`text="${sanitizeForPrompt(el.text)}"`)
+      if (el.role) parts.push(`role=${el.role}`)
+      if (el.ariaLabel) parts.push(`aria="${sanitizeForPrompt(el.ariaLabel)}"`)
+      if (el.placeholder) parts.push(`placeholder="${sanitizeForPrompt(el.placeholder)}"`)
+      parts.push(`pos=(${Math.round(el.rect.x)},${Math.round(el.rect.y)})`)
+      parts.push(`selector="${el.selector}"`)
+      return `- [${parts.join(' | ')}]`
+    })
+    .join('\n')
+}
+
+function formatCompletedSteps(steps: CompletedStep[]): string {
+  if (steps.length === 0) return 'None yet — this is step 1.'
+  return steps.map((s, i) => `${i + 1}. [${s.action}] ${s.instruction} (on ${sanitizeUrl(s.pageUrl)})`).join('\n')
+}
+
+export function buildWalkthroughPrompt(
+  docContext: string,
+  domSnapshot: DomSnapshot,
+  message: string,
+  completedSteps: CompletedStep[],
+): string {
+  const elementsBlock = formatDomElements(domSnapshot)
+  const safeUrl = sanitizeUrl(domSnapshot.url)
+  const completedBlock = formatCompletedSteps(completedSteps)
+
+  return `DOCS:
+${docContext || 'None'}
+
+CURRENT PAGE: ${safeUrl}
+DOM ELEMENTS:
+${elementsBlock}
+
+COMPLETED STEPS:
+${completedBlock}
+
+USER GOAL: ${message}
+
+Return the ONE next step as JSON:
+{"done":false,"step":{"instruction":"...","action":"click","elementRef":"ref","fallbackSelector":"sel","typeValue":null},"stepNumber":${completedSteps.length + 1},"hint":"next you'll..."}`
 }

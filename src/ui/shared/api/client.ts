@@ -130,6 +130,7 @@ export interface ProjectDTO {
   design: ProjectDesignDTO | null
   widgetApiKey: string | null
   widgetEnabled: boolean
+  walkthroughEnabled: boolean
   createdAt: string
   updatedAt: string
 }

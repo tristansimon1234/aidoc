@@ -1,6 +1,9 @@
 import { embedText, embedTexts, generateText } from '../../shared/ai/gemini.client.js'
+import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
+import { WalkthroughResponseSchema } from './chat.schema.js'
 import * as chatRepo from './chat.repository.js'
 import type { ChatMessage, ChatResponse, DocChunk } from './chat.types.js'
+import type { WalkthroughRequest, WalkthroughResponse } from './walkthrough.types.js'
 
 // --- Chunking ---
 
@@ -217,6 +220,11 @@ export async function chat(
   ["How do I invite team members?", "What are the different plans?"]
 - ALWAYS include the ---FOLLOWUPS--- separator and array, even if it's just one question
 
+## Interactive guide flag
+- If your answer describes steps the user could perform in their app's UI (clicking buttons, filling forms, navigating pages), add "---WALKTHROUGH---" on its own line BEFORE the ---FOLLOWUPS--- line
+- ONLY add this flag when the answer contains concrete UI actions (click, type, select, navigate). Do NOT add it for conceptual explanations, FAQs, or answers that don't involve interacting with the UI
+- This flag enables a "Guide me" button that highlights UI elements on the user's screen
+
 ## Boundaries
 - Base your answers on the documentation context — don't invent features
 - Do NOT fabricate screenshot URLs — only use images that appear in the context
@@ -243,10 +251,18 @@ ${message}`
     }
   }
 
-  // Parse follow-ups from response
+  // Parse walkthrough flag and follow-ups from response
   let answer = response.text
   let followUps: string[] = []
-  // Match various formats Gemini might use: ---FOLLOWUPS---, FOLLOWUPS, ---FOLLOWUPS, etc.
+  let walkthroughAvailable = false
+
+  // Check for ---WALKTHROUGH--- flag (AI signals this answer is guidable)
+  if (/---?\s*WALKTHROUGH\s*---?/i.test(answer)) {
+    walkthroughAvailable = true
+    answer = answer.replace(/---?\s*WALKTHROUGH\s*---?\n?/gi, '').trim()
+  }
+
+  // Parse follow-ups
   const followUpSplit = answer.split(/---?\s*FOLLOWUPS\s*---?/i)
   if (followUpSplit.length > 1) {
     answer = followUpSplit[0]!.trim()
@@ -262,6 +278,7 @@ ${message}`
     answer,
     sources: Array.from(sourceMap.values()),
     followUps,
+    ...(walkthroughAvailable ? { walkthroughAvailable } : {}),
   }
 }
 
@@ -313,6 +330,88 @@ Generate 6 highly specific questions that users of THIS product would actually a
     return Array.isArray(parsed) ? parsed.slice(0, 6) : []
   } catch {
     return []
+  }
+}
+
+// --- Progressive walkthrough generation (one step at a time) ---
+
+// Cache RAG context — same question always produces same doc chunks
+const walkthroughContextCache = new Map<string, { docContext: string; expiresAt: number }>()
+const WT_CONTEXT_TTL_MS = 600_000 // 10 minutes
+
+async function getWalkthroughDocContext(projectId: string, message: string): Promise<string> {
+  const cacheKey = `${projectId}:${message}`
+  const cached = walkthroughContextCache.get(cacheKey)
+  if (cached && Date.now() < cached.expiresAt) return cached.docContext
+
+  const queryEmbedding = await embedText(message)
+  const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
+  const docContext = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
+
+  walkthroughContextCache.set(cacheKey, { docContext, expiresAt: Date.now() + WT_CONTEXT_TTL_MS })
+  return docContext
+}
+
+export async function generateWalkthrough(
+  projectId: string,
+  request: WalkthroughRequest,
+): Promise<WalkthroughResponse> {
+  // 1. RAG search (cached — same message always returns same chunks)
+  const docContext = await getWalkthroughDocContext(projectId, request.message)
+
+  // 2. Build prompt with completed steps context
+  const userPrompt = buildWalkthroughPrompt(
+    docContext,
+    request.domSnapshot,
+    request.message,
+    request.completedSteps ?? [],
+  )
+
+  const response = await generateText({
+    systemPrompt: WALKTHROUGH_SYSTEM_PROMPT,
+    userPrompt,
+    maxTokens: 1024,
+  })
+
+  // 3. Parse single-step JSON response (tolerant of Gemini quirks)
+  let jsonStr = response.text.trim()
+  // Strip markdown fences
+  if (jsonStr.startsWith('```')) {
+    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+  }
+  // Extract JSON object if Gemini added text around it
+  const jsonMatch = jsonStr.match(/\{[\s\S]*\}/)
+  if (jsonMatch) jsonStr = jsonMatch[0]
+
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(jsonStr) as Record<string, unknown>
+  } catch (parseErr) {
+    console.error('[walkthrough] JSON parse failed:', (parseErr as Error).message, '| raw:', jsonStr.slice(0, 300))
+    return { done: true, step: null, stepNumber: 0, hint: null }
+  }
+
+  // Normalize Gemini output — coerce empty strings to null for nullable fields
+  if (parsed.step && typeof parsed.step === 'object') {
+    const step = parsed.step as Record<string, unknown>
+    if (step.elementRef === '' || step.elementRef === undefined) step.elementRef = null
+    if (step.fallbackSelector === '' || step.fallbackSelector === undefined) step.fallbackSelector = null
+    if (step.typeValue === '' || step.typeValue === undefined) step.typeValue = null
+  }
+  if (parsed.hint === '' || parsed.hint === undefined) parsed.hint = null
+  if (parsed.stepNumber === undefined) parsed.stepNumber = (request.completedSteps?.length ?? 0) + 1
+
+  try {
+    const validated = WalkthroughResponseSchema.parse(parsed)
+    return {
+      done: validated.done,
+      step: validated.step,
+      stepNumber: validated.stepNumber,
+      hint: validated.hint,
+    }
+  } catch (zodErr) {
+    console.error('[walkthrough] Zod validation failed:', (zodErr as Error).message, '| parsed:', JSON.stringify(parsed).slice(0, 300))
+    return { done: true, step: null, stepNumber: 0, hint: null }
   }
 }
 
