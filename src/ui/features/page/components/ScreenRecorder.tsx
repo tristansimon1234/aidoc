@@ -399,12 +399,8 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
 }
 
 // Extract frames from video at timestamps and upload as screenshots.
-// Sorts timestamps ascending and clamps to video duration to ensure correct ordering.
 async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
   if (timestamps.length === 0) return
-
-  // Sort timestamps ascending (Gemini may return them out of order)
-  const sorted = [...timestamps].sort((a, b) => a - b)
 
   return new Promise((resolve, reject) => {
     const video = document.createElement('video')
@@ -416,33 +412,61 @@ async function extractAndUploadFrames(videoFile: File, runId: string, timestamps
       canvas.width = Math.min(video.videoWidth, 1280)
       canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
 
-      // Clamp timestamps to video duration
       const duration = video.duration
-      const clamped = sorted.map((t) => Math.min(t, Math.max(0, duration - 0.1)))
+
+      // Sort, clamp to video duration, and deduplicate timestamps
+      // (timestamps closer than 0.5s apart produce the same frame)
+      const sorted = [...timestamps].sort((a, b) => a - b)
+      const unique: { time: number; stepIndex: number }[] = []
+      let lastTime = -1
+      for (let idx = 0; idx < sorted.length; idx++) {
+        const t = Math.max(0, Math.min(sorted[idx]!, duration - 0.1))
+        if (t - lastTime >= 0.5) {
+          unique.push({ time: t, stepIndex: idx })
+          lastTime = t
+        } else {
+          // Duplicate — still register the step with the previous frame
+          unique.push({ time: t, stepIndex: idx })
+        }
+      }
 
       let i = 0
+      let lastSeekedTime = -1
+
+      const captureAndAdvance = (): void => {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const entry = unique[i]!
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const path = `runs/${runId}/frame-${entry.stepIndex}.jpg`
+            const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
+            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
+            await api.runs.updateStepScreenshot(runId, entry.stepIndex, path)
+          }
+          i++
+          extractNext()
+        }, 'image/jpeg', 0.85)
+      }
 
       const extractNext = (): void => {
-        if (i >= clamped.length) { resolve(); return }
-        video.currentTime = clamped[i]!
+        if (i >= unique.length) { resolve(); return }
+
+        const targetTime = unique[i]!.time
+
+        // If target time is same as where we already are (within 0.5s),
+        // capture directly without seeking — onseeked won't fire
+        if (Math.abs(video.currentTime - targetTime) < 0.5 && lastSeekedTime === targetTime) {
+          setTimeout(captureAndAdvance, 50)
+          return
+        }
+
+        lastSeekedTime = targetTime
+        video.currentTime = targetTime
       }
 
       video.onseeked = () => {
-        // Small delay after seek to let the browser decode the frame fully
-        setTimeout(() => {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          const stepIndex = i
-          canvas.toBlob(async (blob) => {
-            if (blob) {
-              const path = `runs/${runId}/frame-${stepIndex}.jpg`
-              const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
-              await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-              await api.runs.updateStepScreenshot(runId, stepIndex, path)
-            }
-            i++
-            extractNext()
-          }, 'image/jpeg', 0.85)
-        }, 150) // 150ms delay — gives browser time to decode the seeked frame
+        // Delay after seek to let browser fully decode the frame
+        setTimeout(captureAndAdvance, 150)
       }
 
       video.onerror = () => reject(new Error('Failed to load video'))

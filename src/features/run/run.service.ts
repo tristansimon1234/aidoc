@@ -362,9 +362,9 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     await runRepo.updateRunStatus(runId, 'completed')
 
-    // Add small offset to each timestamp to ensure we capture the RESULT state
-    // (Gemini sometimes returns the moment of click, not the loaded result)
-    return { timestamps: sortedSteps.map((s) => s.timestamp + 0.8) }
+    // Small offset (+0.3s) to capture the result state after action completes.
+    // The Gemini prompt already asks for post-action timestamps, this is extra safety.
+    return { timestamps: sortedSteps.map((s) => s.timestamp + 0.3) }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')
