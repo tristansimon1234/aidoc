@@ -1,139 +1,97 @@
 import { synthesizeSpeech, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 import { uploadToStorage, getPublicUrl } from '../../shared/db/storage.repository.js'
 
-const MAX_CHUNK_LENGTH = 4500 // ElevenLabs limit ~5000 chars, leave margin
-
-export interface VoiceoverResult {
+/** A single narration segment synced to a video timestamp range */
+export interface VoiceoverSegment {
+  stepIndex: number
+  startTime: number
+  endTime: number
   audioPath: string
   audioUrl: string
-  duration: number
+  text: string
+}
+
+export interface VoiceoverResult {
+  segments: VoiceoverSegment[]
+  fullAudioPath: string
+  fullAudioUrl: string
 }
 
 /**
- * Strip markdown formatting to produce clean narration text.
- */
-function markdownToNarration(markdown: string): string {
-  return markdown
-    // Remove images
-    .replace(/!\[.*?\]\(.*?\)/g, '')
-    // Remove links but keep text
-    .replace(/\[([^\]]+)\]\(.*?\)/g, '$1')
-    // Remove headers markers
-    .replace(/^#{1,6}\s+/gm, '')
-    // Remove bold/italic markers
-    .replace(/\*{1,3}(.*?)\*{1,3}/g, '$1')
-    .replace(/_{1,3}(.*?)_{1,3}/g, '$1')
-    // Remove code blocks
-    .replace(/```[\s\S]*?```/g, '')
-    // Remove inline code
-    .replace(/`([^`]+)`/g, '$1')
-    // Remove HTML tags
-    .replace(/<[^>]+>/g, '')
-    // Remove horizontal rules
-    .replace(/^[-*_]{3,}\s*$/gm, '')
-    // Remove blockquote markers
-    .replace(/^>\s+/gm, '')
-    // Remove list markers
-    .replace(/^[\s]*[-*+]\s+/gm, '')
-    .replace(/^[\s]*\d+\.\s+/gm, '')
-    // Collapse multiple newlines
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
-
-/**
- * Split text into chunks that fit within the ElevenLabs character limit.
- * Splits on paragraph boundaries to maintain natural speech flow.
- */
-function splitIntoChunks(text: string): string[] {
-  if (text.length <= MAX_CHUNK_LENGTH) return [text]
-
-  const paragraphs = text.split(/\n\n+/)
-  const chunks: string[] = []
-  let current = ''
-
-  for (const paragraph of paragraphs) {
-    if (current.length + paragraph.length + 2 > MAX_CHUNK_LENGTH) {
-      if (current) chunks.push(current.trim())
-      // If a single paragraph exceeds the limit, split on sentences
-      if (paragraph.length > MAX_CHUNK_LENGTH) {
-        const sentences = paragraph.match(/[^.!?]+[.!?]+/g) ?? [paragraph]
-        let sentenceChunk = ''
-        for (const sentence of sentences) {
-          if (sentenceChunk.length + sentence.length > MAX_CHUNK_LENGTH) {
-            if (sentenceChunk) chunks.push(sentenceChunk.trim())
-            sentenceChunk = sentence
-          } else {
-            sentenceChunk += sentence
-          }
-        }
-        current = sentenceChunk
-      } else {
-        current = paragraph
-      }
-    } else {
-      current += (current ? '\n\n' : '') + paragraph
-    }
-  }
-  if (current.trim()) chunks.push(current.trim())
-
-  return chunks
-}
-
-/**
- * Generate a voice-over narration from markdown documentation content.
- * Returns the path and URL of the audio file in Supabase storage.
+ * Generate voice-over narration synced to video timestamps.
+ *
+ * Instead of narrating the whole doc as one block, this generates
+ * one audio segment per step, each mapped to the step's video timestamp.
+ * The player can then play the right narration at the right moment.
  */
 export async function generateVoiceover(
   runId: string,
-  markdownContent: string,
+  steps: { stepIndex: number; text: string }[],
+  timestamps: number[],
   options?: { voiceId?: string; language?: string },
 ): Promise<VoiceoverResult> {
   if (!isElevenLabsConfigured()) {
     throw new Error('ElevenLabs is not configured — set ELEVENLABS_API_KEY')
   }
 
-  // 1. Convert markdown to clean narration text
-  let narrationText = markdownToNarration(markdownContent)
+  if (steps.length === 0) {
+    throw new Error('No steps to narrate')
+  }
 
-  // 2. If language translation is requested, translate via Gemini
+  // Translate all step texts at once if language is specified
+  let stepTexts = steps.map((s) => s.text)
   if (options?.language) {
     const { generateText } = await import('../../shared/ai/gemini.client.js')
+    const allText = stepTexts.map((t, i) => `[STEP ${i}]\n${t}`).join('\n\n')
     const translated = await generateText({
-      userPrompt: `Translate the following text to ${options.language}. Keep it natural and conversational — this will be read aloud as a narration. Do NOT add any introduction or explanation, just output the translated text.\n\n${narrationText}`,
+      userPrompt: `Translate each step to ${options.language}. Keep the [STEP N] markers. Keep it natural and conversational — this will be read aloud. Output ONLY the translated text.\n\n${allText}`,
       maxTokens: 8192,
     })
-    narrationText = translated.text
+    // Parse back into individual step texts
+    const parts = translated.text.split(/\[STEP \d+\]\n?/)
+    if (parts.length > 1) {
+      stepTexts = parts.filter((p) => p.trim()).map((p) => p.trim())
+    }
   }
 
-  if (!narrationText || narrationText.length < 10) {
-    throw new Error('Documentation content too short to generate voice-over')
-  }
+  // Generate audio for each step
+  const segments: VoiceoverSegment[] = []
+  const allBuffers: Buffer[] = []
 
-  // 3. Split into chunks and synthesize
-  const chunks = splitIntoChunks(narrationText)
-  const audioBuffers: Buffer[] = []
+  for (let i = 0; i < steps.length; i++) {
+    const text = stepTexts[i] ?? steps[i]!.text
+    if (!text || text.length < 3) continue
 
-  for (const chunk of chunks) {
-    const buffer = await synthesizeSpeech(chunk, {
-      voiceId: options?.voiceId,
+    const buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
+
+    // Upload individual segment
+    const segPath = `runs/${runId}/voiceover-step-${i}.mp3`
+    await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
+
+    // Calculate time range from timestamps
+    const startTime = timestamps[i] ?? 0
+    const endTime = timestamps[i + 1] ?? (startTime + 30) // last step: 30s after
+
+    segments.push({
+      stepIndex: steps[i]!.stepIndex,
+      startTime,
+      endTime,
+      audioPath: segPath,
+      audioUrl: getPublicUrl('artifacts', segPath) ?? '',
+      text,
     })
-    audioBuffers.push(buffer)
+
+    allBuffers.push(buffer)
   }
 
-  // 4. Concatenate audio buffers
-  const combinedBuffer = Buffer.concat(audioBuffers)
+  // Also upload a concatenated full audio (for fallback / download)
+  const fullBuffer = Buffer.concat(allBuffers)
+  const fullPath = `runs/${runId}/voiceover-full.mp3`
+  await uploadToStorage('artifacts', fullPath, fullBuffer, 'audio/mpeg')
 
-  // 5. Estimate duration (mp3 at ~128kbps = ~16KB per second)
-  const estimatedDuration = Math.round(combinedBuffer.length / (128 * 1024 / 8))
-
-  // 6. Upload to Supabase storage
-  const langSuffix = options?.language ? `-${options.language}` : ''
-  const audioPath = `runs/${runId}/voiceover${langSuffix}.mp3`
-  await uploadToStorage('artifacts', audioPath, combinedBuffer, 'audio/mpeg')
-
-  // 7. Get public URL
-  const audioUrl = getPublicUrl('artifacts', audioPath) ?? ''
-
-  return { audioPath, audioUrl, duration: estimatedDuration }
+  return {
+    segments,
+    fullAudioPath: fullPath,
+    fullAudioUrl: getPublicUrl('artifacts', fullPath) ?? '',
+  }
 }

@@ -172,25 +172,47 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       const { generateVoiceover } = await import('../documentation/voiceover.service.js')
 
-      // Get the doc content for this run
-      const { findDocByRunId } = await import('../documentation/documentation.repository.js')
-      const doc = await findDocByRunId(params.data.id)
-      if (!doc?.markdownContent) {
-        throw new AppError('No documentation found for this run', 'DOC_NOT_FOUND', 404)
+      // Get run steps and timestamps for synced narration
+      const run = await runService.getRun(params.data.id)
+      if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+
+      const runSteps = await runService.getRunSteps(params.data.id)
+      if (runSteps.length === 0) {
+        throw new AppError('No steps found for this run', 'NO_STEPS', 404)
       }
 
-      const result = await generateVoiceover(params.data.id, doc.markdownContent, {
+      // Build narration text for each step from observation (screen description)
+      const { generateText } = await import('../../shared/ai/gemini.client.js')
+      const stepDescriptions = runSteps.map((s) =>
+        `Step ${s.stepIndex + 1}: ${s.action ?? ''}\n${s.observation ?? ''}`,
+      ).join('\n\n')
+
+      const narrationResult = await generateText({
+        userPrompt: `Convert these screen recording step descriptions into a short, natural voice-over narration. Write 1-2 sentences per step, as if narrating a tutorial video. Be concise and conversational.\n\nSteps:\n${stepDescriptions}\n\nReturn one line per step, prefixed with the step number:\n1. First step narration\n2. Second step narration\netc.`,
+        maxTokens: 4096,
+      })
+
+      // Parse per-step narrations
+      const lines = narrationResult.text.split('\n').filter((l) => l.trim())
+      const stepsWithText = runSteps.map((s, i) => {
+        const line = lines.find((l) => l.match(new RegExp(`^${i + 1}[.)]`)))
+        const text = line ? line.replace(/^\d+[.)]\s*/, '') : s.action ?? `Step ${i + 1}`
+        return { stepIndex: s.stepIndex, text }
+      })
+
+      // Get timestamps from run summary
+      const summary = run.summaryJson as Record<string, unknown> | null
+      const timestamps = (summary?.stepTimestamps as number[]) ?? runSteps.map((_, i) => i * 5)
+
+      const result = await generateVoiceover(params.data.id, stepsWithText, timestamps, {
         voiceId: body.voiceId,
         language: body.language,
       })
 
       // Store voiceover info in run summary
-      const run = await runService.getRun(params.data.id)
-      if (run) {
-        const summary = run.summaryJson ?? {}
-        const { updateRunSummary } = await import('./run.repository.js')
-        await updateRunSummary(params.data.id, { ...summary, voiceover: result })
-      }
+      const existingSummary = run.summaryJson ?? {}
+      const { updateRunSummary } = await import('./run.repository.js')
+      await updateRunSummary(params.data.id, { ...existingSummary, voiceover: result })
 
       res.status(200).json(result)
     } catch (err) {

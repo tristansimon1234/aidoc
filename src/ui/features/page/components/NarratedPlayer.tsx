@@ -1,45 +1,97 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button, Spinner } from '../../../design-system/components/index.js'
 
+export interface VoiceoverSegment {
+  stepIndex: number
+  startTime: number
+  endTime: number
+  audioUrl: string
+}
+
 interface NarratedPlayerProps {
   videoUrl: string | null
+  /** Legacy: single audio URL (plays from start, no sync) */
   audioUrl: string | null
+  /** Synced segments: each segment plays at the right video timestamp */
+  segments?: VoiceoverSegment[]
   onGenerateVoiceover?: () => Promise<void>
 }
 
 /**
  * Synced video + narration player.
- * Shows the recording with optional AI narration.
- * When no narration exists, shows an "Improve video with AI" button.
+ * When segments are provided, plays the matching audio segment at each video timestamp.
+ * Falls back to single audio track if no segments.
  */
-export function NarratedPlayer({ videoUrl, audioUrl, onGenerateVoiceover }: NarratedPlayerProps): React.ReactElement {
+export function NarratedPlayer({ videoUrl, audioUrl, segments, onGenerateVoiceover }: NarratedPlayerProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
   const [expanded, setExpanded] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [activeSegment, setActiveSegment] = useState(-1)
   const rafRef = useRef<number | null>(null)
+  const audioElementsRef = useRef<Map<number, HTMLAudioElement>>(new Map())
+  const fallbackAudioRef = useRef<HTMLAudioElement | null>(null)
 
-  const syncAudio = useCallback(() => {
-    const video = videoRef.current
-    const audio = audioRef.current
-    if (!video || !audio) return
-    if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
-      audio.currentTime = video.currentTime
+  const hasNarration = Boolean(audioUrl || (segments && segments.length > 0))
+  const hasSegments = segments && segments.length > 0
+
+  // Preload segment audio elements
+  useEffect(() => {
+    const map = new Map<number, HTMLAudioElement>()
+    if (segments) {
+      for (const seg of segments) {
+        if (seg.audioUrl) {
+          const audio = new Audio()
+          audio.preload = 'auto'
+          audio.src = seg.audioUrl
+          map.set(seg.stepIndex, audio)
+        }
+      }
     }
-  }, [])
+    audioElementsRef.current = map
+    return () => {
+      map.forEach((a) => { a.pause(); a.src = '' })
+    }
+  }, [segments])
+
+  // Segment-based playback: check which segment should be playing
+  const updateSegmentPlayback = useCallback(() => {
+    if (!hasSegments || !videoRef.current) return
+    const currentTime = videoRef.current.currentTime
+
+    // Find the active segment for the current time
+    const seg = segments!.find((s) => currentTime >= s.startTime && currentTime < s.endTime)
+    const segIndex = seg?.stepIndex ?? -1
+
+    if (segIndex !== activeSegment) {
+      // Stop previous segment audio
+      if (activeSegment >= 0) {
+        audioElementsRef.current.get(activeSegment)?.pause()
+      }
+      // Start new segment audio
+      if (segIndex >= 0) {
+        const audio = audioElementsRef.current.get(segIndex)
+        if (audio) {
+          audio.currentTime = 0
+          if (playing) void audio.play()
+        }
+      }
+      setActiveSegment(segIndex)
+    }
+  }, [segments, hasSegments, activeSegment, playing])
 
   const updateProgress = useCallback(() => {
     const video = videoRef.current
     if (video && video.duration) {
       setProgress(video.currentTime / video.duration)
     }
+    if (hasSegments) updateSegmentPlayback()
     if (playing) {
       rafRef.current = requestAnimationFrame(updateProgress)
     }
-  }, [playing])
+  }, [playing, hasSegments, updateSegmentPlayback])
 
   useEffect(() => {
     if (playing) {
@@ -52,28 +104,36 @@ export function NarratedPlayer({ videoUrl, audioUrl, onGenerateVoiceover }: Narr
 
   const togglePlay = (): void => {
     const video = videoRef.current
-    const audio = audioRef.current
     if (!video) return
     if (video.paused) {
-      syncAudio()
       void video.play()
-      if (audio) void audio.play()
+      // For legacy single audio
+      if (!hasSegments && fallbackAudioRef.current) {
+        fallbackAudioRef.current.currentTime = video.currentTime
+        void fallbackAudioRef.current.play()
+      }
+      // For segments, the updateSegmentPlayback loop handles it
       setPlaying(true)
     } else {
       video.pause()
-      if (audio) audio.pause()
+      if (fallbackAudioRef.current) fallbackAudioRef.current.pause()
+      audioElementsRef.current.forEach((a) => a.pause())
       setPlaying(false)
     }
   }
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>): void => {
     const video = videoRef.current
-    const audio = audioRef.current
     if (!video || !video.duration) return
     const rect = e.currentTarget.getBoundingClientRect()
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     video.currentTime = pct * video.duration
-    if (audio) audio.currentTime = pct * video.duration
+    // Stop all segment audios on seek — the loop will restart the right one
+    audioElementsRef.current.forEach((a) => a.pause())
+    setActiveSegment(-1)
+    if (!hasSegments && fallbackAudioRef.current) {
+      fallbackAudioRef.current.currentTime = pct * video.duration
+    }
     setProgress(pct)
   }
 
@@ -87,6 +147,14 @@ export function NarratedPlayer({ videoUrl, audioUrl, onGenerateVoiceover }: Narr
     }
   }
 
+  const stopAll = (): void => {
+    setExpanded(false)
+    setPlaying(false)
+    videoRef.current?.pause()
+    fallbackAudioRef.current?.pause()
+    audioElementsRef.current.forEach((a) => a.pause())
+  }
+
   const formatTime = (seconds: number): string => {
     if (!isFinite(seconds)) return '0:00'
     const m = Math.floor(seconds / 60)
@@ -95,7 +163,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, onGenerateVoiceover }: Narr
   }
 
   // No video and no audio — show just the generate button if available
-  if (!videoUrl && !audioUrl) {
+  if (!videoUrl && !audioUrl && !hasSegments) {
     if (!onGenerateVoiceover) return <></>
     return (
       <div style={{
@@ -166,21 +234,22 @@ export function NarratedPlayer({ videoUrl, audioUrl, onGenerateVoiceover }: Narr
               <polygon points="6 3 20 12 6 21 6 3" />
             </svg>
             <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-fg)', fontWeight: 500 }}>
-              {audioUrl ? 'Watch narrated video' : 'Watch recording'}
+              {hasNarration ? 'Watch narrated video' : 'Watch recording'}
             </span>
-            {audioUrl && (
+            {hasSegments && (
+              <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-success)', padding: '1px 6px', background: 'rgba(0,200,0,0.1)', borderRadius: 'var(--radius-sm)' }}>
+                synced narration
+              </span>
+            )}
+            {!hasSegments && audioUrl && (
               <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-success)', padding: '1px 6px', background: 'rgba(0,200,0,0.1)', borderRadius: 'var(--radius-sm)' }}>
                 AI narration
               </span>
             )}
           </button>
 
-          {/* Improve button — visible when video exists but no narration */}
-          {!audioUrl && onGenerateVoiceover && !generating && (
+          {!hasNarration && onGenerateVoiceover && !generating && (
             <Button size="sm" variant="secondary" onClick={() => void handleGenerateVoiceover()}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}>
-                <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-              </svg>
               Improve with AI
             </Button>
           )}
@@ -200,14 +269,17 @@ export function NarratedPlayer({ videoUrl, audioUrl, onGenerateVoiceover }: Narr
           borderRadius: 'var(--radius-xl)',
           overflow: 'hidden',
         }}>
-          {/* Video */}
           <div style={{ position: 'relative', background: '#000', cursor: 'pointer' }} onClick={togglePlay}>
             <video
               ref={videoRef}
               src={videoUrl!}
               preload="metadata"
               onLoadedMetadata={() => { if (videoRef.current) setDuration(videoRef.current.duration) }}
-              onEnded={() => { setPlaying(false); audioRef.current?.pause() }}
+              onEnded={() => {
+                setPlaying(false)
+                fallbackAudioRef.current?.pause()
+                audioElementsRef.current.forEach((a) => a.pause())
+              }}
               style={{ width: '100%', display: 'block', maxHeight: '400px' }}
             />
             {!playing && (
@@ -223,7 +295,10 @@ export function NarratedPlayer({ videoUrl, audioUrl, onGenerateVoiceover }: Narr
             )}
           </div>
 
-          {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
+          {/* Legacy single audio (fallback) */}
+          {!hasSegments && audioUrl && (
+            <audio ref={fallbackAudioRef} src={audioUrl} preload="auto" />
+          )}
 
           {/* Controls bar */}
           <div style={{ padding: 'var(--space-sm) var(--space-md)', display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
@@ -260,21 +335,20 @@ export function NarratedPlayer({ videoUrl, audioUrl, onGenerateVoiceover }: Narr
               {formatTime(duration)}
             </span>
 
-            {audioUrl && (
+            {hasNarration && (
               <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-success)' }}>
-                narrated
+                {hasSegments ? 'synced' : 'narrated'}
               </span>
             )}
 
-            {/* Improve button inside expanded player */}
-            {!audioUrl && onGenerateVoiceover && !generating && (
+            {!hasNarration && onGenerateVoiceover && !generating && (
               <Button size="sm" variant="secondary" onClick={() => void handleGenerateVoiceover()}>
                 Improve with AI
               </Button>
             )}
             {generating && <Spinner size="sm" />}
 
-            <button type="button" onClick={() => { setExpanded(false); setPlaying(false); videoRef.current?.pause(); audioRef.current?.pause() }} style={{
+            <button type="button" onClick={stopAll} style={{
               background: 'none', border: 'none', cursor: 'pointer', padding: 0,
               color: 'var(--color-muted-fg)', display: 'flex', alignItems: 'center',
             }}>

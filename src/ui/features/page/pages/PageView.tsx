@@ -42,6 +42,7 @@ export function PageView(): React.ReactElement {
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
+  const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; audioUrl: string }[]>([])
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [latestRunId, setLatestRunId] = useState<string | null>(null)
   const prevPageIdRef = useRef(pageId)
@@ -79,12 +80,25 @@ export function PageView(): React.ReactElement {
       // Extract voiceover + video URLs from latest run summary
       // Uses public URLs (artifacts bucket is public)
       const summary = runData?.summaryJson as Record<string, unknown> | null
-      const voiceover = summary?.voiceover as { audioPath?: string } | undefined
-      if (voiceover?.audioPath) {
-        const { data: audioData } = supabase.storage.from('artifacts').getPublicUrl(voiceover.audioPath)
+      const voiceover = summary?.voiceover as {
+        fullAudioPath?: string
+        fullAudioUrl?: string
+        segments?: { stepIndex: number; startTime: number; endTime: number; audioUrl: string }[]
+        // Legacy: single audio
+        audioPath?: string
+      } | undefined
+
+      if (voiceover?.segments && voiceover.segments.length > 0) {
+        setVoiceoverSegments(voiceover.segments)
+        setVoiceoverUrl(null) // segments take priority over single audio
+      } else if (voiceover?.fullAudioPath || voiceover?.audioPath) {
+        const path = voiceover.fullAudioPath ?? voiceover.audioPath!
+        const { data: audioData } = supabase.storage.from('artifacts').getPublicUrl(path)
         setVoiceoverUrl(audioData?.publicUrl ?? null)
+        setVoiceoverSegments([])
       } else {
         setVoiceoverUrl(null)
+        setVoiceoverSegments([])
       }
 
       // Find the video URL — check summaryJson.videoPath, then try common paths
@@ -321,14 +335,21 @@ DO NOT generate new documentation. Only verify the existing one.`
               void debouncedPageUpdate({ title: e.target.value })
             }}
           />
-          {(voiceoverUrl || videoUrl || latestRunId) && (
+          {(voiceoverUrl || voiceoverSegments.length > 0 || videoUrl || latestRunId) && (
             <NarratedPlayer
               videoUrl={videoUrl}
               audioUrl={voiceoverUrl}
+              segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
               onGenerateVoiceover={latestRunId && page.content ? async () => {
-                const result = await api.runs.generateVoiceover(latestRunId)
-                if (result.audioPath) {
-                  const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                const result = await api.runs.generateVoiceover(latestRunId) as {
+                  segments?: { stepIndex: number; startTime: number; endTime: number; audioUrl: string }[]
+                  fullAudioPath?: string
+                }
+                if (result.segments && result.segments.length > 0) {
+                  setVoiceoverSegments(result.segments)
+                  setVoiceoverUrl(null)
+                } else if (result.fullAudioPath) {
+                  const { data } = supabase.storage.from('artifacts').getPublicUrl(result.fullAudioPath)
                   setVoiceoverUrl(data?.publicUrl ?? null)
                 }
               } : undefined}

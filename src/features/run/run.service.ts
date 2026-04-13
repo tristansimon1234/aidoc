@@ -347,7 +347,7 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
       })
     }
 
-    // Build summary — include videoPath for the narrated player
+    // Build summary — include videoPath + step timestamps for the narrated player
     await runRepo.updateRunSummary(runId, {
       sections: [{
         url: 'video',
@@ -358,6 +358,7 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
       blockers: [],
       agentMessage: analysis.summary,
       videoPath,
+      stepTimestamps: sortedSteps.map((s) => s.timestamp),
     })
 
     await runRepo.updateRunStatus(runId, 'completed')
