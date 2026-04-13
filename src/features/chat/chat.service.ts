@@ -333,42 +333,33 @@ Generate 6 highly specific questions that users of THIS product would actually a
   }
 }
 
-// --- Walkthrough generation ---
+// --- Progressive walkthrough generation (one step at a time) ---
 
 export async function generateWalkthrough(
   projectId: string,
   request: WalkthroughRequest,
 ): Promise<WalkthroughResponse> {
-  // 1. RAG search — same as chat()
+  // 1. RAG search
   const queryEmbedding = await embedText(request.message)
   const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
   const docContext = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
 
-  // 2. Build conversation history
-  const conversationHistory = request.history.length > 0
-    ? request.history
-        .slice(-10)
-        .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
-        .join('\n\n')
-    : undefined
-
-  // 3. Build prompt and call Gemini
+  // 2. Build prompt with completed steps context
   const userPrompt = buildWalkthroughPrompt(
     docContext,
     request.domSnapshot,
     request.message,
-    conversationHistory,
+    request.completedSteps ?? [],
   )
 
   const response = await generateText({
     systemPrompt: WALKTHROUGH_SYSTEM_PROMPT,
     userPrompt,
-    maxTokens: 4096,
+    maxTokens: 1024,
   })
 
-  // 4. Parse and validate JSON response
+  // 3. Parse and validate single-step JSON response
   let jsonStr = response.text.trim()
-  // Strip markdown fences if present
   if (jsonStr.startsWith('```')) {
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   }
@@ -377,9 +368,10 @@ export async function generateWalkthrough(
   const validated = WalkthroughResponseSchema.parse(parsed)
 
   return {
-    steps: validated.steps,
-    totalSteps: validated.totalSteps,
-    pageNote: validated.pageNote,
+    done: validated.done,
+    step: validated.step,
+    stepNumber: validated.stepNumber,
+    hint: validated.hint,
   }
 }
 

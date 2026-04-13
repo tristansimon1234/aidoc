@@ -80,6 +80,11 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
         body.data.userContext,
       )
 
+      // Only expose walkthroughAvailable if the project has walkthrough enabled
+      if (!project.walkthroughEnabled) {
+        delete result.walkthroughAvailable
+      }
+
       res.status(200).json(result)
     } catch (err) {
       next(err)
@@ -139,6 +144,7 @@ widgetRouter.post('/:widgetKey/walkthrough', largeJsonParser, (req: Request, res
       const { findProjectByWidgetKey } = await import('../project/project.repository.js')
       const project = await findProjectByWidgetKey(widgetKey)
       if (!project) throw new NotFoundError('Widget not found or disabled')
+      if (!project.walkthroughEnabled) throw new NotFoundError('Walkthrough not enabled for this project')
 
       const body = WalkthroughRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
@@ -149,6 +155,7 @@ widgetRouter.post('/:widgetKey/walkthrough', largeJsonParser, (req: Request, res
           message: body.data.message,
           history: body.data.history,
           domSnapshot: body.data.domSnapshot,
+          completedSteps: body.data.completedSteps ?? [],
           userContext: body.data.userContext ?? undefined,
         },
       )

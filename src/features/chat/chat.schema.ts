@@ -49,27 +49,33 @@ export const DomSnapshotSchema = z.object({
   elements: z.array(DomElementSchema).max(200),
 })
 
+export const CompletedStepSchema = z.object({
+  instruction: z.string().max(500),
+  action: z.string().max(50),
+  pageUrl: z.string().max(2000),
+})
+
 export const WalkthroughRequestSchema = z.object({
   message: z.string().min(1).max(2000),
   history: z.array(ChatMessageSchema).max(50).default([]),
   domSnapshot: DomSnapshotSchema,
+  completedSteps: z.array(CompletedStepSchema).max(30).default([]),
   userContext: UserContextSchema,
 })
 
 export type WalkthroughRequestInput = z.infer<typeof WalkthroughRequestSchema>
 
 export const WalkthroughStepSchema = z.object({
-  stepNumber: z.number().int().positive(),
   instruction: z.string().max(500),
   action: z.enum(['click', 'type', 'select', 'scroll', 'observe', 'navigate']),
   elementRef: z.string().max(100).nullable(),
   fallbackSelector: z.string().max(200).nullable(),
   typeValue: z.string().max(1000).nullable(),
-  notFound: z.boolean(),
 })
 
 export const WalkthroughResponseSchema = z.object({
-  steps: z.array(WalkthroughStepSchema).max(15),
-  totalSteps: z.number().int().positive(),
-  pageNote: z.string().nullable(),
+  done: z.boolean(),
+  step: WalkthroughStepSchema.nullable(),
+  stepNumber: z.number().int().min(0),
+  hint: z.string().max(200).nullable(),
 })

@@ -264,20 +264,25 @@ ${stepsText}
 }`
 }
 
-// --- Walkthrough (AI-guided DOM highlighting) ---
+// --- Walkthrough (progressive AI-guided DOM highlighting) ---
 
-export const WALKTHROUGH_SYSTEM_PROMPT = `You map documentation steps to live DOM elements. Output ONLY valid JSON.
+import type { CompletedStep } from '../../features/chat/walkthrough.types.js'
+
+export const WALKTHROUGH_SYSTEM_PROMPT = `You guide users through a product ONE STEP AT A TIME by mapping documentation to live DOM elements. Output ONLY valid JSON.
+
+Given: documentation, current page DOM elements, and steps already completed.
+Task: determine the ONE next action the user should take.
 
 RULES:
-1. Match each doc step to a DOM element by text, aria-label, or role
-2. Use elementRef = the element's ref value from the DOM list
-3. Use fallbackSelector = a short CSS selector as backup
-4. Set notFound: true if the element is not in the DOM list
-5. Keep instruction under 80 chars, in the user's language
+1. Return exactly ONE step — the next logical action on the CURRENT page
+2. Match the target element by text, aria-label, or role from the DOM list
+3. elementRef = the element's "ref" from the DOM list. fallbackSelector = short CSS selector backup
+4. If all doc steps are done, set done: true and step: null
+5. instruction: under 80 chars, in the user's language
 6. action: click | type | select | scroll | observe | navigate
-7. For type actions, set typeValue
-8. Max 10 steps. Include prerequisite actions (open dropdown before selecting)
-9. If steps span multiple pages, set pageNote`
+7. For type: set typeValue. For navigate: instruction says where to go
+8. hint: optional short note about what comes next (under 100 chars)
+9. Think about prerequisite actions (open dropdown before selecting an item)`
 
 /** Server-side PII redaction — defense in depth (widget also redacts client-side) */
 function sanitizeForPrompt(text: string): string {
@@ -316,25 +321,33 @@ function formatDomElements(snapshot: DomSnapshot): string {
     .join('\n')
 }
 
+function formatCompletedSteps(steps: CompletedStep[]): string {
+  if (steps.length === 0) return 'None yet — this is step 1.'
+  return steps.map((s, i) => `${i + 1}. [${s.action}] ${s.instruction} (on ${sanitizeUrl(s.pageUrl)})`).join('\n')
+}
+
 export function buildWalkthroughPrompt(
   docContext: string,
   domSnapshot: DomSnapshot,
   message: string,
-  conversationHistory?: string,
+  completedSteps: CompletedStep[],
 ): string {
   const elementsBlock = formatDomElements(domSnapshot)
   const safeUrl = sanitizeUrl(domSnapshot.url)
+  const completedBlock = formatCompletedSteps(completedSteps)
 
   return `DOCS:
 ${docContext || 'None'}
 
-PAGE: ${safeUrl} (${domSnapshot.viewport.width}x${domSnapshot.viewport.height})
-
+CURRENT PAGE: ${safeUrl}
 DOM ELEMENTS:
 ${elementsBlock}
 
-${conversationHistory ? `HISTORY:\n${conversationHistory}\n` : ''}QUESTION: ${message}
+COMPLETED STEPS:
+${completedBlock}
 
-OUTPUT JSON:
-{"steps":[{"stepNumber":1,"instruction":"...","action":"click","elementRef":"ref-from-dom","fallbackSelector":"button.x","typeValue":null,"notFound":false}],"totalSteps":N,"pageNote":null}`
+USER GOAL: ${message}
+
+Return the ONE next step as JSON:
+{"done":false,"step":{"instruction":"...","action":"click","elementRef":"ref","fallbackSelector":"sel","typeValue":null},"stepNumber":${completedSteps.length + 1},"hint":"next you'll..."}`
 }

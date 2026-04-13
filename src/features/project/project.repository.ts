@@ -14,6 +14,7 @@ interface ProjectRow {
   design: ProjectDesign | null
   widget_api_key: string | null
   widget_enabled: boolean
+  walkthrough_enabled: boolean
   created_at: string
   updated_at: string
 }
@@ -31,6 +32,7 @@ function mapToProject(row: ProjectRow): Project {
     design: row.design,
     widgetApiKey: row.widget_api_key,
     widgetEnabled: row.widget_enabled,
+    walkthroughEnabled: row.walkthrough_enabled,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -79,6 +81,7 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   if (input.credentials !== undefined) updates.credentials = input.credentials
   if (input.discoveredContext !== undefined) updates.discovered_context = input.discoveredContext
   if (input.design !== undefined) updates.design = input.design
+  if (input.walkthroughEnabled !== undefined) updates.walkthrough_enabled = input.walkthroughEnabled
 
   const { data, error } = await supabase
     .from('projects')

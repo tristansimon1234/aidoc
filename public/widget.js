@@ -45,11 +45,12 @@
   var isSending = false;
   var dynamicSuggestions = [];
 
-  // --- Walkthrough state ---
-  var wtSteps = [];
-  var wtCurrentStep = -1;
+  // --- Walkthrough state (progressive — one step at a time) ---
   var wtActive = false;
-  var wtLastMessage = '';
+  var wtMessage = '';
+  var wtCompletedSteps = [];
+  var wtCurrentStep = null;
+  var wtStepNumber = 0;
 
   // --- Build CSS from current config ---
   function buildCSS() {
@@ -411,10 +412,10 @@
     } catch (e) {}
   }
 
-  function showPermissionDialog(onAllow, onDeny) {
+  function showPermissionDialog(elementCount, onAllow, onDeny) {
     msgContainer.innerHTML = [
       '<div class="aidoc-permission">',
-      '<p>To guide you step-by-step, I need to read the interactive elements on this page.<br>No personal data is collected.</p>',
+      '<p>To guide you step-by-step, I\'ll read <strong>' + elementCount + ' elements</strong> on this page (buttons, links, form fields).<br>No passwords or typed text are captured.</p>',
       '<div class="aidoc-permission-actions">',
       '<button class="aidoc-perm-allow">Allow</button>',
       '<button class="aidoc-perm-deny">No thanks</button>',
@@ -424,65 +425,95 @@
     msgContainer.querySelector('.aidoc-perm-deny').onclick = function () { onDeny(); };
   }
 
-  // --- Walkthrough API ---
+  // --- Progressive Walkthrough API ---
 
   function requestWalkthrough(text) {
-    wtLastMessage = text;
+    wtMessage = text;
+    wtCompletedSteps = [];
 
-    function doRequest() {
-      // Show loading in messages area
-      msgContainer.innerHTML = '<div class="aidoc-typing">Analyzing your page...</div>';
-      var snapshot = captureDomSnapshot();
-      var history = messages.map(function (m) { return { role: m.role, content: m.content }; });
+    // Pre-scan to show element count in permission dialog
+    var preSnapshot = captureDomSnapshot();
 
-      fetch(API_BASE + '/' + API_KEY + '/walkthrough', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          history: history,
-          domSnapshot: snapshot,
-          userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() },
-        }),
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.steps && data.steps.length > 0) {
-            enterWalkthroughMode(data);
-          } else {
-            renderMessages();
-          }
-        })
-        .catch(function () {
-          renderMessages();
-        });
+    function startWalkthrough() {
+      fetchNextStep();
     }
 
     if (checkDomPermission()) {
-      doRequest();
+      startWalkthrough();
     } else {
-      showPermissionDialog(doRequest, function () { renderMessages(); });
+      showPermissionDialog(preSnapshot.elements.length, startWalkthrough, function () { renderMessages(); });
     }
+  }
+
+  function fetchNextStep() {
+    // Show loading in mini bar or messages
+    if (wtActive) {
+      showLoadingBar();
+    } else {
+      msgContainer.innerHTML = '<div class="aidoc-typing">Analyzing your page...</div>';
+    }
+
+    var snapshot = captureDomSnapshot();
+    var history = messages.map(function (m) { return { role: m.role, content: m.content }; });
+
+    fetch(API_BASE + '/' + API_KEY + '/walkthrough', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: wtMessage,
+        history: history,
+        domSnapshot: snapshot,
+        completedSteps: wtCompletedSteps,
+        userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() },
+      }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.done || !data.step) {
+          exitWalkthrough();
+          return;
+        }
+        wtCurrentStep = data.step;
+        wtStepNumber = data.stepNumber;
+
+        if (!wtActive) {
+          // First step — collapse panel, enter walkthrough mode
+          panel.classList.remove('open');
+          isOpen = false;
+          wtActive = true;
+          startDomObserver();
+        }
+
+        removeHighlight();
+        renderWalkthroughBar();
+        highlightStep(wtCurrentStep);
+      })
+      .catch(function () {
+        exitWalkthrough();
+      });
+  }
+
+  // Called when user clicks the highlighted element — advance to next step
+  function onStepCompleted() {
+    if (!wtActive || !wtCurrentStep) return;
+    wtCompletedSteps.push({
+      instruction: wtCurrentStep.instruction,
+      action: wtCurrentStep.action,
+      pageUrl: window.location.href,
+    });
+    removeHighlight();
+    showLoadingBar();
+    // Wait for DOM to settle (animations, navigation, modals)
+    setTimeout(function () { if (wtActive) fetchNextStep(); }, 600);
   }
 
   // --- Walkthrough Mode ---
 
-  function enterWalkthroughMode(data) {
-    wtSteps = data.steps;
-    wtCurrentStep = 0;
-    wtActive = true;
-    // Collapse the chat panel — walkthrough uses a mini bar instead
-    panel.classList.remove('open');
-    isOpen = false;
-    startDomObserver();
-    renderWalkthroughBar();
-    highlightStep(wtSteps[0]);
-  }
-
   function exitWalkthrough() {
     wtActive = false;
-    wtSteps = [];
-    wtCurrentStep = -1;
+    wtCurrentStep = null;
+    wtCompletedSteps = [];
+    wtStepNumber = 0;
     stopDomObserver();
     removeHighlight();
     removeWalkthroughBar();
@@ -493,38 +524,44 @@
     if (bar) bar.remove();
   }
 
+  function showLoadingBar() {
+    removeWalkthroughBar();
+    var bar = document.createElement('div');
+    bar.id = 'aidoc-wt-bar';
+    bar.innerHTML = '<span class="aidoc-wt-bar-step">' + (wtCompletedSteps.length + 1) + '</span><span class="aidoc-wt-bar-text">Analyzing...</span><button class="aidoc-wt-bar-exit" data-wt="exit">&times;</button>';
+    document.body.appendChild(bar);
+    bar.querySelector('[data-wt="exit"]').onclick = function () { exitWalkthrough(); };
+  }
+
   function renderWalkthroughBar() {
-    var step = wtSteps[wtCurrentStep];
-    if (!step) { exitWalkthrough(); return; }
+    if (!wtCurrentStep) { exitWalkthrough(); return; }
 
     removeWalkthroughBar();
 
     var bar = document.createElement('div');
     bar.id = 'aidoc-wt-bar';
     bar.innerHTML = [
-      '<span class="aidoc-wt-bar-step">' + step.stepNumber + '/' + wtSteps.length + '</span>',
-      '<span class="aidoc-wt-bar-text">' + escapeHtml(step.instruction) + '</span>',
-      (wtCurrentStep > 0 ? '<button data-wt="prev">&larr;</button>' : ''),
-      (wtCurrentStep < wtSteps.length - 1 ? '<button data-wt="next">&rarr;</button>' : '<button data-wt="done">Done</button>'),
+      '<span class="aidoc-wt-bar-step">' + wtStepNumber + '</span>',
+      '<span class="aidoc-wt-bar-text">' + escapeHtml(wtCurrentStep.instruction) + '</span>',
+      '<button data-wt="skip">Skip</button>',
       '<button class="aidoc-wt-bar-exit" data-wt="exit">&times;</button>',
     ].join('');
     document.body.appendChild(bar);
 
-    bar.querySelectorAll('button[data-wt]').forEach(function (b) {
-      b.onclick = function (e) {
-        e.stopPropagation();
-        var action = b.getAttribute('data-wt');
-        if (action === 'prev' && wtCurrentStep > 0) { wtCurrentStep--; removeHighlight(); renderWalkthroughBar(); highlightStep(wtSteps[wtCurrentStep]); }
-        else if (action === 'next' && wtCurrentStep < wtSteps.length - 1) { wtCurrentStep++; removeHighlight(); renderWalkthroughBar(); highlightStep(wtSteps[wtCurrentStep]); }
-        else if (action === 'done' || action === 'exit') { exitWalkthrough(); }
-      };
-    });
+    bar.querySelector('[data-wt="skip"]').onclick = function (e) {
+      e.stopPropagation();
+      onStepCompleted(); // Skip = mark as done and move on
+    };
+    bar.querySelector('[data-wt="exit"]').onclick = function (e) {
+      e.stopPropagation();
+      exitWalkthrough();
+    };
   }
 
   // --- Highlight Engine ---
 
   function matchElement(step) {
-    if (!step || step.notFound) return null;
+    if (!step) return null;
 
     // 1. Try by ref (data-testid or id)
     if (step.elementRef) {
@@ -573,26 +610,13 @@
 
     wtHighlightedEl = el;
 
-    // Listen for user clicking the highlighted element — auto-advance after DOM settles
+    // Listen for user clicking the highlighted element — triggers progressive next step
     wtClickHandler = function () {
       if (!wtActive) return;
-      // Remove listener immediately
       el.removeEventListener('click', wtClickHandler);
       wtClickHandler = null;
       wtHighlightedEl = null;
-
-      // Wait for DOM to settle after click (animations, navigation, modals)
-      setTimeout(function () {
-        if (!wtActive) return;
-        if (wtCurrentStep < wtSteps.length - 1) {
-          wtCurrentStep++;
-          removeHighlight();
-          renderWalkthroughBar();
-          highlightStep(wtSteps[wtCurrentStep]);
-        } else {
-          exitWalkthrough();
-        }
-      }, 600);
+      onStepCompleted();
     };
     el.addEventListener('click', wtClickHandler);
 
@@ -639,11 +663,10 @@
     if (!rect) tip.className = 'aidoc-wt-notfound';
 
     tip.innerHTML = [
-      '<div class="aidoc-wt-tip-step">Step ' + step.stepNumber + ' of ' + wtSteps.length + '</div>',
+      '<div class="aidoc-wt-tip-step">Step ' + wtStepNumber + '</div>',
       '<div class="aidoc-wt-tip-text">' + simpleMarkdown(step.instruction) + '</div>',
       '<div class="aidoc-wt-tip-actions">',
-      wtCurrentStep > 0 ? '<button data-wt="prev">Prev</button>' : '',
-      wtCurrentStep < wtSteps.length - 1 ? '<button data-wt="next">Next</button>' : '<button data-wt="done">Done</button>',
+      '<button data-wt="skip">Skip</button>',
       '<button data-wt="exit">Exit</button>',
       '</div>',
     ].join('');
@@ -673,9 +696,8 @@
       b.onclick = function (e) {
         e.stopPropagation();
         var action = b.getAttribute('data-wt');
-        if (action === 'prev' && wtCurrentStep > 0) { wtCurrentStep--; removeHighlight(); renderWalkthroughBar(); highlightStep(wtSteps[wtCurrentStep]); }
-        else if (action === 'next' && wtCurrentStep < wtSteps.length - 1) { wtCurrentStep++; removeHighlight(); renderWalkthroughBar(); highlightStep(wtSteps[wtCurrentStep]); }
-        else if (action === 'done' || action === 'exit') { exitWalkthrough(); }
+        if (action === 'skip') { onStepCompleted(); }
+        else if (action === 'exit') { exitWalkthrough(); }
       };
     });
   }
@@ -696,15 +718,13 @@
     if (tooltip) tooltip.remove();
   }
 
-  // Re-scan after page navigation — DOM has changed, re-match current step
+  // Re-scan after page navigation — fetch next step for the new page
   function onPageChange() {
     if (!wtActive) return;
     removeHighlight();
-    // Wait for new page to render, then re-highlight current step (client-side only, no API call)
+    // Wait for new page to render, then re-analyze with fresh DOM
     setTimeout(function () {
-      if (wtActive && wtSteps[wtCurrentStep]) {
-        highlightStep(wtSteps[wtCurrentStep]);
-      }
+      if (wtActive) fetchNextStep();
     }, 500);
   }
 
@@ -722,8 +742,8 @@
       if (!wtActive) return;
       clearTimeout(wtMutationTimer);
       wtMutationTimer = setTimeout(function () {
-        if (!wtActive || !wtSteps[wtCurrentStep]) return;
-        var el = wtHighlightedEl || matchElement(wtSteps[wtCurrentStep]);
+        if (!wtActive || !wtCurrentStep) return;
+        var el = wtHighlightedEl || matchElement(wtCurrentStep);
         if (!el) return;
         var ring = document.getElementById('aidoc-wt-ring');
         var overlay = document.getElementById('aidoc-wt-overlay');
@@ -758,7 +778,7 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
       removeHighlight();
-      if (wtSteps[wtCurrentStep]) highlightStep(wtSteps[wtCurrentStep]);
+      if (wtCurrentStep) highlightStep(wtCurrentStep);
     }, 200);
   });
 

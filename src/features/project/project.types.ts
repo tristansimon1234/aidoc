@@ -32,6 +32,7 @@ export interface Project {
   design: ProjectDesign | null
   widgetApiKey: string | null
   widgetEnabled: boolean
+  walkthroughEnabled: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -61,4 +62,5 @@ export interface UpdateProjectInput {
   credentials?: ProjectCredential[]
   discoveredContext?: DiscoveredContext
   design?: ProjectDesign
+  walkthroughEnabled?: boolean
 }
