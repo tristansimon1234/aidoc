@@ -315,8 +315,8 @@ Each section's word count includes audio tags. If a section says "HARD LIMIT 15 
 Prefer SHORT, punchy lines over long explanations. 1-2 sentences per section is usually enough. Leave breathing room — silence between sections is FINE and feels natural. It's FAR better to be slightly short than to overshoot.
 
 ## Content rules
-- GREETING: Section 1 starts with a short greeting that matches the tone
-- CLOSING: Last section ends with a brief goodbye
+- GREETING: Section 1 MUST start with a short greeting ("Hey!", "Welcome!", "Hi there!")
+- CLOSING: The LAST section (Section ${numSteps}) MUST end with a closing phrase like "Thanks for watching!", "That's it — enjoy!", "See you next time!", "And that's a wrap!". This is NON-NEGOTIABLE — never end abruptly.
 - CONCISE: say it in fewer words. "Let's create a project" not "What we're going to do now is create a new project"
 - ANTICIPATORY: describe what we're ABOUT to do, not what just happened
 - EXPLAIN THE WHY: briefly — say WHY, not just WHAT
