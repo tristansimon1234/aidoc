@@ -194,6 +194,9 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const timestamps = (summary?.stepTimestamps as number[]) ?? []
       const numSteps = timestamps.length || 1
 
+      console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
+      console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
+
       // Ask Gemini to transform the DOC into a narration script
       // The doc is already well-written — just adapt it for spoken delivery
       const { generateText } = await import('../../shared/ai/gemini.client.js')
@@ -228,11 +231,16 @@ Write exactly ${numSteps} sections. Output ONLY the script.`,
       })
 
       // Parse [SECTION N] markers
+      console.log(`[voiceover] Gemini narration raw output (${narrationResult.text.length} chars):\n${narrationResult.text.slice(0, 500)}`)
       const rawSegments = narrationResult.text.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
+      console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numSteps})`)
       const stepsWithText = timestamps.map((_, i) => {
         const text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
         return { stepIndex: i, text }
       })
+      for (const s of stepsWithText) {
+        console.log(`[voiceover] Step ${s.stepIndex}: "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}" (${s.text.length} chars)`)
+      }
 
       const result = await generateVoiceover(params.data.id, stepsWithText, timestamps, {
         voiceId: body.voiceId,

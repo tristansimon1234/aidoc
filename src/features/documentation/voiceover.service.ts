@@ -91,12 +91,24 @@ export async function generateVoiceover(
 
   const fullText = textParts.join(' ')
 
+  console.log(`[voiceover] Full text for ElevenLabs (${fullText.length} chars):`)
+  console.log(`[voiceover] "${fullText.slice(0, 300)}${fullText.length > 300 ? '...' : ''}"`)
+  console.log(`[voiceover] Segments: ${segments.length}, breaks: ${textParts.filter(p => p.includes('<break')).length}`)
+  for (const seg of segments) {
+    console.log(`[voiceover] Segment ${seg.stepIndex}: ${seg.startTime.toFixed(1)}s-${seg.endTime.toFixed(1)}s`)
+  }
+
   // Single ElevenLabs call
   const buffer = await synthesizeSpeech(fullText, { voiceId: options?.voiceId })
+
+  console.log(`[voiceover] ElevenLabs returned ${buffer.length} bytes (${(buffer.length / 1024).toFixed(0)}KB)`)
 
   const audioPath = `runs/${runId}/voiceover.mp3`
   await uploadToStorage('artifacts', audioPath, buffer, 'audio/mpeg')
   const audioUrl = `${getPublicUrl('artifacts', audioPath) ?? ''}?v=${Date.now()}`
+
+  console.log(`[voiceover] Uploaded → ${audioPath}`)
+  console.log(`[voiceover] URL → ${audioUrl}`)
 
   return { audioPath, audioUrl, segments }
 }

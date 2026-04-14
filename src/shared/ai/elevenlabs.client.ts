@@ -44,6 +44,8 @@ export async function synthesizeSpeech(
   const voiceId = options?.voiceId ?? DEFAULT_VOICE_ID
   const modelId = options?.modelId ?? DEFAULT_MODEL_ID
 
+  console.log(`[elevenlabs] Synthesizing: voice=${voiceId}, model=${modelId}, text=${text.length} chars, stability=${options?.stability ?? 0.65}, style=${options?.style ?? 0.3}`)
+
   const response = await fetch(`${BASE_URL}/text-to-speech/${voiceId}`, {
     method: 'POST',
     headers: {
