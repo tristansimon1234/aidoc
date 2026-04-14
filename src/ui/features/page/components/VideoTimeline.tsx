@@ -102,6 +102,8 @@ export function VideoTimeline({ runId, duration, segments, onSegmentsChange }: V
   // Color palette for segments
   const colors = ['#3B82F6', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#6366F1', '#EF4444', '#14B8A6']
 
+  if (!duration || !isFinite(duration) || duration <= 0) return <></>
+
   return (
     <div style={{
       background: 'var(--color-card)',
@@ -130,7 +132,7 @@ export function VideoTimeline({ runId, duration, segments, onSegmentsChange }: V
         }}
       >
         {/* Time markers */}
-        {Array.from({ length: Math.ceil(duration / 30) + 1 }, (_, i) => i * 30).map((t) => (
+        {duration > 0 && isFinite(duration) && Array.from({ length: Math.ceil(duration / 30) + 1 }, (_, i) => i * 30).map((t) => (
           <div key={t} style={{
             position: 'absolute',
             left: `${timeToPercent(t)}%`,
