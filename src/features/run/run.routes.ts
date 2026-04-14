@@ -172,61 +172,60 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       const { generateVoiceover } = await import('../documentation/voiceover.service.js')
 
-      // Get run steps and timestamps for synced narration
+      // Get the generated doc content — this is the quality source
       const run = await runService.getRun(params.data.id)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
 
-      const runSteps = await runService.getRunSteps(params.data.id)
-      if (runSteps.length === 0) {
-        throw new AppError('No steps found for this run', 'NO_STEPS', 404)
+      const { findDocByRunId } = await import('../documentation/documentation.repository.js')
+      const doc = await findDocByRunId(params.data.id)
+      if (!doc?.markdownContent) {
+        throw new AppError('Generate documentation first before creating voice-over', 'DOC_NOT_FOUND', 404)
       }
-
-      // Build narration script from step descriptions using Gemini
-      const { generateText } = await import('../../shared/ai/gemini.client.js')
-      const stepDescriptions = runSteps.map((s) =>
-        `Step ${s.stepIndex + 1}: ${s.action ?? ''}\nScreen: ${s.observation ?? ''}`,
-      ).join('\n\n')
-
-      const narrationResult = await generateText({
-        userPrompt: `You are narrating a tutorial video — warm, natural, like a friendly colleague showing you something on their screen.
-
-Write a FLOWING voice-over script. Use [STEP N] markers to separate sections, but the narration should read as ONE continuous piece, not isolated lines.
-
-RULES:
-- Write 1-2 sentences per step, max
-- Use "you" — talk TO the viewer
-- Use contractions: "let's", "you'll", "we're"
-- Add "..." for natural pauses
-- Focus on WHAT to do and WHY — don't describe what's visible on screen
-- Use transitions between steps: "Now...", "Next up...", "Perfect..."
-- First step: brief welcome. Last step: quick wrap-up
-- DO NOT say things like "the user clicks" or "the screen shows" — you ARE the narrator, talk directly
-
-Steps to narrate:
-${stepDescriptions}
-
-Write in this exact format:
-[STEP 1]
-Hey! Let's get your account set up... it only takes a minute.
-[STEP 2]
-Head over to Settings... you'll find it right here in the top corner.
-[STEP 3]
-Now just type in your email. Make sure it's the one you check regularly.
-
-Write ${runSteps.length} sections. Output ONLY the script, nothing else.`,
-        maxTokens: 4096,
-      })
-
-      // Parse [STEP N] markers into per-step texts
-      const rawSegments = narrationResult.text.split(/\[STEP \d+\]\s*\n?/).filter((s) => s.trim())
-      const stepsWithText = runSteps.map((s, i) => {
-        const text = rawSegments[i]?.trim() ?? s.action ?? `Step ${i + 1}`
-        return { stepIndex: s.stepIndex, text }
-      })
 
       // Get timestamps from run summary
       const summary = run.summaryJson as Record<string, unknown> | null
-      const timestamps = (summary?.stepTimestamps as number[]) ?? runSteps.map((_, i) => i * 5)
+      const timestamps = (summary?.stepTimestamps as number[]) ?? []
+      const numSteps = timestamps.length || 1
+
+      // Ask Gemini to transform the DOC into a narration script
+      // The doc is already well-written — just adapt it for spoken delivery
+      const { generateText } = await import('../../shared/ai/gemini.client.js')
+      const narrationResult = await generateText({
+        userPrompt: `Transform this documentation into a voice-over narration script for the tutorial video.
+
+## Documentation
+${doc.markdownContent}
+
+## Task
+Rewrite this documentation as a spoken narration. The video has ${numSteps} steps.
+Use [SECTION N] markers to split the narration into ${numSteps} segments that will be synced to the video.
+
+RULES:
+- Keep the SAME content and structure as the doc — don't invent new information
+- Adapt the tone for spoken delivery: contractions ("let's", "you'll"), natural pauses ("..."), direct address ("you")
+- Each section should be 1-3 sentences — concise, not a full paragraph
+- First section: brief welcome. Last section: wrap-up
+- Transitions between sections: "Now...", "Next...", "Perfect..."
+- DO NOT read image captions, URLs, or code blocks aloud
+- DO NOT say "as shown in the screenshot" or "the documentation says"
+- Sound like a friendly colleague walking someone through the product
+
+Output format:
+[SECTION 1]
+Hey! Let's walk through how to get started... it's really straightforward.
+[SECTION 2]
+Head over to the settings page... this is where you'll configure everything.
+
+Write exactly ${numSteps} sections. Output ONLY the script.`,
+        maxTokens: 4096,
+      })
+
+      // Parse [SECTION N] markers
+      const rawSegments = narrationResult.text.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
+      const stepsWithText = timestamps.map((_, i) => {
+        const text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
+        return { stepIndex: i, text }
+      })
 
       const result = await generateVoiceover(params.data.id, stepsWithText, timestamps, {
         voiceId: body.voiceId,
