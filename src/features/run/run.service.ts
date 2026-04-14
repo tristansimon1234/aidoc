@@ -326,19 +326,19 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     console.log(`[video] Step 1: Convert — service=${videoServiceAvailable ? 'YES' : 'NO'}, path=${videoPath}`)
 
-    if (videoServiceAvailable && !videoPath.endsWith('.mp4')) {
+    if (!videoPath.endsWith('.mp4') && videoServiceAvailable) {
       try {
         const mp4Path = await convertToMp4(videoPath, runId)
         analyzeVideoPath = mp4Path
         playerVideoPath = mp4Path
         console.log(`[video] Converted to MP4: ${mp4Path}`)
       } catch (err) {
-        console.error(`[video] MP4 conversion FAILED: ${(err as Error).message}`)
-        // Continue with original — Gemini supports webm
+        console.error(`[video] MP4 conversion FAILED (continuing with .webm): ${(err as Error).message}`)
       }
-    } else if (!videoServiceAvailable) {
-      console.log(`[video] VIDEO_SERVICE_URL not set — skipping conversion, using ${videoPath} as-is`)
+    } else {
+      console.log(`[video] Skipping conversion — ${!videoServiceAvailable ? 'no video service' : 'already MP4'}`)
     }
+    console.log(`[video] Using video: ${analyzeVideoPath}`)
 
     // --- Step 2: Download for Gemini analysis ---
     console.log(`[video] Step 2: Download ${analyzeVideoPath} from storage`)
