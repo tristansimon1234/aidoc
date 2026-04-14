@@ -55,9 +55,9 @@ export async function synthesizeSpeech(
       text,
       model_id: modelId,
       voice_settings: {
-        stability: options?.stability ?? 0.3,
-        similarity_boost: options?.similarityBoost ?? 0.75,
-        style: options?.style ?? 0.6,
+        stability: options?.stability ?? 0.65,
+        similarity_boost: options?.similarityBoost ?? 0.8,
+        style: options?.style ?? 0.3,
         use_speaker_boost: options?.speakerBoost ?? true,
       },
     }),

@@ -96,7 +96,7 @@ export async function generateVoiceover(
 
   const audioPath = `runs/${runId}/voiceover.mp3`
   await uploadToStorage('artifacts', audioPath, buffer, 'audio/mpeg')
-  const audioUrl = getPublicUrl('artifacts', audioPath) ?? ''
+  const audioUrl = `${getPublicUrl('artifacts', audioPath) ?? ''}?v=${Date.now()}`
 
   return { audioPath, audioUrl, segments }
 }
