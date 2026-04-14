@@ -14,17 +14,9 @@ export interface VoiceoverResult {
   segments: VoiceoverSegment[]
 }
 
-/** Estimate speech duration from word count (~150 words/min = 2.5 words/sec) */
-function estimateSpeechDuration(text: string): number {
-  const words = text.trim().split(/\s+/).length
-  return words / 2.5
-}
-
 /**
- * Generate a single voice-over audio file with timed <break> tags.
- *
- * Break durations are calculated from video timestamps minus the
- * estimated speech duration of the previous segment (based on word count).
+ * Generate voice-over by synthesizing each segment separately,
+ * then concatenating with precise silence padding via the video service.
  */
 export async function generateVoiceover(
   runId: string,
@@ -55,9 +47,9 @@ export async function generateVoiceover(
     }
   }
 
-  // Build the text with <break> tags between segments
+  // Generate each segment separately
   const segments: VoiceoverSegment[] = []
-  const textParts: string[] = []
+  const segmentPaths: { audioPath: string; targetStartTime: number }[] = []
 
   for (let i = 0; i < steps.length; i++) {
     const text = stepTexts[i] ?? steps[i]!.text
@@ -66,21 +58,15 @@ export async function generateVoiceover(
     const startTime = timestamps[i] ?? 0
     const endTime = timestamps[i + 1] ?? (startTime + 30)
 
-    // Calculate break before this segment (except the first)
-    if (textParts.length > 0 && i > 0) {
-      const prevText = stepTexts[i - 1] ?? ''
-      const prevTimestamp = timestamps[i - 1] ?? 0
-      const prevSpeechDuration = estimateSpeechDuration(prevText)
+    console.log(`[voiceover] Generating segment ${i}/${steps.length}: "${text.slice(0, 60)}..." (${text.length} chars)`)
 
-      // Break = time gap between steps minus how long the previous narration takes
-      const rawGap = startTime - prevTimestamp - prevSpeechDuration
-      const breakSeconds = Math.max(0.3, Math.min(5, rawGap))
+    const buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
+    const segPath = `runs/${runId}/voiceover-seg-${i}.mp3`
+    await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
 
-      textParts.push(`<break time="${breakSeconds.toFixed(1)}s" />`)
-    }
+    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB → ${segPath}`)
 
-    textParts.push(text)
-
+    segmentPaths.push({ audioPath: segPath, targetStartTime: startTime })
     segments.push({
       stepIndex: steps[i]!.stepIndex,
       startTime,
@@ -89,26 +75,22 @@ export async function generateVoiceover(
     })
   }
 
-  const fullText = textParts.join(' ')
+  // Concatenate with silence padding via video service
+  const { isVideoServiceConfigured, concatAudio } = await import('../../shared/video/video.client.js')
 
-  console.log(`[voiceover] Full text for ElevenLabs (${fullText.length} chars):`)
-  console.log(`[voiceover] "${fullText.slice(0, 300)}${fullText.length > 300 ? '...' : ''}"`)
-  console.log(`[voiceover] Segments: ${segments.length}, breaks: ${textParts.filter(p => p.includes('<break')).length}`)
-  for (const seg of segments) {
-    console.log(`[voiceover] Segment ${seg.stepIndex}: ${seg.startTime.toFixed(1)}s-${seg.endTime.toFixed(1)}s`)
+  let audioPath: string
+  if (isVideoServiceConfigured() && segmentPaths.length > 1) {
+    console.log(`[voiceover] Concatenating ${segmentPaths.length} segments via video service...`)
+    audioPath = await concatAudio(runId, segmentPaths)
+  } else {
+    // Fallback: just use the first segment (or single segment)
+    audioPath = segmentPaths[0]?.audioPath ?? `runs/${runId}/voiceover.mp3`
   }
 
-  // Single ElevenLabs call
-  const buffer = await synthesizeSpeech(fullText, { voiceId: options?.voiceId })
-
-  console.log(`[voiceover] ElevenLabs returned ${buffer.length} bytes (${(buffer.length / 1024).toFixed(0)}KB)`)
-
-  const audioPath = `runs/${runId}/voiceover.mp3`
-  await uploadToStorage('artifacts', audioPath, buffer, 'audio/mpeg')
   const audioUrl = `${getPublicUrl('artifacts', audioPath) ?? ''}?v=${Date.now()}`
 
-  console.log(`[voiceover] Uploaded → ${audioPath}`)
-  console.log(`[voiceover] URL → ${audioUrl}`)
+  console.log(`[voiceover] Final audio: ${audioPath}`)
+  console.log(`[voiceover] URL: ${audioUrl}`)
 
   return { audioPath, audioUrl, segments }
 }

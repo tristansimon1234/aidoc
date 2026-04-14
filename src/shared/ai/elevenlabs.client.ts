@@ -2,7 +2,7 @@ import { env } from '../config/env.js'
 
 const BASE_URL = 'https://api.elevenlabs.io/v1'
 const DEFAULT_VOICE_ID = 'EXAVITQu4vr4xnSDxMaL' // "Sarah" — clear, professional
-const DEFAULT_MODEL_ID = 'eleven_multilingual_v2'
+const DEFAULT_MODEL_ID = 'eleven_v3'
 
 function getApiKey(): string {
   if (!env.ELEVENLABS_API_KEY) {

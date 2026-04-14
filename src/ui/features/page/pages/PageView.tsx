@@ -45,6 +45,8 @@ export function PageView(): React.ReactElement {
   const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; text?: string }[]>([])
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [latestRunId, setLatestRunId] = useState<string | null>(null)
+  const [voices, setVoices] = useState<{ voiceId: string; name: string }[]>([])
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -73,6 +75,13 @@ export function PageView(): React.ReactElement {
       const { page: pageData, latestRun: runData, doc: docData } = fullData
       setPage(pageData)
       setTryReport(testReport)
+
+      // Fetch available voices (once)
+      if (voices.length === 0) {
+        api.runs.getVoices().then((r) => {
+          setVoices(r.voices.map((v) => ({ voiceId: v.voiceId, name: v.name })))
+        }).catch(() => { /* ElevenLabs not configured */ })
+      }
 
       // Track latest run ID for voiceover generation
       setLatestRunId(runData?.id ?? null)
@@ -336,10 +345,15 @@ DO NOT generate new documentation. Only verify the existing one.`
               audioUrl={voiceoverUrl}
               segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
               runId={latestRunId}
+              voices={voices}
+              selectedVoiceId={selectedVoiceId}
+              onVoiceChange={setSelectedVoiceId}
               onSegmentsChange={setVoiceoverSegments}
               onVideoUrlChange={setVideoUrl}
               onGenerateVoiceover={latestRunId && page.content ? async () => {
-                const result = await api.runs.generateVoiceover(latestRunId) as {
+                const result = await api.runs.generateVoiceover(latestRunId, {
+                  voiceId: selectedVoiceId,
+                }) as {
                   segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
                   audioPath?: string
                   audioUrl?: string

@@ -51,6 +51,16 @@ export async function probeVideo(videoPath: string): Promise<{ durationSeconds: 
   return callService<{ durationSeconds: number }>('/probe', { videoPath })
 }
 
+/** Concatenate audio segments with silence padding for video sync. Returns final audio path. */
+export async function concatAudio(
+  runId: string,
+  segments: { audioPath: string; targetStartTime: number }[],
+): Promise<string> {
+  const result = await callService<{ audioPath: string }>('/concat-audio', { runId, segments })
+  console.log(`[video-service] Concatenated ${segments.length} audio segments → ${result.audioPath}`)
+  return result.audioPath
+}
+
 /** Trim video to time range. Returns the trimmed video path. */
 export async function trimVideo(videoPath: string, runId: string, startTime: number, endTime: number): Promise<string> {
   const result = await callService<{ trimmedPath: string }>('/trim', { videoPath, runId, startTime, endTime })

@@ -9,11 +9,19 @@ export interface VoiceoverSegment {
   text?: string
 }
 
+interface VoiceOption {
+  voiceId: string
+  name: string
+}
+
 interface NarratedPlayerProps {
   videoUrl: string | null
   audioUrl: string | null
   segments?: VoiceoverSegment[]
   runId?: string | null
+  voices?: VoiceOption[]
+  selectedVoiceId?: string
+  onVoiceChange?: (voiceId: string) => void
   onGenerateVoiceover?: () => Promise<void>
   onSegmentsChange?: (segments: VoiceoverSegment[]) => void
   onVideoUrlChange?: (url: string) => void
@@ -21,7 +29,7 @@ interface NarratedPlayerProps {
 
 type PlayerState = 'loading' | 'ready' | 'error'
 
-export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerateVoiceover, onSegmentsChange, onVideoUrlChange }: NarratedPlayerProps): React.ReactElement {
+export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, voices, selectedVoiceId, onVoiceChange, onGenerateVoiceover, onSegmentsChange, onVideoUrlChange }: NarratedPlayerProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -172,6 +180,22 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
               </span>
             )}
           </button>
+          {voices && voices.length > 0 && onVoiceChange && (
+            <select
+              value={selectedVoiceId ?? ''}
+              onChange={(e) => onVoiceChange(e.target.value)}
+              style={{
+                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+                background: 'var(--color-secondary)', color: 'var(--color-fg)',
+                border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+                padding: '2px 6px', cursor: 'pointer',
+              }}
+            >
+              {voices.map((v) => (
+                <option key={v.voiceId} value={v.voiceId}>{v.name}</option>
+              ))}
+            </select>
+          )}
           {onGenerateVoiceover && !generating && (
             <Button size="sm" variant="secondary" onClick={() => void handleGenerateVoiceover()}>
               {hasNarration ? 'Regenerate voice' : 'Improve with AI'}
@@ -250,6 +274,24 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
 
             {/* Narration badge */}
             {hasNarration && <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-success)' }}>narrated</span>}
+
+            {/* Voice selector */}
+            {voices && voices.length > 0 && onVoiceChange && (
+              <select
+                value={selectedVoiceId ?? ''}
+                onChange={(e) => onVoiceChange(e.target.value)}
+                style={{
+                  fontSize: 11, fontFamily: 'var(--font-mono)',
+                  background: 'var(--color-secondary)', color: 'var(--color-fg)',
+                  border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+                  padding: '2px 6px', cursor: 'pointer', maxWidth: 120,
+                }}
+              >
+                {voices.map((v) => (
+                  <option key={v.voiceId} value={v.voiceId}>{v.name}</option>
+                ))}
+              </select>
+            )}
 
             {/* Regenerate */}
             {onGenerateVoiceover && !generating && (

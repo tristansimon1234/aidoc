@@ -228,4 +228,100 @@ app.post('/trim', async (req, res) => {
   }
 })
 
+/**
+ * POST /concat-audio
+ * Concatenate audio segments with precise silence padding to sync with video timestamps
+ */
+app.post('/concat-audio', async (req, res) => {
+  const start = Date.now()
+  try {
+    const { runId, segments } = req.body
+    if (!runId || !segments?.length) {
+      return res.status(400).json({ error: 'runId and segments required' })
+    }
+
+    const supabase = getSupabase(req.body)
+    const tmpDir = join(tmpdir(), `concat-${Date.now()}`)
+    mkdirSync(tmpDir, { recursive: true })
+
+    const parts = [] // ordered list of files to concat
+    let currentTime = 0
+
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]
+      const targetStart = seg.targetStartTime
+
+      // Download segment audio from Supabase
+      const audioBuffer = await downloadVideo(supabase, seg.audioPath)
+      const segPath = join(tmpDir, `seg-${i}.mp3`)
+      writeFileSync(segPath, audioBuffer)
+
+      // Probe actual duration
+      const segDuration = await new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(segPath, (err, metadata) => {
+          if (err) return reject(err)
+          resolve(metadata.format.duration || 0)
+        })
+      })
+
+      // Calculate silence needed before this segment
+      const silenceNeeded = Math.max(0, targetStart - currentTime)
+
+      console.log(`[concat] Seg ${i}: target=${targetStart.toFixed(1)}s, current=${currentTime.toFixed(1)}s, silence=${silenceNeeded.toFixed(1)}s, audio=${segDuration.toFixed(1)}s`)
+
+      if (silenceNeeded > 0.05) {
+        // Generate silence
+        const silPath = join(tmpDir, `silence-${i}.mp3`)
+        await new Promise((resolve, reject) => {
+          ffmpeg()
+            .input('anullsrc=r=44100:cl=mono')
+            .inputFormat('lavfi')
+            .duration(silenceNeeded)
+            .outputOptions(['-c:a', 'libmp3lame', '-b:a', '128k'])
+            .output(silPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run()
+        })
+        parts.push(silPath)
+      }
+
+      parts.push(segPath)
+      currentTime = targetStart + segDuration
+    }
+
+    // Write concat file list
+    const listPath = join(tmpDir, 'list.txt')
+    const listContent = parts.map(p => `file '${p}'`).join('\n')
+    writeFileSync(listPath, listContent)
+
+    // Concatenate all parts
+    const outputPath = join(tmpDir, 'voiceover.mp3')
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(listPath)
+        .inputOptions(['-f', 'concat', '-safe', '0'])
+        .outputOptions(['-c:a', 'libmp3lame', '-b:a', '128k'])
+        .output(outputPath)
+        .on('end', resolve)
+        .on('error', reject)
+        .run()
+    })
+
+    // Upload final file
+    const finalBuffer = readFileSync(outputPath)
+    const finalPath = `runs/${runId}/voiceover.mp3`
+    await uploadFile(supabase, finalPath, finalBuffer, 'audio/mpeg')
+
+    // Cleanup
+    try { for (const f of readdirSync(tmpDir)) unlinkSync(join(tmpDir, f)) } catch {}
+
+    console.log(`[concat] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${finalPath} (${(finalBuffer.length / 1024).toFixed(0)}KB)`)
+    res.json({ audioPath: finalPath })
+  } catch (err) {
+    console.error('[concat] Error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.listen(PORT, () => console.log(`Video service running on port ${PORT}`))

@@ -163,6 +163,23 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
   })()
 })
 
+// Get available ElevenLabs voices
+runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const { isElevenLabsConfigured, getAvailableVoices } = await import('../../shared/ai/elevenlabs.client.js')
+      if (!isElevenLabsConfigured()) {
+        res.json({ voices: [] })
+        return
+      }
+      const voices = await getAvailableVoices()
+      res.json({ voices })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Generate voice-over narration from documentation
 runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
@@ -197,8 +214,16 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
       console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
 
+      // Build time budget per section
+      const timeBudgets = timestamps.map((t, i) => {
+        const next = timestamps[i + 1] ?? (t + 30)
+        return next - t
+      })
+      const sectionList = timestamps.map((_, i) =>
+        `[SECTION ${i + 1}] (${timeBudgets[i]!.toFixed(1)}s available — max ~${Math.floor(timeBudgets[i]! * 2.5)} words)`
+      ).join('\n')
+
       // Ask Gemini to transform the DOC into a narration script
-      // The doc is already well-written — just adapt it for spoken delivery
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const narrationResult = await generateText({
         userPrompt: `Transform this documentation into a voice-over narration script for the tutorial video.
@@ -210,21 +235,31 @@ ${doc.markdownContent}
 Rewrite this documentation as a spoken narration. The video has ${numSteps} steps.
 Use [SECTION N] markers to split the narration into ${numSteps} segments that will be synced to the video.
 
+Each section has a TIME BUDGET — the narration must fit within it.
+Estimate ~2.5 words per second. A section with 5s budget = max 12 words.
+
+${sectionList}
+
 RULES:
+- CRITICAL: Respect the time budget for each section. Short sections = short text.
 - Keep the SAME content and structure as the doc — don't invent new information
-- Adapt the tone for spoken delivery: contractions ("let's", "you'll"), natural pauses ("..."), direct address ("you")
-- Each section should be 1-3 sentences — concise, not a full paragraph
+- Adapt the tone for spoken delivery: contractions ("let's", "you'll"), direct address ("you")
 - First section: brief welcome. Last section: wrap-up
 - Transitions between sections: "Now...", "Next...", "Perfect..."
 - DO NOT read image captions, URLs, or code blocks aloud
 - DO NOT say "as shown in the screenshot" or "the documentation says"
 - Sound like a friendly colleague walking someone through the product
+- You can use these audio tags for natural delivery:
+  [pause] — brief pause
+  [short pause] — very short pause
+  [long pause] — longer pause
+  [sigh], [laughs], [clears throat] — natural sounds (use sparingly)
 
 Output format:
 [SECTION 1]
-Hey! Let's walk through how to get started... it's really straightforward.
+Hey! Let's walk through how to get started [pause] it's really straightforward.
 [SECTION 2]
-Head over to the settings page... this is where you'll configure everything.
+Head over to the settings page [short pause] this is where you'll configure everything.
 
 Write exactly ${numSteps} sections. Output ONLY the script.`,
         maxTokens: 4096,
