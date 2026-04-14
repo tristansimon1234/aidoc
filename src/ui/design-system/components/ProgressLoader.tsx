@@ -3,16 +3,12 @@ import styles from './ProgressLoader.module.css'
 
 interface ProgressStep {
   label: string
-  /** Estimated duration in seconds */
   estimatedSeconds: number
 }
 
 interface ProgressLoaderProps {
-  /** Sequential steps with time estimates */
   steps: ProgressStep[]
-  /** Index of the currently active step (0-based) */
   activeStep: number
-  /** Override status message */
   statusMessage?: string | null
 }
 
@@ -20,13 +16,11 @@ export function ProgressLoader({ steps, activeStep, statusMessage }: ProgressLoa
   const [elapsed, setElapsed] = useState(0)
   const startRef = useRef(Date.now())
 
-  // Reset timer when active step changes
   useEffect(() => {
     startRef.current = Date.now()
     setElapsed(0)
   }, [activeStep])
 
-  // Tick every 200ms
   useEffect(() => {
     const interval = setInterval(() => {
       setElapsed((Date.now() - startRef.current) / 1000)
@@ -34,78 +28,65 @@ export function ProgressLoader({ steps, activeStep, statusMessage }: ProgressLoa
     return () => clearInterval(interval)
   }, [activeStep])
 
-  // Calculate progress
   const totalEstimated = steps.reduce((sum, s) => sum + s.estimatedSeconds, 0)
   const completedTime = steps.slice(0, activeStep).reduce((sum, s) => sum + s.estimatedSeconds, 0)
   const currentStep = steps[activeStep]
   const currentEstimated = currentStep?.estimatedSeconds ?? 10
 
-  // Cubic ease-out: fast start, slows near end, caps at 95%
-  const rawStepProgress = Math.min(elapsed / currentEstimated, 0.95)
-  const easedStepProgress = 1 - Math.pow(1 - rawStepProgress, 3)
+  const rawProgress = Math.min(elapsed / currentEstimated, 0.95)
+  const eased = 1 - Math.pow(1 - rawProgress, 3)
 
-  const overallProgress = Math.min(
-    (completedTime + easedStepProgress * currentEstimated) / totalEstimated,
+  const overall = Math.min(
+    (completedTime + eased * currentEstimated) / totalEstimated,
     0.98,
   )
 
-  const percent = Math.round(overallProgress * 100)
+  const percent = Math.round(overall * 100)
+  const waterHeight = Math.max(2, percent)
 
-  // Time remaining
   const remainingCurrent = Math.max(0, currentEstimated - elapsed)
   const remainingFuture = steps.slice(activeStep + 1).reduce((sum, s) => sum + s.estimatedSeconds, 0)
   const totalRemaining = Math.ceil(remainingCurrent + remainingFuture)
 
-  const formatRemaining = (secs: number): string => {
+  const fmt = (secs: number): string => {
     if (secs <= 0) return 'almost done...'
-    if (secs < 60) return `~${secs}s remaining`
-    const mins = Math.floor(secs / 60)
-    const s = secs % 60
-    return `~${mins}m${s > 0 ? ` ${s}s` : ''} remaining`
+    if (secs < 60) return `~${secs}s`
+    return `~${Math.floor(secs / 60)}m ${secs % 60}s`
   }
 
   return (
     <div className={styles.container}>
-      {/* Water orb + info */}
-      <div className={styles.orbWrapper}>
-        <div className={styles.orb}>
-          <div className={styles.orbWater} style={{ height: `${percent}%` }} />
-          <span className={styles.orbPercent}>{percent}%</span>
-        </div>
-        <div className={styles.orbInfo}>
-          <div className={styles.status}>
-            {statusMessage ?? currentStep?.label ?? 'Processing...'}
-          </div>
-          <div className={styles.time}>
-            {formatRemaining(totalRemaining)}
-          </div>
-        </div>
+      {/* Water rising from bottom */}
+      <div className={styles.water} style={{ height: `${waterHeight}%` }}>
+        {/* SVG wave at the surface */}
+        <svg className={styles.waveSvg} viewBox="0 0 1200 24" preserveAspectRatio="none">
+          <path className={styles.wavePath1}
+            d="M0,12 C150,24 350,0 600,12 C850,24 1050,0 1200,12 L1200,24 L0,24 Z" />
+          <path className={styles.wavePath2}
+            d="M0,16 C200,8 400,20 600,14 C800,8 1000,22 1200,16 L1200,24 L0,24 Z" />
+        </svg>
       </div>
 
-      {/* Thin progress bar */}
-      <div className={styles.barTrack}>
-        <div className={styles.barFill} style={{ width: `${percent}%` }}>
-          <div className={styles.barShimmer} />
-        </div>
-      </div>
+      {/* Content on top */}
+      <div className={styles.content}>
+        <span className={styles.percent}>{percent}%</span>
+        <span className={styles.status}>
+          {statusMessage ?? currentStep?.label ?? 'Processing...'}
+        </span>
+        <span className={styles.time}>{fmt(totalRemaining)}</span>
 
-      {/* Step indicators */}
-      {steps.length > 1 && (
-        <div className={styles.steps}>
-          {steps.map((step, i) => (
-            <div key={i} className={`${styles.step} ${i < activeStep ? styles.stepDone : i === activeStep ? styles.stepActive : styles.stepPending}`}>
-              <div className={styles.stepDot}>
-                {i < activeStep ? (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                ) : (
-                  <span className={styles.stepNumber}>{i + 1}</span>
-                )}
-              </div>
-              <span className={styles.stepLabel}>{step.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
+        {steps.length > 1 && (
+          <div className={styles.steps}>
+            {steps.map((_, i) => (
+              <div key={i} className={`${styles.dot} ${
+                i < activeStep ? styles.dotDone :
+                i === activeStep ? styles.dotActive :
+                styles.dotPending
+              }`} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

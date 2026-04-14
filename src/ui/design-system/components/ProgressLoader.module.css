@@ -1,97 +1,77 @@
+/* Single water-fill container */
 .container {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-md);
-  padding: var(--space-lg);
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-xl);
-}
-
-/* --- Water-fill orb --- */
-.orbWrapper {
-  display: flex;
-  align-items: center;
-  gap: var(--space-lg);
-}
-
-.orb {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  border: 2px solid var(--color-border);
   position: relative;
   overflow: hidden;
-  flex-shrink: 0;
-  background: var(--color-secondary);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  min-height: 120px;
 }
 
-.orbWater {
+/* Water fill — rises from bottom */
+.water {
   position: absolute;
   bottom: 0;
-  left: -10%;
-  width: 120%;
-  transition: height 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-  background: var(--color-fg);
+  left: 0;
+  right: 0;
+  transition: height 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.03) 0%,
+    rgba(0, 0, 0, 0.06) 100%
+  );
 }
 
-.orbWater::before,
-.orbWater::after {
-  content: '';
+/* Animated wave surface using SVG */
+.waveSvg {
   position: absolute;
+  top: -12px;
+  left: 0;
   width: 200%;
-  height: 200%;
-  border-radius: 40%;
-  animation: wave 3s linear infinite;
+  height: 24px;
+  animation: drift 4s linear infinite;
 }
 
-.orbWater::before {
-  top: -198%;
-  left: -50%;
-  background: rgba(255, 255, 255, 0.15);
+.wavePath1 {
+  fill: rgba(0, 0, 0, 0.05);
 }
 
-.orbWater::after {
-  top: -196%;
-  left: -30%;
-  background: rgba(255, 255, 255, 0.1);
-  animation-duration: 4s;
-  animation-direction: reverse;
+.wavePath2 {
+  fill: rgba(0, 0, 0, 0.03);
 }
 
-@keyframes wave {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+@keyframes drift {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
-.orbPercent {
-  position: absolute;
-  inset: 0;
+/* Content overlay */
+.content {
+  position: relative;
+  z-index: 1;
+  padding: var(--space-lg) var(--space-xl);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  color: var(--color-muted-fg);
-  z-index: 1;
-  mix-blend-mode: difference;
+  gap: var(--space-sm);
+  min-height: 120px;
 }
 
-/* --- Info next to orb --- */
-.orbInfo {
-  flex: 1;
-  min-width: 0;
+.percent {
+  font-size: 32px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--color-fg);
+  letter-spacing: -0.04em;
+  line-height: 1;
 }
 
 .status {
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-fg);
-  margin: 0 0 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  text-align: center;
 }
 
 .time {
@@ -100,115 +80,37 @@
   color: var(--color-muted-fg);
 }
 
-/* --- Fluid progress bar (below orb) --- */
-.barTrack {
-  width: 100%;
-  height: 4px;
-  border-radius: var(--radius-full);
-  background: var(--color-secondary);
-  overflow: hidden;
-}
-
-.barFill {
-  height: 100%;
-  border-radius: var(--radius-full);
-  background: var(--color-fg);
-  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-  min-width: 1%;
-}
-
-.barShimmer {
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.4) 50%,
-    transparent 100%
-  );
-  animation: shimmer 2s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  0% { left: -100%; }
-  100% { left: 250%; }
-}
-
-/* --- Step indicators --- */
+/* Step dots row */
 .steps {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: 6px;
+  margin-top: var(--space-xs);
 }
 
-.step {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: 1;
-}
-
-.stepDot {
-  width: 18px;
-  height: 18px;
+.dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
   transition: all 0.3s ease;
 }
 
-.stepNumber {
-  font-size: 9px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-}
-
-.stepLabel {
-  font-size: var(--text-xs);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* States */
-.stepDone .stepDot {
+.dotDone {
   background: var(--color-fg);
-  color: var(--color-card);
 }
 
-.stepDone .stepLabel {
-  color: var(--color-fg);
-  font-weight: 500;
-}
-
-.stepActive .stepDot {
+.dotActive {
   background: var(--color-fg);
-  color: var(--color-card);
-  animation: pulse-dot 2s ease-in-out infinite;
+  width: 20px;
+  border-radius: var(--radius-full);
+  animation: pulse-bar 1.5s ease-in-out infinite;
 }
 
-.stepActive .stepLabel {
-  color: var(--color-fg);
-  font-weight: 600;
+.dotPending {
+  background: var(--color-border);
 }
 
-.stepPending .stepDot {
-  background: var(--color-secondary);
-  color: var(--color-muted-fg);
-}
-
-.stepPending .stepLabel {
-  color: var(--color-muted-fg);
-}
-
-@keyframes pulse-dot {
+@keyframes pulse-bar {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  50% { opacity: 0.4; }
 }
