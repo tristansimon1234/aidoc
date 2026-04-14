@@ -405,54 +405,59 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
   )
 }
 
-// Extract frames using ffmpeg.wasm — frame-accurate seeking in the browser
+// Extract frames from video at timestamps using canvas seeking.
+// Uses a busy flag to prevent double onseeked from causing drift.
 async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
   if (timestamps.length === 0) return
 
   const sorted = [...timestamps].sort((a, b) => a - b)
 
-  // Dynamic import — ffmpeg.wasm is ~25MB, only loaded when needed (cached after first load)
-  const { FFmpeg } = await import('@ffmpeg/ffmpeg')
-  const { fetchFile } = await import('@ffmpeg/util')
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video')
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { resolve(); return }
 
-  const ffmpeg = new FFmpeg()
-  await ffmpeg.load()
+    video.onloadedmetadata = () => {
+      canvas.width = Math.min(video.videoWidth, 1280)
+      canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
 
-  // Write video to virtual filesystem
-  const ext = videoFile.name.includes('.') ? videoFile.name.split('.').pop() : 'webm'
-  await ffmpeg.writeFile(`input.${ext}`, await fetchFile(videoFile))
+      const duration = video.duration
+      const frames = sorted.map((t, idx) => ({
+        time: Math.max(0, Math.min(t, duration - 0.1)),
+        stepIndex: idx,
+      }))
 
-  try {
-    for (let i = 0; i < sorted.length; i++) {
-      const t = sorted[i]!
-      const outFile = `frame-${i}.jpg`
+      let i = 0
+      let busy = false
 
-      // -ss before -i = fast seek, frame-accurate
-      await ffmpeg.exec([
-        '-ss', t.toFixed(2),
-        '-i', `input.${ext}`,
-        '-frames:v', '1',
-        '-vf', 'scale=1280:-2',
-        '-q:v', '2',
-        outFile,
-      ])
+      const captureCurrentFrame = async (): Promise<void> => {
+        if (busy || i >= frames.length) return
+        busy = true
+        try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const entry = frames[i]!
+          const blob = await new Promise<Blob | null>((res) => canvas.toBlob((b) => res(b), 'image/jpeg', 0.85))
+          if (blob) {
+            const path = `runs/${runId}/frame-${entry.stepIndex}.jpg`
+            const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
+            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
+            await api.runs.updateStepScreenshot(runId, entry.stepIndex, path)
+          }
+          i++
+          busy = false
+          if (i >= frames.length) resolve()
+          else video.currentTime = frames[i]!.time
+        } catch (err) { busy = false; reject(err as Error) }
+      }
 
-      const data = await ffmpeg.readFile(outFile)
-      // Copy to a plain ArrayBuffer to avoid SharedArrayBuffer issues with Blob
-      const raw = data instanceof Uint8Array ? data : new TextEncoder().encode(data as string)
-      const copy = new Uint8Array(raw.length)
-      copy.set(raw)
-      const blob = new Blob([copy], { type: 'image/jpeg' })
-
-      const path = `runs/${runId}/frame-${i}.jpg`
-      const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
-      await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-      await api.runs.updateStepScreenshot(runId, i, path)
-
-      // Clean up frame from virtual FS
-      await ffmpeg.deleteFile(outFile)
+      video.onseeked = () => setTimeout(() => void captureCurrentFrame(), 150)
+      video.onerror = () => reject(new Error('Failed to load video'))
+      if (frames.length > 0) video.currentTime = frames[0]!.time
+      else resolve()
     }
-  } finally {
-    ffmpeg.terminate()
-  }
+
+    video.onerror = () => reject(new Error('Failed to load video'))
+    video.src = URL.createObjectURL(videoFile)
+  })
 }
