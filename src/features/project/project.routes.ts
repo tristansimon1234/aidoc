@@ -68,26 +68,70 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         clearTimeout(timeout)
       }
 
-      // Extract the most useful parts instead of sending raw HTML
-      const extract = (pattern: RegExp): string[] => {
+      // Try to fetch the main CSS stylesheet for design tokens
+      const cssLink = html.match(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)/i)?.[1]
+        ?? html.match(/<link[^>]*href=["']([^"']+\.css[^"']*)/i)?.[1]
+      let externalCss = ''
+      if (cssLink) {
+        try {
+          const cssUrl = cssLink.startsWith('http') ? cssLink : new URL(cssLink, url).href
+          console.log(`[analyze-url] Fetching CSS: ${cssUrl}`)
+          const cssResp = await fetch(cssUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AiDoc/1.0)' },
+            signal: AbortSignal.timeout(5000),
+          })
+          externalCss = (await cssResp.text()).slice(0, 30_000)
+        } catch {
+          // Non-critical
+        }
+      }
+
+      // --- Extract structured data from HTML ---
+      const extractAll = (pattern: RegExp, src: string): string[] => {
         const matches: string[] = []
         let m: RegExpExecArray | null
-        while ((m = pattern.exec(html)) !== null) { matches.push(m[1] ?? m[0]); if (matches.length > 20) break }
+        while ((m = pattern.exec(src)) !== null) { matches.push(m[1] ?? m[0]); if (matches.length > 30) break }
         return matches
       }
 
+      // Meta tags
       const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? ''
       const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const themeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
-      const headings = extract(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi).map(h => h.replace(/<[^>]+>/g, '').trim()).filter(Boolean)
-      const links = extract(/<a[^>]*>([\s\S]*?)<\/a>/gi).map(a => a.replace(/<[^>]+>/g, '').trim()).filter(h => h.length > 2 && h.length < 60)
-      const fonts = extract(/font-family:\s*['"]?([^;'"}\n]+)/gi)
-      const googleFonts = html.match(/fonts\.googleapis\.com\/css2?\?family=([^"&]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
-      const colors = extract(/(?:color|background(?:-color)?)\s*:\s*(#[0-9a-fA-F]{3,8})/gi)
+      const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
 
-      // Build a compact summary for Gemini
+      // Headings & navigation
+      const headings = extractAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi, html).map(h => h.replace(/<[^>]+>/g, '').trim()).filter(Boolean)
+      const links = extractAll(/<a[^>]*>([\s\S]*?)<\/a>/gi, html).map(a => a.replace(/<[^>]+>/g, '').trim()).filter(h => h.length > 2 && h.length < 60)
+
+      // --- Design extraction: search EVERYWHERE for colors and fonts ---
+
+      // 1. Extract <style> blocks BEFORE stripping them
+      const styleBlocks = extractAll(/<style[^>]*>([\s\S]*?)<\/style>/gi, html).join('\n')
+
+      // 2. Extract inline style attributes
+      const inlineStyles = extractAll(/style=["']([^"']+)/gi, html).join('; ')
+
+      // 3. Combine all CSS sources (inline + <style> blocks + external stylesheet)
+      const allCss = styleBlocks + '\n' + inlineStyles + '\n' + externalCss
+
+      // 4. Extract colors from all sources (hex, rgb, hsl, CSS vars)
+      const hexColors = [...new Set(extractAll(/#[0-9a-fA-F]{3,8}(?=[\s;,)"']|$)/g, allCss + ' ' + html))]
+        .filter(c => c.length >= 4 && c !== '#000' && c !== '#fff' && c !== '#FFF' && c !== '#000000' && c !== '#ffffff' && c !== '#FFFFFF')
+      const rgbColors = [...new Set(extractAll(/rgba?\(\s*(\d+\s*,\s*\d+\s*,\s*\d+(?:\s*,\s*[\d.]+)?)\s*\)/g, allCss))]
+      const cssVarColors = [...new Set(extractAll(/--[\w-]*(?:color|brand|primary|accent|bg|background)[\w-]*\s*:\s*([^;}\n]+)/gi, allCss))]
+
+      // 5. Fonts from all sources
+      const fontFamilies = [...new Set(extractAll(/font-family\s*:\s*["']?([^;'"}\n]+)/gi, allCss))]
+      const googleFonts = [...new Set(extractAll(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&]+)/gi, html))].map(f => f.replace(/\+/g, ' '))
+      const fontLinks = [...new Set(extractAll(/href=["'][^"']*fonts[^"']*["']/gi, html))]
+
+      // 6. CSS custom properties (brand-related)
+      const brandVars = [...new Set(extractAll(/--([\w-]*(?:primary|accent|brand|main|theme)[\w-]*)\s*:\s*([^;}\n]+)/gi, allCss))]
+
+      // Text content (stripped)
       const textContent = html
         .replace(/<script[\s\S]*?<\/script>/gi, '')
         .replace(/<style[\s\S]*?<\/style>/gi, '')
@@ -95,7 +139,7 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         .replace(/<[^>]+>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
-        .slice(0, 3000)
+        .slice(0, 2000)
 
       const pageInfo = [
         `URL: ${url}`,
@@ -103,16 +147,25 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         ogTitle && ogTitle !== title && `OG Title: ${ogTitle}`,
         metaDesc && `Meta description: ${metaDesc}`,
         ogDesc && ogDesc !== metaDesc && `OG description: ${ogDesc}`,
+        ogImage && `OG image: ${ogImage}`,
         themeColor && `Theme color: ${themeColor}`,
         headings.length > 0 && `Headings: ${headings.slice(0, 10).join(' | ')}`,
         links.length > 0 && `Nav links: ${[...new Set(links)].slice(0, 15).join(', ')}`,
-        googleFonts && `Google Font: ${googleFonts}`,
-        fonts.length > 0 && `CSS fonts: ${[...new Set(fonts)].slice(0, 5).join(', ')}`,
-        colors.length > 0 && `CSS colors found: ${[...new Set(colors)].slice(0, 15).join(', ')}`,
+        '',
+        '--- DESIGN DATA ---',
+        hexColors.length > 0 && `Hex colors found in CSS: ${hexColors.slice(0, 20).join(', ')}`,
+        rgbColors.length > 0 && `RGB colors: ${rgbColors.slice(0, 10).map(c => `rgb(${c})`).join(', ')}`,
+        cssVarColors.length > 0 && `CSS color variables: ${cssVarColors.slice(0, 10).join(', ')}`,
+        brandVars.length > 0 && `Brand CSS variables: ${brandVars.slice(0, 10).join(', ')}`,
+        googleFonts.length > 0 && `Google Fonts: ${googleFonts.join(', ')}`,
+        fontFamilies.length > 0 && `CSS font-family: ${fontFamilies.slice(0, 5).join(' | ')}`,
+        fontLinks.length > 0 && `Font links: ${fontLinks.slice(0, 3).join(', ')}`,
+        themeColor && `Meta theme-color: ${themeColor}`,
+        '',
         `Page text (excerpt): ${textContent}`,
       ].filter(Boolean).join('\n')
 
-      console.log(`[analyze-url] Extracted info (${pageInfo.length} chars)`)
+      console.log(`[analyze-url] Extracted info (${pageInfo.length} chars), ${hexColors.length} hex colors, ${fontFamilies.length} fonts`)
 
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const result = await generateText({
