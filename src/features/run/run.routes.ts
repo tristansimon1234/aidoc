@@ -188,7 +188,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const body = req.body as { voiceId?: string; language?: string }
+      const body = req.body as { voiceId?: string; language?: string; tone?: string }
 
       // Check ElevenLabs is configured before attempting
       const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
@@ -230,17 +230,75 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       }).join('\n')
 
       // Ask Gemini to transform the DOC into a narration script
+      // Tone presets — controls voice delivery style
+      const TONE_PRESETS: Record<string, { label: string; direction: string; example: string }> = {
+        friendly: {
+          label: 'Friendly & Casual',
+          direction: `Warm, upbeat, conversational. Like a helpful coworker showing you around. Use contractions (let's, you'll, here's), filler phrases ("so basically", "the cool thing is"), and light humor. Laugh occasionally, show genuine excitement.`,
+          example: `[SECTION 1]\nHey! [excited] So we're gonna set up your workspace — this is where all your documentation lives, organized by project.\n[SECTION 2]\nLet's create a new project. Think of it as a home for everything related to one product. [laughs] Super easy.`,
+        },
+        professional: {
+          label: 'Professional & Clear',
+          direction: `Polished, confident, measured pace. Like a senior product manager giving a demo to executives. Clear and articulate, no filler words. Structured sentences, calm authority. Use pauses for emphasis rather than emotional tags.`,
+          example: `[SECTION 1]\nWelcome. In this walkthrough, we'll set up your documentation workspace — the central hub for all your project content.\n[SECTION 2]\nFirst, we'll create a new project. [short pause] Each project groups the documentation for a single product or service.`,
+        },
+        energetic: {
+          label: 'Energetic & Hyped',
+          direction: `High-energy, fast-paced, genuinely PUMPED. Like a YouTuber who LOVES this product. Use CAPS for emphasis, exclamation marks, rapid delivery. Show excitement with [excited], [laughs], [happy gasp]. Short punchy sentences mixed with longer excited ones.`,
+          example: `[SECTION 1]\n[excited] Okay let's GO! We're setting up your workspace and honestly — this is where it gets REALLY cool.\n[SECTION 2]\nFirst things first, create a new project. [happy gasp] Just watch how fast this is!`,
+        },
+        calm: {
+          label: 'Calm & Reassuring',
+          direction: `Gentle, patient, soothing pace. Like a meditation teacher explaining software. Slower rhythm, lots of ellipses for breathing room... reassuring phrases ("don't worry", "take your time", "it's that simple"). Whisper for tips.`,
+          example: `[SECTION 1]\nHi there... welcome. [calm] We're going to walk through setting up your workspace together. No rush — just follow along at your own pace.\n[SECTION 2]\nLet's start by creating a project... [whispers] don't worry, it only takes a moment.`,
+        },
+        playful: {
+          label: 'Playful & Fun',
+          direction: `Witty, irreverent, a little cheeky. Like a fun friend who happens to be a tech expert. Use humor, light sarcasm, playful asides. [giggles], [whispers], [sarcastic]. Self-aware about being an AI narrator. Pop culture references welcome.`,
+          example: `[SECTION 1]\n[laughs] Alright... let's do this! Your shiny new workspace awaits — think of it as your documentation command center. [whispers] Very official.\n[SECTION 2]\nStep one — create a project. [giggles] I know, groundbreaking stuff. But trust me, it gets cooler from here.`,
+        },
+      }
+
+      const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
+
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const narrationResult = await generateText({
-        userPrompt: `You are recording voice-over narration for a product tutorial video. Your narration plays slightly before each action on screen — you guide the viewer through what's about to happen and WHY it matters.
+        userPrompt: `You are writing a voice-over narration script for a product tutorial video. The narration plays alongside a screen recording — you guide the viewer through what's about to happen and WHY it matters.
 
-## Your approach
-You're not just listing clicks. You EXPLAIN the purpose behind each step — why this field matters, what it enables, what the user will get out of it. Think of the best SaaS product tours: they make you understand the value, not just the mechanics.
+This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an essay.
 
-BAD: "Click 'New Project'." (just a click, no context)
-GOOD: "Let's create your first project [short pause] this is where all your docs will live."
-GOOD: "Add your app's URL here — the AI uses this to understand your product and generate smarter docs."
-GOOD: "Now hit 'Generate' [pause] this is where the magic happens. The AI will watch your recording and write the documentation for you."
+## Tone: ${tone.label}
+${tone.direction}
+
+## ElevenLabs v3 formatting rules (CRITICAL — follow exactly)
+The TTS engine interprets formatting as stage directions:
+
+**Punctuation controls delivery:**
+- Ellipsis (...) creates a natural pause or trailing off: "So basically... this is where the magic happens."
+- Em dash (—) creates a short punchy pause: "Click create — and you're done."
+- CAPS emphasize words: "This is REALLY important" → stress on "really"
+- Exclamation marks add energy: "That's it!" vs "That's it."
+- Questions create natural rising intonation: "Pretty cool, right?"
+- Commas and periods = natural breathing rhythm
+
+**Line breaks matter:**
+Each line break creates a slight pause. Short lines = snappier delivery:
+"Click create.
+And just like that — your project is live."
+
+**Audio tags are stage directions** — place them between sentences to shape emotion:
+Emotional: [excited], [happy], [calm], [nervous], [frustrated]
+Reactions: [laughs], [giggles], [sighs], [gasps], [happy gasp]
+Delivery: [whispers], [cheerfully], [playfully], [sarcastic], [deadpan]
+Pacing: [short pause], [long pause], [rushed], [drawn out]
+Cognitive: [hesitates], [matter-of-fact], [reflective]
+
+**Tag rules:**
+- Tags go BETWEEN sentences only: "First sentence. [laughs] Second sentence."
+- NEVER mid-sentence: NOT "Click the [pause] button"
+- Match tags to tone — don't whisper in an energetic script, don't shout in a calm one
+- Combine context + tag for best results: "No way... [happy gasp] it actually worked!" is better than just "[happy gasp] it worked"
+- Use 4-6 different tags across the full script for variety
 
 ## Documentation source:
 ${doc.markdownContent}
@@ -252,48 +310,20 @@ Word budget: ~${totalMaxWords} words total. Each section: 2-3 sentences. Fill th
 ${sectionList}
 
 ## Content rules
-- GREETING: Section 1 MUST start with a warm greeting ("Hey there!", "Welcome!", "Hi! So glad you're here.")
-- CLOSING: Last section MUST end with a goodbye ("Thanks for watching!", "See you next time!", "That's a wrap — enjoy!")
-- FILL THE TIME: use the full word budget for each section. 2-3 sentences per section, not just 1. Silence between sections feels awkward.
+- GREETING: Section 1 MUST start with a warm greeting that matches the tone
+- CLOSING: Last section MUST end with a goodbye that matches the tone
+- FILL THE TIME: use the full word budget per section. 2-3 sentences, not just 1.
 - ANTICIPATORY: describe what we're ABOUT to do, not what just happened
-- EXPLAIN THE WHY: don't just say "click X" — say WHY we're clicking X, what it enables, what the user gains
-- Add VALUE: mention what features enable, what problems they solve
-- NATURAL: contractions (let's, you'll, here's), conversational ("so basically", "the cool thing is")
+- EXPLAIN THE WHY: don't just say "click X" — say WHY, what it enables, what the user gains
+- VALUE: mention what features enable and what problems they solve
 - Skip: URLs, code, image references, technical IDs
-- Never say: "as you can see", "in this tutorial", "notice how"
+- Never say: "as you can see", "in this tutorial", "notice how", "in this video"
 
-## Audio expression tags
-Place tags BETWEEN sentences only — NEVER in the middle of a sentence. They add rhythm and emotion.
-
-Available tags:
-  [laughs] — light friendly warmth after something fun or easy
-  [excited] — genuine enthusiasm when revealing a cool feature
-  [whispers] — sharing a secret or pro tip
-  [sighs] — satisfaction after completing a milestone
-  [pause] — beat between two sentences (use sparingly — max 2 in entire script)
-
-CRITICAL RULES for tags:
-- Place tags ONLY between complete sentences: "First sentence. [laughs] Second sentence."
-- NEVER inside a sentence: NOT "Click the [pause] button" — this sounds broken
-- Use at least 3 DIFFERENT tags across the script
-- [laughs], [excited], [whispers] are the PRIORITY tags — they add personality
-- [pause] is BORING — use it max 2 times in the whole script, prefer the emotional tags instead
+## Example output for this tone:
+${tone.example}
 
 ## Output
-Start DIRECTLY with [SECTION 1]. No preamble.
-
-[SECTION 1]
-Hey! So we're gonna set up your workspace — this is where all your documentation lives, organized by project.
-[SECTION 2]
-Let's create a new project. Think of it as a home for everything related to one product.
-[SECTION 3]
-Give it a name — this shows up in your sidebar and in the published docs your users will see.
-[SECTION 4]
-Now add your app's URL. The AI actually uses this to crawl and understand your product better. [whispers] Pretty smart right?
-[SECTION 5]
-Describe who this is for. This is what makes the generated docs feel personalized instead of generic. [excited] It really works!
-[SECTION 6]
-Alright hit create and just like that, your project is ready with a default Getting Started page! [laughs] Told you it was quick.`,
+Start DIRECTLY with [SECTION 1]. No preamble, no commentary.`,
         maxTokens: 8192,
       })
 

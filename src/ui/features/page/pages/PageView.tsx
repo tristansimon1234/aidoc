@@ -45,6 +45,7 @@ export function PageView(): React.ReactElement {
   const [latestRunId, setLatestRunId] = useState<string | null>(null)
   const [voices, setVoices] = useState<{ voiceId: string; name: string }[]>([])
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
+  const [selectedTone, setSelectedTone] = useState<string>('friendly')
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -365,6 +366,7 @@ DO NOT generate new documentation. Only verify the existing one.`
                 onGenerateVoiceover={latestRunId && page.content ? async () => {
                   const result = await api.runs.generateVoiceover(latestRunId, {
                     voiceId: selectedVoiceId,
+                    tone: selectedTone,
                   }) as {
                     segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
                     audioPath?: string
@@ -380,6 +382,43 @@ DO NOT generate new documentation. Only verify the existing one.`
                   setVoiceoverSegments(result.segments ?? [])
                 } : undefined}
               />
+              {/* Tone selector */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
+                padding: 'var(--space-sm) var(--space-md)',
+                background: 'var(--color-card)', border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)', marginTop: 'var(--space-sm)',
+              }}>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', whiteSpace: 'nowrap' }}>Narration tone</span>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {[
+                    { id: 'friendly', label: 'Friendly', icon: '👋' },
+                    { id: 'professional', label: 'Professional', icon: '💼' },
+                    { id: 'energetic', label: 'Energetic', icon: '⚡' },
+                    { id: 'calm', label: 'Calm', icon: '🧘' },
+                    { id: 'playful', label: 'Playful', icon: '🎭' },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setSelectedTone(t.id)}
+                      style={{
+                        padding: '3px 10px',
+                        fontSize: 'var(--text-xs)',
+                        fontFamily: 'var(--font-mono)',
+                        border: `1px solid ${selectedTone === t.id ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                        borderRadius: 'var(--radius-sm)',
+                        background: selectedTone === t.id ? 'var(--color-primary)' : 'var(--color-secondary)',
+                        color: selectedTone === t.id ? 'white' : 'var(--color-fg)',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {t.icon} {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {/* Show on public page toggle */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',

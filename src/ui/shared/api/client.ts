@@ -265,7 +265,7 @@ export const api = {
       request(`/runs/${id}/generate-doc`, { method: 'POST' }),
     getVoices: (): Promise<{ voices: { voiceId: string; name: string; category: string; labels: Record<string, string> }[] }> =>
       request('/runs/voices'),
-    generateVoiceover: (id: string, options?: { voiceId?: string; language?: string }): Promise<{ audioPath: string; audioUrl: string; duration: number }> =>
+    generateVoiceover: (id: string, options?: { voiceId?: string; language?: string; tone?: string }): Promise<{ audioPath: string; audioUrl: string; duration: number }> =>
       request(`/runs/${id}/generate-voiceover`, { method: 'POST', body: JSON.stringify(options ?? {}) }),
     regenerateSegment: (id: string, stepIndex: number, text?: string, voiceId?: string): Promise<{ stepIndex: number; audioUrl: string; text: string }> =>
       request(`/runs/${id}/regenerate-segment`, { method: 'POST', body: JSON.stringify({ stepIndex, text, voiceId }) }),

@@ -153,6 +153,15 @@ export async function updatePage(
   if (body.isPublic !== undefined) updates.is_public = body.isPublic
 
   const { data, error } = await supabase.from('doc_pages').update(updates).eq('id', pageId).select('*').single()
+
+  // If is_public column doesn't exist yet, retry without it
+  if (error?.message?.includes('is_public')) {
+    delete updates.is_public
+    const retry = await supabase.from('doc_pages').update(updates).eq('id', pageId).select('*').single()
+    if (retry.error) throw new Error(retry.error.message)
+    return mapPage(retry.data)
+  }
+
   if (error) throw new Error(error.message)
   return mapPage(data)
 }
