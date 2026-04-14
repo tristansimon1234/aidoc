@@ -318,7 +318,7 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     const { supabase } = await import('../../shared/db/supabase.client.js')
 
     // --- Step 1: Convert to MP4 via video microservice ---
-    const { isVideoServiceConfigured, convertToMp4, extractFrames: extractFramesRemote } = await import('../../shared/video/video.client.js')
+    const { isVideoServiceConfigured, /* convertToMp4, */ extractFrames: extractFramesRemote } = await import('../../shared/video/video.client.js')
 
     let analyzeVideoPath = videoPath
     let playerVideoPath = videoPath
@@ -326,18 +326,18 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     console.log(`[video] Step 1: Convert — service=${videoServiceAvailable ? 'YES' : 'NO'}, path=${videoPath}`)
 
-    if (!videoPath.endsWith('.mp4') && videoServiceAvailable) {
-      try {
-        const mp4Path = await convertToMp4(videoPath, runId)
-        analyzeVideoPath = mp4Path
-        playerVideoPath = mp4Path
-        console.log(`[video] Converted to MP4: ${mp4Path}`)
-      } catch (err) {
-        console.error(`[video] MP4 conversion FAILED (continuing with .webm): ${(err as Error).message}`)
-      }
-    } else {
-      console.log(`[video] Skipping conversion — ${!videoServiceAvailable ? 'no video service' : 'already MP4'}`)
-    }
+    // Conversion disabled — Gemini supports .webm natively, and the video service
+    // is currently unreliable (hangs on /convert). Re-enable when Railway is fixed.
+    // if (!videoPath.endsWith('.mp4') && videoServiceAvailable) {
+    //   try {
+    //     const mp4Path = await convertToMp4(videoPath, runId)
+    //     analyzeVideoPath = mp4Path
+    //     playerVideoPath = mp4Path
+    //   } catch (err) {
+    //     console.error(`[video] MP4 conversion FAILED: ${(err as Error).message}`)
+    //   }
+    // }
+    console.log(`[video] Skipping conversion — using original ${videoPath}`)
     console.log(`[video] Using video: ${analyzeVideoPath}`)
 
     // --- Step 2: Download for Gemini analysis ---
