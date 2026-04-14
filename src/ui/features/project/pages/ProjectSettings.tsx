@@ -8,7 +8,7 @@ import styles from './ProjectSettings.module.css'
 
 interface Credential { label: string; username: string; password: string }
 
-type SettingsTab = 'general' | 'context' | 'credentials' | 'knowledge'
+type SettingsTab = 'general' | 'knowledge' | 'credentials'
 
 export function ProjectSettings(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
@@ -54,11 +54,10 @@ export function ProjectSettings(): React.ReactElement {
     finally { setSaving(false) }
   }
 
-  const tabs: { id: SettingsTab; label: string; highlight?: boolean }[] = [
+  const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'general', label: 'General' },
-    { id: 'context', label: 'AI Context' },
-    { id: 'credentials', label: 'Credentials' },
     { id: 'knowledge', label: 'Knowledge' },
+    { id: 'credentials', label: 'Credentials' },
   ]
 
   return (
@@ -75,7 +74,6 @@ export function ProjectSettings(): React.ReactElement {
               onClick={() => setActiveTab(t.id)}
             >
               {t.label}
-              {t.highlight && <span className={styles.tabBadge} />}
             </button>
           ))}
         </div>
@@ -116,38 +114,45 @@ export function ProjectSettings(): React.ReactElement {
             </div>
           )}
 
-          {activeTab === 'context' && (
-            <div className={styles.section}>
-              <div className={styles.sectionHeader}>
-                <h2 className={styles.sectionTitle}>AI Context</h2>
-                <p className={styles.sectionDesc}>Help the AI understand your product. Better context = better documentation and chat answers.</p>
-              </div>
-              <div className={styles.fieldGrid}>
-                <div className={`${styles.field} ${styles.fieldFull}`}>
-                  <label className={styles.label}>Target audience</label>
-                  <textarea className={styles.textarea} value={context.audience}
-                    onChange={(e) => setContext({ ...context, audience: e.target.value })}
-                    placeholder="e.g. SaaS product managers who need to track feature adoption" rows={2} />
+          {activeTab === 'knowledge' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              {/* Your context — manual */}
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <h2 className={styles.sectionTitle}>Your context</h2>
+                  <p className={styles.sectionDesc}>Help the AI understand your product. Better context = better documentation and chat.</p>
                 </div>
-                <div className={`${styles.field} ${styles.fieldFull}`}>
-                  <label className={styles.label}>Key workflow</label>
-                  <textarea className={styles.textarea} value={context.workflow}
-                    onChange={(e) => setContext({ ...context, workflow: e.target.value })}
-                    placeholder="e.g. User creates a project, adds team members, runs first report" rows={2} />
+                <div className={styles.fieldGrid}>
+                  <div className={`${styles.field} ${styles.fieldFull}`}>
+                    <label className={styles.label}>Target audience</label>
+                    <textarea className={styles.textarea} value={context.audience}
+                      onChange={(e) => setContext({ ...context, audience: e.target.value })}
+                      placeholder="e.g. SaaS product managers who need to track feature adoption" rows={2} />
+                  </div>
+                  <div className={`${styles.field} ${styles.fieldFull}`}>
+                    <label className={styles.label}>Key workflow</label>
+                    <textarea className={styles.textarea} value={context.workflow}
+                      onChange={(e) => setContext({ ...context, workflow: e.target.value })}
+                      placeholder="e.g. User creates a project, adds team members, runs first report" rows={2} />
+                  </div>
+                  <div className={`${styles.field} ${styles.fieldFull}`}>
+                    <label className={styles.label}>Domain knowledge</label>
+                    <textarea className={styles.textarea} value={context.quirks}
+                      onChange={(e) => setContext({ ...context, quirks: e.target.value })}
+                      placeholder="e.g. 'Workspace' means a team account. Archive is hidden until 5+ items." rows={2} />
+                  </div>
                 </div>
-                <div className={`${styles.field} ${styles.fieldFull}`}>
-                  <label className={styles.label}>Domain knowledge</label>
-                  <textarea className={styles.textarea} value={context.quirks}
-                    onChange={(e) => setContext({ ...context, quirks: e.target.value })}
-                    placeholder="e.g. 'Workspace' means a team account. Archive is hidden until 5+ items." rows={2} />
+                <div className={styles.saveBar}>
+                  <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
+                    {saving ? 'Saving...' : 'Save'}
+                  </Button>
+                  {saved && <span className={`${styles.saveMsg} ${styles.success}`}>Saved</span>}
                 </div>
               </div>
-              <div className={styles.saveBar}>
-                <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
-                  {saving ? 'Saving...' : 'Save'}
-                </Button>
-                {saved && <span className={`${styles.saveMsg} ${styles.success}`}>Saved</span>}
-              </div>
+
+              {/* Discovered — auto-generated */}
+              <KnowledgeTab context={project.discoveredContext} projectId={projectId!}
+                onSaved={(updated) => { setProject({ ...project, discoveredContext: updated }); setParentProject({ ...project, discoveredContext: updated }) }} />
             </div>
           )}
 
@@ -185,10 +190,6 @@ export function ProjectSettings(): React.ReactElement {
             </div>
           )}
 
-          {activeTab === 'knowledge' && (
-            <KnowledgeTab context={project.discoveredContext} projectId={projectId!}
-              onSaved={(updated) => setProject({ ...project, discoveredContext: updated })} />
-          )}
         </div>
     </div>
   )
@@ -210,9 +211,9 @@ function KnowledgeTab({ context, projectId, onSaved }: {
     return (
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Knowledge Base</h2>
+          <h2 className={styles.sectionTitle}>Discovered by AI</h2>
           <p className={styles.sectionDesc}>
-            The AI builds this automatically as it generates documentation. Generate docs for any page to get started.
+            Auto-generated as the AI explores and generates documentation. Generate docs for any page to get started.
           </p>
         </div>
       </div>
@@ -238,8 +239,8 @@ function KnowledgeTab({ context, projectId, onSaved }: {
   return (
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
-        <h2 className={styles.sectionTitle}>Knowledge Base</h2>
-        <p className={styles.sectionDesc}>Auto-generated by the AI. You can edit to correct mistakes.</p>
+        <h2 className={styles.sectionTitle}>Discovered by AI</h2>
+        <p className={styles.sectionDesc}>Auto-generated as the AI generates documentation. You can edit to correct mistakes.</p>
       </div>
 
       <div className={styles.statRow}>
