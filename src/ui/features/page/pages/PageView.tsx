@@ -340,9 +340,11 @@ DO NOT generate new documentation. Only verify the existing one.`
               videoUrl={videoUrl}
               audioUrl={voiceoverUrl}
               segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
+              runId={latestRunId}
+              onSegmentsChange={setVoiceoverSegments}
               onGenerateVoiceover={latestRunId && page.content ? async () => {
                 const result = await api.runs.generateVoiceover(latestRunId) as {
-                  segments?: { stepIndex: number; startTime: number; endTime: number; audioUrl: string }[]
+                  segments?: { stepIndex: number; startTime: number; endTime: number; audioUrl: string; text?: string }[]
                   fullAudioPath?: string
                 }
                 if (result.segments && result.segments.length > 0) {

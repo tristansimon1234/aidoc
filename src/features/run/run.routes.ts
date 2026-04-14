@@ -243,6 +243,93 @@ Write ${runSteps.length} lines total. No extra commentary — ONLY the numbered 
   })()
 })
 
+// Regenerate a single voiceover segment
+runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { stepIndex: number; text?: string; voiceId?: string }
+      if (body.stepIndex == null) throw new ValidationError('stepIndex is required')
+
+      const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
+      if (!isElevenLabsConfigured()) {
+        throw new AppError('ELEVENLABS_API_KEY required', 'ELEVENLABS_NOT_CONFIGURED', 400)
+      }
+
+      const { synthesizeSpeech } = await import('../../shared/ai/elevenlabs.client.js')
+      const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
+
+      // Get existing voiceover data
+      const run = await runService.getRun(params.data.id)
+      if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+      const summary = run.summaryJson as Record<string, unknown> | null
+      const voiceover = summary?.voiceover as { segments?: Array<Record<string, unknown>> } | undefined
+      if (!voiceover?.segments) throw new AppError('No voiceover to edit', 'NO_VOICEOVER', 404)
+
+      // If custom text provided, use it. Otherwise use existing text.
+      const existingSeg = voiceover.segments.find((s) => (s.stepIndex as number) === body.stepIndex)
+      const text = body.text ?? (existingSeg?.text as string) ?? `Step ${body.stepIndex + 1}`
+
+      // Synthesize new audio
+      const buffer = await synthesizeSpeech(text, { voiceId: body.voiceId })
+      const segPath = `runs/${params.data.id}/voiceover-step-${body.stepIndex}.mp3`
+      await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
+      const audioUrl = getPublicUrl('artifacts', segPath) ?? ''
+
+      // Update the segment in the summary
+      const updatedSegments = voiceover.segments.map((s) =>
+        (s.stepIndex as number) === body.stepIndex
+          ? { ...s, audioUrl, audioPath: segPath, text }
+          : s,
+      )
+      const { updateRunSummary } = await import('./run.repository.js')
+      await updateRunSummary(params.data.id, {
+        ...summary,
+        voiceover: { ...voiceover, segments: updatedSegments },
+      })
+
+      res.status(200).json({ stepIndex: body.stepIndex, audioUrl, text })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Update voiceover segment timing (drag to reposition)
+runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { segments: Array<{ stepIndex: number; startTime: number; endTime: number }> }
+      if (!Array.isArray(body.segments)) throw new ValidationError('segments array required')
+
+      const run = await runService.getRun(params.data.id)
+      if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+      const summary = run.summaryJson as Record<string, unknown> | null
+      const voiceover = summary?.voiceover as { segments?: Array<Record<string, unknown>> } | undefined
+      if (!voiceover?.segments) throw new AppError('No voiceover to edit', 'NO_VOICEOVER', 404)
+
+      // Merge timing updates into existing segments
+      const updatedSegments = voiceover.segments.map((s) => {
+        const update = body.segments.find((u) => u.stepIndex === (s.stepIndex as number))
+        return update ? { ...s, startTime: update.startTime, endTime: update.endTime } : s
+      })
+
+      const { updateRunSummary } = await import('./run.repository.js')
+      await updateRunSummary(params.data.id, {
+        ...summary,
+        voiceover: { ...voiceover, segments: updatedSegments },
+      })
+
+      res.status(200).json({ segments: updatedSegments })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Analyze Try Doc — compare exploration results against documentation
 runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {

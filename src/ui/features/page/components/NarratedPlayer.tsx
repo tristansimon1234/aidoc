@@ -1,27 +1,32 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button, Spinner } from '../../../design-system/components/index.js'
+import { VideoTimeline } from './VideoTimeline.js'
 
 export interface VoiceoverSegment {
   stepIndex: number
   startTime: number
   endTime: number
   audioUrl: string
+  text?: string
 }
 
 interface NarratedPlayerProps {
   videoUrl: string | null
   audioUrl: string | null
   segments?: VoiceoverSegment[]
+  runId?: string | null
   onGenerateVoiceover?: () => Promise<void>
+  onSegmentsChange?: (segments: VoiceoverSegment[]) => void
 }
 
-export function NarratedPlayer({ videoUrl, audioUrl, segments, onGenerateVoiceover }: NarratedPlayerProps): React.ReactElement {
+export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerateVoiceover, onSegmentsChange }: NarratedPlayerProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [playing, setPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [duration, setDuration] = useState(0)
   const [expanded, setExpanded] = useState(false)
   const [generating, setGenerating] = useState(false)
+  const [showTimeline, setShowTimeline] = useState(false)
   const rafRef = useRef<number | null>(null)
   const audioElementsRef = useRef<Map<number, HTMLAudioElement>>(new Map())
   const fallbackAudioRef = useRef<HTMLAudioElement | null>(null)
@@ -285,10 +290,42 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, onGenerateVoiceov
               <Button size="sm" variant="secondary" onClick={() => void handleGenerateVoiceover()}>Improve with AI</Button>
             )}
             {generating && <Spinner size="sm" />}
+
+            {/* Timeline toggle — only when segments exist */}
+            {hasSegments && runId && (
+              <button
+                type="button"
+                onClick={() => setShowTimeline(!showTimeline)}
+                title="Edit timeline"
+                style={{
+                  background: showTimeline ? 'var(--color-secondary)' : 'none',
+                  border: 'none', cursor: 'pointer', padding: '2px 6px',
+                  color: showTimeline ? 'var(--color-primary)' : 'var(--color-muted-fg)',
+                  display: 'flex', alignItems: 'center', borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M3 15h18" /><path d="M9 3v18" />
+                </svg>
+              </button>
+            )}
+
             <button type="button" onClick={collapse} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--color-muted-fg)', display: 'flex' }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
             </button>
           </div>
+
+          {/* Timeline editor */}
+          {showTimeline && hasSegments && runId && (
+            <VideoTimeline
+              runId={runId}
+              duration={duration}
+              segments={segments!}
+              onSegmentsChange={(updated) => {
+                onSegmentsChange?.(updated)
+              }}
+            />
+          )}
         </div>
       )}
     </div>
