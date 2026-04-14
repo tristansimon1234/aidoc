@@ -186,6 +186,7 @@ export function NewProject(): React.ReactElement {
               border: '1px solid var(--color-border)', borderRadius: 'var(--radius-xl)',
               display: 'flex', flexDirection: 'column', gap: 'var(--space-md)',
               marginTop: 'var(--space-md)',
+              animation: 'fadeSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
             }}>
               <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
                 About your product
@@ -347,7 +348,7 @@ export function NewProject(): React.ReactElement {
           {error && <p style={{ color: 'var(--color-destructive)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-md)' }}>{error}</p>}
 
           {analyzed && (
-            <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-lg)' }}>
+            <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-lg)', animation: 'fadeSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both' }}>
               <Button type="submit" disabled={submitting || !name || !baseUrl}>
                 {submitting ? 'Creating...' : 'Create Project'}
               </Button>
