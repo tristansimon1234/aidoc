@@ -4,11 +4,11 @@
   justify-content: center;
   gap: 6px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   font-family: var(--font-sans);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.15s ease;
   white-space: nowrap;
   letter-spacing: -0.01em;
 }
@@ -21,36 +21,31 @@
 
 .button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-card), 0 0 0 4px var(--color-border);
 }
 
-/* Primary — bold, with subtle shadow */
+/* Primary — clean black (ElevenLabs style) */
 .primary {
   background-color: var(--color-primary);
   color: white;
-  font-weight: 600;
-  box-shadow: 0 1px 2px oklch(from var(--color-primary) l c h / 0.3);
+  font-weight: 500;
 }
 .primary:hover:not(:disabled) {
   background-color: var(--color-primary-hover);
-  box-shadow: 0 2px 8px oklch(from var(--color-primary) l c h / 0.35);
   transform: translateY(-0.5px);
 }
 .primary:active:not(:disabled) {
   transform: translateY(0);
-  box-shadow: 0 1px 2px oklch(from var(--color-primary) l c h / 0.2);
 }
 
-/* Secondary — subtle border, clean */
+/* Secondary — subtle, clean border */
 .secondary {
   background-color: var(--color-card);
   color: var(--color-fg);
   border: 1px solid var(--color-border);
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.04);
 }
 .secondary:hover:not(:disabled) {
   background-color: var(--color-secondary);
-  border-color: var(--color-muted-fg);
 }
 .secondary:active:not(:disabled) {
   background-color: var(--color-secondary);
@@ -60,7 +55,6 @@
 .danger {
   background-color: var(--color-destructive);
   color: white;
-  box-shadow: 0 1px 2px oklch(from var(--color-destructive) l c h / 0.3);
 }
 .danger:hover:not(:disabled) {
   opacity: 0.9;
@@ -79,20 +73,20 @@
 
 /* Sizes */
 .sm {
-  padding: 4px 10px;
+  padding: 4px 12px;
   font-size: var(--text-xs);
-  height: 28px;
-  border-radius: 7px;
+  height: 30px;
+  border-radius: var(--radius-md);
 }
 
 .md {
-  padding: 6px 14px;
+  padding: 6px 16px;
   font-size: var(--text-sm);
-  height: 34px;
+  height: 36px;
 }
 
 .lg {
-  padding: 8px 18px;
+  padding: 8px 20px;
   font-size: var(--text-base);
-  height: 40px;
+  height: 42px;
 }

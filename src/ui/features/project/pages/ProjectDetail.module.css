@@ -2,7 +2,7 @@
 
 .layout {
   display: flex;
-  height: calc(100vh - 48px);
+  height: calc(100vh - 56px);
 }
 
 /* Topbar */
@@ -53,18 +53,19 @@
 .searchBar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  gap: 8px;
+  padding: 7px 14px;
+  background: var(--color-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
   color: var(--color-muted-fg);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 
 .searchBarFocused {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px oklch(from var(--color-primary) l c h / 0.08);
+  background: var(--color-card);
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-sm);
 }
 
 .searchInput {
@@ -171,9 +172,9 @@
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 6px 8px;
+  padding: 6px 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-full);
   background: none;
   color: var(--color-muted-fg);
   cursor: pointer;
@@ -182,10 +183,10 @@
   font-weight: 500;
   white-space: nowrap;
   transition:
-    color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-    background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-    padding 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-    gap 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    color 0.2s ease,
+    background-color 0.2s ease,
+    padding 0.2s ease,
+    gap 0.2s ease;
 }
 
 .switchItem:hover {
@@ -194,14 +195,15 @@
 }
 
 .switchItemActive {
-  color: var(--color-primary);
-  background: var(--color-accent);
+  color: var(--color-fg);
+  background: var(--color-secondary);
   gap: 6px;
-  padding: 6px 12px;
+  padding: 6px 14px;
+  font-weight: 600;
 }
 
 .switchItemActive:hover {
-  background: var(--color-accent);
+  background: var(--color-secondary);
 }
 
 .switchLabel {
@@ -220,16 +222,16 @@
   opacity: 1;
 }
 
-/* --- Sidebar — same bg as content --- */
+/* --- Sidebar — clean white, subtle border --- */
 .sidebar {
-  width: 240px;
+  width: 260px;
   flex-shrink: 0;
   border-right: 1px solid var(--color-border);
-  background-color: var(--color-bg);
+  background-color: var(--color-card);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: var(--space-sm);
+  padding: var(--space-md) var(--space-sm);
 }
 
 .sidebarHeader {
@@ -311,7 +313,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: calc(100vh - 48px);
+  height: calc(100vh - 56px);
 }
 
 @media (max-width: 768px) {

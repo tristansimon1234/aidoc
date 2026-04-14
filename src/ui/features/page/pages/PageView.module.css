@@ -1,7 +1,7 @@
-/* Tab bar */
+/* Tab bar — clean underline tabs (ElevenLabs style) */
 .tabBar {
   display: flex;
-  gap: var(--space-lg);
+  gap: 4px;
 }
 
 .tab {
@@ -9,33 +9,37 @@
   display: flex;
   align-items: center;
   gap: var(--space-xs);
-  padding: var(--space-sm) 0;
+  padding: var(--space-sm) var(--space-md);
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--color-muted-fg);
   background: none;
   border: none;
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
 .tab:hover {
   color: var(--color-fg);
+  background: var(--color-secondary);
 }
 
 .tabActive {
   color: var(--color-fg);
+  background: var(--color-secondary);
+  font-weight: 600;
 }
 
 .tabActive::after {
   content: '';
   position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
   height: 2px;
-  background-color: var(--color-primary);
+  background-color: var(--color-fg);
   border-radius: 1px;
 }
 
@@ -112,7 +116,7 @@
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--space-lg);
-  padding-bottom: 0;
+  padding-bottom: var(--space-sm);
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -133,7 +137,7 @@
 
 /* Dashboard sections */
 .section {
-  padding: var(--space-md);
+  padding: var(--space-lg);
   background-color: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
@@ -294,10 +298,9 @@
 }
 
 .dropZone:hover {
-  border-color: var(--color-primary);
-  background: linear-gradient(180deg, var(--color-accent) 0%, var(--color-card) 100%);
+  border-color: var(--color-fg);
+  background: var(--color-secondary);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
 }
 
 .dropZoneTitle {
@@ -434,19 +437,20 @@
 
 .briefingInput {
   width: 100%;
-  padding: var(--space-sm);
+  padding: 10px var(--space-md);
   font-size: var(--text-sm);
   color: var(--color-fg);
   background: var(--color-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
   font-family: var(--font-sans);
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .briefingInput:focus {
-  border-color: var(--color-primary);
+  border-color: var(--color-border);
+  background: var(--color-card);
 }
 
 .briefingInputMono {
@@ -456,21 +460,22 @@
 
 .briefingTextarea {
   width: 100%;
-  padding: var(--space-sm);
+  padding: 10px var(--space-md);
   font-size: var(--text-sm);
   color: var(--color-fg);
   background: var(--color-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
   font-family: var(--font-sans);
   outline: none;
   resize: vertical;
   min-height: 60px;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .briefingTextarea:focus {
-  border-color: var(--color-primary);
+  border-color: var(--color-border);
+  background: var(--color-card);
 }
 
 .briefingExample {
