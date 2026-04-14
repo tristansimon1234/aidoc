@@ -86,11 +86,11 @@ export function PageView(): React.ReactElement {
         segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
       } | undefined
 
-      if (voiceover?.audioPath) {
+      if (voiceover?.audioUrl) {
+        setVoiceoverUrl(voiceover.audioUrl)
+      } else if (voiceover?.audioPath) {
         const { data: audioData } = supabase.storage.from('artifacts').getPublicUrl(voiceover.audioPath)
         setVoiceoverUrl(audioData?.publicUrl ?? null)
-      } else if (voiceover?.audioUrl) {
-        setVoiceoverUrl(voiceover.audioUrl)
       } else {
         setVoiceoverUrl(null)
       }
@@ -344,11 +344,11 @@ DO NOT generate new documentation. Only verify the existing one.`
                   audioPath?: string
                   audioUrl?: string
                 }
-                if (result.audioPath) {
+                if (result.audioUrl) {
+                  setVoiceoverUrl(result.audioUrl)
+                } else if (result.audioPath) {
                   const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
                   setVoiceoverUrl(data?.publicUrl ?? null)
-                } else if (result.audioUrl) {
-                  setVoiceoverUrl(result.audioUrl)
                 }
                 setVoiceoverSegments(result.segments ?? [])
               } : undefined}
