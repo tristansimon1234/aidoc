@@ -1,5 +1,5 @@
 import { type ChangeEvent, useState, useRef, useEffect } from 'react'
-import { Button, Spinner } from '../../../design-system/components/index.js'
+import { Button, ProgressLoader } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO } from '../../../shared/api/client.js'
 import { updatePage as dbUpdatePage } from '../../../shared/api/db.js'
 import styles from '../pages/PageView.module.css'
@@ -307,18 +307,17 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
   }
 
   // Processing pipeline
-  if (status !== 'idle') {
+  if (status === 'uploading' || status === 'analyzing' || status === 'extracting' || status === 'generating') {
+    const pipelineSteps = [
+      { label: 'Uploading video', estimatedSeconds: 5 },
+      { label: 'Analyzing with AI', estimatedSeconds: 45 },
+      { label: 'Extracting screenshots', estimatedSeconds: 10 },
+      { label: 'Generating documentation', estimatedSeconds: 20 },
+    ]
+    const stepMap: Record<string, number> = { uploading: 0, analyzing: 1, extracting: 2, generating: 3 }
     return (
       <div className={styles.methodContent}>
-        <div className={styles.methodProgress}>
-          <Spinner size="sm" />
-          <span>
-            {status === 'uploading' && 'Uploading video...'}
-            {status === 'analyzing' && 'Analyzing video with AI \u2014 this may take a minute...'}
-            {status === 'extracting' && 'Extracting screenshots...'}
-            {status === 'generating' && 'Generating documentation...'}
-          </span>
-        </div>
+        <ProgressLoader steps={pipelineSteps} activeStep={stepMap[status] ?? 0} />
       </div>
     )
   }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
-import { Button, Spinner } from '../../../design-system/components/index.js'
+import { Button, ProgressLoader } from '../../../design-system/components/index.js'
 import { createProject } from '../../../shared/api/db.js'
 import { api } from '../../../shared/api/client.js'
 
@@ -150,18 +150,30 @@ export function NewProject(): React.ReactElement {
               </div>
             </div>
 
-            {!analyzed && (
+            {!analyzed && !analyzing && (
               <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
-                <Button type="button" disabled={!baseUrl || analyzing} onClick={() => void handleAnalyze()}>
-                  {analyzing ? 'Analyzing...' : 'Analyze website'}
+                <Button type="button" disabled={!baseUrl} onClick={() => void handleAnalyze()}>
+                  Analyze website
                 </Button>
-                {analyzing && <Spinner size="sm" />}
                 <button type="button" onClick={() => setAnalyzed(true)} style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', fontFamily: 'var(--font-sans)',
                 }}>
                   Skip — I&apos;ll fill it myself
                 </button>
+              </div>
+            )}
+
+            {analyzing && (
+              <div style={{ marginTop: 'var(--space-md)' }}>
+                <ProgressLoader
+                  steps={[
+                    { label: 'Fetching website', estimatedSeconds: 3 },
+                    { label: 'Analyzing with AI', estimatedSeconds: 8 },
+                    { label: 'Extracting design', estimatedSeconds: 4 },
+                  ]}
+                  activeStep={1}
+                />
               </div>
             )}
           </div>

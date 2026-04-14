@@ -6,6 +6,7 @@ import {
   BlockEditor,
   EmptyState,
   TableOfContents,
+  ProgressLoader,
 } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
@@ -46,6 +47,7 @@ export function PageView(): React.ReactElement {
   const [voices, setVoices] = useState<{ voiceId: string; name: string }[]>([])
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
+  const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -403,30 +405,47 @@ DO NOT generate new documentation. Only verify the existing one.`
                     </>
                   )}
                   {latestRunId && page.content && (
-                    <Button size="sm" onClick={() => {
+                    <Button size="sm" disabled={generatingVoiceover} onClick={() => {
                       void (async () => {
-                        const result = await api.runs.generateVoiceover(latestRunId, {
-                          voiceId: selectedVoiceId,
-                          tone: selectedTone,
-                        }) as {
-                          segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
-                          audioPath?: string
-                          audioUrl?: string
+                        setGeneratingVoiceover(true)
+                        try {
+                          const result = await api.runs.generateVoiceover(latestRunId, {
+                            voiceId: selectedVoiceId,
+                            tone: selectedTone,
+                          }) as {
+                            segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+                            audioPath?: string
+                            audioUrl?: string
+                          }
+                          const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
+                          if (result.audioUrl) {
+                            setVoiceoverUrl(bust(result.audioUrl))
+                          } else if (result.audioPath) {
+                            const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                            setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
+                          }
+                          setVoiceoverSegments(result.segments ?? [])
+                        } finally {
+                          setGeneratingVoiceover(false)
                         }
-                        const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
-                        if (result.audioUrl) {
-                          setVoiceoverUrl(bust(result.audioUrl))
-                        } else if (result.audioPath) {
-                          const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
-                          setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
-                        }
-                        setVoiceoverSegments(result.segments ?? [])
                       })()
                     }}>
                       {voiceoverUrl ? 'Regenerate voice-over' : 'Generate voice-over'}
                     </Button>
                   )}
                 </div>
+
+                {/* Voiceover generation progress */}
+                {generatingVoiceover && (
+                  <ProgressLoader
+                    steps={[
+                      { label: 'Writing narration script', estimatedSeconds: 15 },
+                      { label: 'Generating audio segments', estimatedSeconds: 25 },
+                      { label: 'Assembling final audio', estimatedSeconds: 10 },
+                    ]}
+                    activeStep={0}
+                  />
+                )}
               </div>
 
               {/* Show on public page */}
@@ -594,10 +613,10 @@ DO NOT generate new documentation. Only verify the existing one.`
 
           {/* Analyzing state */}
           {analyzing && (
-            <div className={styles.section} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px', gap: 'var(--space-md)' }}>
-              <Spinner size="lg" />
-              <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--text-sm)' }}>Generating structured test report...</span>
-            </div>
+            <ProgressLoader
+              steps={[{ label: 'Generating structured test report', estimatedSeconds: 20 }]}
+              activeStep={0}
+            />
           )}
 
           {/* Structured report */}
