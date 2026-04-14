@@ -232,59 +232,65 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       // Ask Gemini to transform the DOC into a narration script
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const narrationResult = await generateText({
-        userPrompt: `You are a professional voice-over artist recording a tutorial video narration. Your voice will play SLIGHTLY BEFORE each action happens on screen — you're guiding the viewer, telling them what to do next BEFORE they see it.
+        userPrompt: `You are recording voice-over narration for a product tutorial video. Your narration plays slightly before each action on screen — you guide the viewer through what's about to happen and WHY it matters.
 
-## Your style
-Think of the best YouTube tutorial creators: warm, confident, never robotic. You're a friend showing someone your favorite app. Short punchy sentences. You ANTICIPATE — "let's click here" (then the click happens). Never describe what already happened.
+## Your approach
+You're not just listing clicks. You EXPLAIN the purpose behind each step — why this field matters, what it enables, what the user will get out of it. Think of the best SaaS product tours: they make you understand the value, not just the mechanics.
 
-## The documentation to narrate:
+BAD: "Click 'New Project'." (just a click, no context)
+GOOD: "Let's create your first project [short pause] this is where all your docs will live."
+GOOD: "Add your app's URL here — the AI uses this to understand your product and generate smarter docs."
+GOOD: "Now hit 'Generate' [pause] this is where the magic happens. The AI will watch your recording and write the documentation for you."
+
+## Documentation source:
 ${doc.markdownContent}
 
 ## Script structure
-${numSteps} sections, each plays before its corresponding screen moment.
-Total word budget: ~${totalMaxWords} words for the ENTIRE script.
+${numSteps} sections using [SECTION N] markers.
+Word budget: ~${totalMaxWords} words total. Each section: 1-2 sentences.
 
 ${sectionList}
 
-## Writing rules
-- ANTICIPATORY: "Let's open the settings" NOT "The settings page is now visible"
-- CONCISE: 1 sentence per section, sometimes 2 short ones. Respect the word limit.
-- NATURAL: contractions (let's, you'll, here's), filler words sparingly (so, now, alright)
-- NO reading: skip URLs, code blocks, image references, technical IDs
-- NO meta: never say "as you can see", "in this tutorial", "as shown"
+## Content rules
+- ANTICIPATORY: describe what we're ABOUT to do, not what just happened
+- EXPLAIN THE WHY: don't just say "click X" — say why we're clicking X and what it does
+- Add VALUE: mention what features enable, what problems they solve, what the user gains
+- NATURAL: contractions (let's, you'll, here's), conversational ("so basically", "the cool thing is")
+- Skip: URLs, code, image references, technical IDs
+- Never say: "as you can see", "in this tutorial", "notice how"
 
-## Voice expression tags
-These make you sound human. Use them generously and VARY them:
+## Audio expression tags
+Place tags BETWEEN sentences only — NEVER in the middle of a sentence. They add rhythm and emotion.
 
-Pacing:
-  [pause] — beat between ideas. "Click create [pause] and we're done."
-  [short pause] — tiny breath. "Enter your name [short pause] right here."
-  [long pause] — before a new topic or big reveal.
+Available tags:
+  [laughs] — light friendly warmth after something fun or easy
+  [excited] — genuine enthusiasm when revealing a cool feature
+  [whispers] — sharing a secret or pro tip
+  [sighs] — satisfaction after completing a milestone
+  [pause] — beat between two sentences (use sparingly — max 2 in entire script)
 
-Emotion:
-  [laughs] — warmth, lightness. "That's literally it [laughs] told you it was easy."
-  [excited] — genuine enthusiasm. "And boom [excited] your project is live!"
-  [whispers] — sharing a secret/tip. "Here's the best part [whispers] it's all automatic."
+CRITICAL RULES for tags:
+- Place tags ONLY between complete sentences: "First sentence. [laughs] Second sentence."
+- NEVER inside a sentence: NOT "Click the [pause] button" — this sounds broken
+- Use at least 3 DIFFERENT tags across the script
+- [laughs], [excited], [whispers] are the PRIORITY tags — they add personality
+- [pause] is BORING — use it max 2 times in the whole script, prefer the emotional tags instead
 
-Delivery:
-  [clears throat] — resetting before a new section.
-  [sighs] — satisfaction. "And there we go [sighs] everything's set up."
-
-Rules: use at least 3 different tag types. Never use the same tag twice in a row. Place tags MID-sentence or between sentences, never at the very start of section 1.
-
-## Output format
-Start DIRECTLY with [SECTION 1]. No preamble, no title, no intro text.
+## Output
+Start DIRECTLY with [SECTION 1]. No preamble.
 
 [SECTION 1]
-Hey! [pause] So we're gonna set up your first project — super quick.
+Hey! So we're gonna set up your workspace — this is where all your documentation lives, organized by project.
 [SECTION 2]
-Go ahead and click 'New Project' right here.
+Let's create a new project. Think of it as a home for everything related to one product.
 [SECTION 3]
-Give it a name [short pause] whatever you want.
+Give it a name — this shows up in your sidebar and in the published docs your users will see.
 [SECTION 4]
-Pop in your URL [whispers] this helps the AI understand your app.
+Now add your app's URL. The AI actually uses this to crawl and understand your product better. [whispers] Pretty smart right?
 [SECTION 5]
-Alright hit create [excited] and just like that, you're in!`,
+Describe who this is for. This is what makes the generated docs feel personalized instead of generic. [excited] It really works!
+[SECTION 6]
+Alright hit create and just like that, your project is ready with a default Getting Started page! [laughs] Told you it was quick.`,
         maxTokens: 8192,
       })
 
