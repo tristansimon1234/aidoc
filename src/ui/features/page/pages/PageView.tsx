@@ -96,11 +96,23 @@ export function PageView(): React.ReactElement {
       }
       setVoiceoverSegments(voiceover?.segments ?? [])
 
-      // Get video URL from summaryJson.videoPath
+      // Get video URL from summaryJson.videoPath — verify it exists
       const vPath = summary?.videoPath as string | undefined
-      if (vPath) {
+      if (vPath && runData?.id) {
         const { data: vData } = supabase.storage.from('artifacts').getPublicUrl(vPath)
-        setVideoUrl(vData?.publicUrl ?? null)
+        // HEAD check to verify file exists (catches stale .mp4 paths from failed ffmpeg)
+        const check = await fetch(vData?.publicUrl ?? '', { method: 'HEAD' }).catch(() => null)
+        if (check?.ok) {
+          setVideoUrl(vData?.publicUrl ?? null)
+        } else {
+          // Try fallback: original upload format (.webm, .mp4, .mov)
+          const basePath = `runs/${runData.id}/video`
+          for (const ext of ['.webm', '.mp4', '.mov']) {
+            const { data: fallback } = supabase.storage.from('artifacts').getPublicUrl(basePath + ext)
+            const fbCheck = await fetch(fallback?.publicUrl ?? '', { method: 'HEAD' }).catch(() => null)
+            if (fbCheck?.ok) { setVideoUrl(fallback?.publicUrl ?? null); break }
+          }
+        }
       } else {
         setVideoUrl(null)
       }
