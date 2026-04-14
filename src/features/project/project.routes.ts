@@ -41,54 +41,97 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       const parsed = AnalyzeUrlSchema.safeParse(req.body)
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
+      const url = parsed.data.url
+      console.log(`[analyze-url] Fetching: ${url}`)
+
       // Fetch HTML server-side (avoids CORS)
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 10000)
-      let html: string
+      const timeout = setTimeout(() => controller.abort(), 15000)
+      let html = ''
+      let fetchError: string | null = null
       try {
-        const resp = await fetch(parsed.data.url, {
+        const resp = await fetch(url, {
           signal: controller.signal,
-          headers: { 'User-Agent': 'AiDoc/1.0 (Documentation Generator)' },
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (compatible; AiDoc/1.0; +https://aidoc.app)',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+          redirect: 'follow',
         })
+        console.log(`[analyze-url] Response: ${resp.status} ${resp.statusText}, content-type: ${resp.headers.get('content-type')}`)
         html = await resp.text()
-      } catch {
-        html = ''
+        console.log(`[analyze-url] HTML length: ${html.length} chars`)
+      } catch (err) {
+        fetchError = (err as Error).message
+        console.warn(`[analyze-url] Fetch failed: ${fetchError}`)
       } finally {
         clearTimeout(timeout)
       }
 
-      // Truncate to ~80KB and strip scripts/styles
+      // Strip scripts/styles/SVGs, keep text + structure
       const stripped = html
         .replace(/<script[\s\S]*?<\/script>/gi, '')
         .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<svg[\s\S]*?<\/svg>/gi, '')
+        .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
         .slice(0, 80_000)
 
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const result = await generateText({
-        userPrompt: `Analyze this webpage HTML and extract product information. The URL is: ${parsed.data.url}
+        userPrompt: `Analyze this webpage and extract product information + design details.
 
-HTML content:
-${stripped || '(Could not fetch page content — infer from the URL)'}
+URL: ${url}
+${fetchError ? `(Note: direct fetch failed with "${fetchError}" — infer what you can from the URL itself)` : ''}
+
+${stripped ? `HTML content (scripts/styles removed):\n${stripped}` : '(No HTML content available — analyze based on URL pattern)'}
 
 Return ONLY valid JSON with these fields:
 {
-  "name": "product/company name (guess from HTML title, logo, headings)",
-  "description": "one-sentence product description",
-  "audience": "who uses this product (role, industry, use case)",
-  "workflow": "the most important user journey or workflow"
+  "name": "product or company name (from <title>, logo text, headings, or URL domain)",
+  "description": "one-sentence description of what this product does",
+  "audience": "who uses this product — role, industry, use case (be specific)",
+  "workflow": "the most important user journey or primary workflow",
+  "design": {
+    "accentColor": "primary/accent color hex (from buttons, links, brand elements — e.g. #4F46E5)",
+    "bgColor": "background color hex (usually #FFFFFF or similar)",
+    "textColor": "main text color hex (usually dark — e.g. #1A1A1A)",
+    "font": "primary font family name (from headings or body — e.g. Inter, Roboto, system-ui)"
+  }
 }
 
-If you can't determine a field, return an empty string for it. Return ONLY the JSON object, no markdown fences.`,
+Rules:
+- For design colors: look at inline styles, class names that suggest colors, brand elements, meta theme-color tags
+- If you can't determine exact colors, make educated guesses based on the brand/industry
+- For font: check font-family declarations, Google Fonts links, or common SaaS fonts
+- If a field is truly unknowable, use empty string (except design — always provide best guesses)
+- Return ONLY the JSON object, no markdown fences, no commentary`,
         maxTokens: 1024,
       })
 
+      console.log(`[analyze-url] Gemini response (${result.text.length} chars): ${result.text.slice(0, 300)}`)
+
       // Parse JSON from Gemini response
-      let analysis = { name: '', description: '', audience: '', workflow: '' }
+      let analysis: {
+        name: string
+        description: string
+        audience: string
+        workflow: string
+        design?: { accentColor: string; bgColor: string; textColor: string; font: string }
+      } = { name: '', description: '', audience: '', workflow: '' }
       try {
         const cleaned = result.text.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
         analysis = JSON.parse(cleaned) as typeof analysis
-      } catch {
-        // Gemini returned non-JSON — use empty defaults
+      } catch (parseErr) {
+        console.warn(`[analyze-url] JSON parse failed: ${(parseErr as Error).message}`)
+        // Try to extract JSON from the response more aggressively
+        const jsonMatch = result.text.match(/\{[\s\S]*\}/)
+        if (jsonMatch) {
+          try {
+            analysis = JSON.parse(jsonMatch[0]) as typeof analysis
+          } catch {
+            // Give up — return empty defaults
+          }
+        }
       }
 
       res.status(200).json(analysis)

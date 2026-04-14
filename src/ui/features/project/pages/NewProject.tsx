@@ -27,6 +27,9 @@ export function NewProject(): React.ReactElement {
   const [audience, setAudience] = useState('')
   const [workflow, setWorkflow] = useState('')
 
+  // Design (extracted from website)
+  const [design, setDesign] = useState<{ accentColor: string; bgColor: string; textColor: string; font: string } | null>(null)
+
   // Test environment
   const [credentials, setCredentials] = useState<Credential[]>([])
 
@@ -43,6 +46,7 @@ export function NewProject(): React.ReactElement {
       if (result.description) setDescription(result.description)
       if (result.audience) setAudience(result.audience)
       if (result.workflow) setWorkflow(result.workflow)
+      if (result.design) setDesign(result.design)
       setAnalyzed(true)
     } catch (err) {
       setError((err as Error).message)
@@ -81,7 +85,14 @@ export function NewProject(): React.ReactElement {
         context,
         credentials: validCreds.length > 0 ? validCreds : undefined,
       })
-      .then((p) => navigate(`/projects/${p.id}`))
+      .then(async (p) => {
+        // Apply discovered design if available
+        if (design) {
+          const { updateProject } = await import('../../../shared/api/db.js')
+          await updateProject(p.id, { design }).catch(() => { /* non-critical */ })
+        }
+        navigate(`/projects/${p.id}`)
+      })
       .catch((err: Error) => {
         setError(err.message)
         setSubmitting(false)
@@ -199,6 +210,37 @@ export function NewProject(): React.ReactElement {
                     }} />
                 </div>
               </div>
+
+              {/* Design preview */}
+              {design && (
+                <div style={{
+                  borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)',
+                  marginTop: 'var(--space-xs)',
+                }}>
+                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
+                    Detected brand
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                      <div style={{ width: 24, height: 24, borderRadius: 'var(--radius-sm)', background: design.accentColor, border: '1px solid var(--color-border)' }} />
+                      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)' }}>{design.accentColor}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                      <div style={{ width: 24, height: 24, borderRadius: 'var(--radius-sm)', background: design.bgColor, border: '1px solid var(--color-border)' }} />
+                      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)' }}>{design.bgColor}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                      <div style={{ width: 24, height: 24, borderRadius: 'var(--radius-sm)', background: design.textColor, border: '1px solid var(--color-border)' }} />
+                      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)' }}>{design.textColor}</span>
+                    </div>
+                    {design.font && (
+                      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', background: 'var(--color-secondary)', padding: '2px 8px', borderRadius: 'var(--radius-sm)' }}>
+                        {design.font}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Test environment */}
               <div style={{
