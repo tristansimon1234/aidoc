@@ -55,10 +55,12 @@ export async function generateVoiceover(
     const text = stepTexts[i] ?? steps[i]!.text
     if (!text || text.length < 3) continue
 
-    const startTime = timestamps[i] ?? 0
-    const endTime = timestamps[i + 1] ?? (startTime + 20)
+    const rawStart = timestamps[i] ?? 0
+    // Start narration slightly before the action — narrator announces what's about to happen
+    const startTime = Math.max(0, rawStart - 1.5)
+    const endTime = timestamps[i + 1] ?? (rawStart + 20)
 
-    console.log(`[voiceover] Segment ${i}: "${text.slice(0, 60)}${text.length > 60 ? '...' : ''}" (${text.length} chars, target ${startTime.toFixed(1)}s)`)
+    console.log(`[voiceover] Segment ${i}: "${text.slice(0, 60)}${text.length > 60 ? '...' : ''}" (${text.length} chars, target ${startTime.toFixed(1)}s ← shifted from ${rawStart.toFixed(1)}s)`)
 
     const buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
     const segPath = `runs/${runId}/voiceover-seg-${i}.mp3`
