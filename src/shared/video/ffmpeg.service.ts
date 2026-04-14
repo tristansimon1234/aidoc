@@ -13,8 +13,6 @@ let ffmpegBinaryPath: string | null = null
 
 function trySetPath(path: string, source: string): boolean {
   if (path && existsSync(path)) {
-    // Ensure binary is executable (Vercel might strip permissions)
-    try { execSync(`chmod +x "${path}"`, { timeout: 3000 }) } catch { /* ignore */ }
     ffmpegBinaryPath = path
     ffmpeg.setFfmpegPath(path)
     console.log(`[ffmpeg] ${source}: ${path}`)
@@ -80,6 +78,10 @@ export async function convertToMp4(inputBuffer: Buffer, inputFormat: string): Pr
   // If already MP4, return as-is
   if (inputFormat === 'video/mp4') return inputBuffer
 
+  const start = Date.now()
+  const sizeMB = (inputBuffer.length / 1024 / 1024).toFixed(1)
+  console.log(`[ffmpeg] Converting ${sizeMB}MB ${inputFormat} → MP4...`)
+
   const tmpIn = join(tmpdir(), `aidoc-in-${Date.now()}.${inputFormat.includes('webm') ? 'webm' : 'mov'}`)
   const tmpOut = join(tmpdir(), `aidoc-out-${Date.now()}.mp4`)
 
@@ -101,7 +103,9 @@ export async function convertToMp4(inputBuffer: Buffer, inputFormat: string): Pr
         .run()
     })
 
-    return readFileSync(tmpOut)
+    const result = readFileSync(tmpOut)
+    console.log(`[ffmpeg] Conversion done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${(result.length / 1024 / 1024).toFixed(1)}MB`)
+    return result
   } finally {
     try { unlinkSync(tmpIn) } catch { /* ignore */ }
     try { unlinkSync(tmpOut) } catch { /* ignore */ }
