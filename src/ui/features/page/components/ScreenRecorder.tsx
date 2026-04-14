@@ -252,8 +252,8 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.size > 500 * 1024 * 1024) {
-      setError('Video too large (max 500MB)')
+    if (file.size > 200 * 1024 * 1024) {
+      setError('Video too large (max 200MB)')
       return
     }
 
@@ -330,7 +330,7 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
           </p>
           <div className={styles.methodInfoTags}>
             <span className={styles.methodTag}>.mp4, .webm, .mov</span>
-            <span className={styles.methodTag}>up to 500MB</span>
+            <span className={styles.methodTag}>up to 200MB</span>
             <span className={styles.methodTag}>auto voice-over</span>
             {hasExtension && <span className={styles.methodTag} style={{ color: 'var(--color-success)' }}>DOM capture active</span>}
           </div>

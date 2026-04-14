@@ -332,6 +332,12 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     // Sort steps by timestamp ascending
     const sortedSteps = [...analysis.steps].sort((a, b) => a.timestamp - b.timestamp)
+
+    if (sortedSteps.length === 0) {
+      await runRepo.updateRunStatus(runId, 'failed')
+      throw new Error('Could not detect any actions in the video. Try a longer recording with clear interactions.')
+    }
+
     const timestamps = sortedSteps.map((s) => s.timestamp)
 
     // Create run steps (screenshots will be extracted client-side)

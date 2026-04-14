@@ -148,6 +148,13 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
+
+      // Verify run has steps before generating
+      const steps = await runService.getRunSteps(params.data.id)
+      if (steps.length === 0) {
+        throw new AppError('No steps found — the video analysis didn\'t detect any actions. Try re-uploading.', 'NO_STEPS', 400)
+      }
+
       const doc = await runService.generateDoc(params.data.id)
       res.status(200).json(doc)
     } catch (err) {
