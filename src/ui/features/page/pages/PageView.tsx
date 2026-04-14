@@ -76,13 +76,6 @@ export function PageView(): React.ReactElement {
       setPage(pageData)
       setTryReport(testReport)
 
-      // Fetch available voices (once)
-      if (voices.length === 0) {
-        api.runs.getVoices().then((r) => {
-          setVoices(r.voices.map((v) => ({ voiceId: v.voiceId, name: v.name })))
-        }).catch(() => { /* ElevenLabs not configured */ })
-      }
-
       // Track latest run ID for voiceover generation
       setLatestRunId(runData?.id ?? null)
 
@@ -141,6 +134,17 @@ export function PageView(): React.ReactElement {
   useEffect(() => {
     void fetchData()
   }, [fetchData])
+
+  // Fetch available ElevenLabs voices (once on mount)
+  useEffect(() => {
+    api.runs.getVoices().then((r) => {
+      const v = r.voices.map((voice) => ({ voiceId: voice.voiceId, name: voice.name }))
+      console.log(`[voices] Loaded ${v.length} voices`)
+      setVoices(v)
+    }).catch((err) => {
+      console.warn('[voices] Failed to load:', err)
+    })
+  }, [])
 
   const handleTryDoc = async (): Promise<void> => {
     if (!projectId || !pageId || !page?.content) return

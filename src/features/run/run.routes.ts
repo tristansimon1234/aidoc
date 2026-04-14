@@ -249,13 +249,15 @@ RULES:
 - DO NOT read image captions, URLs, or code blocks aloud
 - DO NOT say "as shown in the screenshot" or "the documentation says"
 - Sound like a friendly colleague walking someone through the product
-- You can use these audio tags for natural delivery:
-  [pause] — brief pause
-  [short pause] — very short pause
-  [long pause] — longer pause
-  [sigh], [laughs], [clears throat] — natural sounds (use sparingly)
+- IMPORTANT: Use audio tags to make the delivery natural and human-like. You MUST include at least one audio tag per section:
+  [pause] — brief pause between sentences or ideas
+  [short pause] — very short pause within a sentence
+  [long pause] — longer pause for emphasis or transitions
+  [sigh], [laughs], [clears throat] — natural human sounds (use sparingly, 1-2 per script)
+  Example: "Hey there! [pause] Let's walk through this together."
+  Example: "Click the button [short pause] and you'll see the form appear."
 
-Output format:
+Output format (start DIRECTLY with [SECTION 1], no preamble):
 [SECTION 1]
 Hey! Let's walk through how to get started [pause] it's really straightforward.
 [SECTION 2]
