@@ -315,56 +315,44 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
   await runRepo.updateRunStatus(runId, 'running')
 
   try {
-    // Download video from Supabase Storage
     const { supabase } = await import('../../shared/db/supabase.client.js')
-    const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
-    if (error || !data) throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
 
-    const rawBuffer = Buffer.from(await data.arrayBuffer())
-    const mimeType = videoPath.endsWith('.webm') ? 'video/webm'
-      : videoPath.endsWith('.mov') ? 'video/quicktime'
-      : 'video/mp4'
+    // --- Step 1: Convert to MP4 via video microservice ---
+    const { isVideoServiceConfigured, convertToMp4, extractFrames: extractFramesRemote } = await import('../../shared/video/video.client.js')
 
-    // --- Step 1: Convert to MP4 if needed (via ffmpeg) ---
-    const { isAvailable, convertToMp4, extractFrames } = await import('../../shared/video/ffmpeg.service.js')
-    const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
-
-    let videoBuffer: Buffer<ArrayBuffer> = rawBuffer as Buffer<ArrayBuffer>
+    let analyzeVideoPath = videoPath
     let playerVideoPath = videoPath
-    let ffmpegWorks = false
 
-    if (isAvailable() && mimeType !== 'video/mp4') {
+    if (isVideoServiceConfigured() && !videoPath.endsWith('.mp4')) {
       try {
-        console.log(`[video] Converting ${mimeType} → MP4...`)
-        videoBuffer = await convertToMp4(rawBuffer, mimeType) as Buffer<ArrayBuffer>
-        playerVideoPath = videoPath.replace(/\.[^.]+$/, '.mp4')
-        await uploadToStorage('artifacts', playerVideoPath, videoBuffer, 'video/mp4')
-        ffmpegWorks = true
-        console.log(`[video] Converted → ${playerVideoPath}`)
+        const mp4Path = await convertToMp4(videoPath, runId)
+        analyzeVideoPath = mp4Path
+        playerVideoPath = mp4Path
       } catch (err) {
-        console.warn(`[video] ffmpeg conversion failed: ${(err as Error).message}`)
-        videoBuffer = rawBuffer
-        playerVideoPath = videoPath
+        console.warn(`[video] Conversion failed, using original: ${(err as Error).message}`)
       }
-    } else if (mimeType === 'video/mp4') {
-      ffmpegWorks = isAvailable()
     }
 
-    // --- Step 2: Analyze with Gemini ---
+    // --- Step 2: Download for Gemini analysis ---
+    const { data, error } = await supabase.storage.from('artifacts').download(analyzeVideoPath)
+    if (error || !data) throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
+
+    const buffer = Buffer.from(await data.arrayBuffer())
+    const mimeType = analyzeVideoPath.endsWith('.mp4') ? 'video/mp4'
+      : analyzeVideoPath.endsWith('.webm') ? 'video/webm'
+      : 'video/quicktime'
+    const fileName = analyzeVideoPath.split('/').pop() ?? 'video.mp4'
+
+    // --- Step 3: Analyze with Gemini ---
     const { analyzeVideoWithGemini } = await import('../../shared/ai/gemini.client.js')
-    const analyzeMime = ffmpegWorks ? 'video/mp4' : mimeType
-    const fileName = playerVideoPath.split('/').pop() ?? 'video.mp4'
-    const analysis = await analyzeVideoWithGemini(videoBuffer, analyzeMime, fileName)
+    const analysis = await analyzeVideoWithGemini(buffer, mimeType, fileName)
 
     const sortedSteps = [...analysis.steps].sort((a, b) => a.timestamp - b.timestamp)
 
-    // === DIAGNOSTIC LOGGING ===
-    console.log(`[video] Gemini returned ${analysis.steps.length} steps for run ${runId}:`)
+    console.log(`[video] Gemini returned ${sortedSteps.length} steps:`)
     for (const s of sortedSteps) {
-      console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction} — "${s.screenDescription.slice(0, 80)}"`)
+      console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction}`)
     }
-    console.log(`[video] ffmpeg available: ${isAvailable()}, ffmpegWorks: ${ffmpegWorks}`)
-    // === END DIAGNOSTIC ===
 
     if (sortedSteps.length === 0) {
       await runRepo.updateRunStatus(runId, 'failed')
@@ -373,61 +361,35 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     const timestamps = sortedSteps.map((s) => s.timestamp)
 
-    // --- Step 3: Extract frames (server-side if ffmpeg available) ---
+    // --- Step 4: Extract frames via video microservice ---
     let framesExtracted = false
+    let framePaths: (string | null)[] = []
 
-    if (ffmpegWorks) {
+    if (isVideoServiceConfigured()) {
       try {
-        console.log(`[video] Extracting ${timestamps.length} frames server-side...`)
-        const frames = await extractFrames(videoBuffer, timestamps)
-
-        for (let i = 0; i < sortedSteps.length; i++) {
-          const s = sortedSteps[i]!
-          const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
-          const frameBuffer = frames[i]
-          let screenshotPath: string | undefined
-
-          if (frameBuffer && frameBuffer.length > 0) {
-            screenshotPath = `runs/${runId}/frame-${i}.jpg`
-            await uploadToStorage('artifacts', screenshotPath, frameBuffer, 'image/jpeg')
-          }
-
-          await runRepo.createRunStep({
-            runId,
-            stepIndex: i,
-            title: s.userAction,
-            action: s.userAction,
-            observation: `${s.screenDescription}${narrationText}`,
-            screenshotPath: screenshotPath ?? undefined,
-            status: 'completed',
-          })
-        }
-
-        framesExtracted = true
-        console.log(`[video] ${timestamps.length} frames extracted and uploaded`)
+        framePaths = await extractFramesRemote(playerVideoPath, runId, timestamps)
+        framesExtracted = framePaths.some((p) => p !== null)
       } catch (err) {
-        console.warn(`[video] Server frame extraction failed: ${(err as Error).message}`)
+        console.warn(`[video] Frame extraction failed: ${(err as Error).message}`)
       }
     }
 
-    // Fallback: create steps without screenshots (client will extract them)
-    if (!framesExtracted) {
-      console.log('[video] Creating steps without screenshots (client-side extraction needed)')
-      for (let i = 0; i < sortedSteps.length; i++) {
-        const s = sortedSteps[i]!
-        const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
-        await runRepo.createRunStep({
-          runId,
-          stepIndex: i,
-          title: s.userAction,
-          action: s.userAction,
-          observation: `${s.screenDescription}${narrationText}`,
-          status: 'completed',
-        })
-      }
+    // --- Step 5: Create run steps ---
+    for (let i = 0; i < sortedSteps.length; i++) {
+      const s = sortedSteps[i]!
+      const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
+      await runRepo.createRunStep({
+        runId,
+        stepIndex: i,
+        title: s.userAction,
+        action: s.userAction,
+        observation: `${s.screenDescription}${narrationText}`,
+        screenshotPath: framePaths[i] ?? undefined,
+        status: 'completed',
+      })
     }
 
-    // --- Step 4: Summary ---
+    // --- Step 6: Summary ---
     await runRepo.updateRunSummary(runId, {
       sections: [{
         url: 'video',
@@ -450,6 +412,7 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     throw err
   }
 }
+
 
 export async function getRun(id: string): Promise<Run> {
   const run = await runRepo.findRunById(id)

@@ -355,17 +355,13 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
       const videoPath = summary?.videoPath as string | undefined
       if (!videoPath) throw new AppError('No video found', 'NO_VIDEO', 404)
 
-      // Download, trim, re-upload
-      const { supabase } = await import('../../shared/db/supabase.client.js')
-      const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
-      if (error || !data) throw new Error(`Failed to download video: ${error?.message}`)
+      // Trim via video microservice
+      const { isVideoServiceConfigured, trimVideo } = await import('../../shared/video/video.client.js')
+      if (!isVideoServiceConfigured()) {
+        throw new AppError('Video service not configured — set VIDEO_SERVICE_URL', 'VIDEO_SERVICE_NOT_CONFIGURED', 400)
+      }
 
-      const { trimVideo } = await import('../../shared/video/ffmpeg.service.js')
-      const trimmedBuffer = await trimVideo(Buffer.from(await data.arrayBuffer()), body.startTime, body.endTime)
-
-      const trimmedPath = videoPath.replace(/\.mp4$/, '-trimmed.mp4')
-      const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
-      await uploadToStorage('artifacts', trimmedPath, trimmedBuffer, 'video/mp4')
+      const trimmedPath = await trimVideo(videoPath, params.data.id, body.startTime, body.endTime)
 
       // Update summary with new video path
       const { updateRunSummary } = await import('./run.repository.js')
@@ -375,6 +371,7 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
         trimApplied: { startTime: body.startTime, endTime: body.endTime },
       })
 
+      const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
       const videoUrl = getPublicUrl('artifacts', trimmedPath) ?? ''
       res.status(200).json({ videoPath: trimmedPath, videoUrl })
     } catch (err) {

@@ -1,0 +1,189 @@
+import express from 'express'
+import ffmpeg from 'fluent-ffmpeg'
+import { createClient } from '@supabase/supabase-js'
+import { writeFileSync, readFileSync, unlinkSync, mkdirSync, readdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const app = express()
+app.use(express.json({ limit: '300mb' }))
+
+const PORT = process.env.PORT || 3001
+
+// Health check
+app.get('/', (_req, res) => {
+  res.json({ status: 'ok', service: 'aidoc-video' })
+})
+
+// Helper: create supabase client from request
+function getSupabase(body) {
+  if (!body.supabaseUrl || !body.serviceKey) throw new Error('supabaseUrl and serviceKey required')
+  return createClient(body.supabaseUrl, body.serviceKey)
+}
+
+// Helper: download from supabase storage
+async function downloadVideo(supabase, videoPath) {
+  const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
+  if (error || !data) throw new Error(`Download failed: ${error?.message ?? 'no data'}`)
+  return Buffer.from(await data.arrayBuffer())
+}
+
+// Helper: upload to supabase storage
+async function uploadFile(supabase, path, buffer, contentType) {
+  const { error } = await supabase.storage.from('artifacts').upload(path, buffer, { contentType, upsert: true })
+  if (error) throw new Error(`Upload failed: ${error.message}`)
+}
+
+/**
+ * POST /convert
+ * Convert video to MP4 (H.264 + faststart)
+ */
+app.post('/convert', async (req, res) => {
+  const start = Date.now()
+  try {
+    const { videoPath, runId } = req.body
+    if (!videoPath || !runId) return res.status(400).json({ error: 'videoPath and runId required' })
+
+    const supabase = getSupabase(req.body)
+    const buffer = await downloadVideo(supabase, videoPath)
+    const sizeMB = (buffer.length / 1024 / 1024).toFixed(1)
+    console.log(`[convert] ${sizeMB}MB ${videoPath}`)
+
+    // Skip if already MP4
+    if (videoPath.endsWith('.mp4')) {
+      return res.json({ mp4Path: videoPath, skipped: true })
+    }
+
+    const tmpIn = join(tmpdir(), `in-${Date.now()}.webm`)
+    const tmpOut = join(tmpdir(), `out-${Date.now()}.mp4`)
+    writeFileSync(tmpIn, buffer)
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(tmpIn)
+        .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-c:a', 'aac', '-movflags', '+faststart'])
+        .output(tmpOut)
+        .on('progress', (p) => console.log(`[convert] ${p.percent?.toFixed(0) ?? '?'}%`))
+        .on('end', resolve)
+        .on('error', reject)
+        .run()
+    })
+
+    const mp4Buffer = readFileSync(tmpOut)
+    const mp4Path = videoPath.replace(/\.[^.]+$/, '.mp4')
+    await uploadFile(supabase, mp4Path, mp4Buffer, 'video/mp4')
+
+    unlinkSync(tmpIn)
+    unlinkSync(tmpOut)
+
+    console.log(`[convert] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${mp4Path}`)
+    res.json({ mp4Path })
+  } catch (err) {
+    console.error('[convert] Error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * POST /extract-frames
+ * Extract JPEG frames at specific timestamps
+ */
+app.post('/extract-frames', async (req, res) => {
+  const start = Date.now()
+  try {
+    const { videoPath, runId, timestamps } = req.body
+    if (!videoPath || !runId || !timestamps?.length) {
+      return res.status(400).json({ error: 'videoPath, runId, and timestamps required' })
+    }
+
+    const supabase = getSupabase(req.body)
+    const buffer = await downloadVideo(supabase, videoPath)
+    console.log(`[frames] Extracting ${timestamps.length} frames from ${videoPath}`)
+
+    const tmpIn = join(tmpdir(), `frames-${Date.now()}.mp4`)
+    const tmpDir = join(tmpdir(), `frames-${Date.now()}`)
+    writeFileSync(tmpIn, buffer)
+    mkdirSync(tmpDir, { recursive: true })
+
+    const framePaths = []
+
+    for (let i = 0; i < timestamps.length; i++) {
+      const t = timestamps[i]
+      const outPath = join(tmpDir, `frame-${i}.jpg`)
+
+      await new Promise((resolve, reject) => {
+        ffmpeg(tmpIn)
+          .seekInput(t)
+          .frames(1)
+          .outputOptions(['-vf', 'scale=1280:-2', '-q:v', '2'])
+          .output(outPath)
+          .on('end', resolve)
+          .on('error', reject)
+          .run()
+      })
+
+      try {
+        const frameBuffer = readFileSync(outPath)
+        const framePath = `runs/${runId}/frame-${i}.jpg`
+        await uploadFile(supabase, framePath, frameBuffer, 'image/jpeg')
+        framePaths.push(framePath)
+      } catch {
+        framePaths.push(null)
+      }
+    }
+
+    // Cleanup
+    try { unlinkSync(tmpIn) } catch {}
+    try { for (const f of readdirSync(tmpDir)) unlinkSync(join(tmpDir, f)) } catch {}
+
+    console.log(`[frames] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${framePaths.length} frames`)
+    res.json({ framePaths })
+  } catch (err) {
+    console.error('[frames] Error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * POST /trim
+ * Trim video to a time range
+ */
+app.post('/trim', async (req, res) => {
+  try {
+    const { videoPath, runId, startTime, endTime } = req.body
+    if (!videoPath || !runId || startTime == null || endTime == null) {
+      return res.status(400).json({ error: 'videoPath, runId, startTime, endTime required' })
+    }
+
+    const supabase = getSupabase(req.body)
+    const buffer = await downloadVideo(supabase, videoPath)
+
+    const tmpIn = join(tmpdir(), `trim-in-${Date.now()}.mp4`)
+    const tmpOut = join(tmpdir(), `trim-out-${Date.now()}.mp4`)
+    writeFileSync(tmpIn, buffer)
+
+    await new Promise((resolve, reject) => {
+      ffmpeg(tmpIn)
+        .setStartTime(startTime)
+        .setDuration(endTime - startTime)
+        .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-c:a', 'aac', '-movflags', '+faststart'])
+        .output(tmpOut)
+        .on('end', resolve)
+        .on('error', reject)
+        .run()
+    })
+
+    const trimmedBuffer = readFileSync(tmpOut)
+    const trimmedPath = videoPath.replace(/\.[^.]+$/, '-trimmed.mp4')
+    await uploadFile(supabase, trimmedPath, trimmedBuffer, 'video/mp4')
+
+    unlinkSync(tmpIn)
+    unlinkSync(tmpOut)
+
+    res.json({ trimmedPath })
+  } catch (err) {
+    console.error('[trim] Error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.listen(PORT, () => console.log(`Video service running on port ${PORT}`))
