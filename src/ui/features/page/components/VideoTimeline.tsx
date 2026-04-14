@@ -69,7 +69,7 @@ export function VideoTimeline({ runId, duration, segments, voiceId, onSegmentsCh
       const text = editingIdx === idx ? editText : undefined
       const result = await api.runs.regenerateSegment(runId, segments[idx]!.stepIndex, text, voiceId) as { stepIndex: number; audioUrl?: string; text: string }
       onSegmentsChange(segments.map((s, i) => i === idx ? { ...s, text: result.text } : s))
-      if (result.audioUrl) onAudioUrlChange?.(result.audioUrl)
+      if (result.audioUrl) onAudioUrlChange?.(`${result.audioUrl}${result.audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}`)
       setEditingIdx(null)
     } catch { /* ignore */ }
     finally { setRegeneratingIdx(null) }

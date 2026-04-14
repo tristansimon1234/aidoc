@@ -298,7 +298,7 @@ DO NOT generate new documentation. Only verify the existing one.`
           onClick={() => {
             const newVal = !page.isPublic
             setPage({ ...page, isPublic: newVal })
-            void dbUpdatePage(projectId!, pageId!, { isPublic: newVal })
+            void dbUpdatePage(projectId!, pageId!, { isPublic: newVal }).then(() => context.refetchPages())
           }}
         >
           <span style={{ color: page.isPublic ? 'var(--color-success)' : 'var(--color-muted-fg)' }}>
@@ -370,11 +370,12 @@ DO NOT generate new documentation. Only verify the existing one.`
                     audioPath?: string
                     audioUrl?: string
                   }
+                  const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
                   if (result.audioUrl) {
-                    setVoiceoverUrl(result.audioUrl)
+                    setVoiceoverUrl(bust(result.audioUrl))
                   } else if (result.audioPath) {
                     const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
-                    setVoiceoverUrl(data?.publicUrl ?? null)
+                    setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
                   }
                   setVoiceoverSegments(result.segments ?? [])
                 } : undefined}
