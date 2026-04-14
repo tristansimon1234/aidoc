@@ -9,28 +9,30 @@ export function isVideoServiceConfigured(): boolean {
   return Boolean(env.VIDEO_SERVICE_URL)
 }
 
-/** Wake up Railway service (cold start can take 10-30s) */
+/** Wake up Railway service and verify it's healthy */
 let lastPing = 0
 async function ensureAwake(): Promise<void> {
   const now = Date.now()
-  if (now - lastPing < 5 * 60_000) return // Skip if pinged < 5min ago
+  if (now - lastPing < 5 * 60_000) return
   lastPing = now
   const base = getBaseUrl()
-  console.log(`[video-service] Waking up service...`)
+  console.log(`[video-service] Pinging ${base}/health ...`)
   try {
-    await fetch(`${base}/health`, { signal: AbortSignal.timeout(30_000) })
-    console.log(`[video-service] Service is awake`)
-  } catch {
-    console.log(`[video-service] No /health endpoint — trying anyway`)
+    const start = Date.now()
+    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(30_000) })
+    const body = await res.text().catch(() => '')
+    console.log(`[video-service] Health: ${res.status} (${Date.now() - start}ms) ${body.slice(0, 100)}`)
+  } catch (err) {
+    console.warn(`[video-service] Health check failed: ${(err as Error).message}`)
   }
 }
 
 async function callService<T>(endpoint: string, body: Record<string, unknown>, timeoutMs = 180_000): Promise<T> {
-  // Wake up service first (Railway cold starts)
   await ensureAwake()
 
   const url = `${getBaseUrl()}${endpoint}`
-  console.log(`[video-service] POST ${endpoint} (timeout: ${timeoutMs / 1000}s)`)
+  const start = Date.now()
+  console.log(`[video-service] POST ${endpoint} (timeout: ${timeoutMs / 1000}s) body keys: ${Object.keys(body).join(', ')}`)
 
   const res = await fetch(url, {
     method: 'POST',
@@ -43,9 +45,12 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>, t
     signal: AbortSignal.timeout(timeoutMs),
   })
 
+  const elapsed = Date.now() - start
+  console.log(`[video-service] ${endpoint} responded: ${res.status} (${elapsed}ms)`)
+
   if (!res.ok) {
     const errBody = await res.text().catch(() => res.statusText)
-    console.error(`[video-service] ${endpoint} failed (${res.status}): ${errBody}`)
+    console.error(`[video-service] ${endpoint} ERROR: ${errBody}`)
     throw new Error(`Video service error (${res.status}): ${errBody}`)
   }
 
