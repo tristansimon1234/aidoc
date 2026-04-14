@@ -418,63 +418,64 @@ async function extractAndUploadFrames(videoFile: File, runId: string, timestamps
 
       const duration = video.duration
 
-      // Sort, clamp to video duration, and deduplicate timestamps
-      // (timestamps closer than 0.5s apart produce the same frame)
-      const sorted = [...timestamps].sort((a, b) => a - b)
-      const unique: { time: number; stepIndex: number }[] = []
-      let lastTime = -1
-      for (let idx = 0; idx < sorted.length; idx++) {
-        const t = Math.max(0, Math.min(sorted[idx]!, duration - 0.1))
-        if (t - lastTime >= 0.5) {
-          unique.push({ time: t, stepIndex: idx })
-          lastTime = t
-        } else {
-          // Duplicate — still register the step with the previous frame
-          unique.push({ time: t, stepIndex: idx })
-        }
-      }
+      // Sort and clamp timestamps to video duration
+      const frames = [...timestamps]
+        .sort((a, b) => a - b)
+        .map((t, idx) => ({
+          time: Math.max(0, Math.min(t, duration - 0.1)),
+          stepIndex: idx,
+        }))
 
       let i = 0
-      let lastSeekedTime = -1
+      let busy = false // Guard against double onseeked fires
 
-      const captureAndAdvance = (): void => {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const entry = unique[i]!
-        canvas.toBlob(async (blob) => {
+      const captureCurrentFrame = async (): Promise<void> => {
+        if (busy || i >= frames.length) return
+        busy = true
+
+        try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          const entry = frames[i]!
+
+          const blob = await new Promise<Blob | null>((res) =>
+            canvas.toBlob((b) => res(b), 'image/jpeg', 0.85),
+          )
+
           if (blob) {
             const path = `runs/${runId}/frame-${entry.stepIndex}.jpg`
             const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
             await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
             await api.runs.updateStepScreenshot(runId, entry.stepIndex, path)
           }
+
           i++
-          extractNext()
-        }, 'image/jpeg', 0.85)
-      }
+          busy = false
 
-      const extractNext = (): void => {
-        if (i >= unique.length) { resolve(); return }
-
-        const targetTime = unique[i]!.time
-
-        // If target time is same as where we already are (within 0.5s),
-        // capture directly without seeking — onseeked won't fire
-        if (Math.abs(video.currentTime - targetTime) < 0.5 && lastSeekedTime === targetTime) {
-          setTimeout(captureAndAdvance, 50)
-          return
+          // Move to next frame
+          if (i >= frames.length) {
+            resolve()
+          } else {
+            video.currentTime = frames[i]!.time
+          }
+        } catch (err) {
+          busy = false
+          reject(err as Error)
         }
-
-        lastSeekedTime = targetTime
-        video.currentTime = targetTime
       }
 
       video.onseeked = () => {
-        // Delay after seek to let browser fully decode the frame
-        setTimeout(captureAndAdvance, 150)
+        // 150ms delay to let browser decode the frame
+        setTimeout(() => void captureCurrentFrame(), 150)
       }
 
       video.onerror = () => reject(new Error('Failed to load video'))
-      extractNext()
+
+      // Start the chain
+      if (frames.length > 0) {
+        video.currentTime = frames[0]!.time
+      } else {
+        resolve()
+      }
     }
 
     video.onerror = () => reject(new Error('Failed to load video'))
