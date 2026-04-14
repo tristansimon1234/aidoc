@@ -141,6 +141,7 @@ export function PageView(): React.ReactElement {
       const v = r.voices.map((voice) => ({ voiceId: voice.voiceId, name: voice.name }))
       console.log(`[voices] Loaded ${v.length} voices`)
       setVoices(v)
+      if (v.length > 0) setSelectedVoiceId(v[0]!.voiceId)
     }).catch((err) => {
       console.warn('[voices] Failed to load:', err)
     })

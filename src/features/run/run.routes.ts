@@ -244,18 +244,30 @@ RULES:
 - TOTAL script must be under ${totalMaxWords} words. This is a HARD LIMIT.
 - Each section: 1 SHORT sentence. No more.
 - ${numSteps} sections using [SECTION N] markers.
-- Use [pause], [short pause] between phrases for natural rhythm.
 - Conversational tone: "let's", "you'll", "just", "here"
 - Skip URLs, code, image captions.
 - Start with [SECTION 1], no preamble.
 
-Example of correct brevity:
+AUDIO TAGS — use these to make the voice expressive and human. VARY them, don't repeat the same tag:
+- [pause] — between sentences
+- [short pause] — micro-pause within a sentence
+- [long pause] — dramatic transition between ideas
+- [laughs] — light laugh for friendly moments ("pretty cool, right? [laughs]")
+- [whispers] — for tips or asides ("and here's the trick [whispers] it's automatic")
+- [excited] — enthusiasm ("and just like that [excited] your project is live!")
+- [sighs] — relief or reflection
+- [clears throat] — before starting a new topic
+Use at least 2 DIFFERENT tag types across the script. Don't just use [pause] everywhere.
+
+Example of correct brevity + varied tags:
 [SECTION 1]
-Welcome! [pause] Let's set up your first project.
+Hey! [pause] Let's set up your first project together.
 [SECTION 2]
-Click 'New Project' here.
+Click 'New Project' here [short pause] nice and easy.
 [SECTION 3]
-Enter your app name [short pause] and hit create.`,
+Enter your app name [whispers] and hit create.
+[SECTION 4]
+And just like that [excited] you're all set!`,
         maxTokens: 8192,
       })
 
