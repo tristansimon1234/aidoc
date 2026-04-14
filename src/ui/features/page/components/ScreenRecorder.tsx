@@ -182,7 +182,8 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
             ? 'video/webm'
             : 'video/mp4'
 
-      const recorder = new MediaRecorder(combinedStream, { mimeType })
+      // Higher bitrate = more frequent keyframes = better seeking precision
+      const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 3_000_000 })
       mediaRecorderRef.current = recorder
 
       recorder.ondataavailable = (e) => {

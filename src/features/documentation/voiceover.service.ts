@@ -1,7 +1,6 @@
 import { synthesizeSpeech, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 import { uploadToStorage, getPublicUrl } from '../../shared/db/storage.repository.js'
 
-/** A single narration segment synced to a video timestamp range */
 export interface VoiceoverSegment {
   stepIndex: number
   startTime: number
@@ -10,18 +9,22 @@ export interface VoiceoverSegment {
 }
 
 export interface VoiceoverResult {
-  segments: VoiceoverSegment[]
   audioPath: string
   audioUrl: string
+  segments: VoiceoverSegment[]
+}
+
+/** Estimate speech duration from word count (~150 words/min = 2.5 words/sec) */
+function estimateSpeechDuration(text: string): number {
+  const words = text.trim().split(/\s+/).length
+  return words / 2.5
 }
 
 /**
- * Generate a single voice-over audio track with timed pauses between steps.
+ * Generate a single voice-over audio file with timed <break> tags.
  *
- * Uses ElevenLabs <break> tags to insert silences that match the video
- * timestamp gaps, so the narration naturally syncs with the video.
- * This produces one continuous audio file with natural flow instead of
- * choppy per-segment files.
+ * Break durations are calculated from video timestamps minus the
+ * estimated speech duration of the previous segment (based on word count).
  */
 export async function generateVoiceover(
   runId: string,
@@ -37,7 +40,7 @@ export async function generateVoiceover(
     throw new Error('No steps to narrate')
   }
 
-  // Translate all step texts at once if language is specified
+  // Translate if requested
   let stepTexts = steps.map((s) => s.text)
   if (options?.language) {
     const { generateText } = await import('../../shared/ai/gemini.client.js')
@@ -52,9 +55,7 @@ export async function generateVoiceover(
     }
   }
 
-  // Build a single text block with <break> tags between steps.
-  // The break duration matches the time gap between consecutive steps
-  // in the video, so the narration stays in sync.
+  // Build the text with <break> tags between segments
   const segments: VoiceoverSegment[] = []
   const textParts: string[] = []
 
@@ -65,38 +66,37 @@ export async function generateVoiceover(
     const startTime = timestamps[i] ?? 0
     const endTime = timestamps[i + 1] ?? (startTime + 30)
 
+    // Calculate break before this segment (except the first)
+    if (textParts.length > 0 && i > 0) {
+      const prevText = stepTexts[i - 1] ?? ''
+      const prevTimestamp = timestamps[i - 1] ?? 0
+      const prevSpeechDuration = estimateSpeechDuration(prevText)
+
+      // Break = time gap between steps minus how long the previous narration takes
+      const rawGap = startTime - prevTimestamp - prevSpeechDuration
+      const breakSeconds = Math.max(0.3, Math.min(5, rawGap))
+
+      textParts.push(`<break time="${breakSeconds.toFixed(1)}s" />`)
+    }
+
+    textParts.push(text)
+
     segments.push({
       stepIndex: steps[i]!.stepIndex,
       startTime,
       endTime,
       text,
     })
-
-    // Add break before this step (except the first one)
-    if (textParts.length > 0) {
-      // Calculate the gap between the end of the previous step's narration
-      // and the start of this step. Use the timestamp gap as a guide.
-      const prevTimestamp = timestamps[i - 1] ?? 0
-      const gapSeconds = Math.max(0.5, Math.min(5, startTime - prevTimestamp - 2))
-      textParts.push(`<break time="${gapSeconds.toFixed(1)}s" />`)
-    }
-
-    textParts.push(text)
   }
 
   const fullText = textParts.join(' ')
 
-  // Single ElevenLabs call for the entire narration
+  // Single ElevenLabs call
   const buffer = await synthesizeSpeech(fullText, { voiceId: options?.voiceId })
 
-  // Upload the single audio file
   const audioPath = `runs/${runId}/voiceover.mp3`
   await uploadToStorage('artifacts', audioPath, buffer, 'audio/mpeg')
   const audioUrl = getPublicUrl('artifacts', audioPath) ?? ''
 
-  return {
-    segments,
-    audioPath,
-    audioUrl,
-  }
+  return { audioPath, audioUrl, segments }
 }

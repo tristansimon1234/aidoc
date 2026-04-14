@@ -188,37 +188,39 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       ).join('\n\n')
 
       const narrationResult = await generateText({
-        userPrompt: `You are a warm, professional video tutorial narrator — think of a friendly tech YouTuber.
+        userPrompt: `You are narrating a tutorial video — warm, natural, like a friendly colleague showing you something on their screen.
 
-Write a voice-over script for a screen recording walkthrough. This text will be synthesized by a text-to-speech engine, so write it to SOUND great when read aloud.
+Write a FLOWING voice-over script. Use [STEP N] markers to separate sections, but the narration should read as ONE continuous piece, not isolated lines.
 
-STYLE RULES:
-- Use natural speech patterns: contractions ("let's", "you'll", "it's"), filler phrases ("alright", "so", "now")
-- Add short pauses with "..." between phrases for breathing room
-- Use emphasis by capitalizing key words sparingly ("click the SAVE button")
-- Address the viewer as "you" — make it personal
-- Use smooth transitions: "Alright...", "So now...", "Perfect — next...", "And that's it!"
-- Keep each step to 1-2 short sentences — don't over-explain
-- Sound enthusiastic but not over the top
-- Start with a brief intro and end with a wrap-up
+RULES:
+- Write 1-2 sentences per step, max
+- Use "you" — talk TO the viewer
+- Use contractions: "let's", "you'll", "we're"
+- Add "..." for natural pauses
+- Focus on WHAT to do and WHY — don't describe what's visible on screen
+- Use transitions between steps: "Now...", "Next up...", "Perfect..."
+- First step: brief welcome. Last step: quick wrap-up
+- DO NOT say things like "the user clicks" or "the screen shows" — you ARE the narrator, talk directly
 
-Steps:
+Steps to narrate:
 ${stepDescriptions}
 
-Return EXACTLY one line per step, prefixed with the step number:
-1. Alright... so here we are on the dashboard. Let's get you set up!
-2. Go ahead and click on "Settings" in the top right... this is where you'll configure everything.
-etc.
+Write in this exact format:
+[STEP 1]
+Hey! Let's get your account set up... it only takes a minute.
+[STEP 2]
+Head over to Settings... you'll find it right here in the top corner.
+[STEP 3]
+Now just type in your email. Make sure it's the one you check regularly.
 
-Write ${runSteps.length} lines total. No extra commentary — ONLY the numbered lines.`,
+Write ${runSteps.length} sections. Output ONLY the script, nothing else.`,
         maxTokens: 4096,
       })
 
-      // Parse per-step narrations
-      const lines = narrationResult.text.split('\n').filter((l) => l.trim())
+      // Parse [STEP N] markers into per-step texts
+      const rawSegments = narrationResult.text.split(/\[STEP \d+\]\s*\n?/).filter((s) => s.trim())
       const stepsWithText = runSteps.map((s, i) => {
-        const line = lines.find((l) => l.match(new RegExp(`^${i + 1}[.)]`)))
-        const text = line ? line.replace(/^\d+[.)]\s*/, '') : s.action ?? `Step ${i + 1}`
+        const text = rawSegments[i]?.trim() ?? s.action ?? `Step ${i + 1}`
         return { stepIndex: s.stepIndex, text }
       })
 

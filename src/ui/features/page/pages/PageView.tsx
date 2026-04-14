@@ -96,23 +96,11 @@ export function PageView(): React.ReactElement {
       }
       setVoiceoverSegments(voiceover?.segments ?? [])
 
-      // Find the video URL — check summaryJson.videoPath, then try common paths
-      if (runData?.id) {
-        const vPath = (summary?.videoPath as string | undefined) ?? null
-        const pathsToTry = vPath
-          ? [vPath]
-          : [`runs/${runData.id}/video.webm`, `runs/${runData.id}/video.mp4`, `runs/${runData.id}/video.mov`]
-
-        let foundVideoUrl: string | null = null
-        for (const p of pathsToTry) {
-          const { data } = supabase.storage.from('artifacts').getPublicUrl(p)
-          if (data?.publicUrl) {
-            // Verify the file actually exists with a HEAD request
-            const check = await fetch(data.publicUrl, { method: 'HEAD' }).catch(() => null)
-            if (check?.ok) { foundVideoUrl = data.publicUrl; break }
-          }
-        }
-        setVideoUrl(foundVideoUrl)
+      // Get video URL from summaryJson.videoPath
+      const vPath = summary?.videoPath as string | undefined
+      if (vPath) {
+        const { data: vData } = supabase.storage.from('artifacts').getPublicUrl(vPath)
+        setVideoUrl(vData?.publicUrl ?? null)
       } else {
         setVideoUrl(null)
       }

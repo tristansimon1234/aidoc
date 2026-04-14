@@ -18,25 +18,36 @@ interface NarratedPlayerProps {
   onSegmentsChange?: (segments: VoiceoverSegment[]) => void
 }
 
+type PlayerState = 'loading' | 'ready' | 'error'
+
 export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerateVoiceover, onSegmentsChange }: NarratedPlayerProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
+  const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [expanded, setExpanded] = useState(false)
-  const [generating, setGenerating] = useState(false)
   const [showTimeline, setShowTimeline] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState<string | null>(null)
+  const [playerState, setPlayerState] = useState<PlayerState>('loading')
   const rafRef = useRef<number | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const hasNarration = Boolean(audioUrl || (segments && segments.length > 0))
+  const hasNarration = Boolean(audioUrl)
   const hasSegments = segments && segments.length > 0
 
-  // The rAF playback loop — updates progress bar
+  // Track playback position via requestAnimationFrame
   const tick = useCallback(() => {
     const video = videoRef.current
-    if (video && video.duration) {
-      setProgress(video.currentTime / video.duration)
+    if (video) {
+      setCurrentTime(video.currentTime)
+    }
+    // Sync audio with video (re-sync if drift > 0.3s)
+    const audio = audioRef.current
+    if (video && audio && !video.paused) {
+      if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
+        audio.currentTime = video.currentTime
+      }
     }
     rafRef.current = requestAnimationFrame(tick)
   }, [])
@@ -44,30 +55,17 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
   useEffect(() => {
     if (playing) {
       rafRef.current = requestAnimationFrame(tick)
-    } else {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-    }
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
   }, [playing, tick])
-
-  const syncAudio = (): void => {
-    const video = videoRef.current
-    const audio = audioRef.current
-    if (!video || !audio) return
-    // Keep audio in sync — re-sync if drift exceeds 0.3s
-    if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
-      audio.currentTime = video.currentTime
-    }
-  }
 
   const togglePlay = (): void => {
     const video = videoRef.current
     const audio = audioRef.current
-    if (!video) return
+    if (!video || playerState !== 'ready') return
+
     if (video.paused) {
-      syncAudio()
+      if (audio) audio.currentTime = video.currentTime
       void video.play()
       if (audio) void audio.play()
       setPlaying(true)
@@ -81,19 +79,23 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>): void => {
     const video = videoRef.current
     const audio = audioRef.current
-    if (!video || !video.duration) return
+    if (!video || duration <= 0) return
     const rect = e.currentTarget.getBoundingClientRect()
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    video.currentTime = pct * video.duration
-    if (audio) audio.currentTime = pct * video.duration
-    setProgress(pct)
+    const t = pct * duration
+    video.currentTime = t
+    if (audio) audio.currentTime = t
+    setCurrentTime(t)
   }
 
   const handleGenerateVoiceover = async (): Promise<void> => {
     if (!onGenerateVoiceover) return
     setGenerating(true)
+    setGenError(null)
     try {
       await onGenerateVoiceover()
+    } catch (err) {
+      setGenError((err as Error).message ?? 'Voice-over generation failed')
     } finally {
       setGenerating(false)
     }
@@ -106,15 +108,15 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
     audioRef.current?.pause()
   }
 
-  const formatTime = (seconds: number): string => {
-    if (!isFinite(seconds)) return '0:00'
-    const m = Math.floor(seconds / 60)
-    const s = Math.floor(seconds % 60)
-    return `${m}:${s.toString().padStart(2, '0')}`
+  const fmt = (s: number): string => {
+    if (!isFinite(s) || s < 0) return '0:00'
+    return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`
   }
 
-  // No video and no audio — show generate button only
-  if (!videoUrl && !audioUrl && !hasSegments) {
+  const progress = duration > 0 ? currentTime / duration : 0
+
+  // === No video at all — just show generate button ===
+  if (!videoUrl) {
     if (!onGenerateVoiceover) return <></>
     return (
       <div style={{
@@ -124,34 +126,16 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
         borderRadius: 'var(--radius-lg)', marginBottom: 'var(--space-md)',
       }}>
         {generating ? (
-          <>
-            <Spinner size="sm" />
-            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)' }}>Generating AI narration...</span>
-          </>
+          <><Spinner size="sm" /><span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)' }}>Generating voice-over...</span></>
         ) : (
-          <Button size="sm" onClick={() => void handleGenerateVoiceover()}>
-            Generate AI voice-over
-          </Button>
+          <Button size="sm" onClick={() => void handleGenerateVoiceover()}>Generate AI voice-over</Button>
         )}
+        {genError && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)' }}>{genError}</span>}
       </div>
     )
   }
 
-  // No video — just audio
-  if (!videoUrl && audioUrl) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
-        padding: 'var(--space-sm) var(--space-md)',
-        background: 'var(--color-card)', border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius-lg)', marginBottom: 'var(--space-md)',
-      }}>
-        <audio controls preload="none" src={audioUrl} style={{ flex: 1, height: 32 }} />
-      </div>
-    )
-  }
-
-  // Has video — full player
+  // === Has video ===
   return (
     <div style={{ marginBottom: 'var(--space-md)' }}>
       {/* Collapsed bar */}
@@ -166,7 +150,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
             display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
             background: 'none', border: 'none', cursor: 'pointer', padding: 0, flex: 1,
           }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary)' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--color-primary)' }}>
               <polygon points="6 3 20 12 6 21 6 3" />
             </svg>
             <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-fg)', fontWeight: 500 }}>
@@ -183,58 +167,81 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
               {hasNarration ? 'Regenerate voice' : 'Improve with AI'}
             </Button>
           )}
-          {generating && (
-            <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
-              <Spinner size="sm" /> Generating...
-            </span>
-          )}
+          {generating && <><Spinner size="sm" /><span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Generating...</span></>}
+          {genError && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)' }}>{genError}</span>}
         </div>
       )}
 
       {/* Expanded player */}
       {expanded && (
-        <div style={{
-          background: 'var(--color-card)', border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius-xl)', overflow: 'hidden',
-        }}>
+        <div style={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}>
+          {/* Video */}
           <div style={{ position: 'relative', background: '#000', cursor: 'pointer' }} onClick={togglePlay}>
             <video
               ref={videoRef}
-              src={videoUrl!}
+              src={videoUrl}
               preload="metadata"
               muted={hasNarration}
-              onLoadedMetadata={() => { if (videoRef.current) setDuration(videoRef.current.duration) }}
+              onLoadedMetadata={() => {
+                const d = videoRef.current?.duration ?? 0
+                if (d > 0 && isFinite(d)) {
+                  setDuration(d)
+                  setPlayerState('ready')
+                }
+              }}
+              onError={() => setPlayerState('error')}
               onEnded={() => { setPlaying(false); audioRef.current?.pause() }}
               style={{ width: '100%', display: 'block', maxHeight: '400px' }}
             />
-            {!playing && (
+            {playerState === 'loading' && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)' }}>
+                <Spinner size="lg" />
+              </div>
+            )}
+            {playerState === 'ready' && !playing && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.3)' }}>
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="white" stroke="none"><polygon points="6 3 20 12 6 21 6 3" /></svg>
               </div>
             )}
+            {playerState === 'error' && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.7)' }}>
+                <span style={{ color: 'var(--color-destructive)', fontSize: 'var(--text-sm)' }}>Failed to load video</span>
+              </div>
+            )}
           </div>
 
-          {/* Single audio track — synced with video via <break> tags */}
+          {/* Hidden audio element for narration */}
           {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
 
-          {/* Controls */}
+          {/* Controls bar */}
           <div style={{ padding: 'var(--space-sm) var(--space-md)', display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-            <button type="button" onClick={togglePlay} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--color-fg)', display: 'flex' }}>
+            {/* Play/Pause */}
+            <button type="button" onClick={togglePlay} disabled={playerState !== 'ready'} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--color-fg)', display: 'flex', opacity: playerState === 'ready' ? 1 : 0.3 }}>
               {playing
                 ? <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></svg>
                 : <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3" /></svg>
               }
             </button>
-            <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', minWidth: 36 }}>
-              {formatTime(videoRef.current?.currentTime ?? 0)}
+
+            {/* Current time */}
+            <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', minWidth: 36 }}>
+              {fmt(currentTime)}
             </span>
+
+            {/* Progress bar */}
             <div onClick={handleSeek} style={{ flex: 1, height: 6, background: 'var(--color-secondary)', borderRadius: 3, cursor: 'pointer' }}>
               <div style={{ height: '100%', width: `${progress * 100}%`, background: 'var(--color-primary)', borderRadius: 3 }} />
             </div>
-            <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', minWidth: 36, textAlign: 'right' }}>
-              {formatTime(duration)}
+
+            {/* Duration */}
+            <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', minWidth: 36, textAlign: 'right' }}>
+              {fmt(duration)}
             </span>
-            {hasNarration && <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-success)' }}>{hasSegments ? 'synced' : 'narrated'}</span>}
+
+            {/* Narration badge */}
+            {hasNarration && <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--color-success)' }}>narrated</span>}
+
+            {/* Regenerate */}
             {onGenerateVoiceover && !generating && (
               <Button size="sm" variant="secondary" onClick={() => void handleGenerateVoiceover()}>
                 {hasNarration ? 'Regenerate' : 'Improve with AI'}
@@ -242,40 +249,39 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
             )}
             {generating && <Spinner size="sm" />}
 
-            {/* Timeline toggle — only when segments exist and video is loaded */}
-            {hasSegments && runId && duration > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowTimeline(!showTimeline)}
-                title="Edit timeline"
-                style={{
-                  background: showTimeline ? 'var(--color-secondary)' : 'none',
-                  border: 'none', cursor: 'pointer', padding: '2px 6px',
-                  color: showTimeline ? 'var(--color-primary)' : 'var(--color-muted-fg)',
-                  display: 'flex', alignItems: 'center', borderRadius: 'var(--radius-sm)',
-                }}
-              >
+            {/* Download audio */}
+            {audioUrl && (
+              <a href={audioUrl} download="narration.mp3" title="Download narration" style={{ display: 'flex', color: 'var(--color-muted-fg)', padding: 2 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M3 15h18" /><path d="M9 3v18" />
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" x2="12" y1="15" y2="3" />
                 </svg>
+              </a>
+            )}
+
+            {/* Timeline toggle */}
+            {hasSegments && runId && duration > 0 && (
+              <button type="button" onClick={() => setShowTimeline(!showTimeline)} title="Edit timeline"
+                style={{ background: showTimeline ? 'var(--color-secondary)' : 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', color: showTimeline ? 'var(--color-primary)' : 'var(--color-muted-fg)', display: 'flex', borderRadius: 'var(--radius-sm)' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18" /><path d="M3 15h18" /><path d="M9 3v18" /></svg>
               </button>
             )}
 
+            {/* Collapse */}
             <button type="button" onClick={collapse} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--color-muted-fg)', display: 'flex' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6" /></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m18 15-6-6-6 6" /></svg>
             </button>
           </div>
 
+          {/* Generation error */}
+          {genError && (
+            <div style={{ padding: '0 var(--space-md) var(--space-sm)', fontSize: 'var(--text-xs)', color: 'var(--color-destructive)' }}>
+              {genError}
+            </div>
+          )}
+
           {/* Timeline editor */}
-          {showTimeline && hasSegments && runId && (
-            <VideoTimeline
-              runId={runId}
-              duration={duration}
-              segments={segments!}
-              onSegmentsChange={(updated) => {
-                onSegmentsChange?.(updated)
-              }}
-            />
+          {showTimeline && hasSegments && runId && duration > 0 && (
+            <VideoTimeline runId={runId} duration={duration} segments={segments!} onSegmentsChange={(s) => onSegmentsChange?.(s)} />
           )}
         </div>
       )}
