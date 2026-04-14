@@ -31,6 +31,7 @@ export function NewProject(): React.ReactElement {
   const [design, setDesign] = useState<{ accentColor: string; bgColor: string; textColor: string; font: string } | null>(null)
 
   // Test environment
+  const [testUrl, setTestUrl] = useState('')
   const [credentials, setCredentials] = useState<Credential[]>([])
 
   const [submitting, setSubmitting] = useState(false)
@@ -80,7 +81,7 @@ export function NewProject(): React.ReactElement {
 
     createProject({
         name,
-        baseUrl,
+        baseUrl: testUrl || baseUrl,
         description: description || undefined,
         context,
         credentials: validCreds.length > 0 ? validCreds : undefined,
@@ -266,24 +267,39 @@ export function NewProject(): React.ReactElement {
                 borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)',
                 marginTop: 'var(--space-xs)',
               }}>
+                <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
+                  Test environment
+                </div>
+                <p style={{
+                  fontSize: 'var(--text-xs)', color: 'var(--color-warning)',
+                  margin: '0 0 var(--space-md)', lineHeight: 1.4,
+                  padding: '6px 10px', background: 'var(--color-status-blocked-bg)',
+                  borderRadius: 'var(--radius-md)',
+                }}>
+                  Non-production environment only — the AI will explore and interact with this URL. Never use real user data.
+                </p>
+                <div style={{ marginBottom: 'var(--space-md)' }}>
+                  <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', display: 'block', marginBottom: 4 }}>Test / staging URL</label>
+                  <input type="url" value={testUrl} onChange={(e) => setTestUrl(e.target.value)}
+                    placeholder="e.g. https://staging.myapp.com"
+                    style={{
+                      width: '100%', padding: '10px var(--space-md)', fontSize: 'var(--text-xs)',
+                      color: 'var(--color-fg)', background: 'var(--color-secondary)',
+                      border: '1px solid transparent', borderRadius: 'var(--radius-lg)',
+                      fontFamily: 'var(--font-mono)', outline: 'none',
+                    }} />
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: '4px 0 0', lineHeight: 1.4 }}>
+                    The AI agent will use this URL to explore your product. Leave empty to use the website URL.
+                  </p>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
-                    Test credentials
-                  </div>
+                  <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Credentials</label>
                   <button type="button" onClick={addCredential} style={{
                     background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
                     cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
                     fontFamily: 'var(--font-mono)', padding: '2px 8px',
                   }}>+ add</button>
                 </div>
-                <p style={{
-                  fontSize: 'var(--text-xs)', color: 'var(--color-warning)',
-                  margin: '0 0 var(--space-sm)', lineHeight: 1.4,
-                  padding: '6px 10px', background: 'var(--color-status-blocked-bg)',
-                  borderRadius: 'var(--radius-md)',
-                }}>
-                  Non-production environment only — never use real user data or production credentials.
-                </p>
                 {credentials.map((cred, i) => (
                   <div key={i} style={{
                     display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto',
