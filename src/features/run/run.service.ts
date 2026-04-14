@@ -308,7 +308,7 @@ export async function cancelExploration(id: string): Promise<void> {
   cancelRun(id)
 }
 
-export async function analyzeVideo(runId: string, videoPath: string): Promise<{ timestamps: number[]; extractFramesClientSide: boolean }> {
+export async function analyzeVideo(runId: string, videoPath: string): Promise<{ timestamps: number[] }> {
   const run = await runRepo.findRunById(runId)
   if (!run) throw new NotFoundError('Run')
 
@@ -320,82 +320,34 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
     if (error || !data) throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
 
-    const rawBuffer = Buffer.from(await data.arrayBuffer())
+    const buffer = Buffer.from(await data.arrayBuffer())
     const mimeType = videoPath.endsWith('.webm') ? 'video/webm'
       : videoPath.endsWith('.mov') ? 'video/quicktime'
       : 'video/mp4'
-
-    // Try to convert to MP4 for precise seeking (ffmpeg may not be available)
-    const { isAvailable, convertToMp4, extractFrames } = await import('../../shared/video/ffmpeg.service.js')
-    const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
-
-    let analyzeBuffer: Buffer = rawBuffer as Buffer
-    let analyzeMime = mimeType
-    let playerVideoPath = videoPath
-    let serverFrames: Buffer[] | null = null
-
-    if (isAvailable()) {
-      try {
-        const mp4Buffer = await convertToMp4(rawBuffer, mimeType)
-        analyzeBuffer = mp4Buffer
-        analyzeMime = 'video/mp4'
-
-        // Upload MP4 version for the player
-        if (mimeType !== 'video/mp4') {
-          playerVideoPath = videoPath.replace(/\.[^.]+$/, '.mp4')
-          await uploadToStorage('artifacts', playerVideoPath, mp4Buffer, 'video/mp4')
-          console.log(`[video] Converted ${videoPath} → ${playerVideoPath}`)
-        }
-      } catch (ffErr) {
-        console.warn(`[video] ffmpeg conversion failed, using original: ${(ffErr as Error).message}`)
-      }
-    } else {
-      console.warn('[video] ffmpeg not available, using original video')
-    }
+    const fileName = videoPath.split('/').pop() ?? 'video.mp4'
 
     // Analyze with Gemini
     const { analyzeVideoWithGemini } = await import('../../shared/ai/gemini.client.js')
-    const fileName = videoPath.split('/').pop() ?? 'video.mp4'
-    const analysis = await analyzeVideoWithGemini(analyzeBuffer, analyzeMime, fileName)
+    const analysis = await analyzeVideoWithGemini(buffer, mimeType, fileName)
 
     // Sort steps by timestamp ascending
     const sortedSteps = [...analysis.steps].sort((a, b) => a.timestamp - b.timestamp)
     const timestamps = sortedSteps.map((s) => s.timestamp)
 
-    // Try server-side frame extraction with ffmpeg
-    if (isAvailable()) {
-      try {
-        serverFrames = await extractFrames(analyzeBuffer, timestamps)
-      } catch (ffErr) {
-        console.warn(`[video] ffmpeg frame extraction failed: ${(ffErr as Error).message}`)
-      }
-    }
-
-    // Create run steps (with or without server-extracted frames)
+    // Create run steps (screenshots will be extracted client-side)
     for (let i = 0; i < sortedSteps.length; i++) {
       const s = sortedSteps[i]!
       const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
-
-      // Upload frame if server-side extraction succeeded
-      let screenshotPath: string | undefined
-      const frameBuffer = serverFrames?.[i]
-      if (frameBuffer && frameBuffer.length > 0) {
-        screenshotPath = `runs/${runId}/frame-${i}.jpg`
-        await uploadToStorage('artifacts', screenshotPath, frameBuffer, 'image/jpeg')
-      }
-
       await runRepo.createRunStep({
         runId,
         stepIndex: i,
         title: s.userAction,
         action: s.userAction,
         observation: `${s.screenDescription}${narrationText}`,
-        screenshotPath: screenshotPath ?? undefined,
         status: 'completed',
       })
     }
 
-    // Build summary — use MP4 path if available, otherwise original
     await runRepo.updateRunSummary(runId, {
       sections: [{
         url: 'video',
@@ -405,14 +357,13 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
       }],
       blockers: [],
       agentMessage: analysis.summary,
-      videoPath: playerVideoPath,
+      videoPath,
       stepTimestamps: timestamps,
     })
 
     await runRepo.updateRunStatus(runId, 'completed')
 
-    // Tell client if it needs to extract frames (ffmpeg wasn't available or failed)
-    return { timestamps, extractFramesClientSide: serverFrames === null }
+    return { timestamps }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')
