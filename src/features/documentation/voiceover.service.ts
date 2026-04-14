@@ -6,23 +6,22 @@ export interface VoiceoverSegment {
   stepIndex: number
   startTime: number
   endTime: number
-  audioPath: string
-  audioUrl: string
   text: string
 }
 
 export interface VoiceoverResult {
   segments: VoiceoverSegment[]
-  fullAudioPath: string
-  fullAudioUrl: string
+  audioPath: string
+  audioUrl: string
 }
 
 /**
- * Generate voice-over narration synced to video timestamps.
+ * Generate a single voice-over audio track with timed pauses between steps.
  *
- * Instead of narrating the whole doc as one block, this generates
- * one audio segment per step, each mapped to the step's video timestamp.
- * The player can then play the right narration at the right moment.
+ * Uses ElevenLabs <break> tags to insert silences that match the video
+ * timestamp gaps, so the narration naturally syncs with the video.
+ * This produces one continuous audio file with natural flow instead of
+ * choppy per-segment files.
  */
 export async function generateVoiceover(
   runId: string,
@@ -47,51 +46,57 @@ export async function generateVoiceover(
       userPrompt: `Translate each step to ${options.language}. Keep the [STEP N] markers. Keep it natural and conversational — this will be read aloud. Output ONLY the translated text.\n\n${allText}`,
       maxTokens: 8192,
     })
-    // Parse back into individual step texts
     const parts = translated.text.split(/\[STEP \d+\]\n?/)
     if (parts.length > 1) {
       stepTexts = parts.filter((p) => p.trim()).map((p) => p.trim())
     }
   }
 
-  // Generate audio for each step
+  // Build a single text block with <break> tags between steps.
+  // The break duration matches the time gap between consecutive steps
+  // in the video, so the narration stays in sync.
   const segments: VoiceoverSegment[] = []
-  const allBuffers: Buffer[] = []
+  const textParts: string[] = []
 
   for (let i = 0; i < steps.length; i++) {
     const text = stepTexts[i] ?? steps[i]!.text
     if (!text || text.length < 3) continue
 
-    const buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
-
-    // Upload individual segment
-    const segPath = `runs/${runId}/voiceover-step-${i}.mp3`
-    await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
-
-    // Calculate time range from timestamps
     const startTime = timestamps[i] ?? 0
-    const endTime = timestamps[i + 1] ?? (startTime + 30) // last step: 30s after
+    const endTime = timestamps[i + 1] ?? (startTime + 30)
 
     segments.push({
       stepIndex: steps[i]!.stepIndex,
       startTime,
       endTime,
-      audioPath: segPath,
-      audioUrl: getPublicUrl('artifacts', segPath) ?? '',
       text,
     })
 
-    allBuffers.push(buffer)
+    // Add break before this step (except the first one)
+    if (textParts.length > 0) {
+      // Calculate the gap between the end of the previous step's narration
+      // and the start of this step. Use the timestamp gap as a guide.
+      const prevTimestamp = timestamps[i - 1] ?? 0
+      const gapSeconds = Math.max(0.5, Math.min(5, startTime - prevTimestamp - 2))
+      textParts.push(`<break time="${gapSeconds.toFixed(1)}s" />`)
+    }
+
+    textParts.push(text)
   }
 
-  // Also upload a concatenated full audio (for fallback / download)
-  const fullBuffer = Buffer.concat(allBuffers)
-  const fullPath = `runs/${runId}/voiceover-full.mp3`
-  await uploadToStorage('artifacts', fullPath, fullBuffer, 'audio/mpeg')
+  const fullText = textParts.join(' ')
+
+  // Single ElevenLabs call for the entire narration
+  const buffer = await synthesizeSpeech(fullText, { voiceId: options?.voiceId })
+
+  // Upload the single audio file
+  const audioPath = `runs/${runId}/voiceover.mp3`
+  await uploadToStorage('artifacts', audioPath, buffer, 'audio/mpeg')
+  const audioUrl = getPublicUrl('artifacts', audioPath) ?? ''
 
   return {
     segments,
-    fullAudioPath: fullPath,
-    fullAudioUrl: getPublicUrl('artifacts', fullPath) ?? '',
+    audioPath,
+    audioUrl,
   }
 }

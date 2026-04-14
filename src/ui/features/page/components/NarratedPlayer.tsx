@@ -6,7 +6,6 @@ export interface VoiceoverSegment {
   stepIndex: number
   startTime: number
   endTime: number
-  audioUrl: string
   text?: string
 }
 
@@ -28,72 +27,20 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
   const [generating, setGenerating] = useState(false)
   const [showTimeline, setShowTimeline] = useState(false)
   const rafRef = useRef<number | null>(null)
-  const audioElementsRef = useRef<Map<number, HTMLAudioElement>>(new Map())
-  const fallbackAudioRef = useRef<HTMLAudioElement | null>(null)
-  // Use a REF (not state) for active segment — must be synchronous in the rAF loop
-  const activeSegmentRef = useRef(-1)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   const hasNarration = Boolean(audioUrl || (segments && segments.length > 0))
   const hasSegments = segments && segments.length > 0
 
-  // Preload segment audio elements
-  useEffect(() => {
-    const map = new Map<number, HTMLAudioElement>()
-    if (segments) {
-      for (const seg of segments) {
-        if (seg.audioUrl) {
-          const audio = new Audio()
-          audio.preload = 'auto'
-          audio.src = seg.audioUrl
-          map.set(seg.stepIndex, audio)
-        }
-      }
-    }
-    audioElementsRef.current = map
-    activeSegmentRef.current = -1
-    return () => {
-      map.forEach((a) => { a.pause(); a.src = '' })
-    }
-  }, [segments])
-
-  // The rAF playback loop — updates progress bar + syncs segment audio
+  // The rAF playback loop — updates progress bar
   const tick = useCallback(() => {
     const video = videoRef.current
-    if (!video) return
-
-    if (video.duration) {
+    if (video && video.duration) {
       setProgress(video.currentTime / video.duration)
     }
-
-    // Segment-based audio sync
-    if (hasSegments) {
-      const currentTime = video.currentTime
-      const seg = segments!.find((s) => currentTime >= s.startTime && currentTime < s.endTime)
-      const segIndex = seg?.stepIndex ?? -1
-
-      if (segIndex !== activeSegmentRef.current) {
-        // Stop previous
-        const prevAudio = audioElementsRef.current.get(activeSegmentRef.current)
-        if (prevAudio) {
-          prevAudio.pause()
-          prevAudio.currentTime = 0
-        }
-        // Start new
-        if (segIndex >= 0) {
-          const nextAudio = audioElementsRef.current.get(segIndex)
-          if (nextAudio) {
-            nextAudio.currentTime = 0
-            void nextAudio.play()
-          }
-        }
-        activeSegmentRef.current = segIndex
-      }
-    }
-
     rafRef.current = requestAnimationFrame(tick)
-  }, [hasSegments, segments])
+  }, [])
 
-  // Start/stop the rAF loop when playing changes
   useEffect(() => {
     if (playing) {
       rafRef.current = requestAnimationFrame(tick)
@@ -105,39 +52,40 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
     }
   }, [playing, tick])
 
-  const stopAllAudio = (): void => {
-    audioElementsRef.current.forEach((a) => { a.pause(); a.currentTime = 0 })
-    fallbackAudioRef.current?.pause()
-    activeSegmentRef.current = -1
+  const syncAudio = (): void => {
+    const video = videoRef.current
+    const audio = audioRef.current
+    if (!video || !audio) return
+    // Keep audio in sync — re-sync if drift exceeds 0.3s
+    if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
+      audio.currentTime = video.currentTime
+    }
   }
 
   const togglePlay = (): void => {
     const video = videoRef.current
+    const audio = audioRef.current
     if (!video) return
     if (video.paused) {
+      syncAudio()
       void video.play()
-      if (!hasSegments && fallbackAudioRef.current) {
-        fallbackAudioRef.current.currentTime = video.currentTime
-        void fallbackAudioRef.current.play()
-      }
+      if (audio) void audio.play()
       setPlaying(true)
     } else {
       video.pause()
-      stopAllAudio()
+      audio?.pause()
       setPlaying(false)
     }
   }
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>): void => {
     const video = videoRef.current
+    const audio = audioRef.current
     if (!video || !video.duration) return
     const rect = e.currentTarget.getBoundingClientRect()
     const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
     video.currentTime = pct * video.duration
-    stopAllAudio()
-    if (!hasSegments && fallbackAudioRef.current) {
-      fallbackAudioRef.current.currentTime = pct * video.duration
-    }
+    if (audio) audio.currentTime = pct * video.duration
     setProgress(pct)
   }
 
@@ -155,7 +103,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
     setExpanded(false)
     setPlaying(false)
     videoRef.current?.pause()
-    stopAllAudio()
+    audioRef.current?.pause()
   }
 
   const formatTime = (seconds: number): string => {
@@ -256,7 +204,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
               preload="metadata"
               muted={hasNarration}
               onLoadedMetadata={() => { if (videoRef.current) setDuration(videoRef.current.duration) }}
-              onEnded={() => { setPlaying(false); stopAllAudio() }}
+              onEnded={() => { setPlaying(false); audioRef.current?.pause() }}
               style={{ width: '100%', display: 'block', maxHeight: '400px' }}
             />
             {!playing && (
@@ -266,7 +214,8 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
             )}
           </div>
 
-          {!hasSegments && audioUrl && <audio ref={fallbackAudioRef} src={audioUrl} preload="auto" />}
+          {/* Single audio track — synced with video via <break> tags */}
+          {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
 
           {/* Controls */}
           <div style={{ padding: 'var(--space-sm) var(--space-md)', display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>

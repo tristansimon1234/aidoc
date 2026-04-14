@@ -42,7 +42,7 @@ export function PageView(): React.ReactElement {
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
-  const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; audioUrl: string }[]>([])
+  const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; text?: string }[]>([])
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [latestRunId, setLatestRunId] = useState<string | null>(null)
   const prevPageIdRef = useRef(pageId)
@@ -81,25 +81,20 @@ export function PageView(): React.ReactElement {
       // Uses public URLs (artifacts bucket is public)
       const summary = runData?.summaryJson as Record<string, unknown> | null
       const voiceover = summary?.voiceover as {
-        fullAudioPath?: string
-        fullAudioUrl?: string
-        segments?: { stepIndex: number; startTime: number; endTime: number; audioUrl: string }[]
-        // Legacy: single audio
         audioPath?: string
+        audioUrl?: string
+        segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
       } | undefined
 
-      if (voiceover?.segments && voiceover.segments.length > 0) {
-        setVoiceoverSegments(voiceover.segments)
-        setVoiceoverUrl(null) // segments take priority over single audio
-      } else if (voiceover?.fullAudioPath || voiceover?.audioPath) {
-        const path = voiceover.fullAudioPath ?? voiceover.audioPath!
-        const { data: audioData } = supabase.storage.from('artifacts').getPublicUrl(path)
+      if (voiceover?.audioPath) {
+        const { data: audioData } = supabase.storage.from('artifacts').getPublicUrl(voiceover.audioPath)
         setVoiceoverUrl(audioData?.publicUrl ?? null)
-        setVoiceoverSegments([])
+      } else if (voiceover?.audioUrl) {
+        setVoiceoverUrl(voiceover.audioUrl)
       } else {
         setVoiceoverUrl(null)
-        setVoiceoverSegments([])
       }
+      setVoiceoverSegments(voiceover?.segments ?? [])
 
       // Find the video URL — check summaryJson.videoPath, then try common paths
       if (runData?.id) {
@@ -344,16 +339,17 @@ DO NOT generate new documentation. Only verify the existing one.`
               onSegmentsChange={setVoiceoverSegments}
               onGenerateVoiceover={latestRunId && page.content ? async () => {
                 const result = await api.runs.generateVoiceover(latestRunId) as {
-                  segments?: { stepIndex: number; startTime: number; endTime: number; audioUrl: string; text?: string }[]
-                  fullAudioPath?: string
+                  segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+                  audioPath?: string
+                  audioUrl?: string
                 }
-                if (result.segments && result.segments.length > 0) {
-                  setVoiceoverSegments(result.segments)
-                  setVoiceoverUrl(null)
-                } else if (result.fullAudioPath) {
-                  const { data } = supabase.storage.from('artifacts').getPublicUrl(result.fullAudioPath)
+                if (result.audioPath) {
+                  const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
                   setVoiceoverUrl(data?.publicUrl ?? null)
+                } else if (result.audioUrl) {
+                  setVoiceoverUrl(result.audioUrl)
                 }
+                setVoiceoverSegments(result.segments ?? [])
               } : undefined}
             />
           )}
