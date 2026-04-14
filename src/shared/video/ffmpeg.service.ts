@@ -89,17 +89,27 @@ export async function convertToMp4(inputBuffer: Buffer, inputFormat: string): Pr
     writeFileSync(tmpIn, inputBuffer)
 
     await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        console.error('[ffmpeg] Conversion timed out after 120s')
+        reject(new Error('ffmpeg conversion timed out'))
+      }, 120_000)
+
       ffmpeg(tmpIn)
         .outputOptions([
           '-c:v', 'libx264',
-          '-preset', 'fast',
-          '-crf', '23',
+          '-preset', 'ultrafast',  // fastest encoding — critical for serverless
+          '-crf', '28',            // slightly lower quality but much faster
           '-c:a', 'aac',
-          '-movflags', '+faststart', // Enables progressive loading + better seeking
+          '-b:a', '128k',
+          '-movflags', '+faststart',
+          '-threads', '2',
         ])
         .output(tmpOut)
-        .on('end', () => resolve())
-        .on('error', (err: Error) => reject(err))
+        .on('progress', (p: { percent?: number }) => {
+          if (p.percent) console.log(`[ffmpeg] Converting: ${p.percent.toFixed(0)}%`)
+        })
+        .on('end', () => { clearTimeout(timeout); resolve() })
+        .on('error', (err: Error) => { clearTimeout(timeout); reject(err) })
         .run()
     })
 
