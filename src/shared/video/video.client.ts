@@ -9,7 +9,26 @@ export function isVideoServiceConfigured(): boolean {
   return Boolean(env.VIDEO_SERVICE_URL)
 }
 
-async function callService<T>(endpoint: string, body: Record<string, unknown>, timeoutMs = 120_000): Promise<T> {
+/** Wake up Railway service (cold start can take 10-30s) */
+let lastPing = 0
+async function ensureAwake(): Promise<void> {
+  const now = Date.now()
+  if (now - lastPing < 5 * 60_000) return // Skip if pinged < 5min ago
+  lastPing = now
+  const base = getBaseUrl()
+  console.log(`[video-service] Waking up service...`)
+  try {
+    await fetch(`${base}/health`, { signal: AbortSignal.timeout(30_000) })
+    console.log(`[video-service] Service is awake`)
+  } catch {
+    console.log(`[video-service] No /health endpoint — trying anyway`)
+  }
+}
+
+async function callService<T>(endpoint: string, body: Record<string, unknown>, timeoutMs = 180_000): Promise<T> {
+  // Wake up service first (Railway cold starts)
+  await ensureAwake()
+
   const url = `${getBaseUrl()}${endpoint}`
   console.log(`[video-service] POST ${endpoint} (timeout: ${timeoutMs / 1000}s)`)
 
@@ -25,8 +44,9 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>, t
   })
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
-    throw new Error(`Video service error (${res.status}): ${err.error ?? res.statusText}`)
+    const errBody = await res.text().catch(() => res.statusText)
+    console.error(`[video-service] ${endpoint} failed (${res.status}): ${errBody}`)
+    throw new Error(`Video service error (${res.status}): ${errBody}`)
   }
 
   return res.json() as Promise<T>
