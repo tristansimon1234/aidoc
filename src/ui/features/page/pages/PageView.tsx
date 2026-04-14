@@ -428,7 +428,7 @@ DO NOT generate new documentation. Only verify the existing one.`
           <BriefingSection
             page={page}
             pageId={pageId!}
-            briefing={{ objective: '', knowledge: '', resources: [], ...(page.briefing ?? {}) }}
+            briefing={{ objective: '', knowledge: '', ...(page.briefing ?? {}), resources: (page.briefing as Record<string, unknown> | null)?.resources as PageResourceDTO[] ?? [] }}
             collapsed={false}
             onPageUpdate={(updates) => {
               setPage({ ...page, ...updates })
@@ -593,7 +593,7 @@ function BriefingSection({
   }
 
   // Count filled fields for the summary badge
-  const filledCount = [page.goal, page.startUrl, briefing.objective, briefing.knowledge].filter(Boolean).length + briefing.resources.length
+  const filledCount = [page.goal, page.startUrl, briefing.objective, briefing.knowledge].filter(Boolean).length + (briefing.resources?.length ?? 0)
 
   return (
     <div className={styles.section}>
