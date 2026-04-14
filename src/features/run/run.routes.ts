@@ -216,17 +216,17 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
       console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
 
-      // Build time budget — very conservative: 1.5 words/sec to leave room for pauses
+      // Build time budget — ~2.2 words/sec spoken, but budget at 1.8 to leave room for pauses + tags
       const timeBudgets = timestamps.map((t, i) => {
-        const next = timestamps[i + 1] ?? (t + 20)
+        const next = timestamps[i + 1] ?? (t + 15)
         return next - t
       })
-      const totalVideoTime = (timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0) + 20
-      const totalMaxWords = Math.floor(totalVideoTime * 2)
+      const totalVideoTime = (timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0) + 15
+      const totalMaxWords = Math.floor(totalVideoTime * 1.8)
       const sectionList = timestamps.map((_, i) => {
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(5, Math.floor(budget * 2))
-        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → max ${maxWords} words)`
+        const maxWords = Math.max(4, Math.floor(budget * 1.8))
+        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → HARD LIMIT ${maxWords} words)`
       }).join('\n')
 
       // Ask Gemini to transform the DOC into a narration script
@@ -234,28 +234,28 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const TONE_PRESETS: Record<string, { label: string; direction: string; example: string }> = {
         friendly: {
           label: 'Friendly & Casual',
-          direction: `Warm, upbeat, conversational. Like a helpful coworker showing you around. Use contractions (let's, you'll, here's), filler phrases ("so basically", "the cool thing is"), and light humor. Laugh occasionally, show genuine excitement.`,
-          example: `[SECTION 1]\nHey! [excited] So we're gonna set up your workspace — this is where all your documentation lives, organized by project.\n[SECTION 2]\nLet's create a new project. Think of it as a home for everything related to one product. [laughs] Super easy.`,
+          direction: `Warm, upbeat, conversational. Use contractions, light humor. Keep it SHORT — say it in one sentence when you can.`,
+          example: `[SECTION 1]\nHey! [excited] Let's set up your workspace.\n[SECTION 2]\nCreate a new project — this is home base for your docs. [laughs] Easy.`,
         },
         professional: {
           label: 'Professional & Clear',
-          direction: `Polished, confident, measured pace. Like a senior product manager giving a demo to executives. Clear and articulate, no filler words. Structured sentences, calm authority. Use pauses for emphasis rather than emotional tags.`,
-          example: `[SECTION 1]\nWelcome. In this walkthrough, we'll set up your documentation workspace — the central hub for all your project content.\n[SECTION 2]\nFirst, we'll create a new project. [short pause] Each project groups the documentation for a single product or service.`,
+          direction: `Polished, confident, measured. Clear and articulate, no filler. One precise sentence per idea.`,
+          example: `[SECTION 1]\nWelcome. Let's set up your workspace.\n[SECTION 2]\nFirst, create a project. [short pause] Each project groups docs for one product.`,
         },
         energetic: {
           label: 'Energetic & Hyped',
-          direction: `High-energy, fast-paced, genuinely PUMPED. Like a YouTuber who LOVES this product. Use CAPS for emphasis, exclamation marks, rapid delivery. Show excitement with [excited], [laughs], [happy gasp]. Short punchy sentences mixed with longer excited ones.`,
-          example: `[SECTION 1]\n[excited] Okay let's GO! We're setting up your workspace and honestly — this is where it gets REALLY cool.\n[SECTION 2]\nFirst things first, create a new project. [happy gasp] Just watch how fast this is!`,
+          direction: `High-energy, PUMPED. CAPS for emphasis, short punchy sentences. [excited], [laughs], [happy gasp].`,
+          example: `[SECTION 1]\n[excited] Let's GO! Time to set up your workspace.\n[SECTION 2]\nCreate a project — [happy gasp] watch how fast this is!`,
         },
         calm: {
           label: 'Calm & Reassuring',
-          direction: `Gentle, patient, soothing pace. Like a meditation teacher explaining software. Slower rhythm, lots of ellipses for breathing room... reassuring phrases ("don't worry", "take your time", "it's that simple"). Whisper for tips.`,
-          example: `[SECTION 1]\nHi there... welcome. [calm] We're going to walk through setting up your workspace together. No rush — just follow along at your own pace.\n[SECTION 2]\nLet's start by creating a project... [whispers] don't worry, it only takes a moment.`,
+          direction: `Gentle, patient. Ellipses for breathing room... reassuring phrases. [whispers] for tips.`,
+          example: `[SECTION 1]\nHi... welcome. [calm] Let's set up your workspace together.\n[SECTION 2]\nCreate a project... [whispers] it only takes a moment.`,
         },
         playful: {
           label: 'Playful & Fun',
-          direction: `Witty, irreverent, a little cheeky. Like a fun friend who happens to be a tech expert. Use humor, light sarcasm, playful asides. [giggles], [whispers], [sarcastic]. Self-aware about being an AI narrator. Pop culture references welcome.`,
-          example: `[SECTION 1]\n[laughs] Alright... let's do this! Your shiny new workspace awaits — think of it as your documentation command center. [whispers] Very official.\n[SECTION 2]\nStep one — create a project. [giggles] I know, groundbreaking stuff. But trust me, it gets cooler from here.`,
+          direction: `Witty, cheeky. Light sarcasm, playful asides. [giggles], [whispers], [sarcastic].`,
+          example: `[SECTION 1]\n[laughs] Alright — workspace time. [whispers] Very official.\n[SECTION 2]\nCreate a project. [giggles] Groundbreaking, I know.`,
         },
       }
 
@@ -303,19 +303,23 @@ Cognitive: [hesitates], [matter-of-fact], [reflective]
 ## Documentation source:
 ${doc.markdownContent}
 
-## Script structure
+## Script structure — TIMING IS CRITICAL
 ${numSteps} sections using [SECTION N] markers.
-Word budget: ~${totalMaxWords} words total. Each section: 2-3 sentences. Fill the time — don't leave long silences.
+Total word budget: ~${totalMaxWords} words. The narration MUST fit within the video duration.
 
 ${sectionList}
 
+⚠️ WORD LIMITS ARE HARD LIMITS — NOT TARGETS.
+Each section's word count includes audio tags. If a section says "HARD LIMIT 15 words", your section MUST be ≤15 words. Going over means the narration will desync from the video — the viewer sees one thing while hearing about something else. This RUINS the experience.
+
+Prefer SHORT, punchy lines over long explanations. 1-2 sentences per section is usually enough. Leave breathing room — silence between sections is FINE and feels natural. It's FAR better to be slightly short than to overshoot.
+
 ## Content rules
-- GREETING: Section 1 MUST start with a warm greeting that matches the tone
-- CLOSING: Last section MUST end with a goodbye that matches the tone
-- FILL THE TIME: use the full word budget per section. 2-3 sentences, not just 1.
+- GREETING: Section 1 starts with a short greeting that matches the tone
+- CLOSING: Last section ends with a brief goodbye
+- CONCISE: say it in fewer words. "Let's create a project" not "What we're going to do now is create a new project"
 - ANTICIPATORY: describe what we're ABOUT to do, not what just happened
-- EXPLAIN THE WHY: don't just say "click X" — say WHY, what it enables, what the user gains
-- VALUE: mention what features enable and what problems they solve
+- EXPLAIN THE WHY: briefly — say WHY, not just WHAT
 - Skip: URLs, code, image references, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how", "in this video"
 
@@ -334,11 +338,26 @@ Start DIRECTLY with [SECTION 1]. No preamble, no commentary.`,
       const rawSegments = scriptText.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
       console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numSteps})`)
       const stepsWithText = timestamps.map((_, i) => {
-        const text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
+        let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
+        // Enforce word limit — trim to budget if Gemini went over
+        const budget = timeBudgets[i]!
+        const maxWords = Math.max(4, Math.floor(budget * 1.8))
+        const words = text.split(/\s+/)
+        if (words.length > maxWords * 1.3) {
+          // Over by 30%+ — truncate to limit, ending at a sentence boundary if possible
+          const truncated = words.slice(0, maxWords)
+          const joined = truncated.join(' ')
+          const lastSentence = joined.lastIndexOf('.')
+          text = lastSentence > joined.length * 0.5 ? joined.slice(0, lastSentence + 1) : joined + '.'
+          console.log(`[voiceover] Step ${i}: TRIMMED from ${words.length} to ~${maxWords} words (budget: ${budget.toFixed(0)}s)`)
+        }
         return { stepIndex: i, text }
       })
       for (const s of stepsWithText) {
-        console.log(`[voiceover] Step ${s.stepIndex}: "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}" (${s.text.length} chars)`)
+        const wordCount = s.text.split(/\s+/).length
+        const budget = timeBudgets[s.stepIndex]!
+        const limit = Math.max(4, Math.floor(budget * 1.8))
+        console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
       }
 
       const result = await generateVoiceover(params.data.id, stepsWithText, timestamps, {
