@@ -60,6 +60,15 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
   }, [playing, tick])
 
+  // Timeout: if video doesn't load within 10s, show error
+  useEffect(() => {
+    if (playerState !== 'loading' || !expanded) return
+    const timeout = setTimeout(() => {
+      if (playerState === 'loading') setPlayerState('error')
+    }, 10000)
+    return () => clearTimeout(timeout)
+  }, [playerState, expanded])
+
   const togglePlay = (): void => {
     const video = videoRef.current
     const audio = audioRef.current

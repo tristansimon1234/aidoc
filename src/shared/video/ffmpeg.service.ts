@@ -1,10 +1,37 @@
 import ffmpeg from 'fluent-ffmpeg'
-import ffmpegPath from '@ffmpeg-installer/ffmpeg'
-import { writeFileSync, unlinkSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { writeFileSync, unlinkSync, mkdirSync, readdirSync, readFileSync, existsSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-ffmpeg.setFfmpegPath(ffmpegPath.path)
+// Try to locate ffmpeg binary
+let ffmpegBinaryPath: string | null = null
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const installer = require('@ffmpeg-installer/ffmpeg') as { path: string }
+  if (installer.path && existsSync(installer.path)) {
+    ffmpegBinaryPath = installer.path
+    ffmpeg.setFfmpegPath(installer.path)
+    console.log(`[ffmpeg] Found binary at: ${installer.path}`)
+  }
+} catch {
+  // Try system ffmpeg
+  try {
+    const systemPath = execSync('which ffmpeg', { timeout: 5000 }).toString().trim()
+    if (systemPath) {
+      ffmpegBinaryPath = systemPath
+      ffmpeg.setFfmpegPath(systemPath)
+      console.log(`[ffmpeg] Using system binary: ${systemPath}`)
+    }
+  } catch {
+    console.warn('[ffmpeg] No ffmpeg binary found — video processing will fail')
+  }
+}
+
+/** Check if ffmpeg is available */
+export function isAvailable(): boolean {
+  return ffmpegBinaryPath !== null
+}
 
 /**
  * Convert a video buffer (any format) to MP4 (H.264).
