@@ -1,4 +1,4 @@
-import { type ChangeEvent, useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useOutletContext, Link } from 'react-router-dom'
 import {
   Button,
@@ -7,7 +7,7 @@ import {
   EmptyState,
   TableOfContents,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
+import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
@@ -148,16 +148,19 @@ export function PageView(): React.ReactElement {
 
   const handleTryDoc = async (): Promise<void> => {
     if (!projectId || !pageId || !page?.content) return
-    const startUrl = page.startUrl ?? context.project.baseUrl
+    const briefingData = page.briefing as Record<string, unknown> | null
+    const testUrl = (briefingData?.testUrl as string) || page.startUrl || context.project.baseUrl
+    const testNotes = (briefingData?.testNotes as string) || ''
 
     const tryDocPrompt = `You are simulating a NAIVE USER who has ONLY the documentation below. You have never used this product before. You know NOTHING about it except what the documentation tells you.
 
 ## Documentation to verify:
 
 ${page.content}
+${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
 ## Your task:
-1. Navigate to: ${startUrl}
+1. Navigate to: ${testUrl}
 2. Follow EACH step in the documentation IN ORDER, exactly as written
 3. For EVERY step, report your experience clearly:
    - PASS: if the step works exactly as documented
@@ -186,7 +189,7 @@ DO NOT generate new documentation. Only verify the existing one.`
     try {
       const run = await api.runs.create({
         featureName: `[Test] ${page.title}`,
-        startUrl,
+        startUrl: testUrl,
         goal: `Verify documentation for "${page.title}"`,
         docPageId: pageId,
       })
@@ -350,82 +353,92 @@ DO NOT generate new documentation. Only verify the existing one.`
       {/* ===== VIDEO TAB ===== */}
       {activeTab === 'video' && (
         <div className={styles.tabContent}>
-          {(voiceoverUrl || voiceoverSegments.length > 0 || videoUrl || latestRunId) ? (
+          {(videoUrl || latestRunId) ? (
             <>
+              {/* Video player — always visible */}
               <NarratedPlayer
                 videoUrl={videoUrl}
                 audioUrl={voiceoverUrl}
                 segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
                 runId={latestRunId}
-                voices={voices}
-                selectedVoiceId={selectedVoiceId}
-                onVoiceChange={setSelectedVoiceId}
+                voices={[]}
                 onSegmentsChange={setVoiceoverSegments}
                 onVideoUrlChange={setVideoUrl}
                 onAudioUrlChange={setVoiceoverUrl}
-                onGenerateVoiceover={latestRunId && page.content ? async () => {
-                  const result = await api.runs.generateVoiceover(latestRunId, {
-                    voiceId: selectedVoiceId,
-                    tone: selectedTone,
-                  }) as {
-                    segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
-                    audioPath?: string
-                    audioUrl?: string
-                  }
-                  const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
-                  if (result.audioUrl) {
-                    setVoiceoverUrl(bust(result.audioUrl))
-                  } else if (result.audioPath) {
-                    const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
-                    setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
-                  }
-                  setVoiceoverSegments(result.segments ?? [])
-                } : undefined}
               />
-              {/* Tone selector */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-                padding: 'var(--space-sm) var(--space-md)',
-                background: 'var(--color-card)', border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-lg)', marginTop: 'var(--space-sm)',
-              }}>
-                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', whiteSpace: 'nowrap' }}>Narration tone</span>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+
+              {/* Voice & tone controls */}
+              <div className={styles.section} style={{ marginTop: 'var(--space-md)' }}>
+                {/* Tone row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
+                  <span className={styles.briefingFieldLabel} style={{ margin: 0, whiteSpace: 'nowrap' }}>Tone</span>
                   {[
-                    { id: 'friendly', label: 'Friendly', icon: '👋' },
-                    { id: 'professional', label: 'Professional', icon: '💼' },
-                    { id: 'energetic', label: 'Energetic', icon: '⚡' },
-                    { id: 'calm', label: 'Calm', icon: '🧘' },
-                    { id: 'playful', label: 'Playful', icon: '🎭' },
+                    { id: 'friendly', label: 'Friendly' },
+                    { id: 'professional', label: 'Professional' },
+                    { id: 'energetic', label: 'Energetic' },
+                    { id: 'calm', label: 'Calm' },
+                    { id: 'playful', label: 'Playful' },
                   ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setSelectedTone(t.id)}
-                      style={{
-                        padding: '3px 10px',
-                        fontSize: 'var(--text-xs)',
-                        fontFamily: 'var(--font-mono)',
-                        border: `1px solid ${selectedTone === t.id ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                        borderRadius: 'var(--radius-sm)',
-                        background: selectedTone === t.id ? 'var(--color-primary)' : 'var(--color-secondary)',
-                        color: selectedTone === t.id ? 'white' : 'var(--color-fg)',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {t.icon} {t.label}
+                    <button key={t.id} type="button" onClick={() => setSelectedTone(t.id)}
+                      className={`${styles.tonePill} ${selectedTone === t.id ? styles.tonePillActive : ''}`}>
+                      {t.label}
                     </button>
                   ))}
                 </div>
+
+                {/* Voice + regenerate row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+                  {voices.length > 0 && (
+                    <>
+                      <span className={styles.briefingFieldLabel} style={{ margin: 0 }}>Voice</span>
+                      <select value={selectedVoiceId ?? ''} onChange={(e) => setSelectedVoiceId(e.target.value)}
+                        style={{
+                          fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+                          background: 'var(--color-secondary)', color: 'var(--color-fg)',
+                          border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
+                          padding: '6px 10px', cursor: 'pointer',
+                        }}>
+                        {voices.map((v) => <option key={v.voiceId} value={v.voiceId}>{v.name}</option>)}
+                      </select>
+                    </>
+                  )}
+                  {latestRunId && page.content && (
+                    <Button size="sm" onClick={() => {
+                      void (async () => {
+                        const result = await api.runs.generateVoiceover(latestRunId, {
+                          voiceId: selectedVoiceId,
+                          tone: selectedTone,
+                        }) as {
+                          segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+                          audioPath?: string
+                          audioUrl?: string
+                        }
+                        const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
+                        if (result.audioUrl) {
+                          setVoiceoverUrl(bust(result.audioUrl))
+                        } else if (result.audioPath) {
+                          const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                          setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
+                        }
+                        setVoiceoverSegments(result.segments ?? [])
+                      })()
+                    }}>
+                      {voiceoverUrl ? 'Regenerate voice-over' : 'Generate voice-over'}
+                    </Button>
+                  )}
+                </div>
               </div>
-              {/* Show on public page toggle */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-                padding: 'var(--space-sm) var(--space-md)',
-                background: 'var(--color-card)', border: '1px solid var(--color-border)',
-                borderRadius: 'var(--radius-lg)', marginTop: 'var(--space-sm)',
-              }}>
+
+              {/* Show on public page */}
+              <div className={styles.section} style={{ marginTop: 'var(--space-sm)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
+                    Display video on published page
+                  </div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+                    Show this video at the top of the public documentation page
+                  </div>
+                </div>
                 <div
                   className={styles.publishToggle}
                   onClick={() => {
@@ -436,16 +449,6 @@ DO NOT generate new documentation. Only verify the existing one.`
                     void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
                   }}
                 >
-                  <span style={{
-                    color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic
-                      ? 'var(--color-success)' : 'var(--color-muted-fg)',
-                    fontSize: 'var(--text-sm)',
-                    fontFamily: 'var(--font-sans)',
-                    textTransform: 'none',
-                    letterSpacing: 'normal',
-                  }}>
-                    Display video on published page
-                  </span>
                   <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
                     <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
                   </div>
@@ -465,20 +468,50 @@ DO NOT generate new documentation. Only verify the existing one.`
       {activeTab === 'exploration' && (
         <div className={styles.tabContent}>
 
-          <BriefingSection
-            page={page}
-            pageId={pageId!}
-            briefing={{ objective: '', knowledge: '', ...(page.briefing ?? {}), resources: (page.briefing as Record<string, unknown> | null)?.resources as PageResourceDTO[] ?? [] }}
-            collapsed={false}
-            onPageUpdate={(updates) => {
-              setPage({ ...page, ...updates })
-              void debouncedPageUpdate(updates)
-            }}
-            onBriefingChange={(briefing) => {
-              setPage({ ...page, briefing })
-              void debouncedPageUpdate({ briefing })
-            }}
-          />
+          {/* Agent briefing — simplified */}
+          <div className={styles.section}>
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
+              Agent Briefing
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              <div>
+                <label className={styles.briefingFieldLabel}>Goal</label>
+                <input type="text" value={page.goal ?? ''} onChange={(e) => {
+                  setPage({ ...page, goal: e.target.value })
+                  void debouncedPageUpdate({ goal: e.target.value })
+                }} placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
+              </div>
+
+              <div>
+                <label className={styles.briefingFieldLabel}>What to document</label>
+                <textarea
+                  value={(page.briefing as Record<string, unknown> | null)?.objective as string ?? ''}
+                  onChange={(e) => {
+                    const newBriefing = { ...(page.briefing ?? {}), objective: e.target.value } as typeof page.briefing
+                    setPage({ ...page, briefing: newBriefing })
+                    void debouncedPageUpdate({ briefing: newBriefing })
+                  }}
+                  placeholder="e.g. Document how a new user creates an account and completes onboarding"
+                  rows={3} className={styles.briefingTextarea}
+                />
+              </div>
+
+              <div>
+                <label className={styles.briefingFieldLabel}>What the agent can&apos;t see</label>
+                <textarea
+                  value={(page.briefing as Record<string, unknown> | null)?.knowledge as string ?? ''}
+                  onChange={(e) => {
+                    const newBriefing = { ...(page.briefing ?? {}), knowledge: e.target.value } as typeof page.briefing
+                    setPage({ ...page, briefing: newBriefing })
+                    void debouncedPageUpdate({ briefing: newBriefing })
+                  }}
+                  placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries."
+                  rows={2} className={styles.briefingTextarea}
+                />
+              </div>
+            </div>
+          </div>
 
           <ScreenRecorder
             projectId={projectId!}
@@ -498,6 +531,44 @@ DO NOT generate new documentation. Only verify the existing one.`
       {/* ===== TEST TAB ===== */}
       {activeTab === 'test' && (
         <div className={styles.tabContent}>
+          {/* Test configuration */}
+          {!tryRunning && !analyzing && (
+            <div className={styles.section} style={{ marginBottom: 'var(--space-md)' }}>
+              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
+                Test Configuration
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                <div>
+                  <label className={styles.briefingFieldLabel}>Test URL</label>
+                  <input type="text"
+                    value={(page.briefing as Record<string, unknown> | null)?.testUrl as string ?? page.startUrl ?? context.project.baseUrl ?? ''}
+                    onChange={(e) => {
+                      const newBriefing = { ...(page.briefing ?? {}), testUrl: e.target.value } as typeof page.briefing
+                      setPage({ ...page, briefing: newBriefing })
+                      void debouncedPageUpdate({ briefing: newBriefing })
+                    }}
+                    placeholder={page.startUrl ?? context.project.baseUrl ?? 'https://...'}
+                    className={`${styles.briefingInput}`}
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
+                  />
+                </div>
+                <div>
+                  <label className={styles.briefingFieldLabel}>Additional context</label>
+                  <textarea
+                    value={(page.briefing as Record<string, unknown> | null)?.testNotes as string ?? ''}
+                    onChange={(e) => {
+                      const newBriefing = { ...(page.briefing ?? {}), testNotes: e.target.value } as typeof page.briefing
+                      setPage({ ...page, briefing: newBriefing })
+                      void debouncedPageUpdate({ briefing: newBriefing })
+                    }}
+                    placeholder="e.g. Test with an expired subscription. The Reset button should show a confirmation dialog."
+                    rows={2} className={styles.briefingTextarea}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className={styles.tryHeader}>
             <div className={styles.tryTitleRow}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m9 15 2 2 4-4" /></svg>
@@ -573,189 +644,5 @@ DO NOT generate new documentation. Only verify the existing one.`
   )
 }
 
-// --- Briefing Section (collapsible, numbered steps) ---
 
-const RESOURCE_TYPES: PageResourceDTO['type'][] = ['url', 'credential', 'endpoint', 'file', 'note']
-const ALLOWED_FILE_EXTENSIONS = ['.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml']
-const MAX_FILE_SIZE = 500 * 1024
-
-function BriefingSection({
-  page,
-  pageId,
-  briefing,
-  collapsed,
-  onPageUpdate,
-  onBriefingChange,
-}: {
-  page: DocPageDTO
-  pageId: string
-  briefing: PageBriefingDTO
-  collapsed: boolean
-  onPageUpdate: (updates: Record<string, unknown>) => void
-  onBriefingChange: (briefing: PageBriefingDTO) => void
-}): React.ReactElement {
-  const [open, setOpen] = useState(!collapsed)
-  const [uploadError, setUploadError] = useState<string | null>(null)
-  const [showExample, setShowExample] = useState(false)
-
-  // Auto-collapse when exploration starts
-  useEffect(() => {
-    if (collapsed) setOpen(false)
-  }, [collapsed])
-
-  const update = (partial: Partial<PageBriefingDTO>): void => {
-    onBriefingChange({ ...briefing, ...partial })
-  }
-
-  const addResource = (): void => {
-    update({ resources: [...briefing.resources, { type: 'note', label: '', value: '' }] })
-  }
-
-  const updateResource = (index: number, field: keyof PageResourceDTO, value: string): void => {
-    update({ resources: briefing.resources.map((r, i) => i === index ? { ...r, [field]: value } : r) })
-  }
-
-  const removeResource = (index: number): void => {
-    update({ resources: briefing.resources.filter((_, i) => i !== index) })
-  }
-
-  const handleFileUpload = async (index: number, e: ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploadError(null)
-    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
-    if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) { setUploadError(`Unsupported type. Accepted: ${ALLOWED_FILE_EXTENSIONS.join(', ')}`); return }
-    if (file.size > MAX_FILE_SIZE) { setUploadError('File too large (max 500KB)'); return }
-    const path = `pages/${pageId}/${file.name}`
-    const { error } = await supabase.storage.from('briefing-files').upload(path, file, { upsert: true })
-    if (error) { setUploadError(`Upload failed: ${error.message}`); return }
-    update({ resources: briefing.resources.map((r, i) => i === index ? { ...r, value: path, label: r.label || file.name } : r) })
-  }
-
-  // Count filled fields for the summary badge
-  const filledCount = [page.goal, page.startUrl, briefing.objective, briefing.knowledge].filter(Boolean).length + (briefing.resources?.length ?? 0)
-
-  return (
-    <div className={styles.section}>
-      <button type="button" onClick={() => setOpen(!open)} className={styles.briefingHeader}>
-        <div className={styles.briefingTitle}>
-          <span className={styles.briefingTitleText}>Agent Briefing</span>
-          <span className={`${styles.briefingBadge} ${filledCount > 2 ? styles.briefingBadgeReady : styles.briefingBadgePartial}`}>
-            {filledCount > 2 ? 'ready' : `${filledCount}/4`}
-          </span>
-        </div>
-        <span className={`${styles.briefingChevron} ${open ? styles.briefingChevronOpen : ''}`}>&#9662;</span>
-      </button>
-
-      {!open && (
-        <p className={styles.briefingPreview}>
-          {briefing.objective ? briefing.objective.slice(0, 80) + (briefing.objective.length > 80 ? '...' : '') : 'No objective set — click to expand'}
-        </p>
-      )}
-
-      {open && (
-        <div className={styles.briefingBody}>
-          <p className={styles.briefingHint}>
-            The more precise your briefing, the better the documentation.
-          </p>
-
-          {/* Step 1: Goal + URL */}
-          <div>
-            <div className={styles.briefingStepHeader}>
-              <span className={styles.stepNumber}>1</span>
-              <span className={styles.briefingStepTitle}>Where to explore</span>
-            </div>
-            <div className={styles.briefingGrid}>
-              <div>
-                <label className={styles.briefingFieldLabel}>Start URL</label>
-                <input type="text" value={page.startUrl ?? ''} onChange={(e) => onPageUpdate({ startUrl: e.target.value })}
-                  placeholder="e.g. /pricing" className={`${styles.briefingInput} ${styles.briefingInputMono}`} />
-              </div>
-              <div>
-                <label className={styles.briefingFieldLabel}>Goal</label>
-                <input type="text" value={page.goal ?? ''} onChange={(e) => onPageUpdate({ goal: e.target.value })}
-                  placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
-              </div>
-            </div>
-          </div>
-
-          {/* Step 2: Objective */}
-          <div>
-            <div className={styles.briefingStepBetween}>
-              <div className={styles.briefingStepHeader} style={{ marginBottom: 0 }}>
-                <span className={styles.stepNumber}>2</span>
-                <span className={styles.briefingStepTitle}>What to document</span>
-              </div>
-              <button type="button" onClick={() => setShowExample(!showExample)} className={styles.briefingExampleToggle}>
-                {showExample ? 'hide example' : 'see example'}
-              </button>
-            </div>
-            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
-              What should the user learn from this page? Be specific.
-            </p>
-            {showExample && (
-              <div className={styles.briefingExample}>
-                <p className={styles.briefingExampleBad}>Bad: &quot;Document pricing&quot;</p>
-                <p className={styles.briefingExampleGood}>Good: &quot;Document the pricing page: compare plans, show upgrade flow from free to pro&quot;</p>
-              </div>
-            )}
-            <textarea value={briefing.objective} onChange={(e) => update({ objective: e.target.value })}
-              placeholder="e.g. Document how a new user creates an account and completes onboarding" rows={3} className={styles.briefingTextarea} />
-          </div>
-
-          {/* Step 3: Domain knowledge */}
-          <div>
-            <div className={styles.briefingStepHeader}>
-              <span className={styles.stepNumber}>3</span>
-              <span className={styles.briefingStepTitle}>What the agent can&apos;t see</span>
-            </div>
-            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
-              Business rules, edge cases, hidden behaviors.
-            </p>
-            <textarea value={briefing.knowledge} onChange={(e) => update({ knowledge: e.target.value })}
-              placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries." rows={3} className={styles.briefingTextarea} />
-          </div>
-
-          {/* Step 4: Resources */}
-          <div>
-            <div className={styles.briefingStepBetween}>
-              <div className={styles.briefingStepHeader} style={{ marginBottom: 0 }}>
-                <span className={styles.stepNumber}>4</span>
-                <span className={styles.briefingStepTitle}>Resources</span>
-                <span className={styles.briefingHint}>optional</span>
-              </div>
-              <button type="button" onClick={addResource} className={styles.briefingAddBtn}>+ add</button>
-            </div>
-            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
-              Files the agent can upload, or reference URLs.
-            </p>
-            {uploadError && <p className={styles.briefingError}>{uploadError}</p>}
-            {briefing.resources.map((r, i) => (
-              <div key={i} className={styles.briefingResourceRow}>
-                <select value={r.type} onChange={(e) => updateResource(i, 'type', e.target.value)} className={styles.briefingResourceSelect}>
-                  {RESOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-                <input type="text" value={r.label} onChange={(e) => updateResource(i, 'label', e.target.value)}
-                  placeholder="label" className={styles.briefingResourceSmallInput} />
-                {r.type === 'file' ? (
-                  r.value ? (
-                    <span className={styles.briefingHint}>{r.value.split('/').pop()}</span>
-                  ) : (
-                    <input type="file" accept={ALLOWED_FILE_EXTENSIONS.join(',')} onChange={(e) => void handleFileUpload(i, e)}
-                      className={styles.briefingHint} />
-                  )
-                ) : (
-                  <input type="text" value={r.value} onChange={(e) => updateResource(i, 'value', e.target.value)}
-                    placeholder="value" className={styles.briefingResourceSmallInput} />
-                )}
-                <button type="button" onClick={() => removeResource(i)} className={styles.briefingResourceRemove}>x</button>
-              </div>
-            ))}
-            {briefing.resources.length === 0 && <p className={styles.briefingEmpty}>No resources added</p>}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 

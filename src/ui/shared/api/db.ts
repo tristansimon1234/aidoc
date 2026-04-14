@@ -60,6 +60,7 @@ export async function fetchProjects(): Promise<ProjectDTO[]> {
 export async function createProject(body: {
   name: string
   baseUrl: string
+  description?: string
   context?: ProjectContextDTO
   credentials?: { label: string; username: string; password: string }[]
 }): Promise<ProjectDTO> {
@@ -72,6 +73,7 @@ export async function createProject(body: {
       user_id: user.id,
       name: body.name,
       base_url: body.baseUrl,
+      description: body.description ?? null,
       context: body.context ?? null,
       credentials: body.credentials ?? null,
     })

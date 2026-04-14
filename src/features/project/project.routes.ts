@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
-import { CreateProjectSchema, UpdateProjectSchema, ProjectIdParamSchema } from './project.schema.js'
+import { CreateProjectSchema, UpdateProjectSchema, ProjectIdParamSchema, AnalyzeUrlSchema } from './project.schema.js'
 import * as projectService from './project.service.js'
 
 export const projectRouter = Router()
@@ -28,6 +28,70 @@ projectRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
       const project = await projectService.createProject(getUserId(req), parsed.data)
       res.status(201).json(project)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Analyze a URL to auto-fill project details
+projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const parsed = AnalyzeUrlSchema.safeParse(req.body)
+      if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+
+      // Fetch HTML server-side (avoids CORS)
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10000)
+      let html: string
+      try {
+        const resp = await fetch(parsed.data.url, {
+          signal: controller.signal,
+          headers: { 'User-Agent': 'AiDoc/1.0 (Documentation Generator)' },
+        })
+        html = await resp.text()
+      } catch {
+        html = ''
+      } finally {
+        clearTimeout(timeout)
+      }
+
+      // Truncate to ~80KB and strip scripts/styles
+      const stripped = html
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .slice(0, 80_000)
+
+      const { generateText } = await import('../../shared/ai/gemini.client.js')
+      const result = await generateText({
+        userPrompt: `Analyze this webpage HTML and extract product information. The URL is: ${parsed.data.url}
+
+HTML content:
+${stripped || '(Could not fetch page content — infer from the URL)'}
+
+Return ONLY valid JSON with these fields:
+{
+  "name": "product/company name (guess from HTML title, logo, headings)",
+  "description": "one-sentence product description",
+  "audience": "who uses this product (role, industry, use case)",
+  "workflow": "the most important user journey or workflow"
+}
+
+If you can't determine a field, return an empty string for it. Return ONLY the JSON object, no markdown fences.`,
+        maxTokens: 1024,
+      })
+
+      // Parse JSON from Gemini response
+      let analysis = { name: '', description: '', audience: '', workflow: '' }
+      try {
+        const cleaned = result.text.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
+        analysis = JSON.parse(cleaned) as typeof analysis
+      } catch {
+        // Gemini returned non-JSON — use empty defaults
+      }
+
+      res.status(200).json(analysis)
     } catch (err) {
       next(err)
     }
