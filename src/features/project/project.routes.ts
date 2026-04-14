@@ -88,24 +88,19 @@ ${stripped ? `HTML content (scripts/styles removed):\n${stripped}` : '(No HTML c
 Return ONLY valid JSON with these fields:
 {
   "name": "product or company name (from <title>, logo text, headings, or URL domain)",
-  "description": "one-sentence description of what this product does",
-  "audience": "who uses this product — role, industry, use case (be specific)",
-  "workflow": "the most important user journey or primary workflow",
+  "description": "SHORT one-sentence description (max 20 words)",
+  "audience": "target users in 10 words max",
+  "workflow": "primary user journey in 15 words max",
   "design": {
-    "accentColor": "primary/accent color hex (from buttons, links, brand elements — e.g. #4F46E5)",
-    "bgColor": "background color hex (usually #FFFFFF or similar)",
-    "textColor": "main text color hex (usually dark — e.g. #1A1A1A)",
-    "font": "primary font family name (from headings or body — e.g. Inter, Roboto, system-ui)"
+    "accentColor": "#hex (brand/accent color from buttons or links)",
+    "bgColor": "#hex (page background)",
+    "textColor": "#hex (body text color)",
+    "font": "font family name (e.g. Inter)"
   }
 }
 
-Rules:
-- For design colors: look at inline styles, class names that suggest colors, brand elements, meta theme-color tags
-- If you can't determine exact colors, make educated guesses based on the brand/industry
-- For font: check font-family declarations, Google Fonts links, or common SaaS fonts
-- If a field is truly unknowable, use empty string (except design — always provide best guesses)
-- Return ONLY the JSON object, no markdown fences, no commentary`,
-        maxTokens: 1024,
+Keep ALL values SHORT. Return ONLY raw JSON, no markdown fences, no extra text.`,
+        maxTokens: 2048,
       })
 
       console.log(`[analyze-url] Gemini response (${result.text.length} chars): ${result.text.slice(0, 300)}`)
