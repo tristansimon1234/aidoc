@@ -345,6 +345,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, voices, se
               runId={runId}
               duration={duration}
               segments={segments!}
+              voiceId={selectedVoiceId}
               onSegmentsChange={(s) => onSegmentsChange?.(s)}
               onVideoTrimmed={(url) => onVideoUrlChange?.(url)}
               onAudioUrlChange={(url) => onAudioUrlChange?.(url)}

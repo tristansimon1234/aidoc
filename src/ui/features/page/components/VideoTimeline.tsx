@@ -7,6 +7,7 @@ interface VideoTimelineProps {
   runId: string
   duration: number
   segments: VoiceoverSegment[]
+  voiceId?: string
   onSegmentsChange: (segments: VoiceoverSegment[]) => void
   onVideoTrimmed?: (videoUrl: string) => void
   onAudioUrlChange?: (audioUrl: string) => void
@@ -14,7 +15,7 @@ interface VideoTimelineProps {
 
 const TRACK_H = 32
 
-export function VideoTimeline({ runId, duration, segments, onSegmentsChange, onVideoTrimmed, onAudioUrlChange }: VideoTimelineProps): React.ReactElement {
+export function VideoTimeline({ runId, duration, segments, voiceId, onSegmentsChange, onVideoTrimmed, onAudioUrlChange }: VideoTimelineProps): React.ReactElement {
   const [dragging, setDragging] = useState<number | null>(null)
   const [editingIdx, setEditingIdx] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
@@ -66,7 +67,7 @@ export function VideoTimeline({ runId, duration, segments, onSegmentsChange, onV
     setRegeneratingIdx(idx)
     try {
       const text = editingIdx === idx ? editText : undefined
-      const result = await api.runs.regenerateSegment(runId, segments[idx]!.stepIndex, text) as { stepIndex: number; audioUrl?: string; text: string }
+      const result = await api.runs.regenerateSegment(runId, segments[idx]!.stepIndex, text, voiceId) as { stepIndex: number; audioUrl?: string; text: string }
       onSegmentsChange(segments.map((s, i) => i === idx ? { ...s, text: result.text } : s))
       if (result.audioUrl) onAudioUrlChange?.(result.audioUrl)
       setEditingIdx(null)

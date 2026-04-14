@@ -267,8 +267,8 @@ export const api = {
       request('/runs/voices'),
     generateVoiceover: (id: string, options?: { voiceId?: string; language?: string }): Promise<{ audioPath: string; audioUrl: string; duration: number }> =>
       request(`/runs/${id}/generate-voiceover`, { method: 'POST', body: JSON.stringify(options ?? {}) }),
-    regenerateSegment: (id: string, stepIndex: number, text?: string): Promise<{ stepIndex: number; audioUrl: string; text: string }> =>
-      request(`/runs/${id}/regenerate-segment`, { method: 'POST', body: JSON.stringify({ stepIndex, text }) }),
+    regenerateSegment: (id: string, stepIndex: number, text?: string, voiceId?: string): Promise<{ stepIndex: number; audioUrl: string; text: string }> =>
+      request(`/runs/${id}/regenerate-segment`, { method: 'POST', body: JSON.stringify({ stepIndex, text, voiceId }) }),
     updateSegmentTiming: (id: string, segments: { stepIndex: number; startTime: number; endTime: number }[]): Promise<unknown> =>
       request(`/runs/${id}/voiceover-segments`, { method: 'PUT', body: JSON.stringify({ segments }) }),
     trimVideo: (id: string, startTime: number, endTime: number): Promise<{ videoPath: string; videoUrl: string }> =>
