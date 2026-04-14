@@ -2,7 +2,11 @@ import ffmpeg from 'fluent-ffmpeg'
 import { writeFileSync, unlinkSync, mkdirSync, readdirSync, readFileSync, existsSync } from 'node:fs'
 import { execSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
 
 // Locate ffmpeg binary — multiple strategies for different environments
 let ffmpegBinaryPath: string | null = null
