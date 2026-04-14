@@ -261,13 +261,15 @@ Hey! Let's walk through how to get started [pause] it's really straightforward.
 [SECTION 2]
 Head over to the settings page [short pause] this is where you'll configure everything.
 
-Write exactly ${numSteps} sections. Output ONLY the script.`,
-        maxTokens: 4096,
+Write exactly ${numSteps} sections. Start directly with [SECTION 1] — no preamble or introduction text before it.`,
+        maxTokens: 8192,
       })
 
-      // Parse [SECTION N] markers
+      // Parse [SECTION N] markers — strip any preamble before first [SECTION
       console.log(`[voiceover] Gemini narration raw output (${narrationResult.text.length} chars):\n${narrationResult.text.slice(0, 500)}`)
-      const rawSegments = narrationResult.text.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
+      const firstSectionIdx = narrationResult.text.indexOf('[SECTION')
+      const scriptText = firstSectionIdx >= 0 ? narrationResult.text.slice(firstSectionIdx) : narrationResult.text
+      const rawSegments = scriptText.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
       console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numSteps})`)
       const stepsWithText = timestamps.map((_, i) => {
         const text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
