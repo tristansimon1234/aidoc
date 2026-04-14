@@ -12,6 +12,8 @@ interface PublicPage {
   content: string | null
   parentId: string | null
   sortOrder: number
+  videoUrl?: string | null
+  audioUrl?: string | null
 }
 
 interface PublicProject {
@@ -219,6 +221,23 @@ export function PublicDocs(): React.ReactElement {
             {activePage && (
               <>
                 <h1 className={styles.pageTitle}>{activePage.title}</h1>
+                {activePage.videoUrl && (
+                  <div style={{
+                    marginBottom: 'var(--space-lg)', borderRadius: 'var(--radius-xl)',
+                    overflow: 'hidden', background: '#000', position: 'relative',
+                  }}>
+                    <video
+                      src={activePage.videoUrl}
+                      controls
+                      preload="metadata"
+                      muted={Boolean(activePage.audioUrl)}
+                      style={{ width: '100%', display: 'block', maxHeight: '420px' }}
+                    />
+                    {activePage.audioUrl && (
+                      <audio src={activePage.audioUrl} preload="auto" style={{ display: 'none' }} />
+                    )}
+                  </div>
+                )}
                 {activePage.content ? (
                   <MarkdownRenderer content={activePage.content} />
                 ) : (

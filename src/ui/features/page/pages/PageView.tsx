@@ -2,9 +2,7 @@ import { type ChangeEvent, useState, useEffect, useCallback, useRef } from 'reac
 import { useParams, useOutletContext, Link } from 'react-router-dom'
 import {
   Button,
-  Badge,
   Spinner,
-  StatusIndicator,
   BlockEditor,
   EmptyState,
   TableOfContents,
@@ -36,7 +34,7 @@ export function PageView(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'test'>('doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test'>('doc')
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
@@ -270,66 +268,46 @@ DO NOT generate new documentation. Only verify the existing one.`
   if (loading) return <Spinner size="lg" />
   if (!page) return <EmptyState title="Page not found" />
 
-  const statusMap: Record<string, 'pending' | 'running' | 'completed'> = {
-    draft: 'pending',
-    exploring: 'running',
-    published: 'completed',
-  }
+
 
   return (
     <div>
-      {/* Header — status + publish toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-          <StatusIndicator status={statusMap[page.status] ?? 'pending'} label={page.status} />
-          {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-          <Button
-            size="sm"
-            variant={page.isPublic ? 'secondary' : 'ghost'}
-            onClick={() => {
-              const newVal = !page.isPublic
-              setPage({ ...page, isPublic: newVal })
-              void dbUpdatePage(projectId!, pageId!, { isPublic: newVal })
-            }}
-          >
-            {page.isPublic ? (
-              <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg> Published</>
-            ) : (
-              <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Draft</>
+      {/* Header — publish toggle */}
+      <div className={styles.pageHeader}>
+        <div className={styles.tabBar}>
+          <button className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`} onClick={() => setActiveTab('doc')}>Documentation</button>
+          <button className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`} onClick={() => setActiveTab('exploration')}>Generate</button>
+          <button className={`${styles.tab} ${activeTab === 'video' ? styles.tabActive : ''}`} onClick={() => setActiveTab('video')}>
+            Video
+            {(voiceoverUrl || videoUrl) && <span className={`${styles.tabDot} ${styles.tabDotPass}`} />}
+          </button>
+          <button className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`} onClick={() => setActiveTab('test')}>
+            Test
+            {(tryRunning || analyzing) && <Spinner size="sm" />}
+            {!tryRunning && !analyzing && tryReport && (
+              <span className={`${styles.tabDot} ${
+                tryReport.summary.overallVerdict === 'pass' ? styles.tabDotPass :
+                tryReport.summary.overallVerdict === 'fail' ? styles.tabDotFail :
+                styles.tabDotPartial
+              }`} />
             )}
-          </Button>
+          </button>
         </div>
-      </div>
-
-      <div className={styles.tabBar}>
-        <button
-          className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`}
-          onClick={() => setActiveTab('doc')}
+        <div
+          className={styles.publishToggle}
+          onClick={() => {
+            const newVal = !page.isPublic
+            setPage({ ...page, isPublic: newVal })
+            void dbUpdatePage(projectId!, pageId!, { isPublic: newVal })
+          }}
         >
-          Documentation
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`}
-          onClick={() => setActiveTab('exploration')}
-        >
-          Generate
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`}
-          onClick={() => setActiveTab('test')}
-        >
-          Test
-          {(tryRunning || analyzing) && <Spinner size="sm" />}
-          {!tryRunning && !analyzing && tryReport && (
-            <span className={`${styles.tabDot} ${
-              tryReport.summary.overallVerdict === 'pass' ? styles.tabDotPass :
-              tryReport.summary.overallVerdict === 'fail' ? styles.tabDotFail :
-              styles.tabDotPartial
-            }`} />
-          )}
-        </button>
+          <span style={{ color: page.isPublic ? 'var(--color-success)' : 'var(--color-muted-fg)' }}>
+            {page.isPublic ? 'Published' : 'Draft'}
+          </span>
+          <div className={`${styles.toggleTrack} ${page.isPublic ? styles.toggleTrackOn : ''}`}>
+            <div className={`${styles.toggleKnob} ${page.isPublic ? styles.toggleKnobOn : ''}`} />
+          </div>
+        </div>
       </div>
 
       {/* ===== DOCUMENTATION TAB ===== */}
@@ -344,36 +322,6 @@ DO NOT generate new documentation. Only verify the existing one.`
               void debouncedPageUpdate({ title: e.target.value })
             }}
           />
-          {(voiceoverUrl || voiceoverSegments.length > 0 || videoUrl || latestRunId) && (
-            <NarratedPlayer
-              videoUrl={videoUrl}
-              audioUrl={voiceoverUrl}
-              segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
-              runId={latestRunId}
-              voices={voices}
-              selectedVoiceId={selectedVoiceId}
-              onVoiceChange={setSelectedVoiceId}
-              onSegmentsChange={setVoiceoverSegments}
-              onVideoUrlChange={setVideoUrl}
-              onAudioUrlChange={setVoiceoverUrl}
-              onGenerateVoiceover={latestRunId && page.content ? async () => {
-                const result = await api.runs.generateVoiceover(latestRunId, {
-                  voiceId: selectedVoiceId,
-                }) as {
-                  segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
-                  audioPath?: string
-                  audioUrl?: string
-                }
-                if (result.audioUrl) {
-                  setVoiceoverUrl(result.audioUrl)
-                } else if (result.audioPath) {
-                  const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
-                  setVoiceoverUrl(data?.publicUrl ?? null)
-                }
-                setVoiceoverSegments(result.segments ?? [])
-              } : undefined}
-            />
-          )}
           <BlockEditor
             key={pageId}
             content={page.content ?? ''}
@@ -395,6 +343,81 @@ DO NOT generate new documentation. Only verify the existing one.`
             )
           })()}
           {page.content && <TableOfContents content={page.content} />}
+        </div>
+      )}
+
+      {/* ===== VIDEO TAB ===== */}
+      {activeTab === 'video' && (
+        <div className={styles.tabContent}>
+          {(voiceoverUrl || voiceoverSegments.length > 0 || videoUrl || latestRunId) ? (
+            <>
+              <NarratedPlayer
+                videoUrl={videoUrl}
+                audioUrl={voiceoverUrl}
+                segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
+                runId={latestRunId}
+                voices={voices}
+                selectedVoiceId={selectedVoiceId}
+                onVoiceChange={setSelectedVoiceId}
+                onSegmentsChange={setVoiceoverSegments}
+                onVideoUrlChange={setVideoUrl}
+                onAudioUrlChange={setVoiceoverUrl}
+                onGenerateVoiceover={latestRunId && page.content ? async () => {
+                  const result = await api.runs.generateVoiceover(latestRunId, {
+                    voiceId: selectedVoiceId,
+                  }) as {
+                    segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+                    audioPath?: string
+                    audioUrl?: string
+                  }
+                  if (result.audioUrl) {
+                    setVoiceoverUrl(result.audioUrl)
+                  } else if (result.audioPath) {
+                    const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                    setVoiceoverUrl(data?.publicUrl ?? null)
+                  }
+                  setVoiceoverSegments(result.segments ?? [])
+                } : undefined}
+              />
+              {/* Show on public page toggle */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
+                padding: 'var(--space-sm) var(--space-md)',
+                background: 'var(--color-card)', border: '1px solid var(--color-border)',
+                borderRadius: 'var(--radius-lg)', marginTop: 'var(--space-sm)',
+              }}>
+                <div
+                  className={styles.publishToggle}
+                  onClick={() => {
+                    const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
+                    const newVal = !current
+                    const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
+                    setPage({ ...page, briefing: newBriefing })
+                    void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
+                  }}
+                >
+                  <span style={{
+                    color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic
+                      ? 'var(--color-success)' : 'var(--color-muted-fg)',
+                    fontSize: 'var(--text-sm)',
+                    fontFamily: 'var(--font-sans)',
+                    textTransform: 'none',
+                    letterSpacing: 'normal',
+                  }}>
+                    Display video on published page
+                  </span>
+                  <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
+                    <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <EmptyState
+              title="No video yet"
+              description="Record or upload a video in the Generate tab to create a narrated walkthrough."
+            />
+          )}
         </div>
       )}
 
