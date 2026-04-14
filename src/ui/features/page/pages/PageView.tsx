@@ -355,6 +355,7 @@ DO NOT generate new documentation. Only verify the existing one.`
               onVoiceChange={setSelectedVoiceId}
               onSegmentsChange={setVoiceoverSegments}
               onVideoUrlChange={setVideoUrl}
+              onAudioUrlChange={setVoiceoverUrl}
               onGenerateVoiceover={latestRunId && page.content ? async () => {
                 const result = await api.runs.generateVoiceover(latestRunId, {
                   voiceId: selectedVoiceId,

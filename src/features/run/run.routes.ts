@@ -222,10 +222,10 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         return next - t
       })
       const totalVideoTime = (timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0) + 20
-      const totalMaxWords = Math.floor(totalVideoTime * 1.5)
+      const totalMaxWords = Math.floor(totalVideoTime * 2)
       const sectionList = timestamps.map((_, i) => {
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(3, Math.floor(budget * 1.5))
+        const maxWords = Math.max(5, Math.floor(budget * 2))
         return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → max ${maxWords} words)`
       }).join('\n')
 
@@ -247,14 +247,17 @@ ${doc.markdownContent}
 
 ## Script structure
 ${numSteps} sections using [SECTION N] markers.
-Word budget: ~${totalMaxWords} words total. Each section: 1-2 sentences.
+Word budget: ~${totalMaxWords} words total. Each section: 2-3 sentences. Fill the time — don't leave long silences.
 
 ${sectionList}
 
 ## Content rules
+- GREETING: Section 1 MUST start with a warm greeting ("Hey there!", "Welcome!", "Hi! So glad you're here.")
+- CLOSING: Last section MUST end with a goodbye ("Thanks for watching!", "See you next time!", "That's a wrap — enjoy!")
+- FILL THE TIME: use the full word budget for each section. 2-3 sentences per section, not just 1. Silence between sections feels awkward.
 - ANTICIPATORY: describe what we're ABOUT to do, not what just happened
-- EXPLAIN THE WHY: don't just say "click X" — say why we're clicking X and what it does
-- Add VALUE: mention what features enable, what problems they solve, what the user gains
+- EXPLAIN THE WHY: don't just say "click X" — say WHY we're clicking X, what it enables, what the user gains
+- Add VALUE: mention what features enable, what problems they solve
 - NATURAL: contractions (let's, you'll, here's), conversational ("so basically", "the cool thing is")
 - Skip: URLs, code, image references, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
@@ -353,25 +356,45 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
       const existingSeg = voiceover.segments.find((s) => (s.stepIndex as number) === body.stepIndex)
       const text = body.text ?? (existingSeg?.text as string) ?? `Step ${body.stepIndex + 1}`
 
-      // Synthesize new audio
+      // Synthesize new segment audio — use same naming as generateVoiceover
       const buffer = await synthesizeSpeech(text, { voiceId: body.voiceId })
-      const segPath = `runs/${params.data.id}/voiceover-step-${body.stepIndex}.mp3`
+      const segPath = `runs/${params.data.id}/voiceover-seg-${body.stepIndex}.mp3`
       await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
-      const audioUrl = getPublicUrl('artifacts', segPath) ?? ''
 
       // Update the segment in the summary
       const updatedSegments = voiceover.segments.map((s) =>
         (s.stepIndex as number) === body.stepIndex
-          ? { ...s, audioUrl, audioPath: segPath, text }
+          ? { ...s, audioPath: segPath, text }
           : s,
       )
+
+      // Re-concat ALL segments to rebuild voiceover.mp3
+      const { isVideoServiceConfigured, concatAudio } = await import('../../shared/video/video.client.js')
+      let mainAudioUrl = ''
+      let mainAudioPath = ''
+
+      if (isVideoServiceConfigured()) {
+        const concatSegments = updatedSegments
+          .sort((a, b) => (a.stepIndex as number) - (b.stepIndex as number))
+          .map((s) => ({
+            audioPath: (s.audioPath as string) ?? `runs/${params.data.id}/voiceover-seg-${s.stepIndex as number}.mp3`,
+            targetStartTime: Math.max(0, (s.startTime as number) - 1.5),
+          }))
+        mainAudioPath = await concatAudio(params.data.id, concatSegments)
+        mainAudioUrl = `${getPublicUrl('artifacts', mainAudioPath) ?? ''}?v=${Date.now()}`
+      }
+
       const { updateRunSummary } = await import('./run.repository.js')
       await updateRunSummary(params.data.id, {
         ...summary,
-        voiceover: { ...voiceover, segments: updatedSegments },
+        voiceover: {
+          ...voiceover,
+          segments: updatedSegments,
+          ...(mainAudioPath ? { audioPath: mainAudioPath, audioUrl: mainAudioUrl } : {}),
+        },
       })
 
-      res.status(200).json({ stepIndex: body.stepIndex, audioUrl, text })
+      res.status(200).json({ stepIndex: body.stepIndex, audioUrl: mainAudioUrl, text })
     } catch (err) {
       next(err)
     }

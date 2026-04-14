@@ -25,11 +25,12 @@ interface NarratedPlayerProps {
   onGenerateVoiceover?: () => Promise<void>
   onSegmentsChange?: (segments: VoiceoverSegment[]) => void
   onVideoUrlChange?: (url: string) => void
+  onAudioUrlChange?: (url: string) => void
 }
 
 type PlayerState = 'loading' | 'ready' | 'error'
 
-export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, voices, selectedVoiceId, onVoiceChange, onGenerateVoiceover, onSegmentsChange, onVideoUrlChange }: NarratedPlayerProps): React.ReactElement {
+export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, voices, selectedVoiceId, onVoiceChange, onGenerateVoiceover, onSegmentsChange, onVideoUrlChange, onAudioUrlChange }: NarratedPlayerProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -346,6 +347,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, voices, se
               segments={segments!}
               onSegmentsChange={(s) => onSegmentsChange?.(s)}
               onVideoTrimmed={(url) => onVideoUrlChange?.(url)}
+              onAudioUrlChange={(url) => onAudioUrlChange?.(url)}
             />
           )}
         </div>
