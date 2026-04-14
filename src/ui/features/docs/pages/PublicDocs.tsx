@@ -5,6 +5,54 @@ import type { ProjectDesignDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
 import styles from './PublicDocs.module.css'
 
+/** Lightweight narrated video player for public docs — syncs video + voiceover audio */
+function NarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: string }): React.ReactElement {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  const syncAudio = (): void => {
+    const video = videoRef.current
+    const audio = audioRef.current
+    if (!video || !audio) return
+    if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
+      audio.currentTime = video.currentTime
+    }
+  }
+
+  const handlePlay = (): void => {
+    const audio = audioRef.current
+    const video = videoRef.current
+    if (audio && video) {
+      audio.currentTime = video.currentTime
+      void audio.play()
+    }
+  }
+
+  const handlePause = (): void => { audioRef.current?.pause() }
+  const handleSeeked = (): void => { syncAudio() }
+
+  return (
+    <div style={{
+      marginBottom: 'var(--space-lg)', borderRadius: 'var(--radius-xl)',
+      overflow: 'hidden', background: '#000',
+    }}>
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        controls
+        preload="metadata"
+        muted={Boolean(audioUrl)}
+        onPlay={handlePlay}
+        onPause={handlePause}
+        onSeeked={handleSeeked}
+        onTimeUpdate={syncAudio}
+        style={{ width: '100%', display: 'block', maxHeight: '420px' }}
+      />
+      {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
+    </div>
+  )
+}
+
 interface PublicPage {
   id: string
   title: string
@@ -222,21 +270,7 @@ export function PublicDocs(): React.ReactElement {
               <>
                 <h1 className={styles.pageTitle}>{activePage.title}</h1>
                 {activePage.videoUrl && (
-                  <div style={{
-                    marginBottom: 'var(--space-lg)', borderRadius: 'var(--radius-xl)',
-                    overflow: 'hidden', background: '#000', position: 'relative',
-                  }}>
-                    <video
-                      src={activePage.videoUrl}
-                      controls
-                      preload="metadata"
-                      muted={Boolean(activePage.audioUrl)}
-                      style={{ width: '100%', display: 'block', maxHeight: '420px' }}
-                    />
-                    {activePage.audioUrl && (
-                      <audio src={activePage.audioUrl} preload="auto" style={{ display: 'none' }} />
-                    )}
-                  </div>
+                  <NarratedVideo videoUrl={activePage.videoUrl} audioUrl={activePage.audioUrl ?? undefined} />
                 )}
                 {activePage.content ? (
                   <MarkdownRenderer content={activePage.content} />
