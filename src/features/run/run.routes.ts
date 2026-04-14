@@ -163,24 +163,19 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
   })()
 })
 
-// Get available ElevenLabs voices
-runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
-  void (async () => {
-    try {
-      const { isElevenLabsConfigured, getAvailableVoices } = await import('../../shared/ai/elevenlabs.client.js')
-      if (!isElevenLabsConfigured()) {
-        console.log('[voices] ElevenLabs not configured')
-        res.json({ voices: [] })
-        return
-      }
-      const voices = await getAvailableVoices()
-      console.log(`[voices] Returning ${voices.length} voices`)
-      res.json({ voices })
-    } catch (err) {
-      console.error('[voices] Error:', err)
-      next(err)
-    }
-  })()
+// Get available ElevenLabs voices (hardcoded list — API /voices returns 401 on some plans)
+runRouter.get('/voices', (_req: Request, res: Response) => {
+  const voices = [
+    { voiceId: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', category: 'premade', labels: {} },
+    { voiceId: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', category: 'premade', labels: {} },
+    { voiceId: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', category: 'premade', labels: {} },
+    { voiceId: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', category: 'premade', labels: {} },
+    { voiceId: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', category: 'premade', labels: {} },
+    { voiceId: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', category: 'premade', labels: {} },
+    { voiceId: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', category: 'premade', labels: {} },
+    { voiceId: 'pqHfZKP75CvOlQylNhV4', name: 'Bill', category: 'premade', labels: {} },
+  ]
+  res.json({ voices })
 })
 
 // Generate voice-over narration from documentation
@@ -217,54 +212,46 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
       console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
 
-      // Build time budget per section — use 2 words/sec (conservative) and cap at 80% of available time
+      // Build time budget — very conservative: 1.5 words/sec to leave room for pauses
       const timeBudgets = timestamps.map((t, i) => {
-        const next = timestamps[i + 1] ?? (t + 30)
+        const next = timestamps[i + 1] ?? (t + 20)
         return next - t
       })
-      const totalVideoTime = (timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0) + 30
-      const totalMaxWords = Math.floor(totalVideoTime * 2)
+      const totalVideoTime = (timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0) + 20
+      const totalMaxWords = Math.floor(totalVideoTime * 1.5)
       const sectionList = timestamps.map((_, i) => {
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(5, Math.floor(budget * 2)) // 2 words/sec = conservative
-        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s — MAX ${maxWords} words)`
+        const maxWords = Math.max(3, Math.floor(budget * 1.5))
+        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → max ${maxWords} words)`
       }).join('\n')
 
       // Ask Gemini to transform the DOC into a narration script
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const narrationResult = await generateText({
-        userPrompt: `Transform this documentation into a voice-over narration script for the tutorial video.
+        userPrompt: `Write a SHORT voice-over script for a tutorial video. TOTAL BUDGET: ${totalMaxWords} words max for the entire script.
 
-## Documentation
+## Source documentation (summarize, don't read verbatim):
 ${doc.markdownContent}
 
-## Task
-Rewrite this into a CONCISE spoken narration. Total video: ${totalVideoTime.toFixed(0)}s. Total word budget: ~${totalMaxWords} words.
-Use [SECTION N] markers to split into ${numSteps} segments.
-
-WORD LIMITS PER SECTION (STRICTLY ENFORCED):
+## Sections with STRICT word limits:
 ${sectionList}
 
 RULES:
-- STRICTLY respect the word limit for each section. Count your words. If a section says MAX 10 words, use 10 words or fewer.
-- Be CONCISE — this is a quick walkthrough, not a lecture. One short sentence per section is ideal.
-- Keep the same content flow as the doc — don't invent information
-- Tone: contractions ("let's", "you'll"), direct address ("you")
-- First section: brief welcome. Last section: short wrap-up
-- DO NOT read image captions, URLs, or code blocks
-- Use these audio tags naturally between phrases:
-  [pause] — brief pause
-  [short pause] — micro pause
-  [long pause] — transition pause
-  Audio tags do NOT count toward the word limit.
+- TOTAL script must be under ${totalMaxWords} words. This is a HARD LIMIT.
+- Each section: 1 SHORT sentence. No more.
+- ${numSteps} sections using [SECTION N] markers.
+- Use [pause], [short pause] between phrases for natural rhythm.
+- Conversational tone: "let's", "you'll", "just", "here"
+- Skip URLs, code, image captions.
+- Start with [SECTION 1], no preamble.
 
-Output (start DIRECTLY with [SECTION 1]):
+Example of correct brevity:
 [SECTION 1]
-Hey! [pause] Let's get started.
+Welcome! [pause] Let's set up your first project.
 [SECTION 2]
-Click 'New Project' [short pause] to open the form.
-
-Write exactly ${numSteps} sections. NO preamble.`,
+Click 'New Project' here.
+[SECTION 3]
+Enter your app name [short pause] and hit create.`,
         maxTokens: 8192,
       })
 
