@@ -308,7 +308,7 @@ export async function cancelExploration(id: string): Promise<void> {
   cancelRun(id)
 }
 
-export async function analyzeVideo(runId: string, videoPath: string): Promise<{ timestamps: number[] }> {
+export async function analyzeVideo(runId: string, videoPath: string): Promise<{ timestamps: number[]; framesExtracted: boolean }> {
   const run = await runRepo.findRunById(runId)
   if (!run) throw new NotFoundError('Run')
 
@@ -320,17 +320,42 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
     if (error || !data) throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
 
-    const buffer = Buffer.from(await data.arrayBuffer())
+    const rawBuffer = Buffer.from(await data.arrayBuffer())
     const mimeType = videoPath.endsWith('.webm') ? 'video/webm'
       : videoPath.endsWith('.mov') ? 'video/quicktime'
       : 'video/mp4'
-    const fileName = videoPath.split('/').pop() ?? 'video.mp4'
 
-    // Analyze with Gemini
+    // --- Step 1: Convert to MP4 if needed (via ffmpeg) ---
+    const { isAvailable, convertToMp4, extractFrames } = await import('../../shared/video/ffmpeg.service.js')
+    const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
+
+    let videoBuffer: Buffer<ArrayBuffer> = rawBuffer as Buffer<ArrayBuffer>
+    let playerVideoPath = videoPath
+    let ffmpegWorks = false
+
+    if (isAvailable() && mimeType !== 'video/mp4') {
+      try {
+        console.log(`[video] Converting ${mimeType} → MP4...`)
+        videoBuffer = await convertToMp4(rawBuffer, mimeType) as Buffer<ArrayBuffer>
+        playerVideoPath = videoPath.replace(/\.[^.]+$/, '.mp4')
+        await uploadToStorage('artifacts', playerVideoPath, videoBuffer, 'video/mp4')
+        ffmpegWorks = true
+        console.log(`[video] Converted → ${playerVideoPath}`)
+      } catch (err) {
+        console.warn(`[video] ffmpeg conversion failed: ${(err as Error).message}`)
+        videoBuffer = rawBuffer
+        playerVideoPath = videoPath
+      }
+    } else if (mimeType === 'video/mp4') {
+      ffmpegWorks = isAvailable()
+    }
+
+    // --- Step 2: Analyze with Gemini ---
     const { analyzeVideoWithGemini } = await import('../../shared/ai/gemini.client.js')
-    const analysis = await analyzeVideoWithGemini(buffer, mimeType, fileName)
+    const analyzeMime = ffmpegWorks ? 'video/mp4' : mimeType
+    const fileName = playerVideoPath.split('/').pop() ?? 'video.mp4'
+    const analysis = await analyzeVideoWithGemini(videoBuffer, analyzeMime, fileName)
 
-    // Sort steps by timestamp ascending
     const sortedSteps = [...analysis.steps].sort((a, b) => a.timestamp - b.timestamp)
 
     if (sortedSteps.length === 0) {
@@ -340,20 +365,61 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     const timestamps = sortedSteps.map((s) => s.timestamp)
 
-    // Create run steps (screenshots will be extracted client-side)
-    for (let i = 0; i < sortedSteps.length; i++) {
-      const s = sortedSteps[i]!
-      const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
-      await runRepo.createRunStep({
-        runId,
-        stepIndex: i,
-        title: s.userAction,
-        action: s.userAction,
-        observation: `${s.screenDescription}${narrationText}`,
-        status: 'completed',
-      })
+    // --- Step 3: Extract frames (server-side if ffmpeg available) ---
+    let framesExtracted = false
+
+    if (ffmpegWorks) {
+      try {
+        console.log(`[video] Extracting ${timestamps.length} frames server-side...`)
+        const frames = await extractFrames(videoBuffer, timestamps)
+
+        for (let i = 0; i < sortedSteps.length; i++) {
+          const s = sortedSteps[i]!
+          const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
+          const frameBuffer = frames[i]
+          let screenshotPath: string | undefined
+
+          if (frameBuffer && frameBuffer.length > 0) {
+            screenshotPath = `runs/${runId}/frame-${i}.jpg`
+            await uploadToStorage('artifacts', screenshotPath, frameBuffer, 'image/jpeg')
+          }
+
+          await runRepo.createRunStep({
+            runId,
+            stepIndex: i,
+            title: s.userAction,
+            action: s.userAction,
+            observation: `${s.screenDescription}${narrationText}`,
+            screenshotPath: screenshotPath ?? undefined,
+            status: 'completed',
+          })
+        }
+
+        framesExtracted = true
+        console.log(`[video] ${timestamps.length} frames extracted and uploaded`)
+      } catch (err) {
+        console.warn(`[video] Server frame extraction failed: ${(err as Error).message}`)
+      }
     }
 
+    // Fallback: create steps without screenshots (client will extract them)
+    if (!framesExtracted) {
+      console.log('[video] Creating steps without screenshots (client-side extraction needed)')
+      for (let i = 0; i < sortedSteps.length; i++) {
+        const s = sortedSteps[i]!
+        const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
+        await runRepo.createRunStep({
+          runId,
+          stepIndex: i,
+          title: s.userAction,
+          action: s.userAction,
+          observation: `${s.screenDescription}${narrationText}`,
+          status: 'completed',
+        })
+      }
+    }
+
+    // --- Step 4: Summary ---
     await runRepo.updateRunSummary(runId, {
       sections: [{
         url: 'video',
@@ -363,13 +429,13 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
       }],
       blockers: [],
       agentMessage: analysis.summary,
-      videoPath,
+      videoPath: playerVideoPath,
       stepTimestamps: timestamps,
     })
 
     await runRepo.updateRunStatus(runId, 'completed')
 
-    return { timestamps }
+    return { timestamps, framesExtracted }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')

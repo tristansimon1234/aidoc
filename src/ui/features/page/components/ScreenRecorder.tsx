@@ -119,15 +119,18 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
         await fetch(eventsSignedUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: eventsBlob })
       }
 
-      // 3. Analyze with Gemini
+      // 3. Analyze with Gemini + extract frames (server-side if ffmpeg available)
       setStatus('analyzing')
-      const { timestamps } = await api.runs.analyzeVideo(run.id, videoPath)
+      const result = await api.runs.analyzeVideo(run.id, videoPath) as {
+        timestamps: number[]
+        framesExtracted?: boolean
+      }
 
-      // 4. Extract frames client-side
-      if (timestamps.length > 0) {
+      // 4. Extract frames client-side only if server couldn't
+      if (!result.framesExtracted && result.timestamps.length > 0) {
         setStatus('extracting')
         const videoBlob = file instanceof File ? file : new File([file], fileName, { type: 'video/webm' })
-        await extractAndUploadFrames(videoBlob, run.id, timestamps)
+        await extractAndUploadFrames(videoBlob, run.id, result.timestamps)
       }
 
       // 5. Generate documentation
