@@ -68,22 +68,58 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         clearTimeout(timeout)
       }
 
-      // Strip scripts/styles/SVGs, keep text + structure
-      const stripped = html
+      // Extract the most useful parts instead of sending raw HTML
+      const extract = (pattern: RegExp): string[] => {
+        const matches: string[] = []
+        let m: RegExpExecArray | null
+        while ((m = pattern.exec(html)) !== null) { matches.push(m[1] ?? m[0]); if (matches.length > 20) break }
+        return matches
+      }
+
+      const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? ''
+      const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const themeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const headings = extract(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi).map(h => h.replace(/<[^>]+>/g, '').trim()).filter(Boolean)
+      const links = extract(/<a[^>]*>([\s\S]*?)<\/a>/gi).map(a => a.replace(/<[^>]+>/g, '').trim()).filter(h => h.length > 2 && h.length < 60)
+      const fonts = extract(/font-family:\s*['"]?([^;'"}\n]+)/gi)
+      const googleFonts = html.match(/fonts\.googleapis\.com\/css2?\?family=([^"&]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
+      const colors = extract(/(?:color|background(?:-color)?)\s*:\s*(#[0-9a-fA-F]{3,8})/gi)
+
+      // Build a compact summary for Gemini
+      const textContent = html
         .replace(/<script[\s\S]*?<\/script>/gi, '')
         .replace(/<style[\s\S]*?<\/style>/gi, '')
         .replace(/<svg[\s\S]*?<\/svg>/gi, '')
-        .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
-        .slice(0, 80_000)
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 3000)
+
+      const pageInfo = [
+        `URL: ${url}`,
+        title && `Title: ${title}`,
+        ogTitle && ogTitle !== title && `OG Title: ${ogTitle}`,
+        metaDesc && `Meta description: ${metaDesc}`,
+        ogDesc && ogDesc !== metaDesc && `OG description: ${ogDesc}`,
+        themeColor && `Theme color: ${themeColor}`,
+        headings.length > 0 && `Headings: ${headings.slice(0, 10).join(' | ')}`,
+        links.length > 0 && `Nav links: ${[...new Set(links)].slice(0, 15).join(', ')}`,
+        googleFonts && `Google Font: ${googleFonts}`,
+        fonts.length > 0 && `CSS fonts: ${[...new Set(fonts)].slice(0, 5).join(', ')}`,
+        colors.length > 0 && `CSS colors found: ${[...new Set(colors)].slice(0, 15).join(', ')}`,
+        `Page text (excerpt): ${textContent}`,
+      ].filter(Boolean).join('\n')
+
+      console.log(`[analyze-url] Extracted info (${pageInfo.length} chars)`)
 
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const result = await generateText({
-        userPrompt: `Analyze this webpage and extract product information + design details.
+        userPrompt: `Analyze this webpage and extract product information + design.
+${fetchError ? `(Note: fetch failed: "${fetchError}" — infer from URL)` : ''}
 
-URL: ${url}
-${fetchError ? `(Note: direct fetch failed with "${fetchError}" — infer what you can from the URL itself)` : ''}
-
-${stripped ? `HTML content (scripts/styles removed):\n${stripped}` : '(No HTML content available — analyze based on URL pattern)'}
+${pageInfo}
 
 Return ONLY valid JSON with these fields:
 {
