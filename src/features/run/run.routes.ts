@@ -163,19 +163,23 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
   })()
 })
 
-// Get available ElevenLabs voices (hardcoded list — API /voices returns 401 on some plans)
-runRouter.get('/voices', (_req: Request, res: Response) => {
-  const voices = [
-    { voiceId: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah', category: 'premade', labels: {} },
-    { voiceId: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', category: 'premade', labels: {} },
-    { voiceId: 'onwK4e9ZLuTAKqWW03F9', name: 'Daniel', category: 'premade', labels: {} },
-    { voiceId: 'TX3LPaxmHKxFdv7VOQHJ', name: 'Liam', category: 'premade', labels: {} },
-    { voiceId: 'pFZP5JQG7iQjIQuC4Bku', name: 'Lily', category: 'premade', labels: {} },
-    { voiceId: 'IKne3meq5aSn9XLyUdCD', name: 'Charlie', category: 'premade', labels: {} },
-    { voiceId: 'XB0fDUnXU5powFXDhCwa', name: 'Charlotte', category: 'premade', labels: {} },
-    { voiceId: 'pqHfZKP75CvOlQylNhV4', name: 'Bill', category: 'premade', labels: {} },
-  ]
-  res.json({ voices })
+// Get available ElevenLabs voices
+runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const { isElevenLabsConfigured, getAvailableVoices } = await import('../../shared/ai/elevenlabs.client.js')
+      if (!isElevenLabsConfigured()) {
+        res.json({ voices: [] })
+        return
+      }
+      const voices = await getAvailableVoices()
+      console.log(`[voices] Returning ${voices.length} voices`)
+      res.json({ voices })
+    } catch (err) {
+      console.error('[voices] Error:', err)
+      next(err)
+    }
+  })()
 })
 
 // Generate voice-over narration from documentation
