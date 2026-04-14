@@ -320,34 +320,62 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
     if (error || !data) throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
 
-    const buffer = Buffer.from(await data.arrayBuffer())
+    const rawBuffer = Buffer.from(await data.arrayBuffer())
     const mimeType = videoPath.endsWith('.webm') ? 'video/webm'
       : videoPath.endsWith('.mov') ? 'video/quicktime'
       : 'video/mp4'
-    const fileName = videoPath.split('/').pop() ?? 'video.mp4'
 
-    // Analyze with Gemini
+    // Convert to MP4 for precise seeking (WebM keyframes are too sparse)
+    const { convertToMp4 } = await import('../../shared/video/ffmpeg.service.js')
+    const mp4Buffer = await convertToMp4(rawBuffer, mimeType)
+
+    // If we converted, upload the MP4 version for the player
+    let mp4Path = videoPath
+    if (mimeType !== 'video/mp4') {
+      mp4Path = videoPath.replace(/\.[^.]+$/, '.mp4')
+      const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
+      await uploadToStorage('artifacts', mp4Path, mp4Buffer, 'video/mp4')
+      console.log(`[video] Converted ${videoPath} → ${mp4Path}`)
+    }
+
+    // Analyze with Gemini (use MP4 for better timestamp accuracy)
     const { analyzeVideoWithGemini } = await import('../../shared/ai/gemini.client.js')
-    const analysis = await analyzeVideoWithGemini(buffer, mimeType, fileName)
+    const analysis = await analyzeVideoWithGemini(mp4Buffer, 'video/mp4', 'video.mp4')
 
-    // Sort steps by timestamp (ascending) — Gemini sometimes returns them out of order
+    // Sort steps by timestamp ascending
     const sortedSteps = [...analysis.steps].sort((a, b) => a.timestamp - b.timestamp)
 
-    // Create RunSteps from analysis
+    // Extract frames server-side with ffmpeg (precise seeking)
+    const { extractFrames } = await import('../../shared/video/ffmpeg.service.js')
+    const timestamps = sortedSteps.map((s) => s.timestamp)
+    const frames = await extractFrames(mp4Buffer, timestamps)
+
+    // Upload frames and create run steps
+    const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
     for (let i = 0; i < sortedSteps.length; i++) {
       const s = sortedSteps[i]!
       const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
+
+      // Upload frame
+      const frameBuffer = frames[i]
+      let screenshotPath: string | undefined
+      if (frameBuffer && frameBuffer.length > 0) {
+        screenshotPath = `runs/${runId}/frame-${i}.jpg`
+        await uploadToStorage('artifacts', screenshotPath, frameBuffer, 'image/jpeg')
+      }
+
       await runRepo.createRunStep({
         runId,
         stepIndex: i,
         title: s.userAction,
         action: s.userAction,
         observation: `${s.screenDescription}${narrationText}`,
+        screenshotPath: screenshotPath ?? undefined,
         status: 'completed',
       })
     }
 
-    // Build summary — include videoPath + step timestamps for the narrated player
+    // Build summary — use MP4 path for the player
     await runRepo.updateRunSummary(runId, {
       sections: [{
         url: 'video',
@@ -357,13 +385,13 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
       }],
       blockers: [],
       agentMessage: analysis.summary,
-      videoPath,
-      stepTimestamps: sortedSteps.map((s) => s.timestamp),
+      videoPath: mp4Path,
+      stepTimestamps: timestamps,
     })
 
     await runRepo.updateRunStatus(runId, 'completed')
 
-    return { timestamps: sortedSteps.map((s) => s.timestamp) }
+    return { timestamps }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')

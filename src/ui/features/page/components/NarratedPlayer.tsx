@@ -16,11 +16,12 @@ interface NarratedPlayerProps {
   runId?: string | null
   onGenerateVoiceover?: () => Promise<void>
   onSegmentsChange?: (segments: VoiceoverSegment[]) => void
+  onVideoUrlChange?: (url: string) => void
 }
 
 type PlayerState = 'loading' | 'ready' | 'error'
 
-export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerateVoiceover, onSegmentsChange }: NarratedPlayerProps): React.ReactElement {
+export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerateVoiceover, onSegmentsChange, onVideoUrlChange }: NarratedPlayerProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -281,7 +282,13 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
 
           {/* Timeline editor */}
           {showTimeline && hasSegments && runId && duration > 0 && (
-            <VideoTimeline runId={runId} duration={duration} segments={segments!} onSegmentsChange={(s) => onSegmentsChange?.(s)} />
+            <VideoTimeline
+              runId={runId}
+              duration={duration}
+              segments={segments!}
+              onSegmentsChange={(s) => onSegmentsChange?.(s)}
+              onVideoTrimmed={(url) => onVideoUrlChange?.(url)}
+            />
           )}
         </div>
       )}

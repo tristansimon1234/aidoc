@@ -4,7 +4,7 @@ import { api, type DocPageDTO } from '../../../shared/api/client.js'
 import { updatePage as dbUpdatePage } from '../../../shared/api/db.js'
 import styles from '../pages/PageView.module.css'
 
-type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 'generating'
+type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'generating'
 
 const MAX_RECORDING_SECONDS = 300 // 5 minutes max
 
@@ -119,16 +119,11 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
         await fetch(eventsSignedUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: eventsBlob })
       }
 
-      // 3. Analyze with Gemini
+      // 3. Analyze with Gemini + extract frames (all server-side via ffmpeg)
       setStatus('analyzing')
-      const { timestamps } = await api.runs.analyzeVideo(run.id, videoPath)
+      await api.runs.analyzeVideo(run.id, videoPath)
 
-      // 4. Extract frames at timestamps
-      setStatus('extracting')
-      const videoFile = file instanceof File ? file : new File([file], fileName, { type: 'video/webm' })
-      await extractAndUploadFrames(videoFile, run.id, timestamps)
-
-      // 5. Generate documentation
+      // 4. Generate documentation
       setStatus('generating')
       await api.runs.generateDoc(run.id)
       await dbUpdatePage(projectId, pageId, { status: 'published' })
@@ -309,8 +304,7 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
           <Spinner size="sm" />
           <span>
             {status === 'uploading' && 'Uploading video...'}
-            {status === 'analyzing' && 'Analyzing video with AI \u2014 this may take a minute...'}
-            {status === 'extracting' && 'Extracting screenshots...'}
+            {status === 'analyzing' && 'Analyzing video + extracting screenshots \u2014 this may take a minute...'}
             {status === 'generating' && 'Generating documentation...'}
           </span>
         </div>
@@ -401,85 +395,4 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
       {error && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', marginTop: 'var(--space-sm)' }}>{error}</p>}
     </div>
   )
-}
-
-// Extract frames from video at timestamps and upload as screenshots.
-async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
-  if (timestamps.length === 0) return
-
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (!ctx) { resolve(); return }
-
-    video.onloadedmetadata = () => {
-      canvas.width = Math.min(video.videoWidth, 1280)
-      canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
-
-      const duration = video.duration
-
-      // Sort and clamp timestamps to video duration
-      const frames = [...timestamps]
-        .sort((a, b) => a - b)
-        .map((t, idx) => ({
-          time: Math.max(0, Math.min(t, duration - 0.1)),
-          stepIndex: idx,
-        }))
-
-      let i = 0
-      let busy = false // Guard against double onseeked fires
-
-      const captureCurrentFrame = async (): Promise<void> => {
-        if (busy || i >= frames.length) return
-        busy = true
-
-        try {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          const entry = frames[i]!
-
-          const blob = await new Promise<Blob | null>((res) =>
-            canvas.toBlob((b) => res(b), 'image/jpeg', 0.85),
-          )
-
-          if (blob) {
-            const path = `runs/${runId}/frame-${entry.stepIndex}.jpg`
-            const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
-            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-            await api.runs.updateStepScreenshot(runId, entry.stepIndex, path)
-          }
-
-          i++
-          busy = false
-
-          // Move to next frame
-          if (i >= frames.length) {
-            resolve()
-          } else {
-            video.currentTime = frames[i]!.time
-          }
-        } catch (err) {
-          busy = false
-          reject(err as Error)
-        }
-      }
-
-      video.onseeked = () => {
-        // 150ms delay to let browser decode the frame
-        setTimeout(() => void captureCurrentFrame(), 150)
-      }
-
-      video.onerror = () => reject(new Error('Failed to load video'))
-
-      // Start the chain
-      if (frames.length > 0) {
-        video.currentTime = frames[0]!.time
-      } else {
-        resolve()
-      }
-    }
-
-    video.onerror = () => reject(new Error('Failed to load video'))
-    video.src = URL.createObjectURL(videoFile)
-  })
 }

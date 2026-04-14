@@ -269,6 +269,8 @@ export const api = {
       request(`/runs/${id}/regenerate-segment`, { method: 'POST', body: JSON.stringify({ stepIndex, text }) }),
     updateSegmentTiming: (id: string, segments: { stepIndex: number; startTime: number; endTime: number }[]): Promise<unknown> =>
       request(`/runs/${id}/voiceover-segments`, { method: 'PUT', body: JSON.stringify({ segments }) }),
+    trimVideo: (id: string, startTime: number, endTime: number): Promise<{ videoPath: string; videoUrl: string }> =>
+      request(`/runs/${id}/trim-video`, { method: 'POST', body: JSON.stringify({ startTime, endTime }) }),
     analyzeTry: (id: string, pageContent: string, pageTitle: string, pageId: string): Promise<TryDocReportDTO> =>
       request(`/runs/${id}/analyze-try`, { method: 'POST', body: JSON.stringify({ pageContent, pageTitle, pageId }) }),
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),

@@ -332,6 +332,51 @@ runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: Nex
   })()
 })
 
+// Trim/cut video to a time range
+runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { startTime: number; endTime: number }
+      if (body.startTime == null || body.endTime == null) throw new ValidationError('startTime and endTime required')
+      if (body.startTime >= body.endTime) throw new ValidationError('startTime must be before endTime')
+
+      const run = await runService.getRun(params.data.id)
+      if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+
+      const summary = run.summaryJson as Record<string, unknown> | null
+      const videoPath = summary?.videoPath as string | undefined
+      if (!videoPath) throw new AppError('No video found', 'NO_VIDEO', 404)
+
+      // Download, trim, re-upload
+      const { supabase } = await import('../../shared/db/supabase.client.js')
+      const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
+      if (error || !data) throw new Error(`Failed to download video: ${error?.message}`)
+
+      const { trimVideo } = await import('../../shared/video/ffmpeg.service.js')
+      const trimmedBuffer = await trimVideo(Buffer.from(await data.arrayBuffer()), body.startTime, body.endTime)
+
+      const trimmedPath = videoPath.replace(/\.mp4$/, '-trimmed.mp4')
+      const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
+      await uploadToStorage('artifacts', trimmedPath, trimmedBuffer, 'video/mp4')
+
+      // Update summary with new video path
+      const { updateRunSummary } = await import('./run.repository.js')
+      await updateRunSummary(params.data.id, {
+        ...summary,
+        videoPath: trimmedPath,
+        trimApplied: { startTime: body.startTime, endTime: body.endTime },
+      })
+
+      const videoUrl = getPublicUrl('artifacts', trimmedPath) ?? ''
+      res.status(200).json({ videoPath: trimmedPath, videoUrl })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Analyze Try Doc — compare exploration results against documentation
 runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
