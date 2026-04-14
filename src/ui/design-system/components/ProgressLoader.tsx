@@ -10,10 +10,15 @@ interface ProgressLoaderProps {
   steps: ProgressStep[]
   activeStep: number
   statusMessage?: string | null
+  /** When true, plays the exit animation then calls onExited */
+  done?: boolean
+  onExited?: () => void
 }
 
-export function ProgressLoader({ steps, activeStep, statusMessage }: ProgressLoaderProps): React.ReactElement {
+export function ProgressLoader({ steps, activeStep, statusMessage, done, onExited }: ProgressLoaderProps): React.ReactElement | null {
   const [elapsed, setElapsed] = useState(0)
+  const [exiting, setExiting] = useState(false)
+  const [hidden, setHidden] = useState(false)
   const startRef = useRef(Date.now())
 
   useEffect(() => {
@@ -28,17 +33,28 @@ export function ProgressLoader({ steps, activeStep, statusMessage }: ProgressLoa
     return () => clearInterval(interval)
   }, [activeStep])
 
+  // Handle done → exit animation → hide
+  useEffect(() => {
+    if (!done) return
+    setExiting(true)
+    const timer = setTimeout(() => {
+      setHidden(true)
+      onExited?.()
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [done, onExited])
+
+  if (hidden) return null
+
   const totalEstimated = steps.reduce((sum, s) => sum + s.estimatedSeconds, 0)
   const completedTime = steps.slice(0, activeStep).reduce((sum, s) => sum + s.estimatedSeconds, 0)
   const currentEstimated = steps[activeStep]?.estimatedSeconds ?? 10
 
   const raw = Math.min(elapsed / currentEstimated, 0.95)
   const eased = 1 - Math.pow(1 - raw, 3)
-  const overall = Math.min((completedTime + eased * currentEstimated) / totalEstimated, 0.98)
+  const overall = done ? 1 : Math.min((completedTime + eased * currentEstimated) / totalEstimated, 0.98)
   const percent = Math.round(overall * 100)
-
-  // Text inverts when water covers the content area (roughly > 55%)
-  const isLight = percent > 55
+  const isLight = percent > 45
 
   const remaining = Math.ceil(
     Math.max(0, currentEstimated - elapsed) +
@@ -52,17 +68,17 @@ export function ProgressLoader({ steps, activeStep, statusMessage }: ProgressLoa
   }
 
   return (
-    <div className={styles.container}>
-      <div className={styles.water} style={{ height: `${Math.max(2, percent)}%` }}>
-        <svg className={styles.waveSvg} viewBox="0 0 1200 16" preserveAspectRatio="none">
+    <div className={`${styles.container} ${exiting ? styles.containerExit : ''}`}>
+      <div className={styles.water} style={{ height: `${Math.max(3, percent)}%` }}>
+        <svg className={styles.waveSvg} viewBox="0 0 1200 20" preserveAspectRatio="none">
           <path className={styles.wavePath1}
-            d="M0,8 C100,16 300,0 500,8 C700,16 900,0 1100,8 L1200,8 L1200,16 L0,16 Z" />
+            d="M0,10 C100,18 300,2 500,10 C700,18 900,2 1100,10 L1200,10 L1200,20 L0,20 Z" />
           <path className={styles.wavePath2}
-            d="M0,10 C150,4 350,14 600,9 C850,4 1050,14 1200,10 L1200,16 L0,16 Z" />
+            d="M0,13 C150,6 350,17 600,11 C850,5 1050,17 1200,13 L1200,20 L0,20 Z" />
         </svg>
-        <svg className={styles.waveSvg2} viewBox="0 0 1200 14" preserveAspectRatio="none">
+        <svg className={styles.waveSvg2} viewBox="0 0 1200 16" preserveAspectRatio="none">
           <path className={styles.wavePath3}
-            d="M0,6 C200,12 400,2 600,7 C800,12 1000,2 1200,6 L1200,14 L0,14 Z" />
+            d="M0,8 C200,14 400,3 600,9 C800,15 1000,3 1200,8 L1200,16 L0,16 Z" />
         </svg>
       </div>
 
@@ -73,15 +89,15 @@ export function ProgressLoader({ steps, activeStep, statusMessage }: ProgressLoa
         </div>
         <div className={styles.info}>
           <span className={styles.status}>
-            {statusMessage ?? steps[activeStep]?.label ?? 'Processing...'}
+            {done ? 'Done!' : (statusMessage ?? steps[activeStep]?.label ?? 'Processing...')}
           </span>
-          <span className={styles.time}>{fmt(remaining)}</span>
+          {!done && <span className={styles.time}>{fmt(remaining)}</span>}
         </div>
         {steps.length > 1 && (
           <div className={styles.steps}>
             {steps.map((_, i) => (
               <div key={i} className={`${styles.dot} ${
-                i < activeStep ? styles.dotDone :
+                done || i < activeStep ? styles.dotDone :
                 i === activeStep ? styles.dotActive :
                 styles.dotPending
               }`} />
