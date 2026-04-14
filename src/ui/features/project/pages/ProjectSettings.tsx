@@ -202,7 +202,7 @@ function KnowledgeTab({ context, projectId, onSaved }: {
 }): React.ReactElement {
   const [summary, setSummary] = useState(context?.summary ?? '')
   const [terminology, setTerminology] = useState<[string, string][]>(
-    context?.terminology ? Object.entries(context.terminology) : [],
+    context?.terminology ? Object.entries(context.terminology) as [string, string][] : [],
   )
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -244,9 +244,9 @@ function KnowledgeTab({ context, projectId, onSaved }: {
       </div>
 
       <div className={styles.statRow}>
-        <span className={styles.stat}>{context.features.length} features</span>
-        <span className={styles.stat}>{context.siteStructure.length} pages</span>
-        <span className={styles.stat}>{Object.keys(context.terminology).length} terms</span>
+        <span className={styles.stat}>{context.features?.length ?? 0} features</span>
+        <span className={styles.stat}>{context.siteStructure?.length ?? 0} pages</span>
+        <span className={styles.stat}>{Object.keys(context.terminology ?? {}).length} terms</span>
         {ago && <span className={styles.stat}>updated {ago}</span>}
       </div>
 
@@ -277,7 +277,7 @@ function KnowledgeTab({ context, projectId, onSaved }: {
           ))}
         </div>
 
-        {context.features.length > 0 && (
+        {(context.features?.length ?? 0) > 0 && (
           <div>
             <p className={styles.subLabel}>Features</p>
             <div className={styles.tagList}>
@@ -286,7 +286,7 @@ function KnowledgeTab({ context, projectId, onSaved }: {
           </div>
         )}
 
-        {context.siteStructure.length > 0 && (
+        {(context.siteStructure?.length ?? 0) > 0 && (
           <div>
             <p className={styles.subLabel}>Site structure</p>
             <div className={styles.urlList}>
