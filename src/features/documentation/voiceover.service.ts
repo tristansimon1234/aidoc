@@ -15,9 +15,8 @@ export interface VoiceoverResult {
 }
 
 /**
- * Generate a single voice-over audio file.
- * The narration text already contains [pause] / [short pause] audio tags
- * from ElevenLabs v3 to control pacing.
+ * Generate voice-over: one ElevenLabs call per segment,
+ * then concatenate with precise silence padding via ffmpeg.
  */
 export async function generateVoiceover(
   runId: string,
@@ -48,48 +47,44 @@ export async function generateVoiceover(
     }
   }
 
-  // Build the full narration text — segments joined with [long pause] between them
+  // Generate each segment individually
   const segments: VoiceoverSegment[] = []
-  const textParts: string[] = []
+  const segmentPaths: { audioPath: string; targetStartTime: number }[] = []
 
   for (let i = 0; i < steps.length; i++) {
     const text = stepTexts[i] ?? steps[i]!.text
     if (!text || text.length < 3) continue
 
     const startTime = timestamps[i] ?? 0
-    const endTime = timestamps[i + 1] ?? (startTime + 30)
+    const endTime = timestamps[i + 1] ?? (startTime + 20)
 
-    // Add a pause between segments (not before the first one)
-    if (textParts.length > 0) {
-      textParts.push('[long pause]')
-    }
+    console.log(`[voiceover] Segment ${i}: "${text.slice(0, 60)}${text.length > 60 ? '...' : ''}" (${text.length} chars, target ${startTime.toFixed(1)}s)`)
 
-    textParts.push(text)
+    const buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
+    const segPath = `runs/${runId}/voiceover-seg-${i}.mp3`
+    await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
 
-    segments.push({
-      stepIndex: steps[i]!.stepIndex,
-      startTime,
-      endTime,
-      text,
-    })
+    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB`)
+
+    segmentPaths.push({ audioPath: segPath, targetStartTime: startTime })
+    segments.push({ stepIndex: steps[i]!.stepIndex, startTime, endTime, text })
   }
 
-  const fullText = textParts.join(' ')
+  // Concatenate with silence padding via video service
+  const { isVideoServiceConfigured, concatAudio } = await import('../../shared/video/video.client.js')
 
-  console.log(`[voiceover] Full text for ElevenLabs (${fullText.length} chars, ${segments.length} segments)`)
-  console.log(`[voiceover] "${fullText.slice(0, 300)}${fullText.length > 300 ? '...' : ''}"`)
+  let audioPath: string
+  if (isVideoServiceConfigured() && segmentPaths.length > 1) {
+    console.log(`[voiceover] Concatenating ${segmentPaths.length} segments...`)
+    audioPath = await concatAudio(runId, segmentPaths)
+  } else {
+    // Fallback: use first segment only
+    audioPath = segmentPaths[0]?.audioPath ?? `runs/${runId}/voiceover.mp3`
+  }
 
-  // Single ElevenLabs call
-  const buffer = await synthesizeSpeech(fullText, { voiceId: options?.voiceId })
-
-  console.log(`[voiceover] ElevenLabs returned ${(buffer.length / 1024).toFixed(0)}KB`)
-
-  const audioPath = `runs/${runId}/voiceover.mp3`
-  await uploadToStorage('artifacts', audioPath, buffer, 'audio/mpeg')
   const audioUrl = `${getPublicUrl('artifacts', audioPath) ?? ''}?v=${Date.now()}`
 
-  console.log(`[voiceover] Uploaded → ${audioPath}`)
-  console.log(`[voiceover] URL → ${audioUrl}`)
+  console.log(`[voiceover] Done → ${audioUrl}`)
 
   return { audioPath, audioUrl, segments }
 }

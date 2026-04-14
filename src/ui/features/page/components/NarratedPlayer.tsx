@@ -45,6 +45,13 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, voices, se
   const hasNarration = Boolean(audioUrl)
   const hasSegments = segments && segments.length > 0
 
+  // Reload audio element when URL changes (e.g., after regeneration)
+  useEffect(() => {
+    if (audioRef.current && audioUrl) {
+      audioRef.current.load()
+    }
+  }, [audioUrl])
+
   // Track playback position via requestAnimationFrame
   const tick = useCallback(() => {
     const video = videoRef.current
