@@ -44,7 +44,7 @@ export async function synthesizeSpeech(
   const voiceId = options?.voiceId ?? DEFAULT_VOICE_ID
   const modelId = options?.modelId ?? DEFAULT_MODEL_ID
 
-  console.log(`[elevenlabs] Synthesizing: voice=${voiceId}, model=${modelId}, text=${text.length} chars, stability=${options?.stability ?? 0.65}, style=${options?.style ?? 0.3}`)
+  console.log(`[elevenlabs] Synthesizing: voice=${voiceId}, model=${modelId}, text=${text.length} chars, stability=${options?.stability ?? 0.5}, style=${options?.style ?? 0.5}`)
 
   const response = await fetch(`${BASE_URL}/text-to-speech/${voiceId}`, {
     method: 'POST',
@@ -56,10 +56,12 @@ export async function synthesizeSpeech(
     body: JSON.stringify({
       text,
       model_id: modelId,
+      // Disable text normalization so [audio tags] are not stripped or modified
+      apply_text_normalization: 'off',
       voice_settings: {
-        stability: options?.stability ?? 0.65,
-        similarity_boost: options?.similarityBoost ?? 0.8,
-        style: options?.style ?? 0.3,
+        stability: options?.stability ?? 0.5,         // lower = more expressive (v3 handles this well)
+        similarity_boost: options?.similarityBoost ?? 0.75,
+        style: options?.style ?? 0.5,                 // higher = more stylistic variation
         use_speaker_boost: options?.speakerBoost ?? true,
       },
     }),
