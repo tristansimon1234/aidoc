@@ -174,13 +174,13 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
             </span>
             {hasNarration && (
               <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-success)', padding: '1px 6px', background: 'rgba(0,200,0,0.1)', borderRadius: 'var(--radius-sm)' }}>
-                {hasSegments ? 'synced narration' : 'AI narration'}
+                AI narration
               </span>
             )}
           </button>
-          {!hasNarration && onGenerateVoiceover && !generating && (
+          {onGenerateVoiceover && !generating && (
             <Button size="sm" variant="secondary" onClick={() => void handleGenerateVoiceover()}>
-              Improve with AI
+              {hasNarration ? 'Regenerate voice' : 'Improve with AI'}
             </Button>
           )}
           {generating && (
@@ -235,13 +235,15 @@ export function NarratedPlayer({ videoUrl, audioUrl, segments, runId, onGenerate
               {formatTime(duration)}
             </span>
             {hasNarration && <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-success)' }}>{hasSegments ? 'synced' : 'narrated'}</span>}
-            {!hasNarration && onGenerateVoiceover && !generating && (
-              <Button size="sm" variant="secondary" onClick={() => void handleGenerateVoiceover()}>Improve with AI</Button>
+            {onGenerateVoiceover && !generating && (
+              <Button size="sm" variant="secondary" onClick={() => void handleGenerateVoiceover()}>
+                {hasNarration ? 'Regenerate' : 'Improve with AI'}
+              </Button>
             )}
             {generating && <Spinner size="sm" />}
 
-            {/* Timeline toggle — only when segments exist */}
-            {hasSegments && runId && (
+            {/* Timeline toggle — only when segments exist and video is loaded */}
+            {hasSegments && runId && duration > 0 && (
               <button
                 type="button"
                 onClick={() => setShowTimeline(!showTimeline)}
