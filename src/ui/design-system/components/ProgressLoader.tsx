@@ -34,22 +34,24 @@ export function ProgressLoader({ steps, activeStep, statusMessage }: ProgressLoa
     return () => clearInterval(interval)
   }, [activeStep])
 
-  // Calculate total estimated time and progress
+  // Calculate progress
   const totalEstimated = steps.reduce((sum, s) => sum + s.estimatedSeconds, 0)
   const completedTime = steps.slice(0, activeStep).reduce((sum, s) => sum + s.estimatedSeconds, 0)
   const currentStep = steps[activeStep]
   const currentEstimated = currentStep?.estimatedSeconds ?? 10
 
-  // Progress within current step: ease out so it slows near 100%
+  // Cubic ease-out: fast start, slows near end, caps at 95%
   const rawStepProgress = Math.min(elapsed / currentEstimated, 0.95)
-  const easedStepProgress = 1 - Math.pow(1 - rawStepProgress, 3) // cubic ease-out, caps at ~95%
+  const easedStepProgress = 1 - Math.pow(1 - rawStepProgress, 3)
 
   const overallProgress = Math.min(
     (completedTime + easedStepProgress * currentEstimated) / totalEstimated,
     0.98,
   )
 
-  // Time remaining estimate
+  const percent = Math.round(overallProgress * 100)
+
+  // Time remaining
   const remainingCurrent = Math.max(0, currentEstimated - elapsed)
   const remainingFuture = steps.slice(activeStep + 1).reduce((sum, s) => sum + s.estimatedSeconds, 0)
   const totalRemaining = Math.ceil(remainingCurrent + remainingFuture)
@@ -59,29 +61,32 @@ export function ProgressLoader({ steps, activeStep, statusMessage }: ProgressLoa
     if (secs < 60) return `~${secs}s remaining`
     const mins = Math.floor(secs / 60)
     const s = secs % 60
-    return `~${mins}m ${s > 0 ? `${s}s` : ''} remaining`
+    return `~${mins}m${s > 0 ? ` ${s}s` : ''} remaining`
   }
 
   return (
     <div className={styles.container}>
-      {/* Progress bar */}
-      <div className={styles.barTrack}>
-        <div
-          className={styles.barFill}
-          style={{ width: `${overallProgress * 100}%` }}
-        >
-          <div className={styles.barShimmer} />
+      {/* Water orb + info */}
+      <div className={styles.orbWrapper}>
+        <div className={styles.orb}>
+          <div className={styles.orbWater} style={{ height: `${percent}%` }} />
+          <span className={styles.orbPercent}>{percent}%</span>
+        </div>
+        <div className={styles.orbInfo}>
+          <div className={styles.status}>
+            {statusMessage ?? currentStep?.label ?? 'Processing...'}
+          </div>
+          <div className={styles.time}>
+            {formatRemaining(totalRemaining)}
+          </div>
         </div>
       </div>
 
-      {/* Status line */}
-      <div className={styles.info}>
-        <span className={styles.status}>
-          {statusMessage ?? currentStep?.label ?? 'Processing...'}
-        </span>
-        <span className={styles.time}>
-          {formatRemaining(totalRemaining)}
-        </span>
+      {/* Thin progress bar */}
+      <div className={styles.barTrack}>
+        <div className={styles.barFill} style={{ width: `${percent}%` }}>
+          <div className={styles.barShimmer} />
+        </div>
       </div>
 
       {/* Step indicators */}
