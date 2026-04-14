@@ -138,7 +138,7 @@ export function NewProject(): React.ReactElement {
                   }} />
               </div>
               <div>
-                <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', display: 'block', marginBottom: 4 }}>URL</label>
+                <label style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', display: 'block', marginBottom: 4 }}>Website URL</label>
                 <input type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder="https://myapp.com"
                   style={{

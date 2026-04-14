@@ -16,6 +16,7 @@ export function ProjectSettings(): React.ReactElement {
   const [project, setProject] = useState<ProjectDTO>(outletProject)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [name, setName] = useState(outletProject.name)
+  const [description, setDescription] = useState(outletProject.description ?? '')
   const [baseUrl, setBaseUrl] = useState(outletProject.baseUrl)
   const [context, setContext] = useState(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
   const [credentials, setCredentials] = useState<Credential[]>(
@@ -29,6 +30,7 @@ export function ProjectSettings(): React.ReactElement {
   useEffect(() => {
     setProject(outletProject)
     setName(outletProject.name)
+    setDescription(outletProject.description ?? '')
     setBaseUrl(outletProject.baseUrl)
     setContext(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
     setCredentials((outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [])
@@ -41,7 +43,7 @@ export function ProjectSettings(): React.ReactElement {
     try {
       const validCreds = credentials.filter((c) => c.label && c.username && c.password)
       const updated = await updateProject(projectId, {
-        name, baseUrl,
+        name, baseUrl, description: description || undefined,
         context: (context.audience || context.workflow || context.quirks) ? context : undefined,
         credentials: validCreds.length > 0 ? validCreds : undefined,
         walkthroughEnabled,
@@ -91,9 +93,16 @@ export function ProjectSettings(): React.ReactElement {
                   <input className={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className={styles.field}>
-                  <label className={styles.label}>URL</label>
-                  <input className={styles.inputMono} type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+                  <label className={styles.label}>Website URL</label>
+                  <input className={styles.inputMono} type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://yourproduct.com" />
+                  <p className={styles.sectionDesc} style={{ marginTop: 4 }}>Your production website. Used for analysis and public docs branding.</p>
                 </div>
+              </div>
+              <div className={`${styles.field} ${styles.fieldFull}`} style={{ marginTop: 'var(--space-sm)' }}>
+                <label className={styles.label}>Description</label>
+                <textarea className={styles.textarea} value={description} onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What does your product do?" rows={2} />
               </div>
               <div className={styles.field} style={{ marginTop: 'var(--space-md)' }}>
                 <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
@@ -122,6 +131,11 @@ export function ProjectSettings(): React.ReactElement {
                   <h2 className={styles.sectionTitle}>Your context</h2>
                   <p className={styles.sectionDesc}>Help the AI understand your product. Better context = better documentation and chat.</p>
                 </div>
+                {description && (
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-md)', lineHeight: 1.5, fontStyle: 'italic' }}>
+                    {description}
+                  </p>
+                )}
                 <div className={styles.fieldGrid}>
                   <div className={`${styles.field} ${styles.fieldFull}`}>
                     <label className={styles.label}>Target audience</label>
