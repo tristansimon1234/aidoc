@@ -201,7 +201,10 @@ export async function analyzeVideoWithGemini(
   console.log(`[gemini] Video processed. Analyzing...`)
 
   // Analyze the video
-  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL })
+  const model = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    generationConfig: { maxOutputTokens: 16384 },
+  })
 
   const result = await withRetry(() => model.generateContent([
     {
@@ -270,10 +273,31 @@ Be thorough — capture every meaningful action.`,
   let parsed
   try {
     parsed = VideoAnalysisSchema.safeParse(JSON.parse(jsonStr))
-  } catch (parseErr) {
-    console.error('[gemini] JSON parse failed. Raw response (first 500 chars):', text.slice(0, 500))
-    console.error('[gemini] Extracted JSON (first 500 chars):', jsonStr.slice(0, 500))
-    throw new Error(`Failed to parse Gemini video analysis JSON: ${(parseErr as Error).message}`)
+  } catch {
+    // JSON might be truncated — try to repair by closing open brackets
+    console.warn('[gemini] JSON parse failed, attempting repair...')
+    let repaired = jsonStr
+
+    // Remove trailing incomplete object/value
+    repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
+    repaired = repaired.replace(/,\s*\{[^}]*$/, '')
+
+    // Count and close open brackets
+    const openBraces = (repaired.match(/\{/g) ?? []).length
+    const closeBraces = (repaired.match(/\}/g) ?? []).length
+    const openBrackets = (repaired.match(/\[/g) ?? []).length
+    const closeBrackets = (repaired.match(/\]/g) ?? []).length
+
+    repaired += ']'.repeat(Math.max(0, openBrackets - closeBrackets))
+    repaired += '}'.repeat(Math.max(0, openBraces - closeBraces))
+
+    try {
+      parsed = VideoAnalysisSchema.safeParse(JSON.parse(repaired))
+      console.log(`[gemini] JSON repaired successfully — ${parsed.success ? 'valid' : 'invalid schema'}`)
+    } catch (repairErr) {
+      console.error('[gemini] JSON repair also failed. First 500 chars:', jsonStr.slice(0, 500))
+      throw new Error(`Failed to parse Gemini video analysis JSON: ${(repairErr as Error).message}`)
+    }
   }
 
   if (!parsed.success) {

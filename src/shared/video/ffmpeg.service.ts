@@ -4,28 +4,63 @@ import { execSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-// Try to locate ffmpeg binary
+// Locate ffmpeg binary — multiple strategies for different environments
 let ffmpegBinaryPath: string | null = null
+
+function trySetPath(path: string, source: string): boolean {
+  if (path && existsSync(path)) {
+    // Ensure binary is executable (Vercel might strip permissions)
+    try { execSync(`chmod +x "${path}"`, { timeout: 3000 }) } catch { /* ignore */ }
+    ffmpegBinaryPath = path
+    ffmpeg.setFfmpegPath(path)
+    console.log(`[ffmpeg] ${source}: ${path}`)
+    return true
+  }
+  return false
+}
+
+// Strategy 1: @ffmpeg-installer/ffmpeg package
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const installer = require('@ffmpeg-installer/ffmpeg') as { path: string }
-  if (installer.path && existsSync(installer.path)) {
-    ffmpegBinaryPath = installer.path
-    ffmpeg.setFfmpegPath(installer.path)
-    console.log(`[ffmpeg] Found binary at: ${installer.path}`)
+  trySetPath(installer.path, 'Found via @ffmpeg-installer')
+} catch (e) {
+  console.log(`[ffmpeg] @ffmpeg-installer not available: ${(e as Error).message}`)
+}
+
+// Strategy 2: Look for binary in node_modules manually
+if (!ffmpegBinaryPath) {
+  const searchRoots = [
+    process.cwd(),
+    '/var/task',           // Vercel Lambda
+    '/vercel/path0',       // Vercel build
+    __dirname,             // Relative to this file
+    join(__dirname, '..', '..', '..'), // Project root from src/shared/video/
+  ]
+  const subPaths = [
+    'node_modules/@ffmpeg-installer/linux-x64/ffmpeg',
+    'node_modules/@ffmpeg-installer/ffmpeg/ffmpeg',
+  ]
+  for (const root of searchRoots) {
+    for (const sub of subPaths) {
+      if (trySetPath(join(root, sub), `Found at ${root}`)) break
+    }
+    if (ffmpegBinaryPath) break
   }
-} catch {
-  // Try system ffmpeg
+}
+
+// Strategy 3: System ffmpeg
+if (!ffmpegBinaryPath) {
   try {
     const systemPath = execSync('which ffmpeg', { timeout: 5000 }).toString().trim()
-    if (systemPath) {
-      ffmpegBinaryPath = systemPath
-      ffmpeg.setFfmpegPath(systemPath)
-      console.log(`[ffmpeg] Using system binary: ${systemPath}`)
-    }
+    trySetPath(systemPath, 'Found system ffmpeg')
   } catch {
-    console.warn('[ffmpeg] No ffmpeg binary found — video processing will fail')
+    // not available
   }
+}
+
+if (!ffmpegBinaryPath) {
+  console.warn('[ffmpeg] No ffmpeg binary found in any location')
 }
 
 /** Check if ffmpeg is available */
