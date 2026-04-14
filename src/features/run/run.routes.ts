@@ -232,42 +232,59 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       // Ask Gemini to transform the DOC into a narration script
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const narrationResult = await generateText({
-        userPrompt: `Write a SHORT voice-over script for a tutorial video. TOTAL BUDGET: ${totalMaxWords} words max for the entire script.
+        userPrompt: `You are a professional voice-over artist recording a tutorial video narration. Your voice will play SLIGHTLY BEFORE each action happens on screen — you're guiding the viewer, telling them what to do next BEFORE they see it.
 
-## Source documentation (summarize, don't read verbatim):
+## Your style
+Think of the best YouTube tutorial creators: warm, confident, never robotic. You're a friend showing someone your favorite app. Short punchy sentences. You ANTICIPATE — "let's click here" (then the click happens). Never describe what already happened.
+
+## The documentation to narrate:
 ${doc.markdownContent}
 
-## Sections with STRICT word limits:
+## Script structure
+${numSteps} sections, each plays before its corresponding screen moment.
+Total word budget: ~${totalMaxWords} words for the ENTIRE script.
+
 ${sectionList}
 
-RULES:
-- TOTAL script must be under ${totalMaxWords} words. This is a HARD LIMIT.
-- Each section: 1 SHORT sentence. No more.
-- ${numSteps} sections using [SECTION N] markers.
-- Conversational tone: "let's", "you'll", "just", "here"
-- Skip URLs, code, image captions.
-- Start with [SECTION 1], no preamble.
+## Writing rules
+- ANTICIPATORY: "Let's open the settings" NOT "The settings page is now visible"
+- CONCISE: 1 sentence per section, sometimes 2 short ones. Respect the word limit.
+- NATURAL: contractions (let's, you'll, here's), filler words sparingly (so, now, alright)
+- NO reading: skip URLs, code blocks, image references, technical IDs
+- NO meta: never say "as you can see", "in this tutorial", "as shown"
 
-AUDIO TAGS — use these to make the voice expressive and human. VARY them, don't repeat the same tag:
-- [pause] — between sentences
-- [short pause] — micro-pause within a sentence
-- [long pause] — dramatic transition between ideas
-- [laughs] — light laugh for friendly moments ("pretty cool, right? [laughs]")
-- [whispers] — for tips or asides ("and here's the trick [whispers] it's automatic")
-- [excited] — enthusiasm ("and just like that [excited] your project is live!")
-- [sighs] — relief or reflection
-- [clears throat] — before starting a new topic
-Use at least 2 DIFFERENT tag types across the script. Don't just use [pause] everywhere.
+## Voice expression tags
+These make you sound human. Use them generously and VARY them:
 
-Example of correct brevity + varied tags:
+Pacing:
+  [pause] — beat between ideas. "Click create [pause] and we're done."
+  [short pause] — tiny breath. "Enter your name [short pause] right here."
+  [long pause] — before a new topic or big reveal.
+
+Emotion:
+  [laughs] — warmth, lightness. "That's literally it [laughs] told you it was easy."
+  [excited] — genuine enthusiasm. "And boom [excited] your project is live!"
+  [whispers] — sharing a secret/tip. "Here's the best part [whispers] it's all automatic."
+
+Delivery:
+  [clears throat] — resetting before a new section.
+  [sighs] — satisfaction. "And there we go [sighs] everything's set up."
+
+Rules: use at least 3 different tag types. Never use the same tag twice in a row. Place tags MID-sentence or between sentences, never at the very start of section 1.
+
+## Output format
+Start DIRECTLY with [SECTION 1]. No preamble, no title, no intro text.
+
 [SECTION 1]
-Hey! [pause] Let's set up your first project together.
+Hey! [pause] So we're gonna set up your first project — super quick.
 [SECTION 2]
-Click 'New Project' here [short pause] nice and easy.
+Go ahead and click 'New Project' right here.
 [SECTION 3]
-Enter your app name [whispers] and hit create.
+Give it a name [short pause] whatever you want.
 [SECTION 4]
-And just like that [excited] you're all set!`,
+Pop in your URL [whispers] this helps the AI understand your app.
+[SECTION 5]
+Alright hit create [excited] and just like that, you're in!`,
         maxTokens: 8192,
       })
 
