@@ -86,10 +86,17 @@ export function NewProject(): React.ReactElement {
         credentials: validCreds.length > 0 ? validCreds : undefined,
       })
       .then(async (p) => {
-        // Apply discovered design if available
+        // Apply discovered design if available — normalize font to CSS font-family
         if (design) {
+          const fontName = design.font?.trim()
+          const normalizedDesign = {
+            ...design,
+            font: fontName
+              ? (fontName.includes(',') ? fontName : `"${fontName}", sans-serif`)
+              : '"-apple-system", BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          }
           const { updateProject } = await import('../../../shared/api/db.js')
-          await updateProject(p.id, { design }).catch(() => { /* non-critical */ })
+          await updateProject(p.id, { design: normalizedDesign }).catch(() => { /* non-critical */ })
         }
         navigate(`/projects/${p.id}`)
       })

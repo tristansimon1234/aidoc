@@ -43,7 +43,7 @@ const TEXT_PRESETS = [
   { label: 'Ink', value: '#0A0A0A' },
 ]
 
-const FONT_OPTIONS = [
+const BASE_FONT_OPTIONS = [
   { label: 'System', value: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', preview: 'System UI' },
   { label: 'Inter', value: '"Inter", sans-serif', preview: 'Inter' },
   { label: 'DM Sans', value: '"DM Sans", sans-serif', preview: 'DM Sans' },
@@ -51,6 +51,23 @@ const FONT_OPTIONS = [
   { label: 'Serif', value: 'Georgia, "Times New Roman", serif', preview: 'Serif' },
   { label: 'Mono', value: '"JetBrains Mono", "Fira Code", monospace', preview: 'Monospace' },
 ]
+
+/** Load a Google Font dynamically by injecting a <link> tag */
+function loadGoogleFont(fontName: string): void {
+  const id = `gf-${fontName.replace(/\s+/g, '-').toLowerCase()}`
+  if (document.getElementById(id)) return
+  const link = document.createElement('link')
+  link.id = id
+  link.rel = 'stylesheet'
+  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@300..800&display=swap`
+  document.head.appendChild(link)
+}
+
+/** Extract the primary font family name from a CSS font-family string */
+function extractFontName(fontValue: string): string | null {
+  const match = fontValue.match(/^["']?([^"',]+)/)
+  return match?.[1]?.trim() ?? null
+}
 
 export function ProjectDesign(): React.ReactElement {
   const { project, setProject } = useOutletContext<{ project: ProjectDTO; setProject: (p: ProjectDTO) => void }>()
@@ -60,8 +77,41 @@ export function ProjectDesign(): React.ReactElement {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
+  // Build font options — include detected brand font if not already in the list
+  const fontOptions = (() => {
+    const options = [...BASE_FONT_OPTIONS]
+    const currentFont = design.font
+    if (currentFont && !options.some((o) => o.value === currentFont)) {
+      const name = extractFontName(currentFont)
+      if (name && !options.some((o) => o.label.toLowerCase() === name.toLowerCase())) {
+        // Add as first option (brand font)
+        options.unshift({
+          label: name,
+          value: currentFont.includes(',') ? currentFont : `"${name}", sans-serif`,
+          preview: name,
+        })
+        loadGoogleFont(name)
+      }
+    }
+    return options
+  })()
+
+  // Load Google Font if the current font is custom
+  const currentFontName = extractFontName(design.font)
+  if (currentFontName && !['system', 'georgia', 'jetbrains'].some((s) => currentFontName.toLowerCase().includes(s))) {
+    loadGoogleFont(currentFontName)
+  }
+
   const update = (partial: Partial<ProjectDesignDTO>): void => {
-    setDesign((prev) => ({ ...prev, ...partial }))
+    setDesign((prev) => {
+      const next = { ...prev, ...partial }
+      // If font changed, try loading it as a Google Font
+      if (partial.font) {
+        const name = extractFontName(partial.font)
+        if (name) loadGoogleFont(name)
+      }
+      return next
+    })
     setSaved(false)
   }
 
@@ -210,7 +260,7 @@ export function ProjectDesign(): React.ReactElement {
             <label className={styles.label}>Font</label>
             <p className={styles.hint}>Typography for widget and doc content</p>
             <div className={styles.fontGrid}>
-              {FONT_OPTIONS.map((f) => (
+              {fontOptions.map((f) => (
                 <button
                   key={f.label}
                   className={`${styles.fontOption} ${design.font === f.value ? styles.fontOptionActive : ''}`}
