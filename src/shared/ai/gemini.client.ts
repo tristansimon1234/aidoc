@@ -152,6 +152,31 @@ const VideoAnalysisSchema = z.object({
 export type VideoAnalysis = z.infer<typeof VideoAnalysisSchema>
 export type VideoStep = z.infer<typeof VideoStepSchema>
 
+/**
+ * Detect and correct Gemini's MM:SS concatenation bug.
+ * Gemini sometimes returns "127" meaning 1:27 (87s), not 127 seconds.
+ * We detect this by comparing max timestamp against actual video duration.
+ */
+export function correctTimestamps(steps: VideoStep[], videoDurationSeconds: number): VideoStep[] {
+  if (steps.length === 0) return steps
+
+  const maxTimestamp = Math.max(...steps.map((s) => s.timestamp))
+
+  // If max timestamp is within video duration (+10% tolerance), timestamps are fine
+  if (maxTimestamp <= videoDurationSeconds * 1.1) return steps
+
+  // Timestamps likely in MM:SS concatenated format — convert
+  console.log(`[gemini] Detected MM:SS timestamps (max ${maxTimestamp}s > video ${videoDurationSeconds.toFixed(1)}s). Correcting...`)
+  return steps.map((s) => {
+    if (s.timestamp < 60) return s // sub-60 already correct
+    const minutes = Math.floor(s.timestamp / 100)
+    const seconds = s.timestamp % 100
+    if (seconds >= 60) return s // not MM:SS format
+    const corrected = minutes * 60 + seconds
+    return { ...s, timestamp: corrected }
+  })
+}
+
 export function isGeminiAvailable(): boolean {
   return !!env.GEMINI_API_KEY
 }
@@ -217,7 +242,12 @@ export async function analyzeVideoWithGemini(
       text: `Analyze this screen recording of a web application. For each distinct action or screen change, identify what's happening.
 
 For each step:
-1. Provide the timestamp in seconds — this MUST be the moment AFTER the action completes, showing the RESULT on screen (not the moment before the click). For example, if the user clicks a button at 5s and the new page loads at 6s, use timestamp 6.
+1. Provide the timestamp as a NUMBER OF SECONDS (integer or decimal). You MUST convert minutes to seconds:
+   - 45 seconds → 45
+   - 1 minute 27 seconds → 87 (= 1×60 + 27), NOT 127
+   - 2 minutes 8 seconds → 128 (= 2×60 + 8), NOT 208
+   - 3 minutes 15 seconds → 195 (= 3×60 + 15), NOT 315
+   The timestamp MUST be the moment AFTER the action completes, showing the RESULT on screen.
 2. Describe what's visible on screen AFTER the action (UI elements, page layout, text)
 3. Describe what the user did (clicked, typed, navigated, scrolled)
 4. If there's narration/voiceover, transcribe what's being said at that moment
@@ -227,6 +257,7 @@ IMPORTANT:
 - Each timestamp should show the RESULT state, not the initial state
 - Add 0.5-1 second after a click/navigation to capture the loaded result
 - Skip idle moments or pauses where nothing changes
+- Timestamps are in SECONDS — convert from MM:SS to seconds (e.g. 2:30 = 150, not 230)
 
 Return ONLY valid JSON (no markdown fences):
 {
@@ -238,7 +269,7 @@ Return ONLY valid JSON (no markdown fences):
       "narration": "Let me show you how to sign in to the platform"
     },
     {
-      "timestamp": 16,
+      "timestamp": 87,
       "screenDescription": "The login form with email field filled in and cursor in password field",
       "userAction": "User typed their email address and moved to the password field",
       "narration": null

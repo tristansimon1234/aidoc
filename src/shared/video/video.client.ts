@@ -46,6 +46,11 @@ export async function extractFrames(videoPath: string, runId: string, timestamps
   return result.framePaths
 }
 
+/** Get video duration via ffprobe. */
+export async function probeVideo(videoPath: string): Promise<{ durationSeconds: number }> {
+  return callService<{ durationSeconds: number }>('/probe', { videoPath })
+}
+
 /** Trim video to time range. Returns the trimmed video path. */
 export async function trimVideo(videoPath: string, runId: string, startTime: number, endTime: number): Promise<string> {
   const result = await callService<{ trimmedPath: string }>('/trim', { videoPath, runId, startTime, endTime })

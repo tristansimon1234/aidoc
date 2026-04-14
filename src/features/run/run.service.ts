@@ -344,30 +344,41 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     const fileName = analyzeVideoPath.split('/').pop() ?? 'video.mp4'
 
     // --- Step 3: Analyze with Gemini ---
-    const { analyzeVideoWithGemini } = await import('../../shared/ai/gemini.client.js')
+    const { analyzeVideoWithGemini, correctTimestamps } = await import('../../shared/ai/gemini.client.js')
     const analysis = await analyzeVideoWithGemini(buffer, mimeType, fileName)
 
-    const sortedSteps = [...analysis.steps].sort((a, b) => a.timestamp - b.timestamp)
-
-    console.log(`[video] Gemini returned ${sortedSteps.length} steps:`)
-    for (const s of sortedSteps) {
+    console.log(`[video] Gemini returned ${analysis.steps.length} steps (raw):`)
+    for (const s of analysis.steps) {
       console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction}`)
     }
 
-    if (sortedSteps.length === 0) {
+    if (analysis.steps.length === 0) {
       await runRepo.updateRunStatus(runId, 'failed')
       throw new Error('Could not detect any actions in the video. Try a longer recording with clear interactions.')
     }
 
-    const timestamps = sortedSteps.map((s) => s.timestamp)
+    // --- Step 3b: Correct MM:SS concatenation bug ---
+    // Gemini sometimes returns "127" meaning 1:27 (87s). Detect via video duration.
+    const { probeVideo } = await import('../../shared/video/video.client.js')
+    let videoDuration = Infinity
+    if (isVideoServiceConfigured()) {
+      try {
+        const probe = await probeVideo(playerVideoPath)
+        videoDuration = probe.durationSeconds
+      } catch (err) {
+        console.warn(`[video] Probe failed, skipping timestamp correction: ${(err as Error).message}`)
+      }
+    }
 
-    // Use NEXT step's timestamp for each screenshot — Gemini gives the timestamp
-    // of when the action STARTS, but we want the screenshot to show the RESULT
-    // (which is visible at the moment the next action begins)
-    const screenshotTimestamps = timestamps.map((t, i) => {
-      if (i < timestamps.length - 1) return timestamps[i + 1]! - 0.5 // just before next action
-      return t + 3 // last step: 3s after
-    })
+    const correctedSteps = correctTimestamps(analysis.steps, videoDuration)
+    const sortedSteps = [...correctedSteps].sort((a, b) => a.timestamp - b.timestamp)
+
+    console.log(`[video] Final ${sortedSteps.length} steps:`)
+    for (const s of sortedSteps) {
+      console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction}`)
+    }
+
+    const timestamps = sortedSteps.map((s) => s.timestamp)
 
     // --- Step 4: Extract frames via video microservice ---
     let framesExtracted = false
@@ -375,7 +386,7 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     if (isVideoServiceConfigured()) {
       try {
-        framePaths = await extractFramesRemote(playerVideoPath, runId, screenshotTimestamps)
+        framePaths = await extractFramesRemote(playerVideoPath, runId, timestamps)
         framesExtracted = framePaths.some((p) => p !== null)
       } catch (err) {
         console.warn(`[video] Frame extraction failed: ${(err as Error).message}`)

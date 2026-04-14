@@ -94,6 +94,38 @@ app.post('/convert', async (req, res) => {
 })
 
 /**
+ * POST /probe
+ * Get video duration via ffprobe
+ */
+app.post('/probe', async (req, res) => {
+  try {
+    const { videoPath } = req.body
+    if (!videoPath) return res.status(400).json({ error: 'videoPath required' })
+
+    const supabase = getSupabase(req.body)
+    const buffer = await downloadVideo(supabase, videoPath)
+
+    const tmpIn = join(tmpdir(), `probe-${Date.now()}.mp4`)
+    writeFileSync(tmpIn, buffer)
+
+    const durationSeconds = await new Promise((resolve, reject) => {
+      ffmpeg.ffprobe(tmpIn, (err, metadata) => {
+        if (err) return reject(err)
+        resolve(metadata.format.duration || 0)
+      })
+    })
+
+    unlinkSync(tmpIn)
+
+    console.log(`[probe] ${videoPath} → ${durationSeconds}s`)
+    res.json({ durationSeconds })
+  } catch (err) {
+    console.error('[probe] Error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
  * POST /extract-frames
  * Extract JPEG frames at specific timestamps
  */
