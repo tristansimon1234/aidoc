@@ -60,7 +60,17 @@ app.post('/convert', async (req, res) => {
 
     await new Promise((resolve, reject) => {
       ffmpeg(tmpIn)
-        .outputOptions(['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-c:a', 'aac', '-movflags', '+faststart'])
+        .outputOptions([
+          '-c:v', 'libx264',
+          '-preset', 'ultrafast',
+          '-crf', '30',
+          '-c:a', 'aac',
+          '-b:a', '96k',
+          '-movflags', '+faststart',
+          '-threads', '1',
+          '-max_muxing_queue_size', '64',
+          '-bufsize', '64k',
+        ])
         .output(tmpOut)
         .on('progress', (p) => console.log(`[convert] ${p.percent?.toFixed(0) ?? '?'}%`))
         .on('end', resolve)
