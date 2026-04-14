@@ -169,12 +169,15 @@ runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
     try {
       const { isElevenLabsConfigured, getAvailableVoices } = await import('../../shared/ai/elevenlabs.client.js')
       if (!isElevenLabsConfigured()) {
+        console.log('[voices] ElevenLabs not configured')
         res.json({ voices: [] })
         return
       }
       const voices = await getAvailableVoices()
+      console.log(`[voices] Returning ${voices.length} voices`)
       res.json({ voices })
     } catch (err) {
+      console.error('[voices] Error:', err)
       next(err)
     }
   })()
@@ -214,14 +217,18 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
       console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
 
-      // Build time budget per section
+      // Build time budget per section — use 2 words/sec (conservative) and cap at 80% of available time
       const timeBudgets = timestamps.map((t, i) => {
         const next = timestamps[i + 1] ?? (t + 30)
         return next - t
       })
-      const sectionList = timestamps.map((_, i) =>
-        `[SECTION ${i + 1}] (${timeBudgets[i]!.toFixed(1)}s available — max ~${Math.floor(timeBudgets[i]! * 2.5)} words)`
-      ).join('\n')
+      const totalVideoTime = (timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0) + 30
+      const totalMaxWords = Math.floor(totalVideoTime * 2)
+      const sectionList = timestamps.map((_, i) => {
+        const budget = timeBudgets[i]!
+        const maxWords = Math.max(5, Math.floor(budget * 2)) // 2 words/sec = conservative
+        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s — MAX ${maxWords} words)`
+      }).join('\n')
 
       // Ask Gemini to transform the DOC into a narration script
       const { generateText } = await import('../../shared/ai/gemini.client.js')
@@ -232,38 +239,32 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 ${doc.markdownContent}
 
 ## Task
-Rewrite this documentation as a spoken narration. The video has ${numSteps} steps.
-Use [SECTION N] markers to split the narration into ${numSteps} segments that will be synced to the video.
+Rewrite this into a CONCISE spoken narration. Total video: ${totalVideoTime.toFixed(0)}s. Total word budget: ~${totalMaxWords} words.
+Use [SECTION N] markers to split into ${numSteps} segments.
 
-Each section has a TIME BUDGET — the narration must fit within it.
-Estimate ~2.5 words per second. A section with 5s budget = max 12 words.
-
+WORD LIMITS PER SECTION (STRICTLY ENFORCED):
 ${sectionList}
 
 RULES:
-- CRITICAL: Respect the time budget for each section. Short sections = short text.
-- Keep the SAME content and structure as the doc — don't invent new information
-- Adapt the tone for spoken delivery: contractions ("let's", "you'll"), direct address ("you")
-- First section: brief welcome. Last section: wrap-up
-- Transitions between sections: "Now...", "Next...", "Perfect..."
-- DO NOT read image captions, URLs, or code blocks aloud
-- DO NOT say "as shown in the screenshot" or "the documentation says"
-- Sound like a friendly colleague walking someone through the product
-- IMPORTANT: Use audio tags to make the delivery natural and human-like. You MUST include at least one audio tag per section:
-  [pause] — brief pause between sentences or ideas
-  [short pause] — very short pause within a sentence
-  [long pause] — longer pause for emphasis or transitions
-  [sigh], [laughs], [clears throat] — natural human sounds (use sparingly, 1-2 per script)
-  Example: "Hey there! [pause] Let's walk through this together."
-  Example: "Click the button [short pause] and you'll see the form appear."
+- STRICTLY respect the word limit for each section. Count your words. If a section says MAX 10 words, use 10 words or fewer.
+- Be CONCISE — this is a quick walkthrough, not a lecture. One short sentence per section is ideal.
+- Keep the same content flow as the doc — don't invent information
+- Tone: contractions ("let's", "you'll"), direct address ("you")
+- First section: brief welcome. Last section: short wrap-up
+- DO NOT read image captions, URLs, or code blocks
+- Use these audio tags naturally between phrases:
+  [pause] — brief pause
+  [short pause] — micro pause
+  [long pause] — transition pause
+  Audio tags do NOT count toward the word limit.
 
-Output format (start DIRECTLY with [SECTION 1], no preamble):
+Output (start DIRECTLY with [SECTION 1]):
 [SECTION 1]
-Hey! Let's walk through how to get started [pause] it's really straightforward.
+Hey! [pause] Let's get started.
 [SECTION 2]
-Head over to the settings page [short pause] this is where you'll configure everything.
+Click 'New Project' [short pause] to open the form.
 
-Write exactly ${numSteps} sections. Start directly with [SECTION 1] — no preamble or introduction text before it.`,
+Write exactly ${numSteps} sections. NO preamble.`,
         maxTokens: 8192,
       })
 
