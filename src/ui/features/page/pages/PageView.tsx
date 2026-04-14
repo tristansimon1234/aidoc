@@ -428,7 +428,7 @@ DO NOT generate new documentation. Only verify the existing one.`
           <BriefingSection
             page={page}
             pageId={pageId!}
-            briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
+            briefing={{ objective: '', knowledge: '', resources: [], ...(page.briefing ?? {}) }}
             collapsed={false}
             onPageUpdate={(updates) => {
               setPage({ ...page, ...updates })
