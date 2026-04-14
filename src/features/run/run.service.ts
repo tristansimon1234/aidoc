@@ -358,6 +358,14 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     const sortedSteps = [...analysis.steps].sort((a, b) => a.timestamp - b.timestamp)
 
+    // === DIAGNOSTIC LOGGING ===
+    console.log(`[video] Gemini returned ${analysis.steps.length} steps for run ${runId}:`)
+    for (const s of sortedSteps) {
+      console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction} — "${s.screenDescription.slice(0, 80)}"`)
+    }
+    console.log(`[video] ffmpeg available: ${isAvailable()}, ffmpegWorks: ${ffmpegWorks}`)
+    // === END DIAGNOSTIC ===
+
     if (sortedSteps.length === 0) {
       await runRepo.updateRunStatus(runId, 'failed')
       throw new Error('Could not detect any actions in the video. Try a longer recording with clear interactions.')
