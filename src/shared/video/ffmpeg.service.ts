@@ -94,22 +94,39 @@ export async function convertToMp4(inputBuffer: Buffer, inputFormat: string): Pr
         reject(new Error('ffmpeg conversion timed out'))
       }, 120_000)
 
+      // First check what codecs are available
+      try {
+        const codecs = execSync(`"${ffmpegBinaryPath}" -codecs 2>&1 | head -5`, { timeout: 5000 }).toString()
+        console.log(`[ffmpeg] Binary works. First codecs: ${codecs.trim().split('\n')[0]}`)
+      } catch (e) {
+        console.error(`[ffmpeg] Binary test failed: ${(e as Error).message}`)
+      }
+
       ffmpeg(tmpIn)
         .outputOptions([
           '-c:v', 'libx264',
-          '-preset', 'ultrafast',  // fastest encoding — critical for serverless
-          '-crf', '28',            // slightly lower quality but much faster
+          '-preset', 'ultrafast',
+          '-crf', '28',
           '-c:a', 'aac',
           '-b:a', '128k',
           '-movflags', '+faststart',
-          '-threads', '2',
+          '-threads', '1',
+          '-loglevel', 'error',    // reduce ffmpeg internal logging
         ])
         .output(tmpOut)
-        .on('progress', (p: { percent?: number }) => {
-          if (p.percent) console.log(`[ffmpeg] Converting: ${p.percent.toFixed(0)}%`)
+        .on('start', (cmd: string) => {
+          console.log(`[ffmpeg] Command: ${cmd}`)
+        })
+        .on('progress', (p: { percent?: number; timemark?: string }) => {
+          console.log(`[ffmpeg] Progress: ${p.percent?.toFixed(0) ?? '?'}% (${p.timemark ?? ''})`)
+        })
+        .on('stderr', (line: string) => {
+          if (line.includes('Error') || line.includes('error')) {
+            console.error(`[ffmpeg] stderr: ${line}`)
+          }
         })
         .on('end', () => { clearTimeout(timeout); resolve() })
-        .on('error', (err: Error) => { clearTimeout(timeout); reject(err) })
+        .on('error', (err: Error) => { clearTimeout(timeout); console.error(`[ffmpeg] Error: ${err.message}`); reject(err) })
         .run()
     })
 
