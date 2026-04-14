@@ -9,9 +9,9 @@ export function isVideoServiceConfigured(): boolean {
   return Boolean(env.VIDEO_SERVICE_URL)
 }
 
-async function callService<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
+async function callService<T>(endpoint: string, body: Record<string, unknown>, timeoutMs = 120_000): Promise<T> {
   const url = `${getBaseUrl()}${endpoint}`
-  console.log(`[video-service] POST ${endpoint}`)
+  console.log(`[video-service] POST ${endpoint} (timeout: ${timeoutMs / 1000}s)`)
 
   const res = await fetch(url, {
     method: 'POST',
@@ -21,11 +21,12 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>): 
       supabaseUrl: env.SUPABASE_URL,
       serviceKey: env.SUPABASE_SERVICE_KEY,
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   })
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
-    throw new Error(`Video service error: ${err.error ?? res.statusText}`)
+    throw new Error(`Video service error (${res.status}): ${err.error ?? res.statusText}`)
   }
 
   return res.json() as Promise<T>
