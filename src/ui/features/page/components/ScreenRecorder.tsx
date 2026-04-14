@@ -107,9 +107,15 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
       const ext = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '.webm'
       const videoPath = `runs/${run.id}/video${ext}`
       const mimeType = file instanceof File ? file.type : 'video/webm'
+      const fileSize = file instanceof File ? file.size : (file as Blob).size
+      console.log(`[upload] Starting: ${videoPath} (${(fileSize / 1024 / 1024).toFixed(1)}MB, ${mimeType})`)
       const { signedUrl } = await api.runs.getSignedUploadUrl(run.id, videoPath)
       const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: file })
-      if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text().catch(() => uploadRes.statusText)
+        throw new Error(`Upload failed (${uploadRes.status}): ${errText}`)
+      }
+      console.log(`[upload] Done: ${videoPath}`)
 
       // Upload DOM events if captured
       if (domEvents && domEvents.length > 0) {

@@ -322,20 +322,31 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     let analyzeVideoPath = videoPath
     let playerVideoPath = videoPath
+    const videoServiceAvailable = isVideoServiceConfigured()
 
-    if (isVideoServiceConfigured() && !videoPath.endsWith('.mp4')) {
+    console.log(`[video] Step 1: Convert — service=${videoServiceAvailable ? 'YES' : 'NO'}, path=${videoPath}`)
+
+    if (videoServiceAvailable && !videoPath.endsWith('.mp4')) {
       try {
         const mp4Path = await convertToMp4(videoPath, runId)
         analyzeVideoPath = mp4Path
         playerVideoPath = mp4Path
+        console.log(`[video] Converted to MP4: ${mp4Path}`)
       } catch (err) {
-        console.warn(`[video] Conversion failed, using original: ${(err as Error).message}`)
+        console.error(`[video] MP4 conversion FAILED: ${(err as Error).message}`)
+        // Continue with original — Gemini supports webm
       }
+    } else if (!videoServiceAvailable) {
+      console.log(`[video] VIDEO_SERVICE_URL not set — skipping conversion, using ${videoPath} as-is`)
     }
 
     // --- Step 2: Download for Gemini analysis ---
+    console.log(`[video] Step 2: Download ${analyzeVideoPath} from storage`)
     const { data, error } = await supabase.storage.from('artifacts').download(analyzeVideoPath)
-    if (error || !data) throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
+    if (error || !data) {
+      console.error(`[video] Download FAILED: ${error?.message ?? 'no data'}`)
+      throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
+    }
 
     const buffer = Buffer.from(await data.arrayBuffer())
     const mimeType = analyzeVideoPath.endsWith('.mp4') ? 'video/mp4'
@@ -358,16 +369,18 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     }
 
     // --- Step 3b: Correct MM:SS concatenation bug ---
-    // Gemini sometimes returns "127" meaning 1:27 (87s). Detect via video duration.
     const { probeVideo } = await import('../../shared/video/video.client.js')
     let videoDuration = Infinity
-    if (isVideoServiceConfigured()) {
+    if (videoServiceAvailable) {
       try {
         const probe = await probeVideo(playerVideoPath)
         videoDuration = probe.durationSeconds
+        console.log(`[video] Probe: duration=${videoDuration.toFixed(1)}s`)
       } catch (err) {
-        console.warn(`[video] Probe failed, skipping timestamp correction: ${(err as Error).message}`)
+        console.warn(`[video] Probe failed (non-critical): ${(err as Error).message}`)
       }
+    } else {
+      console.log(`[video] No video service — skipping probe, timestamps may be imprecise`)
     }
 
     const correctedSteps = correctTimestamps(analysis.steps, videoDuration)
@@ -384,13 +397,17 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     let framesExtracted = false
     let framePaths: (string | null)[] = []
 
-    if (isVideoServiceConfigured()) {
+    if (videoServiceAvailable) {
       try {
+        console.log(`[video] Step 4: Extracting ${timestamps.length} frames server-side`)
         framePaths = await extractFramesRemote(playerVideoPath, runId, timestamps)
         framesExtracted = framePaths.some((p) => p !== null)
+        console.log(`[video] Extracted ${framePaths.filter(Boolean).length}/${timestamps.length} frames`)
       } catch (err) {
-        console.warn(`[video] Frame extraction failed: ${(err as Error).message}`)
+        console.warn(`[video] Frame extraction failed (will use client-side fallback): ${(err as Error).message}`)
       }
+    } else {
+      console.log(`[video] No video service — frames will be extracted client-side`)
     }
 
     // --- Step 5: Create run steps ---
