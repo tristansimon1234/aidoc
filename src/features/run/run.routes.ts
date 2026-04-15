@@ -223,11 +223,11 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       if (timestamps.length > 0) {
         mergedTimestamps.push(timestamps[0]!)
       }
-      // Merge subsequent short sections (< 4s gap) but never drop them
+      // Merge subsequent timestamps that are too close (< 8s gap)
       for (let i = 1; i < timestamps.length; i++) {
         const prev = mergedTimestamps[mergedTimestamps.length - 1]!
         const gap = timestamps[i]! - prev
-        if (gap < 4) continue // Too close to previous — skip
+        if (gap < 8) continue
         mergedTimestamps.push(timestamps[i]!)
       }
 
@@ -236,13 +236,8 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         mergedTimestamps.unshift(0)
       }
 
-      // Outro: estimate video end from last timestamp + 10s buffer
-      const estimatedEnd = (timestamps[timestamps.length - 1] ?? 0) + 10
-      const lastMerged = mergedTimestamps[mergedTimestamps.length - 1] ?? 0
-      if (estimatedEnd - lastMerged > 8) {
-        // Big gap at the end — add a closing section
-        mergedTimestamps.push(lastMerged + 5)
-      }
+      // NO outro — the last section's closing phrase is enough
+      // Adding an extra timestamp after the video causes segments past the end
 
       console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections (first: ${mergedTimestamps[0]?.toFixed(1)}s)`)
 
