@@ -9,30 +9,9 @@ export function isVideoServiceConfigured(): boolean {
   return Boolean(env.VIDEO_SERVICE_URL)
 }
 
-/** Wake up Railway service and verify it's healthy */
-let lastPing = 0
-async function ensureAwake(): Promise<void> {
-  const now = Date.now()
-  if (now - lastPing < 5 * 60_000) return
-  lastPing = now
-  const base = getBaseUrl()
-  console.log(`[video-service] Pinging ${base}/health ...`)
-  try {
-    const start = Date.now()
-    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(30_000) })
-    const body = await res.text().catch(() => '')
-    console.log(`[video-service] Health: ${res.status} (${Date.now() - start}ms) ${body.slice(0, 100)}`)
-  } catch (err) {
-    console.warn(`[video-service] Health check failed: ${(err as Error).message}`)
-  }
-}
-
-async function callService<T>(endpoint: string, body: Record<string, unknown>, timeoutMs = 180_000): Promise<T> {
-  await ensureAwake()
-
+async function callService<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
   const url = `${getBaseUrl()}${endpoint}`
-  const start = Date.now()
-  console.log(`[video-service] POST ${endpoint} (timeout: ${timeoutMs / 1000}s) body keys: ${Object.keys(body).join(', ')}`)
+  console.log(`[video-service] POST ${endpoint}`)
 
   const res = await fetch(url, {
     method: 'POST',
@@ -42,24 +21,19 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>, t
       supabaseUrl: env.SUPABASE_URL,
       serviceKey: env.SUPABASE_SERVICE_KEY,
     }),
-    signal: AbortSignal.timeout(timeoutMs),
   })
 
-  const elapsed = Date.now() - start
-  console.log(`[video-service] ${endpoint} responded: ${res.status} (${elapsed}ms)`)
-
   if (!res.ok) {
-    const errBody = await res.text().catch(() => res.statusText)
-    console.error(`[video-service] ${endpoint} ERROR: ${errBody}`)
-    throw new Error(`Video service error (${res.status}): ${errBody}`)
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+    throw new Error(`Video service error: ${err.error ?? res.statusText}`)
   }
 
   return res.json() as Promise<T>
 }
 
-/** Convert video to MP4. Returns the new path in Supabase storage. Timeout: 30s. */
+/** Convert video to MP4. Returns the new path in Supabase storage. */
 export async function convertToMp4(videoPath: string, runId: string): Promise<string> {
-  const result = await callService<{ mp4Path: string; skipped?: boolean }>('/convert', { videoPath, runId }, 30_000)
+  const result = await callService<{ mp4Path: string; skipped?: boolean }>('/convert', { videoPath, runId })
   if (result.skipped) console.log('[video-service] Already MP4, skipped conversion')
   else console.log(`[video-service] Converted → ${result.mp4Path}`)
   return result.mp4Path
