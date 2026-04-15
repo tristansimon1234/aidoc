@@ -404,17 +404,21 @@ DO NOT generate new documentation. Only verify the existing one.`
                   <input type="file" accept="video/mp4,video/webm,video/quicktime" style={{ display: 'none' }} onChange={(e) => {
                     const file = e.target.files?.[0]
                     if (!file) return
-                    // Re-process with new video via ScreenRecorder logic
                     void (async () => {
-                      const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
-                      const path = `runs/${latestRunId}/video${ext}`
-                      const { signedUrl } = await api.runs.getSignedUploadUrl(latestRunId!, path)
-                      await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-                      const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
-                      if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
-                      // Reset voiceover since video changed
-                      setVoiceoverUrl(null)
-                      setVoiceoverSegments([])
+                      try {
+                        const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
+                        const path = `runs/${latestRunId}/video${ext}`
+                        // Delete existing file first, then upload (signed URL fails if file exists)
+                        await supabase.storage.from('artifacts').remove([path])
+                        const { error: upErr } = await supabase.storage.from('artifacts').upload(path, file, { contentType: file.type, upsert: true })
+                        if (upErr) throw new Error(upErr.message)
+                        const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
+                        if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
+                        setVoiceoverUrl(null)
+                        setVoiceoverSegments([])
+                      } catch (err) {
+                        console.error('[replace] Failed:', (err as Error).message)
+                      }
                     })()
                   }} />
                 </label>
