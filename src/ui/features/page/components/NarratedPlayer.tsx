@@ -11,11 +11,7 @@ export interface VoiceoverSegment {
 interface NarratedPlayerProps {
   videoUrl: string | null
   audioUrl: string | null
-  segments?: VoiceoverSegment[]
-  runId?: string | null
-  onSegmentsChange?: (segments: VoiceoverSegment[]) => void
-  onVideoUrlChange?: (url: string) => void
-  onAudioUrlChange?: (url: string) => void
+  onDurationChange?: (duration: number) => void
 }
 
 type PlayerState = 'loading' | 'ready' | 'error'
@@ -24,7 +20,7 @@ type PlayerState = 'loading' | 'ready' | 'error'
  * Pure video+audio player. No voice controls, no generation, no collapse.
  * Just plays video with synced narration audio overlay.
  */
-export function NarratedPlayer({ videoUrl, audioUrl }: NarratedPlayerProps): React.ReactElement {
+export function NarratedPlayer({ videoUrl, audioUrl, onDurationChange }: NarratedPlayerProps): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null)
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -115,7 +111,7 @@ export function NarratedPlayer({ videoUrl, audioUrl }: NarratedPlayerProps): Rea
           muted={hasNarration}
           onLoadedMetadata={() => {
             const d = videoRef.current?.duration ?? 0
-            if (d > 0 && isFinite(d)) { setDuration(d); setPlayerState('ready') }
+            if (d > 0 && isFinite(d)) { setDuration(d); setPlayerState('ready'); onDurationChange?.(d) }
           }}
           onError={() => setPlayerState('error')}
           onEnded={() => { setPlaying(false); audioRef.current?.pause() }}

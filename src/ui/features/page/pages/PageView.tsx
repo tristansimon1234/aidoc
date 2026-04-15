@@ -12,6 +12,7 @@ import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocRe
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
+import { VideoTimeline } from '../components/VideoTimeline.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
 import styles from './PageView.module.css'
@@ -41,7 +42,9 @@ export function PageView(): React.ReactElement {
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
+  const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; text?: string }[]>([])
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [videoDuration, setVideoDuration] = useState(0)
   const [latestRunId, setLatestRunId] = useState<string | null>(null)
   const [voices, setVoices] = useState<{ voiceId: string; name: string }[]>([])
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
@@ -96,7 +99,7 @@ export function PageView(): React.ReactElement {
       } else {
         setVoiceoverUrl(null)
       }
-      // segments loaded from voiceover data
+      setVoiceoverSegments(voiceover?.segments ?? [])
 
       // Get video URL from summaryJson.videoPath — verify it exists
       const vPath = summary?.videoPath as string | undefined
@@ -353,7 +356,7 @@ DO NOT generate new documentation. Only verify the existing one.`
 
       {/* ===== VIDEO TAB ===== */}
       {activeTab === 'video' && (
-        <div className={styles.tabContent} style={{ maxWidth: '900px', margin: '0 auto' }}>
+        <div className={styles.tabContent} style={{ maxWidth: '960px', margin: '0 auto' }}>
           {(videoUrl || latestRunId) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               {/* Explanation */}
@@ -361,70 +364,76 @@ DO NOT generate new documentation. Only verify the existing one.`
                 Configure the AI voice-over for your video. Choose a tone and voice, then generate — the narration syncs automatically with the recording.
               </p>
 
-              {/* Video card — player + toolbar as one unit */}
-              <div className={styles.videoCard}>
-                <div className={styles.videoPlayer}>
-                  <NarratedPlayer videoUrl={videoUrl} audioUrl={voiceoverUrl} />
+              {/* Controls bar — above the video */}
+              <div className={styles.videoToolbar} style={{ borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border)' }}>
+                <div className={styles.videoToolbarGroup}>
+                  <span className={styles.videoToolbarLabel}>Tone</span>
+                  <select value={selectedTone} onChange={(e) => setSelectedTone(e.target.value)} className={styles.videoSelect}>
+                    <option value="friendly">Friendly</option>
+                    <option value="professional">Professional</option>
+                    <option value="energetic">Energetic</option>
+                    <option value="calm">Calm</option>
+                    <option value="playful">Playful</option>
+                  </select>
                 </div>
-
-                {/* Toolbar — everything in one clean bar */}
-                <div className={styles.videoToolbar}>
-                  {/* Tone selector */}
+                {voices.length > 0 && (
                   <div className={styles.videoToolbarGroup}>
-                    <span className={styles.videoToolbarLabel}>Tone</span>
-                    <select value={selectedTone} onChange={(e) => setSelectedTone(e.target.value)} className={styles.videoSelect}>
-                      <option value="friendly">Friendly</option>
-                      <option value="professional">Professional</option>
-                      <option value="energetic">Energetic</option>
-                      <option value="calm">Calm</option>
-                      <option value="playful">Playful</option>
+                    <span className={styles.videoToolbarLabel}>Voice</span>
+                    <select value={selectedVoiceId ?? ''} onChange={(e) => setSelectedVoiceId(e.target.value)} className={styles.videoSelect}>
+                      {voices.map((v) => <option key={v.voiceId} value={v.voiceId}>{v.name}</option>)}
                     </select>
                   </div>
-
-                  {/* Voice selector */}
-                  {voices.length > 0 && (
-                    <div className={styles.videoToolbarGroup}>
-                      <span className={styles.videoToolbarLabel}>Voice</span>
-                      <select value={selectedVoiceId ?? ''} onChange={(e) => setSelectedVoiceId(e.target.value)} className={styles.videoSelect}>
-                        {voices.map((v) => <option key={v.voiceId} value={v.voiceId}>{v.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Spacer */}
-                  <div style={{ flex: 1 }} />
-
-                  {/* Generate button */}
-                  {latestRunId && page.content && (
-                    <Button size="sm" disabled={generatingVoiceover} onClick={() => {
-                      void (async () => {
-                        setGeneratingVoiceover(true)
-                        try {
-                          const result = await api.runs.generateVoiceover(latestRunId, {
-                            voiceId: selectedVoiceId,
-                            tone: selectedTone,
-                          }) as {
-                            segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
-                            audioPath?: string
-                            audioUrl?: string
-                          }
-                          const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
-                          if (result.audioUrl) {
-                            setVoiceoverUrl(bust(result.audioUrl))
-                          } else if (result.audioPath) {
-                            const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
-                            setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
-                          }
-                          // segments updated
-                        } finally {
-                          setGeneratingVoiceover(false)
-                        }
-                      })()
-                    }}>
-                      {voiceoverUrl ? 'Regenerate' : 'Generate voice-over'}
-                    </Button>
-                  )}
+                )}
+                <div style={{ flex: 1 }} />
+                <div
+                  className={styles.videoPublish}
+                  onClick={() => {
+                    const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
+                    const newVal = !current
+                    const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
+                    setPage({ ...page, briefing: newBriefing })
+                    void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
+                  }}
+                >
+                  <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
+                    <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
+                  </div>
+                  <span style={{
+                    fontSize: 'var(--text-xs)', fontWeight: 500,
+                    color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-success)' : 'var(--color-muted-fg)',
+                  }}>
+                    {(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'Published' : 'Hidden'}
+                  </span>
                 </div>
+                {latestRunId && page.content && (
+                  <Button size="sm" disabled={generatingVoiceover} onClick={() => {
+                    void (async () => {
+                      setGeneratingVoiceover(true)
+                      try {
+                        const result = await api.runs.generateVoiceover(latestRunId, {
+                          voiceId: selectedVoiceId,
+                          tone: selectedTone,
+                        }) as {
+                          segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+                          audioPath?: string
+                          audioUrl?: string
+                        }
+                        const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
+                        if (result.audioUrl) {
+                          setVoiceoverUrl(bust(result.audioUrl))
+                        } else if (result.audioPath) {
+                          const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                          setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
+                        }
+                        setVoiceoverSegments(result.segments ?? [])
+                      } finally {
+                        setGeneratingVoiceover(false)
+                      }
+                    })()
+                  }}>
+                    {voiceoverUrl ? 'Regenerate' : 'Generate voice-over'}
+                  </Button>
+                )}
               </div>
 
               {/* Generation progress */}
@@ -439,27 +448,25 @@ DO NOT generate new documentation. Only verify the existing one.`
                 />
               )}
 
-              {/* Publish toggle — subtle, below */}
-              <div
-                className={styles.videoPublish}
-                onClick={() => {
-                  const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
-                  const newVal = !current
-                  const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
-                  setPage({ ...page, briefing: newBriefing })
-                  void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
-                }}
-              >
-                <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
-                  <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
-                </div>
-                <span style={{
-                  fontSize: 'var(--text-xs)', fontWeight: 500,
-                  color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-success)' : 'var(--color-muted-fg)',
-                }}>
-                  {(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'Visible on published page' : 'Hidden from published page'}
-                </span>
+              {/* Video player */}
+              <div className={styles.videoCard}>
+                <NarratedPlayer videoUrl={videoUrl} audioUrl={voiceoverUrl} onDurationChange={setVideoDuration} />
               </div>
+
+              {/* Segment timeline + text editor */}
+              {voiceoverSegments.length > 0 && latestRunId && videoDuration > 0 && (
+                <div className={styles.section} style={{ padding: 0, overflow: 'hidden' }}>
+                  <VideoTimeline
+                    runId={latestRunId}
+                    duration={videoDuration}
+                    segments={voiceoverSegments}
+                    voiceId={selectedVoiceId}
+                    onSegmentsChange={setVoiceoverSegments}
+                    onVideoTrimmed={setVideoUrl}
+                    onAudioUrlChange={(url) => setVoiceoverUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
+                  />
+                </div>
+              )}
             </div>
           ) : (
             <EmptyState
