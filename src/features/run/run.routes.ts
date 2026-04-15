@@ -216,23 +216,35 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
       console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
 
-      // Build time budget — ~2.2 words/sec spoken, but budget at 1.8 to leave room for pauses + tags
-      // Merge short sections (< 4s) with the next one to reduce segment count
+      // Build time budget — merge short sections, add intro/outro
       const mergedTimestamps: number[] = []
-      for (let i = 0; i < timestamps.length; i++) {
-        const next = timestamps[i + 1] ?? (timestamps[i]! + 15)
-        const gap = next - timestamps[i]!
-        if (gap < 4 && i < timestamps.length - 1) {
-          // Skip this timestamp — it'll be covered by the next section
-          continue
-        }
-        mergedTimestamps.push(timestamps[i]!)
-      }
-      // Ensure at least the first timestamp is kept
-      if (mergedTimestamps.length === 0 && timestamps.length > 0) {
+
+      // Always keep the first timestamp
+      if (timestamps.length > 0) {
         mergedTimestamps.push(timestamps[0]!)
       }
-      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections`)
+      // Merge subsequent short sections (< 4s gap) but never drop them
+      for (let i = 1; i < timestamps.length; i++) {
+        const prev = mergedTimestamps[mergedTimestamps.length - 1]!
+        const gap = timestamps[i]! - prev
+        if (gap < 4) continue // Too close to previous — skip
+        mergedTimestamps.push(timestamps[i]!)
+      }
+
+      // Intro: if first action starts late (> 3s), prepend a timestamp at 0 for greeting
+      if (mergedTimestamps.length > 0 && mergedTimestamps[0]! > 3) {
+        mergedTimestamps.unshift(0)
+      }
+
+      // Outro: estimate video end from last timestamp + 10s buffer
+      const estimatedEnd = (timestamps[timestamps.length - 1] ?? 0) + 10
+      const lastMerged = mergedTimestamps[mergedTimestamps.length - 1] ?? 0
+      if (estimatedEnd - lastMerged > 8) {
+        // Big gap at the end — add a closing section
+        mergedTimestamps.push(lastMerged + 5)
+      }
+
+      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections (first: ${mergedTimestamps[0]?.toFixed(1)}s)`)
 
       const numStepsMerged = mergedTimestamps.length
       const timeBudgets = mergedTimestamps.map((t, i) => {

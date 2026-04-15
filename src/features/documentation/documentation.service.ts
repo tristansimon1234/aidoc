@@ -55,8 +55,12 @@ export async function generateAndSaveDoc(
     return !noiseTools.has(toolType)
   })
 
-  const stepSummaries: StepSummary[] = filteredSteps.map((s) => {
-    const screenshotUrl = s.screenshotPath ? getPublicUrl('artifacts', s.screenshotPath) : null
+  const stepSummaries: StepSummary[] = filteredSteps.map((s, i) => {
+    let screenshotUrl = s.screenshotPath ? getPublicUrl('artifacts', s.screenshotPath) : null
+    // Fallback for video runs: frames stored at conventional path
+    if (!screenshotUrl && isVideoRun) {
+      screenshotUrl = getPublicUrl('artifacts', `runs/${runId}/frame-${i}.jpg`)
+    }
     return {
       url: s.url ?? '',
       action: s.action ?? '',
@@ -64,6 +68,7 @@ export async function generateAndSaveDoc(
       screenshotUrl,
     }
   })
+  console.log(`[doc] ${stepSummaries.length} steps, ${stepSummaries.filter(s => s.screenshotUrl).length} with screenshots`)
 
   const result = await generateDocumentation({
     featureName: run.featureName,

@@ -408,10 +408,10 @@ DO NOT generate new documentation. Only verify the existing one.`
                       try {
                         const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
                         const path = `runs/${latestRunId}/video${ext}`
-                        // Delete existing file first, then upload (signed URL fails if file exists)
-                        await supabase.storage.from('artifacts').remove([path])
-                        const { error: upErr } = await supabase.storage.from('artifacts').upload(path, file, { contentType: file.type, upsert: true })
-                        if (upErr) throw new Error(upErr.message)
+                        // Use signed URL (bypasses RLS) like ScreenRecorder does
+                        const { signedUrl } = await api.runs.getSignedUploadUrl(latestRunId!, path)
+                        const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+                        if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
                         const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
                         if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
                         setVoiceoverUrl(null)
@@ -465,6 +465,8 @@ DO NOT generate new documentation. Only verify the existing one.`
                           setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
                         }
                         setVoiceoverSegments(result.segments ?? [])
+                        // Re-fetch to ensure video URL is fresh (summary may have changed)
+                        await fetchData()
                       } finally {
                         setGeneratingVoiceover(false)
                       }

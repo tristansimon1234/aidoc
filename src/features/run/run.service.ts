@@ -503,9 +503,32 @@ export async function analyzeTryDoc(
   if (jsonStr.startsWith('```')) {
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   }
+  // Extract JSON object if surrounded by extra text
+  const braceStart = jsonStr.indexOf('{')
+  const braceEnd = jsonStr.lastIndexOf('}')
+  if (braceStart !== -1 && braceEnd > braceStart) jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
 
   const { TryDocReportSchema } = await import('./run.schema.js')
-  const parsed = TryDocReportSchema.parse(JSON.parse(jsonStr))
+  let parsed
+  try {
+    parsed = TryDocReportSchema.parse(JSON.parse(jsonStr))
+  } catch (parseErr) {
+    // Attempt repair: close open brackets/braces
+    console.warn(`[trydoc] JSON parse failed, attempting repair: ${(parseErr as Error).message}`)
+    let repaired = jsonStr
+    repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
+    repaired = repaired.replace(/,\s*\{[^}]*$/, '')
+    const openBraces = (repaired.match(/\{/g) ?? []).length - (repaired.match(/\}/g) ?? []).length
+    const openBrackets = (repaired.match(/\[/g) ?? []).length - (repaired.match(/\]/g) ?? []).length
+    repaired += ']'.repeat(Math.max(0, openBrackets))
+    repaired += '}'.repeat(Math.max(0, openBraces))
+    try {
+      parsed = TryDocReportSchema.parse(JSON.parse(repaired))
+      console.log('[trydoc] JSON repaired successfully')
+    } catch (repairErr) {
+      throw new Error(`Failed to parse TryDoc report: ${(repairErr as Error).message}`)
+    }
+  }
 
   // Attach screenshot URLs to step results
   const stepsWithScreenshots = parsed.steps.map((stepResult) => {
