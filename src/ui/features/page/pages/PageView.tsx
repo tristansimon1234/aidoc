@@ -364,7 +364,7 @@ DO NOT generate new documentation. Only verify the existing one.`
                 Configure the AI voice-over for your video. Choose a tone and voice, then generate — the narration syncs automatically with the recording.
               </p>
 
-              {/* Controls bar — above the video */}
+              {/* Controls bar */}
               <div className={styles.videoToolbar} style={{ borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border)' }}>
                 <div className={styles.videoToolbarGroup}>
                   <span className={styles.videoToolbarLabel}>Tone</span>
@@ -385,6 +385,30 @@ DO NOT generate new documentation. Only verify the existing one.`
                   </div>
                 )}
                 <div style={{ flex: 1 }} />
+
+                {/* Replace video */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', padding: '4px 8px', borderRadius: 'var(--radius-md)', transition: 'color 0.15s' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></svg>
+                  Replace
+                  <input type="file" accept="video/mp4,video/webm,video/quicktime" style={{ display: 'none' }} onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    // Re-process with new video via ScreenRecorder logic
+                    void (async () => {
+                      const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
+                      const path = `runs/${latestRunId}/video${ext}`
+                      const { signedUrl } = await api.runs.getSignedUploadUrl(latestRunId!, path)
+                      await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+                      const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
+                      if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
+                      // Reset voiceover since video changed
+                      setVoiceoverUrl(null)
+                      setVoiceoverSegments([])
+                    })()
+                  }} />
+                </label>
+
+                {/* Publish toggle */}
                 <div
                   className={styles.videoPublish}
                   onClick={() => {
@@ -453,17 +477,23 @@ DO NOT generate new documentation. Only verify the existing one.`
 
               {/* Segment timeline + text editor */}
               {voiceoverSegments.length > 0 && latestRunId && videoDuration > 0 && (
-                <div className={styles.section} style={{ padding: 0, overflow: 'hidden' }}>
-                  <VideoTimeline
-                    runId={latestRunId}
-                    duration={videoDuration}
-                    segments={voiceoverSegments}
-                    voiceId={selectedVoiceId}
-                    onSegmentsChange={setVoiceoverSegments}
-                    onVideoTrimmed={setVideoUrl}
-                    onAudioUrlChange={(url) => setVoiceoverUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
-                  />
-                </div>
+                <>
+                  <div className={styles.section} style={{ padding: 0, overflow: 'hidden' }}>
+                    <VideoTimeline
+                      runId={latestRunId}
+                      duration={videoDuration}
+                      segments={voiceoverSegments}
+                      voiceId={selectedVoiceId}
+                      onSegmentsChange={setVoiceoverSegments}
+                      onVideoTrimmed={(url) => setVideoUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
+                      onAudioUrlChange={(url) => setVoiceoverUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
+                    />
+                  </div>
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: 0, lineHeight: 1.5 }}>
+                    Click any segment text to edit it, then press Enter or the refresh icon to regenerate just that segment.
+                    Drag the blue trim handles on the timeline to cut the video start/end.
+                  </p>
+                </>
               )}
             </div>
           ) : (
