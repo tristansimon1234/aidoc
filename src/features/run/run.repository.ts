@@ -66,6 +66,32 @@ export async function createRun(input: {
   goal: string
   docPageId?: string
 }): Promise<Run> {
+  // Delete previous non-test runs for this page to avoid stale screenshot references
+  if (input.docPageId && !input.featureName.startsWith('[Test]')) {
+    const { data: oldRuns } = await supabase
+      .from('runs')
+      .select('id')
+      .eq('doc_page_id', input.docPageId)
+      .not('feature_name', 'like', '[Test]%')
+    if (oldRuns && oldRuns.length > 0) {
+      const oldIds = oldRuns.map((r) => (r as Record<string, unknown>).id as string)
+      // Delete storage artifacts for each old run
+      for (const oldId of oldIds) {
+        const { data: files } = await supabase.storage.from('artifacts').list(`runs/${oldId}`)
+        if (files && files.length > 0) {
+          const paths = files.map((f) => `runs/${oldId}/${f.name}`)
+          await supabase.storage.from('artifacts').remove(paths)
+          console.log(`[runs] Cleaned ${paths.length} files from storage for run ${oldId}`)
+        }
+      }
+      // Delete DB records (steps + docs first due to FK)
+      await supabase.from('run_steps').delete().in('run_id', oldIds)
+      await supabase.from('generated_docs').delete().in('run_id', oldIds)
+      await supabase.from('runs').delete().in('id', oldIds)
+      console.log(`[runs] Deleted ${oldIds.length} previous run(s) for page ${input.docPageId}`)
+    }
+  }
+
   const { data, error } = await supabase
     .from('runs')
     .insert({
