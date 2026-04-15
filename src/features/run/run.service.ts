@@ -119,7 +119,7 @@ async function enrichBriefingWithFileContents(
 
   const { supabase } = await import('../../shared/db/supabase.client.js')
   const enrichedResources = await Promise.all(
-    briefing.resources.map(async (r) => {
+    (briefing.resources ?? []).map(async (r) => {
       if (r.type !== 'file' || !r.value) return r
       try {
         console.log(`[briefing] Downloading file resource: ${r.value}`)
@@ -282,6 +282,10 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
           {
             let jsonStr = response.text.trim()
             if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+            // Extract JSON object if surrounded by extra text
+            const braceStart = jsonStr.indexOf('{')
+            const braceEnd = jsonStr.lastIndexOf('}')
+            if (braceStart !== -1 && braceEnd > braceStart) jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
             const { DiscoveredContextSchema } = await import('../project/project.schema.js')
             const parsed = DiscoveredContextSchema.safeParse(JSON.parse(jsonStr))
             if (parsed.success) {
