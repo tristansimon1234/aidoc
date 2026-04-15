@@ -97,6 +97,14 @@ export function NewProject(): React.ReactElement {
         credentials: validCreds.length > 0 ? validCreds : undefined,
       })
       .then(async (p) => {
+        // Save context + design explicitly (createProject may not save context reliably)
+        const updates: Record<string, unknown> = {}
+        if (audience || workflow) updates.context = { audience, workflow, quirks: '' }
+        if (description) updates.description = description
+        if (Object.keys(updates).length > 0) {
+          const { updateProject } = await import('../../../shared/api/db.js')
+          await updateProject(p.id, updates).catch(() => { /* non-critical */ })
+        }
         // Apply discovered design if available — normalize font to CSS font-family
         if (design) {
           const fontName = design.font?.trim()
