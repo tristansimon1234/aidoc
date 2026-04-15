@@ -68,25 +68,7 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         clearTimeout(timeout)
       }
 
-      // Try to fetch the main CSS stylesheet for design tokens
-      const cssLink = html.match(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)/i)?.[1]
-        ?? html.match(/<link[^>]*href=["']([^"']+\.css[^"']*)/i)?.[1]
-      let externalCss = ''
-      if (cssLink) {
-        try {
-          const cssUrl = cssLink.startsWith('http') ? cssLink : new URL(cssLink, url).href
-          console.log(`[analyze-url] Fetching CSS: ${cssUrl}`)
-          const cssResp = await fetch(cssUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AiDoc/1.0)' },
-            signal: AbortSignal.timeout(5000),
-          })
-          externalCss = (await cssResp.text()).slice(0, 30_000)
-        } catch {
-          // Non-critical
-        }
-      }
-
-      // --- Extract structured data from HTML ---
+      // --- Extract structured data from HTML (no external CSS fetch — too slow) ---
       const extractAll = (pattern: RegExp, src: string): string[] => {
         const matches: string[] = []
         let m: RegExpExecArray | null
@@ -100,38 +82,34 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       const themeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const ogTitle = html.match(/<meta[^>]*property=["']og:title["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
-      const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
-
-      // Headings & navigation
       const headings = extractAll(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi, html).map(h => h.replace(/<[^>]+>/g, '').trim()).filter(Boolean)
       const links = extractAll(/<a[^>]*>([\s\S]*?)<\/a>/gi, html).map(a => a.replace(/<[^>]+>/g, '').trim()).filter(h => h.length > 2 && h.length < 60)
 
-      // --- Design extraction: search EVERYWHERE for colors and fonts ---
-
-      // 1. Extract <style> blocks BEFORE stripping them
+      // --- Design: extract server-side with heuristics (not Gemini) ---
       const styleBlocks = extractAll(/<style[^>]*>([\s\S]*?)<\/style>/gi, html).join('\n')
-
-      // 2. Extract inline style attributes
       const inlineStyles = extractAll(/style=["']([^"']+)/gi, html).join('; ')
+      const allCss = styleBlocks + '\n' + inlineStyles
 
-      // 3. Combine all CSS sources (inline + <style> blocks + external stylesheet)
-      const allCss = styleBlocks + '\n' + inlineStyles + '\n' + externalCss
+      // Accent color: priority order
+      const primaryVarMatch = allCss.match(/--(?:color-)?(?:primary|accent|brand)(?:-color)?[^:]*:\s*(#[0-9a-fA-F]{3,8})/i)
+      const buttonColorMatch = html.match(/<(?:button|a)[^>]*style=["'][^"']*(?:background|bg)[^:]*:\s*(#[0-9a-fA-F]{3,8})/i)
+      const accentColor = themeColor || primaryVarMatch?.[1] || buttonColorMatch?.[1] || '#2563EB'
 
-      // 4. Extract colors from all sources (hex, rgb, hsl, CSS vars)
-      const hexColors = [...new Set(extractAll(/#[0-9a-fA-F]{3,8}(?=[\s;,)"']|$)/g, allCss + ' ' + html))]
-        .filter(c => c.length >= 4 && c !== '#000' && c !== '#fff' && c !== '#FFF' && c !== '#000000' && c !== '#ffffff' && c !== '#FFFFFF')
-      const rgbColors = [...new Set(extractAll(/rgba?\(\s*(\d+\s*,\s*\d+\s*,\s*\d+(?:\s*,\s*[\d.]+)?)\s*\)/g, allCss))]
-      const cssVarColors = [...new Set(extractAll(/--[\w-]*(?:color|brand|primary|accent|bg|background)[\w-]*\s*:\s*([^;}\n]+)/gi, allCss))]
+      // Background + text
+      const bgVarMatch = allCss.match(/--(?:color-)?(?:bg|background)(?:-color)?[^:]*:\s*(#[0-9a-fA-F]{3,8})/i)
+      const bgColor = bgVarMatch?.[1] || '#FFFFFF'
+      const textVarMatch = allCss.match(/--(?:color-)?(?:text|fg|foreground)(?:-color)?[^:]*:\s*(#[0-9a-fA-F]{3,8})/i)
+      const textColor = textVarMatch?.[1] || '#1A1A1A'
 
-      // 5. Fonts from all sources
-      const fontFamilies = [...new Set(extractAll(/font-family\s*:\s*["']?([^;'"}\n]+)/gi, allCss))]
-      const googleFonts = [...new Set(extractAll(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&]+)/gi, html))].map(f => f.replace(/\+/g, ' '))
-      const fontLinks = [...new Set(extractAll(/href=["'][^"']*fonts[^"']*["']/gi, html))]
+      // Font
+      const googleFont = html.match(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&:]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
+      const cssFontMatch = allCss.match(/font-family\s*:\s*["']?([^;'"}\n,]+)/i)
+      const font = googleFont || cssFontMatch?.[1]?.trim() || ''
 
-      // 6. CSS custom properties (brand-related)
-      const brandVars = [...new Set(extractAll(/--([\w-]*(?:primary|accent|brand|main|theme)[\w-]*)\s*:\s*([^;}\n]+)/gi, allCss))]
+      const extractedDesign = { accentColor, bgColor, textColor, font }
+      console.log(`[analyze-url] Extracted design: ${JSON.stringify(extractedDesign)}`)
 
-      // Text content (stripped)
+      // Text content for Gemini (just product info, no design)
       const textContent = html
         .replace(/<script[\s\S]*?<\/script>/gi, '')
         .replace(/<style[\s\S]*?<\/style>/gi, '')
@@ -147,78 +125,45 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         ogTitle && ogTitle !== title && `OG Title: ${ogTitle}`,
         metaDesc && `Meta description: ${metaDesc}`,
         ogDesc && ogDesc !== metaDesc && `OG description: ${ogDesc}`,
-        ogImage && `OG image: ${ogImage}`,
-        themeColor && `Theme color: ${themeColor}`,
-        headings.length > 0 && `Headings: ${headings.slice(0, 10).join(' | ')}`,
-        links.length > 0 && `Nav links: ${[...new Set(links)].slice(0, 15).join(', ')}`,
-        '',
-        '--- DESIGN DATA ---',
-        hexColors.length > 0 && `Hex colors found in CSS: ${hexColors.slice(0, 20).join(', ')}`,
-        rgbColors.length > 0 && `RGB colors: ${rgbColors.slice(0, 10).map(c => `rgb(${c})`).join(', ')}`,
-        cssVarColors.length > 0 && `CSS color variables: ${cssVarColors.slice(0, 10).join(', ')}`,
-        brandVars.length > 0 && `Brand CSS variables: ${brandVars.slice(0, 10).join(', ')}`,
-        googleFonts.length > 0 && `Google Fonts: ${googleFonts.join(', ')}`,
-        fontFamilies.length > 0 && `CSS font-family: ${fontFamilies.slice(0, 5).join(' | ')}`,
-        fontLinks.length > 0 && `Font links: ${fontLinks.slice(0, 3).join(', ')}`,
-        themeColor && `Meta theme-color: ${themeColor}`,
-        '',
-        `Page text (excerpt): ${textContent}`,
+        headings.length > 0 && `Headings: ${headings.slice(0, 8).join(' | ')}`,
+        links.length > 0 && `Nav links: ${[...new Set(links)].slice(0, 10).join(', ')}`,
+        `Page text: ${textContent}`,
       ].filter(Boolean).join('\n')
 
-      console.log(`[analyze-url] Extracted info (${pageInfo.length} chars), ${hexColors.length} hex colors, ${fontFamilies.length} fonts`)
-
+      // Gemini: only product info (design extracted above)
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const result = await generateText({
-        userPrompt: `Analyze this webpage and extract product information + design.
-${fetchError ? `(Note: fetch failed: "${fetchError}" — infer from URL)` : ''}
+        userPrompt: `Analyze this webpage. Return ONLY valid JSON:
+${fetchError ? `(Note: fetch failed — infer from URL: ${url})` : ''}
 
 ${pageInfo}
 
-Return ONLY valid JSON with these fields:
 {
-  "name": "product or company name (from <title>, logo text, headings, or URL domain)",
-  "description": "SHORT one-sentence description (max 20 words)",
-  "audience": "target users in 10 words max",
-  "workflow": "primary user journey in 15 words max",
-  "design": {
-    "accentColor": "#hex (brand/accent color from buttons or links)",
-    "bgColor": "#hex (page background)",
-    "textColor": "#hex (body text color)",
-    "font": "font family name (e.g. Inter)"
-  }
+  "name": "product/company name",
+  "description": "what this product does (1 sentence)",
+  "audience": "who uses it (specific role + use case)",
+  "workflow": "main user journey (1 sentence)"
 }
 
-Keep ALL values SHORT. Return ONLY raw JSON, no markdown fences, no extra text.`,
-        maxTokens: 2048,
+Return ONLY the JSON object.`,
+        maxTokens: 512,
       })
 
-      console.log(`[analyze-url] Gemini response (${result.text.length} chars): ${result.text.slice(0, 300)}`)
+      console.log(`[analyze-url] Gemini response: ${result.text.slice(0, 200)}`)
 
-      // Parse JSON from Gemini response
-      let analysis: {
-        name: string
-        description: string
-        audience: string
-        workflow: string
-        design?: { accentColor: string; bgColor: string; textColor: string; font: string }
-      } = { name: '', description: '', audience: '', workflow: '' }
+      // Parse Gemini response (product info only)
+      let analysis = { name: '', description: '', audience: '', workflow: '' }
       try {
-        const cleaned = result.text.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
-        analysis = JSON.parse(cleaned) as typeof analysis
-      } catch (parseErr) {
-        console.warn(`[analyze-url] JSON parse failed: ${(parseErr as Error).message}`)
-        // Try to extract JSON from the response more aggressively
-        const jsonMatch = result.text.match(/\{[\s\S]*\}/)
-        if (jsonMatch) {
-          try {
-            analysis = JSON.parse(jsonMatch[0]) as typeof analysis
-          } catch {
-            // Give up — return empty defaults
-          }
-        }
+        let jsonStr = result.text.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
+        const braceStart = jsonStr.indexOf('{')
+        const braceEnd = jsonStr.lastIndexOf('}')
+        if (braceStart !== -1 && braceEnd > braceStart) jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
+        analysis = JSON.parse(jsonStr) as typeof analysis
+      } catch {
+        console.warn(`[analyze-url] JSON parse failed`)
       }
 
-      res.status(200).json(analysis)
+      res.status(200).json({ ...analysis, design: extractedDesign })
     } catch (err) {
       next(err)
     }
