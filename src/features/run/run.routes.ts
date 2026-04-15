@@ -231,6 +231,20 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         mergedTimestamps.push(timestamps[i]!)
       }
 
+      // Cap segments: ~1 per 15s of video, min 3, max 12
+      const videoDur = (timestamps[timestamps.length - 1] ?? 60) - (timestamps[0] ?? 0)
+      const maxSegments = Math.max(3, Math.min(12, Math.ceil(videoDur / 15)))
+      while (mergedTimestamps.length > maxSegments) {
+        // Find the smallest gap between consecutive timestamps
+        let minGap = Infinity
+        let minIdx = 1
+        for (let i = 1; i < mergedTimestamps.length; i++) {
+          const gap = mergedTimestamps[i]! - mergedTimestamps[i - 1]!
+          if (gap < minGap) { minGap = gap; minIdx = i }
+        }
+        mergedTimestamps.splice(minIdx, 1)
+      }
+
       // Intro: if first action starts late (> 3s), prepend a timestamp at 0 for greeting
       if (mergedTimestamps.length > 0 && mergedTimestamps[0]! > 3) {
         mergedTimestamps.unshift(0)
