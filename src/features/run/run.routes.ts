@@ -546,11 +546,18 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
 
       const trimmedPath = await trimVideo(videoPath, params.data.id, body.startTime, body.endTime)
 
-      // Update summary with new video path
+      // Update summary with new video path + adjust timestamps for trimmed range
       const { updateRunSummary } = await import('./run.repository.js')
+      const oldTimestamps = (summary?.stepTimestamps as number[]) ?? []
+      const trimmedDuration = body.endTime - body.startTime
+      const adjustedTimestamps = oldTimestamps
+        .map((t) => t - body.startTime)
+        .filter((t) => t >= 0 && t <= trimmedDuration)
+
       await updateRunSummary(params.data.id, {
         ...summary,
         videoPath: trimmedPath,
+        stepTimestamps: adjustedTimestamps,
         trimApplied: { startTime: body.startTime, endTime: body.endTime },
       })
 
