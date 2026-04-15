@@ -68,7 +68,21 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         clearTimeout(timeout)
       }
 
-      // --- Extract structured data from HTML (no external CSS fetch — too slow) ---
+      // Quick fetch of main CSS (2s timeout — fast fail)
+      const cssLink = html.match(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)/i)?.[1]
+        ?? html.match(/<link[^>]*href=["']([^"']+\.css[^"']*)/i)?.[1]
+      let externalCss = ''
+      if (cssLink) {
+        try {
+          const cssUrl = cssLink.startsWith('http') ? cssLink : new URL(cssLink, url).href
+          const cssResp = await fetch(cssUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AiDoc/1.0)' },
+            signal: AbortSignal.timeout(2000),
+          })
+          externalCss = (await cssResp.text()).slice(0, 20_000)
+        } catch { /* skip */ }
+      }
+
       const extractAll = (pattern: RegExp, src: string): string[] => {
         const matches: string[] = []
         let m: RegExpExecArray | null
@@ -88,23 +102,49 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       // --- Design: extract server-side with heuristics (not Gemini) ---
       const styleBlocks = extractAll(/<style[^>]*>([\s\S]*?)<\/style>/gi, html).join('\n')
       const inlineStyles = extractAll(/style=["']([^"']+)/gi, html).join('; ')
-      const allCss = styleBlocks + '\n' + inlineStyles
+      const allCss = styleBlocks + '\n' + inlineStyles + '\n' + externalCss
+
+      // Helper: find first hex color matching a pattern
+      const findColor = (...patterns: RegExp[]): string | null => {
+        for (const p of patterns) {
+          const m = allCss.match(p) ?? html.match(p)
+          if (m?.[1]) {
+            // Could be a hex, rgb, or another var — extract hex if present
+            const hex = m[1].match(/#[0-9a-fA-F]{3,8}/)?.[0]
+            if (hex) return hex
+          }
+        }
+        return null
+      }
 
       // Accent color: priority order
-      const primaryVarMatch = allCss.match(/--(?:color-)?(?:primary|accent|brand)(?:-color)?[^:]*:\s*(#[0-9a-fA-F]{3,8})/i)
-      const buttonColorMatch = html.match(/<(?:button|a)[^>]*style=["'][^"']*(?:background|bg)[^:]*:\s*(#[0-9a-fA-F]{3,8})/i)
-      const accentColor = themeColor || primaryVarMatch?.[1] || buttonColorMatch?.[1] || '#2563EB'
+      const accentColor = themeColor
+        || findColor(
+          /--(?:[\w-]*)?(?:primary|accent|brand)(?:[\w-]*)?\s*:\s*([^;}\n]+)/i,
+          /--(?:[\w-]*)?main(?:[\w-]*)?\s*:\s*([^;}\n]+)/i,
+        )
+        || (() => {
+          // Fallback: most common non-gray hex color in CSS
+          const allHex = [...new Set(extractAll(/#[0-9a-fA-F]{6}(?=[\s;,)"']|$)/g, allCss))]
+            .filter(c => {
+              const r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16)
+              const isGray = Math.abs(r - g) < 20 && Math.abs(g - b) < 20
+              const isTooLight = (r + g + b) / 3 > 200
+              const isTooDark = (r + g + b) / 3 < 30
+              return !isGray && !isTooLight && !isTooDark
+            })
+          return allHex[0] ?? null
+        })()
+        || '#2563EB'
 
       // Background + text
-      const bgVarMatch = allCss.match(/--(?:color-)?(?:bg|background)(?:-color)?[^:]*:\s*(#[0-9a-fA-F]{3,8})/i)
-      const bgColor = bgVarMatch?.[1] || '#FFFFFF'
-      const textVarMatch = allCss.match(/--(?:color-)?(?:text|fg|foreground)(?:-color)?[^:]*:\s*(#[0-9a-fA-F]{3,8})/i)
-      const textColor = textVarMatch?.[1] || '#1A1A1A'
+      const bgColor = findColor(/--(?:[\w-]*)?(?:bg|background)(?:[\w-]*)?\s*:\s*([^;}\n]+)/i) || '#FFFFFF'
+      const textColor = findColor(/--(?:[\w-]*)?(?:text|fg|foreground|body)(?:[\w-]*)?\s*:\s*([^;}\n]+)/i) || '#1A1A1A'
 
       // Font
       const googleFont = html.match(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&:]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
       const cssFontMatch = allCss.match(/font-family\s*:\s*["']?([^;'"}\n,]+)/i)
-      const font = googleFont || cssFontMatch?.[1]?.trim() || ''
+      const font = googleFont || cssFontMatch?.[1]?.trim().replace(/["']/g, '') || ''
 
       const extractedDesign = { accentColor, bgColor, textColor, font }
       console.log(`[analyze-url] Extracted design: ${JSON.stringify(extractedDesign)}`)
