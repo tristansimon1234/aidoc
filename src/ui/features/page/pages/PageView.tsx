@@ -318,7 +318,7 @@ DO NOT generate new documentation. Only verify the existing one.`
 
       {/* ===== DOCUMENTATION TAB ===== */}
       {activeTab === 'doc' && (
-        <div className={styles.tabContent}>
+        <div className={styles.tabContent} style={{ maxWidth: '820px' }}>
           <input
             className={styles.pageTitle}
             type="text"
