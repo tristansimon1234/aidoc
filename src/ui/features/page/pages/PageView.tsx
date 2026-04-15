@@ -527,9 +527,23 @@ DO NOT generate new documentation. Only verify the existing one.`
       {activeTab === 'exploration' && (
         <div className={styles.tabContent}>
           {/* Explanation */}
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.6 }}>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-sm)', lineHeight: 1.6 }}>
             Record your screen or upload a video — the AI analyzes every action, extracts key screenshots, and generates structured documentation automatically.
           </p>
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)',
+            padding: 'var(--space-sm) var(--space-md)',
+            background: 'var(--color-status-running-bg)',
+            border: '1px solid var(--color-status-running-border)',
+            borderRadius: 'var(--radius-lg)',
+            marginBottom: 'var(--space-lg)',
+            fontSize: 'var(--text-xs)', color: 'var(--color-status-running-text)', lineHeight: 1.5,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+            <span>
+              <strong>Tip:</strong> For best results, narrate your actions while recording — describe what you&apos;re doing and why. The AI uses your voice to understand the context and generate better documentation.
+            </span>
+          </div>
 
           {/* Two-column layout: briefing + actions */}
           <div className={styles.generateGrid}>
