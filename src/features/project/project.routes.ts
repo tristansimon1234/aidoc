@@ -106,20 +106,24 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
 ${info}
 
 {
-  "name": "company/product name",
-  "description": "what this product does",
-  "audience": "who uses it and why",
-  "workflow": "the main user journey",
+  "name": "company name (short)",
+  "description": "1 sentence, max 20 words",
+  "audience": "1 sentence, max 15 words",
+  "workflow": "1 sentence, max 15 words",
   "design": {
-    "accentColor": "#hex brand color used for buttons/CTAs (NOT gray/black/white)",
-    "bgColor": "#hex page background",
-    "textColor": "#hex body text color",
-    "font": "primary font family name"
+    "accentColor": "#hex — the PRIMARY brand color (buttons, CTAs, links). If unknown, pick a color that matches the brand's industry. NEVER return null — always provide a valid hex.",
+    "bgColor": "#hex — page background. Default #FFFFFF if unknown.",
+    "textColor": "#hex — body text. Default #1A1A1A if unknown.",
+    "font": "font name. Default 'Inter' if unknown."
   },
-  "logoUrl": "absolute URL to the company logo (from og:image, favicon, or <img> with 'logo' in src/alt/class). null if not found."
+  "logoUrl": "URL of the company LOGO only (SVG or PNG with 'logo' in the URL or alt text). Must be a real logo, not a random image. null if none found."
 }
 
-Return ONLY raw JSON, no markdown fences.`,
+RULES:
+- ALL design values must be valid (no null). Guess from the brand if needed.
+- Keep ALL text values SHORT.
+- logoUrl: only a real logo image, not og:image or random illustrations.
+- Return ONLY raw JSON.`,
         maxTokens: 2048,
       })
 
@@ -138,7 +142,24 @@ Return ONLY raw JSON, no markdown fences.`,
         analysis = JSON.parse(jsonStr) as typeof analysis
       } catch { console.warn('[analyze-url] JSON parse failed') }
 
-      console.log(`[analyze-url] Parsed result:`, JSON.stringify(analysis))
+      // Ensure design has no null values
+      if (analysis.design) {
+        analysis.design = {
+          accentColor: analysis.design.accentColor || '#2563EB',
+          bgColor: analysis.design.bgColor || '#FFFFFF',
+          textColor: analysis.design.textColor || '#1A1A1A',
+          font: analysis.design.font || 'Inter',
+        }
+      }
+
+      // Validate logoUrl — reject non-logo images
+      if (analysis.logoUrl) {
+        const logo = analysis.logoUrl.toLowerCase()
+        const isLikeLogo = logo.includes('logo') || logo.includes('brand') || logo.includes('favicon') || logo.endsWith('.svg')
+        if (!isLikeLogo) analysis.logoUrl = null
+      }
+
+      console.log(`[analyze-url] Final:`, JSON.stringify(analysis))
       res.status(200).json(analysis)
     } catch (err) {
       next(err)
