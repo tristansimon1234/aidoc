@@ -243,8 +243,9 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const totalMaxWords = Math.floor(totalVideoTime * 1.8)
       const sectionList = mergedTimestamps.map((_, i) => {
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(4, Math.floor(budget * 1.8))
-        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → HARD LIMIT ${maxWords} words)`
+        const minWords = Math.max(3, Math.floor(budget * 1.2))
+        const maxWords = Math.max(5, Math.floor(budget * 2.2))
+        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → aim for ${minWords}-${maxWords} words)`
       }).join('\n')
 
       // Ask Gemini to transform the DOC into a narration script
@@ -329,7 +330,11 @@ Total word budget: ~${totalMaxWords} words. The narration MUST fit within the vi
 
 ${sectionList}
 
-⚠️ WORD LIMITS ARE HARD LIMITS. Going over means desync. Be SHORT and punchy.
+⚠️ FILL THE TIME. Each section has a word RANGE (min-max). Aim for the MIDDLE of the range.
+- Too short = awkward silence between sections. AVOID this.
+- Too long = narration overlaps the next action. Also bad.
+- For long sections (10s+): explain WHY the feature matters, add context, give tips — don't just describe the click.
+- For short sections (3-5s): one punchy sentence is enough.
 
 ## Content rules
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
@@ -371,12 +376,12 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numStepsMerged})`)
       const stepsWithText = mergedTimestamps.map((_, i) => {
         let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
-        // Enforce word limit — trim to budget if Gemini went over
+        // Enforce word limit — trim to budget if Gemini went way over
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(4, Math.floor(budget * 1.8))
+        const maxWords = Math.max(5, Math.floor(budget * 2.2))
         const words = text.split(/\s+/)
-        if (words.length > maxWords * 1.3) {
-          // Over by 30%+ — truncate to limit, ending at a sentence boundary if possible
+        if (words.length > maxWords * 1.2) {
+          // Over by 20%+ — truncate to limit, ending at a sentence boundary if possible
           const truncated = words.slice(0, maxWords)
           const joined = truncated.join(' ')
           const lastSentence = joined.lastIndexOf('.')
@@ -388,7 +393,7 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       for (const s of stepsWithText) {
         const wordCount = s.text.split(/\s+/).length
         const budget = timeBudgets[s.stepIndex]!
-        const limit = Math.max(4, Math.floor(budget * 1.8))
+        const limit = Math.max(5, Math.floor(budget * 2.2))
         console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
       }
 
