@@ -264,12 +264,10 @@ app.post('/trim', async (req, res) => {
 app.post('/concat-audio', async (req, res) => {
   const start = Date.now()
   try {
-    const { runId, segments: rawSegments } = req.body
-    if (!runId || !rawSegments?.length) {
+    const { runId, segments } = req.body
+    if (!runId || !segments?.length) {
       return res.status(400).json({ error: 'runId and segments required' })
     }
-    // Sort by targetStartTime to ensure correct silence calculation
-    const segments = [...rawSegments].sort((a, b) => a.targetStartTime - b.targetStartTime)
 
     const supabase = getSupabase(req.body)
     const tmpDir = join(tmpdir(), `concat-${Date.now()}`)

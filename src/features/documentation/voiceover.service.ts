@@ -50,26 +50,19 @@ export async function generateVoiceover(
   // Generate each segment individually
   const segments: VoiceoverSegment[] = []
   const segmentPaths: { audioPath: string; targetStartTime: number }[] = []
-  let lastSegmentEnd = 0 // Track actual end of previous segment for gap calculation
 
   for (let i = 0; i < steps.length; i++) {
     let text = stepTexts[i] ?? steps[i]!.text
+    if (!text || text.length < 3) continue
 
     const rawStart = timestamps[i] ?? 0
     const nextStart = timestamps[i + 1]
     const slotDuration = (nextStart ?? (rawStart + 15)) - rawStart
 
-    // Skip truly empty segments but keep index alignment
-    if (!text || text.length < 3) {
-      segments.push({ stepIndex: steps[i]!.stepIndex, startTime: rawStart, endTime: rawStart + 0.5, text: '' })
-      lastSegmentEnd = rawStart + 0.5
-      continue
-    }
-
-    // Anticipation: start narration before the action
-    // Use actual previous segment end (not hardcoded +5s)
-    const gapBefore = rawStart - lastSegmentEnd
-    const anticipation = gapBefore > 5 ? 3 : gapBefore > 2 ? 1.5 : 0.5
+    // Start narration before the action
+    const prevEnd = segmentPaths.length > 0 ? segmentPaths[segmentPaths.length - 1]!.targetStartTime + 5 : 0
+    const gapBefore = rawStart - prevEnd
+    const anticipation = gapBefore > 5 ? 3 : 1.5
     const startTime = Math.max(0, rawStart - anticipation)
 
     // Synthesize — retry with shorter text if audio overflows the slot
@@ -77,9 +70,11 @@ export async function generateVoiceover(
     let estimatedDuration = Math.max(1, buffer.length / 16000)
 
     if (estimatedDuration > slotDuration * 1.1 && text.split(/\s+/).length > 6) {
+      // Audio overflows by >10% — shorten text and retry once
       const words = text.split(/\s+/)
-      const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration))
+      const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration) * 0.9)
       const shortened = words.slice(0, Math.max(4, targetWords)).join(' ')
+      // End at sentence boundary if possible
       const lastDot = shortened.lastIndexOf('.')
       text = lastDot > shortened.length * 0.4 ? shortened.slice(0, lastDot + 1) : shortened + '.'
 
@@ -92,9 +87,8 @@ export async function generateVoiceover(
     const segPath = `runs/${runId}/voiceover-seg-${i}.mp3`
     await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
 
-    const actualEnd = startTime + estimatedDuration
-    lastSegmentEnd = actualEnd
-    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB, ~${estimatedDuration.toFixed(1)}s/${slotDuration.toFixed(0)}s slot`)
+    const actualEnd = Math.min(startTime + estimatedDuration, nextStart ?? (rawStart + 20))
+    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB, ~${estimatedDuration.toFixed(1)}s/${slotDuration.toFixed(0)}s slot "${text.slice(0, 50)}..."`)
 
     segmentPaths.push({ audioPath: segPath, targetStartTime: startTime })
     segments.push({ stepIndex: steps[i]!.stepIndex, startTime, endTime: actualEnd, text })
@@ -103,20 +97,13 @@ export async function generateVoiceover(
   // Concatenate with silence padding via video service
   const { isVideoServiceConfigured, concatAudio } = await import('../../shared/video/video.client.js')
 
-  if (!isVideoServiceConfigured()) {
-    throw new Error('Voice-over assembly requires the video service (VIDEO_SERVICE_URL). Configure it to concatenate audio segments.')
-  }
-
-  if (segmentPaths.length === 0) {
-    throw new Error('No audio segments were generated')
-  }
-
   let audioPath: string
-  if (segmentPaths.length === 1) {
-    audioPath = segmentPaths[0]!.audioPath
-  } else {
+  if (isVideoServiceConfigured() && segmentPaths.length > 1) {
     console.log(`[voiceover] Concatenating ${segmentPaths.length} segments...`)
     audioPath = await concatAudio(runId, segmentPaths)
+  } else {
+    // Fallback: use first segment only
+    audioPath = segmentPaths[0]?.audioPath ?? `runs/${runId}/voiceover.mp3`
   }
 
   const audioUrl = `${getPublicUrl('artifacts', audioPath) ?? ''}?v=${Date.now()}`

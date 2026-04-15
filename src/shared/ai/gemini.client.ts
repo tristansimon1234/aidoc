@@ -384,16 +384,13 @@ export async function generateNarrationFromVideo(
   }
 
   let file = uploadedFile
-  let waitAttempts = 0
   while (file.state === 'PROCESSING') {
-    if (++waitAttempts > 60) throw new Error('Gemini video processing timed out (3 minutes)')
-    console.log(`[gemini] Waiting for video processing... (${waitAttempts}/60)`)
+    console.log('[gemini] Waiting for video processing...')
     await new Promise((resolve) => setTimeout(resolve, 3000))
     file = await fileManager.getFile(file.name) as typeof file
   }
 
   if (file.state === 'FAILED') throw new Error('Gemini failed to process the video file')
-  if (file.state === 'BLOCKED') throw new Error('Gemini blocked the video file (content policy)')
 
   console.log('[gemini] Video ready — generating narration script...')
 
