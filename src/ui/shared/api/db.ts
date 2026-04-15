@@ -10,7 +10,7 @@ export async function fetchPageFull(pageId: string): Promise<{
 }> {
   const [pageResult, runResult, docResult] = await Promise.all([
     supabase.from('doc_pages').select('*').eq('id', pageId).single(),
-    supabase.from('runs').select('*').eq('doc_page_id', pageId).order('created_at', { ascending: false }).limit(1).single(),
+    supabase.from('runs').select('*').eq('doc_page_id', pageId).not('feature_name', 'like', '[Test]%').order('created_at', { ascending: false }).limit(1).single(),
     supabase.from('generated_docs').select('*').eq('doc_page_id', pageId).order('updated_at', { ascending: false }).limit(1).single(),
   ])
 

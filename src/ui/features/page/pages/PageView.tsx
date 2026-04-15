@@ -403,19 +403,20 @@ DO NOT generate new documentation. Only verify the existing one.`
                   Replace
                   <input type="file" accept="video/mp4,video/webm,video/quicktime" style={{ display: 'none' }} onChange={(e) => {
                     const file = e.target.files?.[0]
-                    if (!file) return
+                    if (!file || !latestRunId) return
                     void (async () => {
                       try {
                         const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
                         const path = `runs/${latestRunId}/video${ext}`
-                        // Use signed URL (bypasses RLS) like ScreenRecorder does
-                        const { signedUrl } = await api.runs.getSignedUploadUrl(latestRunId!, path)
+                        const { signedUrl } = await api.runs.getSignedUploadUrl(latestRunId, path)
                         const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
                         if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
                         const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
                         if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
                         setVoiceoverUrl(null)
                         setVoiceoverSegments([])
+                        // Refresh to pick up new video path
+                        await fetchData()
                       } catch (err) {
                         console.error('[replace] Failed:', (err as Error).message)
                       }
