@@ -206,6 +206,18 @@ export async function fetchLatestTestReport(pageId: string): Promise<TryDocRepor
   return summary.tryDocReport as TryDocReportDTO
 }
 
+// --- Helpers ---
+
+function parseJsonbField(value: unknown): unknown {
+  if (value == null) return null
+  if (typeof value === 'object') return value
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) }
+    catch { return null }
+  }
+  return null
+}
+
 // --- snake_case → camelCase mappers ---
 
 function mapProject(row: Record<string, unknown>): ProjectDTO {
@@ -215,10 +227,10 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     name: row.name as string,
     baseUrl: row.base_url as string,
     description: (row.description as string) ?? null,
-    context: (typeof row.context === 'string' ? JSON.parse(row.context) : row.context) as ProjectDTO['context'] ?? null,
-    discoveredContext: (typeof row.discovered_context === 'string' ? JSON.parse(row.discovered_context) : row.discovered_context) as ProjectDTO['discoveredContext'] ?? null,
-    design: (typeof row.design === 'string' ? JSON.parse(row.design) : row.design) as ProjectDTO['design'] ?? null,
-    credentials: (typeof row.credentials === 'string' ? JSON.parse(row.credentials) : row.credentials) as ProjectDTO['credentials'] ?? null,
+    context: parseJsonbField(row.context) as ProjectDTO['context'] ?? null,
+    discoveredContext: parseJsonbField(row.discovered_context) as ProjectDTO['discoveredContext'] ?? null,
+    design: parseJsonbField(row.design) as ProjectDTO['design'] ?? null,
+    credentials: parseJsonbField(row.credentials) as ProjectDTO['credentials'] ?? null,
     widgetApiKey: (row.widget_api_key as string) ?? null,
     widgetEnabled: (row.widget_enabled as boolean) ?? false,
     walkthroughEnabled: (row.walkthrough_enabled as boolean) ?? false,
