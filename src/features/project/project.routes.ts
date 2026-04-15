@@ -62,16 +62,7 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const themeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
-      const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
-      const favicon = html.match(/<link[^>]*rel=["'](?:icon|shortcut icon|apple-touch-icon)["'][^>]*href=["']([^"']+)/i)?.[1] ?? ''
       const googleFont = html.match(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&:]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
-      // Find logo images
-      const logoImgs: string[] = []
-      const imgMatches = html.matchAll(/<img[^>]*(?:class=["'][^"']*logo[^"']*["']|alt=["'][^"']*logo[^"']*["']|src=["'][^"']*logo[^"']*["'])[^>]*src=["']([^"']+)/gi)
-      for (const m of imgMatches) { if (m[1]) logoImgs.push(m[1]) }
-      // Also try src before class/alt
-      const imgMatches2 = html.matchAll(/<img[^>]*src=["']([^"']*logo[^"']*)/gi)
-      for (const m of imgMatches2) { if (m[1]) logoImgs.push(m[1]) }
 
       // Strip to text
       const textContent = html
@@ -90,9 +81,6 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         (metaDesc || ogDesc) && `Description: ${metaDesc || ogDesc}`,
         themeColor && `Brand color (meta theme-color): ${themeColor}`,
         googleFont && `Google Font: ${googleFont}`,
-        ogImage && `OG image: ${ogImage}`,
-        favicon && `Favicon: ${favicon.startsWith('http') ? favicon : new URL(favicon, url).href}`,
-        logoImgs.length > 0 && `Logo images found: ${[...new Set(logoImgs)].slice(0, 3).map(l => l.startsWith('http') ? l : new URL(l, url).href).join(', ')}`,
         `Page text: ${textContent}`,
       ].filter(Boolean).join('\n')
 
@@ -116,14 +104,12 @@ ${info}
     "textColor": "#hex — body text. Default #1A1A1A if unknown.",
     "font": "font name. Default 'Inter' if unknown."
   },
-  "logoUrl": "URL of the company LOGO only (SVG or PNG with 'logo' in the URL or alt text). Must be a real logo, not a random image. null if none found."
 }
 
 RULES:
-- ALL design values must be valid (no null). Guess from the brand if needed.
-- Keep ALL text values SHORT.
-- logoUrl: only a real logo image, not og:image or random illustrations.
-- Return ONLY raw JSON.`,
+- ALL design values must be valid hex (no null). Guess from the brand if needed.
+- Keep text values SHORT.
+- Return ONLY raw JSON, no markdown fences.`,
         maxTokens: 2048,
       })
 
@@ -133,7 +119,6 @@ RULES:
       let analysis: {
         name: string; description: string; audience: string; workflow: string
         design?: { accentColor: string; bgColor: string; textColor: string; font: string }
-        logoUrl?: string | null
       } = { name: '', description: '', audience: '', workflow: '' }
       try {
         let jsonStr = result.text.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
@@ -142,24 +127,17 @@ RULES:
         analysis = JSON.parse(jsonStr) as typeof analysis
       } catch { console.warn('[analyze-url] JSON parse failed') }
 
-      // Ensure design has no null values
+      // Ensure design has no null values — fallback to defaults
       if (analysis.design) {
         analysis.design = {
           accentColor: analysis.design.accentColor || '#2563EB',
           bgColor: analysis.design.bgColor || '#FFFFFF',
           textColor: analysis.design.textColor || '#1A1A1A',
-          font: analysis.design.font || 'Inter',
+          font: analysis.design.font || '',
         }
       }
 
-      // Validate logoUrl — reject non-logo images
-      if (analysis.logoUrl) {
-        const logo = analysis.logoUrl.toLowerCase()
-        const isLikeLogo = logo.includes('logo') || logo.includes('brand') || logo.includes('favicon') || logo.endsWith('.svg')
-        if (!isLikeLogo) analysis.logoUrl = null
-      }
-
-      console.log(`[analyze-url] Final:`, JSON.stringify(analysis))
+      console.log(`[analyze-url] Parsed:`, JSON.stringify(analysis))
       res.status(200).json(analysis)
     } catch (err) {
       next(err)

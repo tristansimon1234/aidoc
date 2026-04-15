@@ -176,7 +176,7 @@ export const api = {
     update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>
       request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: string): Promise<void> => request(`/projects/${id}`, { method: 'DELETE' }),
-    analyzeUrl: (url: string): Promise<{ name: string; description: string; audience: string; workflow: string; design?: { accentColor: string; bgColor: string; textColor: string; font: string }; logoUrl?: string | null }> =>
+    analyzeUrl: (url: string): Promise<{ name: string; description: string; audience: string; workflow: string; design?: { accentColor: string; bgColor: string; textColor: string; font: string } }> =>
       request('/projects/analyze-url', { method: 'POST', body: JSON.stringify({ url }) }),
     generateWidgetKey: (id: string): Promise<{ widgetApiKey: string; widgetEnabled: boolean }> =>
       request(`/projects/${id}/widget-key`, { method: 'POST' }),

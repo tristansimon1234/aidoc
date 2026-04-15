@@ -28,7 +28,7 @@ export function NewProject(): React.ReactElement {
   const [workflow, setWorkflow] = useState('')
 
   // Design (extracted from website)
-  const [design, setDesign] = useState<{ accentColor: string; bgColor: string; textColor: string; font: string; logoUrl?: string } | null>(null)
+  const [design, setDesign] = useState<{ accentColor: string; bgColor: string; textColor: string; font: string } | null>(null)
 
   // Test environment
   const [testUrl, setTestUrl] = useState('')
@@ -49,9 +49,12 @@ export function NewProject(): React.ReactElement {
       setAudience(result.audience || '')
       setWorkflow(result.workflow || '')
       if (result.design) {
-        const d = result.design
-        if (result.logoUrl) setDesign({ ...d, logoUrl: result.logoUrl })
-        else setDesign(d)
+        setDesign({
+          accentColor: result.design.accentColor || '#2563EB',
+          bgColor: result.design.bgColor || '#FFFFFF',
+          textColor: result.design.textColor || '#1A1A1A',
+          font: result.design.font || '',
+        })
       }
       setAnalyzed(true)
     } catch (err) {
@@ -237,39 +240,40 @@ export function NewProject(): React.ReactElement {
                 </div>
               </div>
 
-              {/* Design preview */}
-              {design && (
-                <div style={{
-                  borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)',
-                  marginTop: 'var(--space-xs)',
-                }}>
-                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
-                    Detected brand
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
-                    {design.logoUrl && (
-                      <img src={design.logoUrl} alt="Logo" style={{ height: 28, maxWidth: 120, objectFit: 'contain', borderRadius: 'var(--radius-sm)' }} />
-                    )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-                      <div style={{ width: 24, height: 24, borderRadius: 'var(--radius-sm)', background: design.accentColor, border: '1px solid var(--color-border)' }} />
-                      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)' }}>{design.accentColor}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-                      <div style={{ width: 24, height: 24, borderRadius: 'var(--radius-sm)', background: design.bgColor, border: '1px solid var(--color-border)' }} />
-                      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)' }}>{design.bgColor}</span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-                      <div style={{ width: 24, height: 24, borderRadius: 'var(--radius-sm)', background: design.textColor, border: '1px solid var(--color-border)' }} />
-                      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)' }}>{design.textColor}</span>
-                    </div>
-                    {design.font && (
-                      <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', background: 'var(--color-secondary)', padding: '2px 8px', borderRadius: 'var(--radius-sm)' }}>
-                        {design.font}
-                      </span>
-                    )}
-                  </div>
+              {/* Brand colors — always shown, pre-filled by analysis or defaults */}
+              <div style={{
+                borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)',
+                marginTop: 'var(--space-xs)',
+              }}>
+                <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
+                  Brand colors
                 </div>
-              )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-lg)', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer' }}>
+                    <input type="color" value={design?.accentColor || '#2563EB'}
+                      onChange={(e) => setDesign({ accentColor: e.target.value, bgColor: design?.bgColor || '#FFFFFF', textColor: design?.textColor || '#1A1A1A', font: design?.font || '' })}
+                      style={{ width: 28, height: 28, border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: 0 }} />
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Accent</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer' }}>
+                    <input type="color" value={design?.bgColor || '#FFFFFF'}
+                      onChange={(e) => setDesign({ accentColor: design?.accentColor || '#2563EB', bgColor: e.target.value, textColor: design?.textColor || '#1A1A1A', font: design?.font || '' })}
+                      style={{ width: 28, height: 28, border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: 0 }} />
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Background</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer' }}>
+                    <input type="color" value={design?.textColor || '#1A1A1A'}
+                      onChange={(e) => setDesign({ accentColor: design?.accentColor || '#2563EB', bgColor: design?.bgColor || '#FFFFFF', textColor: e.target.value, font: design?.font || '' })}
+                      style={{ width: 28, height: 28, border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: 0 }} />
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Text</span>
+                  </label>
+                  {design?.font && (
+                    <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', background: 'var(--color-secondary)', padding: '2px 8px', borderRadius: 'var(--radius-sm)' }}>
+                      {design.font}
+                    </span>
+                  )}
+                </div>
+              </div>
 
               {/* Test environment */}
               <div style={{
