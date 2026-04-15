@@ -208,10 +208,17 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         throw new AppError('Generate documentation first before creating voice-over', 'DOC_NOT_FOUND', 404)
       }
 
-      // Get timestamps from run summary
+      // Get timestamps from run summary — validate and sort
       const summary = run.summaryJson as Record<string, unknown> | null
-      const timestamps = (summary?.stepTimestamps as number[]) ?? []
+      const rawTimestamps = (summary?.stepTimestamps as number[]) ?? []
+      const timestamps = rawTimestamps
+        .filter((t) => typeof t === 'number' && isFinite(t) && t >= 0)
+        .sort((a, b) => a - b)
       const numSteps = timestamps.length || 1
+
+      if (timestamps.length === 0) {
+        throw new AppError('No valid timestamps found — regenerate the video analysis first', 'NO_TIMESTAMPS', 400)
+      }
 
       console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
       console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
@@ -320,7 +327,10 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       }
 
       // Generate narration — with video if available, text-only as fallback
-      const narrationPrompt = `You are writing a voice-over narration script for this product tutorial video. WATCH THE VIDEO CAREFULLY — your narration must describe exactly what's happening on screen at each moment.
+      const videoContext = videoBuffer
+        ? `WATCH THE VIDEO CAREFULLY — your narration must describe exactly what's happening on screen at each moment.`
+        : `Write narration based on the documentation below. Describe the user journey step by step.`
+      const narrationPrompt = `You are writing a voice-over narration script for a product tutorial video. ${videoContext}
 
 This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an essay.
 
@@ -395,20 +405,9 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       const scriptText = firstSectionIdx >= 0 ? narrationResult.text.slice(firstSectionIdx) : narrationResult.text
       const rawSegments = scriptText.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
       console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numStepsMerged})`)
+      // Word trimming happens in voiceover.service.ts via retry — not here
       const stepsWithText = mergedTimestamps.map((_, i) => {
-        let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
-        // Enforce word limit — trim to budget if Gemini went way over
-        const budget = timeBudgets[i]!
-        const maxWords = Math.max(5, Math.floor(budget * 2.0))
-        const words = text.split(/\s+/)
-        if (words.length > maxWords * 1.2) {
-          // Over by 20%+ — truncate to limit, ending at a sentence boundary if possible
-          const truncated = words.slice(0, maxWords)
-          const joined = truncated.join(' ')
-          const lastSentence = joined.lastIndexOf('.')
-          text = lastSentence > joined.length * 0.5 ? joined.slice(0, lastSentence + 1) : joined + '.'
-          console.log(`[voiceover] Step ${i}: TRIMMED from ${words.length} to ~${maxWords} words (budget: ${budget.toFixed(0)}s)`)
-        }
+        const text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
         return { stepIndex: i, text }
       })
       for (const s of stepsWithText) {
