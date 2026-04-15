@@ -486,62 +486,72 @@ DO NOT generate new documentation. Only verify the existing one.`
       {/* ===== GENERATE TAB ===== */}
       {activeTab === 'exploration' && (
         <div className={styles.tabContent}>
+          {/* Explanation */}
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.6 }}>
+            Record your screen or upload a video — the AI analyzes every action, extracts key screenshots, and generates structured documentation automatically.
+          </p>
 
-          {/* Agent briefing — simplified */}
-          <div className={styles.section}>
-            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
-              Agent Briefing
+          {/* Two-column layout: briefing + actions */}
+          <div className={styles.generateGrid}>
+            {/* Left — Briefing */}
+            <div className={styles.section} style={{ margin: 0 }}>
+              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
+                Briefing
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                <div>
+                  <label className={styles.briefingFieldLabel}>Goal</label>
+                  <input type="text" value={page.goal ?? ''} onChange={(e) => {
+                    setPage({ ...page, goal: e.target.value })
+                    void debouncedPageUpdate({ goal: e.target.value })
+                  }} placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
+                </div>
+
+                <div>
+                  <label className={styles.briefingFieldLabel}>What to document</label>
+                  <textarea
+                    value={(page.briefing as Record<string, unknown> | null)?.objective as string ?? ''}
+                    onChange={(e) => {
+                      const newBriefing = { ...(page.briefing ?? {}), objective: e.target.value } as typeof page.briefing
+                      setPage({ ...page, briefing: newBriefing })
+                      void debouncedPageUpdate({ briefing: newBriefing })
+                    }}
+                    placeholder="e.g. Document how a new user creates an account and completes onboarding"
+                    rows={2} className={styles.briefingTextarea}
+                  />
+                </div>
+
+                <div>
+                  <label className={styles.briefingFieldLabel}>What the agent can&apos;t see</label>
+                  <textarea
+                    value={(page.briefing as Record<string, unknown> | null)?.knowledge as string ?? ''}
+                    onChange={(e) => {
+                      const newBriefing = { ...(page.briefing ?? {}), knowledge: e.target.value } as typeof page.briefing
+                      setPage({ ...page, briefing: newBriefing })
+                      void debouncedPageUpdate({ briefing: newBriefing })
+                    }}
+                    placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries."
+                    rows={2} className={styles.briefingTextarea}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-              <div>
-                <label className={styles.briefingFieldLabel}>Goal</label>
-                <input type="text" value={page.goal ?? ''} onChange={(e) => {
-                  setPage({ ...page, goal: e.target.value })
-                  void debouncedPageUpdate({ goal: e.target.value })
-                }} placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
-              </div>
-
-              <div>
-                <label className={styles.briefingFieldLabel}>What to document</label>
-                <textarea
-                  value={(page.briefing as Record<string, unknown> | null)?.objective as string ?? ''}
-                  onChange={(e) => {
-                    const newBriefing = { ...(page.briefing ?? {}), objective: e.target.value } as typeof page.briefing
-                    setPage({ ...page, briefing: newBriefing })
-                    void debouncedPageUpdate({ briefing: newBriefing })
-                  }}
-                  placeholder="e.g. Document how a new user creates an account and completes onboarding"
-                  rows={3} className={styles.briefingTextarea}
-                />
-              </div>
-
-              <div>
-                <label className={styles.briefingFieldLabel}>What the agent can&apos;t see</label>
-                <textarea
-                  value={(page.briefing as Record<string, unknown> | null)?.knowledge as string ?? ''}
-                  onChange={(e) => {
-                    const newBriefing = { ...(page.briefing ?? {}), knowledge: e.target.value } as typeof page.briefing
-                    setPage({ ...page, briefing: newBriefing })
-                    void debouncedPageUpdate({ briefing: newBriefing })
-                  }}
-                  placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries."
-                  rows={2} className={styles.briefingTextarea}
-                />
-              </div>
+            {/* Right — Record / Upload */}
+            <div>
+              <ScreenRecorder
+                projectId={projectId!}
+                pageId={pageId!}
+                page={page}
+                onComplete={async () => {
+                  await fetchData()
+                  await context.refetchPages()
+                  setActiveTab('doc')
+                }}
+              />
             </div>
           </div>
-
-          <ScreenRecorder
-            projectId={projectId!}
-            pageId={pageId!}
-            page={page}
-            onComplete={async () => {
-              await fetchData()
-              await context.refetchPages()
-              setActiveTab('doc')
-            }}
-          />
 
           {error && <EmptyState title="Error" description={error} />}
         </div>

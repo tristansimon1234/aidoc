@@ -328,87 +328,62 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
     )
   }
 
-  // Idle — show record button + file upload
+  // Idle — record + upload stacked vertically
   return (
-    <div className={styles.methodContent}>
-      <div className={styles.methodInfo}>
-        <div className={styles.methodInfoText}>
-          <p className={styles.methodInfoDesc}>
-            Record your screen or upload a video. AI watches every click, extracts screenshots at key moments, and writes step-by-step documentation with voice-over narration.
-          </p>
-          <div className={styles.methodInfoTags}>
-            <span className={styles.methodTag}>.mp4, .webm, .mov</span>
-            <span className={styles.methodTag}>up to 200MB</span>
-            <span className={styles.methodTag}>auto voice-over</span>
-            {hasExtension && <span className={styles.methodTag} style={{ color: 'var(--color-success)' }}>DOM capture active</span>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+      {/* Record button */}
+      <button
+        type="button"
+        onClick={() => void startRecording()}
+        className={styles.section}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
+          padding: 'var(--space-lg)', cursor: 'pointer',
+          border: '1px solid var(--color-border)', background: 'var(--color-card)',
+          transition: 'all 0.15s', textAlign: 'left', margin: 0,
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-destructive)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)' }}
+      >
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="var(--color-destructive)" stroke="none" style={{ flexShrink: 0 }}>
+          <circle cx="12" cy="12" r="8" />
+        </svg>
+        <div>
+          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
+            Record Screen
+          </div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+            {micEnabled ? 'Screen + microphone' : 'Screen only — '}
+            {!micEnabled && <button type="button" onClick={(e) => { e.stopPropagation(); setMicEnabled(true) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-sans)', padding: 0 }}>enable mic</button>}
           </div>
         </div>
-      </div>
+      </button>
 
-      {/* Mic toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer', fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)' }}>
-          <input
-            type="checkbox"
-            checked={micEnabled}
-            onChange={(e) => setMicEnabled(e.target.checked)}
-            style={{ accentColor: 'var(--color-primary)' }}
-          />
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" />
-          </svg>
-          Record microphone
-        </label>
-        {!hasExtension && (
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic' }}>
-            Install the AiDoc extension for DOM capture
-          </span>
-        )}
-      </div>
+      {/* Upload */}
+      <label className={styles.section} style={{
+        display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
+        padding: 'var(--space-lg)', cursor: 'pointer', margin: 0,
+        transition: 'all 0.15s',
+      }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-fg)' }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)' }}
+      >
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-muted-fg)', flexShrink: 0 }}>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" />
+        </svg>
+        <div>
+          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
+            Upload a video
+          </div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+            .mp4, .webm, .mov — up to 200MB
+          </div>
+        </div>
+        <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleFileUpload(e)}
+          style={{ display: 'none' }} />
+      </label>
 
-      <div style={{ display: 'flex', gap: 'var(--space-md)', alignItems: 'stretch' }}>
-        {/* Record button */}
-        <button
-          type="button"
-          onClick={() => void startRecording()}
-          style={{
-            flex: 1,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 'var(--space-sm)', padding: 'var(--space-xl)',
-            background: 'var(--color-card)', border: '2px dashed var(--color-border)',
-            borderRadius: 'var(--radius-xl)', cursor: 'pointer',
-            transition: 'all 0.2s',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-destructive)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.transform = 'none' }}
-        >
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="var(--color-destructive)" stroke="none">
-            <circle cx="12" cy="12" r="8" />
-          </svg>
-          <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
-            Record Screen
-          </span>
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
-            {micEnabled ? 'Screen + microphone' : 'Screen only'}
-          </span>
-        </button>
-
-        {/* Upload fallback */}
-        <label
-          className={styles.dropZone}
-          style={{ flex: 1 }}
-        >
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary)', marginBottom: 'var(--space-xs)' }}>
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" />
-          </svg>
-          <span className={styles.dropZoneTitle}>Upload a video</span>
-          <span className={styles.dropZoneHint}>or drop a file here</span>
-          <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleFileUpload(e)}
-            style={{ display: 'none' }} />
-        </label>
-      </div>
-
-      {error && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', marginTop: 'var(--space-sm)' }}>{error}</p>}
+      {error && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', marginTop: 'var(--space-xs)' }}>{error}</p>}
     </div>
   )
 }

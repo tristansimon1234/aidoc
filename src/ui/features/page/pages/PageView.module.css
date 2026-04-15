@@ -729,3 +729,17 @@
   background: var(--color-fg);
   color: white;
 }
+
+/* --- Generate tab two-column layout --- */
+.generateGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+  align-items: start;
+}
+
+@media (max-width: 768px) {
+  .generateGrid {
+    grid-template-columns: 1fr;
+  }
+}
