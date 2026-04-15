@@ -123,7 +123,7 @@ Return ONLY raw JSON, no markdown fences.`,
         maxTokens: 2048,
       })
 
-      console.log(`[analyze-url] Gemini: ${result.text.slice(0, 300)}`)
+      console.log(`[analyze-url] Gemini raw:`, result.text)
 
       // Parse
       let analysis: {
@@ -138,6 +138,7 @@ Return ONLY raw JSON, no markdown fences.`,
         analysis = JSON.parse(jsonStr) as typeof analysis
       } catch { console.warn('[analyze-url] JSON parse failed') }
 
+      console.log(`[analyze-url] Parsed result:`, JSON.stringify(analysis))
       res.status(200).json(analysis)
     } catch (err) {
       next(err)
