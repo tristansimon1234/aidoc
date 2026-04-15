@@ -59,7 +59,7 @@ export function ProjectSettings(): React.ReactElement {
   const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'general', label: 'General' },
     { id: 'knowledge', label: 'Knowledge' },
-    { id: 'credentials', label: 'Credentials' },
+    { id: 'credentials', label: 'Test Environment' },
   ]
 
   return (
@@ -173,9 +173,18 @@ export function ProjectSettings(): React.ReactElement {
           {activeTab === 'credentials' && (
             <div className={styles.section}>
               <div className={styles.sectionHeader}>
-                <h2 className={styles.sectionTitle}>Test Credentials</h2>
-                <p className={styles.sectionDesc}>Used by the AI agent to log in during auto-exploration.</p>
+                <h2 className={styles.sectionTitle}>Test Environment</h2>
+                <p className={styles.sectionDesc}>The AI agent uses this URL and credentials to explore your product.</p>
               </div>
+              <div className={styles.field} style={{ marginBottom: 'var(--space-md)' }}>
+                <label className={styles.label}>Test / staging URL</label>
+                <input className={styles.inputMono} type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://staging.myapp.com" />
+                <p className={styles.sectionDesc} style={{ marginTop: 4, color: 'var(--color-warning)' }}>
+                  Non-production only — the AI will interact with this URL.
+                </p>
+              </div>
+              <label className={styles.label}>Credentials</label>
               {credentials.map((cred, i) => (
                 <div key={i} className={styles.credRow}>
                   <input className={styles.credInput} value={cred.label}
