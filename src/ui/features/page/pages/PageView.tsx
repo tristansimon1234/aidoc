@@ -318,7 +318,7 @@ DO NOT generate new documentation. Only verify the existing one.`
 
       {/* ===== DOCUMENTATION TAB ===== */}
       {activeTab === 'doc' && (
-        <div className={styles.tabContent} style={{ maxWidth: '820px' }}>
+        <div className={styles.tabContent} style={{ maxWidth: '820px', margin: '0 auto' }}>
           <input
             className={styles.pageTitle}
             type="text"
@@ -354,59 +354,53 @@ DO NOT generate new documentation. Only verify the existing one.`
 
       {/* ===== VIDEO TAB ===== */}
       {activeTab === 'video' && (
-        <div className={styles.tabContent} style={{ maxWidth: '900px' }}>
+        <div className={styles.tabContent} style={{ maxWidth: '900px', margin: '0 auto' }}>
           {(videoUrl || latestRunId) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-              {/* Video player */}
-              <div style={{ borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
-                <NarratedPlayer
-                  videoUrl={videoUrl}
-                  audioUrl={voiceoverUrl}
-                  segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
-                  runId={latestRunId}
-                  voices={[]}
-                  onSegmentsChange={setVoiceoverSegments}
-                  onVideoUrlChange={setVideoUrl}
-                  onAudioUrlChange={setVoiceoverUrl}
-                />
-              </div>
+              {/* Video card — player + toolbar as one unit */}
+              <div className={styles.videoCard}>
+                {/* Player */}
+                <div className={styles.videoPlayer}>
+                  <NarratedPlayer
+                    videoUrl={videoUrl}
+                    audioUrl={voiceoverUrl}
+                    segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
+                    runId={latestRunId}
+                    voices={[]}
+                    onSegmentsChange={setVoiceoverSegments}
+                    onVideoUrlChange={setVideoUrl}
+                    onAudioUrlChange={setVoiceoverUrl}
+                  />
+                </div>
 
-              {/* Voice-over controls — two-column */}
-              <div className={styles.generateGrid}>
-                {/* Left — Tone & Voice */}
-                <div className={styles.section} style={{ margin: 0 }}>
-                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
-                    Voice-over
+                {/* Toolbar — everything in one clean bar */}
+                <div className={styles.videoToolbar}>
+                  {/* Tone selector */}
+                  <div className={styles.videoToolbarGroup}>
+                    <span className={styles.videoToolbarLabel}>Tone</span>
+                    <select value={selectedTone} onChange={(e) => setSelectedTone(e.target.value)} className={styles.videoSelect}>
+                      <option value="friendly">Friendly</option>
+                      <option value="professional">Professional</option>
+                      <option value="energetic">Energetic</option>
+                      <option value="calm">Calm</option>
+                      <option value="playful">Playful</option>
+                    </select>
                   </div>
 
-                  <div style={{ marginBottom: 'var(--space-md)' }}>
-                    <label className={styles.briefingFieldLabel}>Tone</label>
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {[
-                        { id: 'friendly', label: 'Friendly' },
-                        { id: 'professional', label: 'Professional' },
-                        { id: 'energetic', label: 'Energetic' },
-                        { id: 'calm', label: 'Calm' },
-                        { id: 'playful', label: 'Playful' },
-                      ].map((t) => (
-                        <button key={t.id} type="button" onClick={() => setSelectedTone(t.id)}
-                          className={`${styles.tonePill} ${selectedTone === t.id ? styles.tonePillActive : ''}`}>
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
+                  {/* Voice selector */}
                   {voices.length > 0 && (
-                    <div style={{ marginBottom: 'var(--space-md)' }}>
-                      <label className={styles.briefingFieldLabel}>Voice</label>
-                      <select value={selectedVoiceId ?? ''} onChange={(e) => setSelectedVoiceId(e.target.value)}
-                        className={styles.briefingInput} style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>
+                    <div className={styles.videoToolbarGroup}>
+                      <span className={styles.videoToolbarLabel}>Voice</span>
+                      <select value={selectedVoiceId ?? ''} onChange={(e) => setSelectedVoiceId(e.target.value)} className={styles.videoSelect}>
                         {voices.map((v) => <option key={v.voiceId} value={v.voiceId}>{v.name}</option>)}
                       </select>
                     </div>
                   )}
 
+                  {/* Spacer */}
+                  <div style={{ flex: 1 }} />
+
+                  {/* Generate button */}
                   {latestRunId && page.content && (
                     <Button size="sm" disabled={generatingVoiceover} onClick={() => {
                       void (async () => {
@@ -433,46 +427,13 @@ DO NOT generate new documentation. Only verify the existing one.`
                         }
                       })()
                     }}>
-                      {voiceoverUrl ? 'Regenerate voice-over' : 'Generate voice-over'}
+                      {voiceoverUrl ? 'Regenerate' : 'Generate voice-over'}
                     </Button>
                   )}
                 </div>
-
-                {/* Right — Publishing */}
-                <div className={styles.section} style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
-                      Publishing
-                    </div>
-                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.5 }}>
-                      When enabled, the video appears at the top of your published documentation page.
-                    </p>
-                  </div>
-                  <div
-                    className={styles.publishToggle}
-                    onClick={() => {
-                      const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
-                      const newVal = !current
-                      const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
-                      setPage({ ...page, briefing: newBriefing })
-                      void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
-                    }}
-                    style={{ padding: 'var(--space-md)', background: 'var(--color-secondary)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-                  >
-                    <span style={{
-                      fontSize: 'var(--text-sm)', fontWeight: 500,
-                      color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-success)' : 'var(--color-muted-fg)',
-                    }}>
-                      {(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'Visible on public page' : 'Hidden from public page'}
-                    </span>
-                    <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
-                      <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
-                    </div>
-                  </div>
-                </div>
               </div>
 
-              {/* Voiceover generation progress — full width */}
+              {/* Generation progress */}
               {generatingVoiceover && (
                 <ProgressLoader
                   steps={[
@@ -483,6 +444,28 @@ DO NOT generate new documentation. Only verify the existing one.`
                   activeStep={0}
                 />
               )}
+
+              {/* Publish toggle — subtle, below */}
+              <div
+                className={styles.videoPublish}
+                onClick={() => {
+                  const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
+                  const newVal = !current
+                  const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
+                  setPage({ ...page, briefing: newBriefing })
+                  void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
+                }}
+              >
+                <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
+                  <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
+                </div>
+                <span style={{
+                  fontSize: 'var(--text-xs)', fontWeight: 500,
+                  color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-success)' : 'var(--color-muted-fg)',
+                }}>
+                  {(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'Visible on published page' : 'Hidden from published page'}
+                </span>
+              </div>
             </div>
           ) : (
             <EmptyState
