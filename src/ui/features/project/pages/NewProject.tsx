@@ -87,6 +87,8 @@ export function NewProject(): React.ReactElement {
     const validCreds = credentials.filter((c) => c.label && c.username && c.password)
     const context = (audience || workflow) ? { audience, workflow, quirks: '' } : undefined
 
+    console.log('[create] audience:', JSON.stringify(audience), 'workflow:', JSON.stringify(workflow), 'context:', JSON.stringify(context))
+
     createProject({
         name,
         baseUrl: testUrl || baseUrl,
