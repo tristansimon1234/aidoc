@@ -42,9 +42,9 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
       const url = parsed.data.url
-      console.log(`[analyze-url] Starting analysis: ${url}`)
+      console.log(`[analyze-url] Starting: ${url}`)
 
-      // 1. Fetch HTML for text content (product info)
+      // 1. Fetch full HTML
       let html = ''
       let fetchError: string | null = null
       try {
@@ -54,82 +54,111 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
           redirect: 'follow',
         })
         html = await resp.text()
+        console.log(`[analyze-url] HTML: ${html.length} chars`)
       } catch (err) { fetchError = (err as Error).message }
 
-      // Extract text content for Gemini
+      // 2. Extract <style> blocks + inline styles (design data)
+      const styleBlocks: string[] = []
+      html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, s) => { styleBlocks.push(s as string); return '' })
+      const inlineStyles: string[] = []
+      html.replace(/style=["']([^"']+)/gi, (_, s) => { inlineStyles.push(s as string); return '' })
+
+      // 3. Quick fetch of main CSS file (2s timeout)
+      const cssLink = html.match(/<link[^>]*href=["']([^"']+\.css[^"']*)/i)?.[1]
+      let externalCss = ''
+      if (cssLink) {
+        try {
+          const cssUrl = cssLink.startsWith('http') ? cssLink : new URL(cssLink, url).href
+          const r = await fetch(cssUrl, { signal: AbortSignal.timeout(2000) })
+          externalCss = (await r.text()).slice(0, 15_000)
+        } catch { /* skip */ }
+      }
+
+      // 4. Build CSS digest for Gemini — all CSS vars, color declarations, font declarations
+      const allCss = styleBlocks.join('\n') + '\n' + inlineStyles.join('; ') + '\n' + externalCss
+      const cssLines: string[] = []
+
+      // CSS custom properties (ALL of them — they define the design system)
+      const varMatches = allCss.matchAll(/--[\w-]+\s*:\s*[^;}\n]+/gi)
+      for (const m of varMatches) cssLines.push(m[0])
+
+      // Color declarations
+      const colorMatches = allCss.matchAll(/(?:color|background(?:-color)?|border-color|fill|stroke)\s*:\s*[^;}\n]+/gi)
+      for (const m of colorMatches) cssLines.push(m[0])
+
+      // Font declarations
+      const fontMatches = allCss.matchAll(/font(?:-family|-weight|-size)?\s*:\s*[^;}\n]+/gi)
+      for (const m of fontMatches) cssLines.push(m[0])
+
+      const cssDigest = [...new Set(cssLines)].slice(0, 100).join('\n')
+
+      // 5. Extract text content
       const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? ''
       const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
-      const textContent = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 2000)
+      const themeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const googleFont = html.match(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&:]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
+      const textContent = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1500)
 
-      // 2. Screenshot the page via thum.io (free, no API key)
-      let screenshotBuffer: Buffer | null = null
-      try {
-        const screenshotUrl = `https://image.thum.io/get/width/1280/crop/800/${encodeURIComponent(url)}`
-        console.log(`[analyze-url] Fetching screenshot...`)
-        const ssResp = await fetch(screenshotUrl, { signal: AbortSignal.timeout(15000) })
-        if (ssResp.ok) {
-          screenshotBuffer = Buffer.from(await ssResp.arrayBuffer())
-          console.log(`[analyze-url] Screenshot: ${(screenshotBuffer.length / 1024).toFixed(0)}KB`)
-        }
-      } catch (err) {
-        console.warn(`[analyze-url] Screenshot failed: ${(err as Error).message}`)
-      }
+      console.log(`[analyze-url] CSS digest: ${cssDigest.length} chars, ${cssLines.length} declarations`)
 
-      // 3. Send screenshot + text to Gemini (multimodal if screenshot available)
-      const { GoogleGenerativeAI } = await import('@google/generative-ai')
-      const { env } = await import('../../shared/config/env.js')
-      const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY!)
-      const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash', generationConfig: { maxOutputTokens: 1024 } })
+      // 6. Send to Gemini — act like a designer reading the source code
+      const { generateText } = await import('../../shared/ai/gemini.client.js')
+      const result = await generateText({
+        userPrompt: `You are a UI designer analyzing a website's source code to extract its design system.
 
-      const prompt = `Analyze this website and return ONLY valid JSON:
-${fetchError ? `(Could not fetch page — analyze from screenshot and URL: ${url})` : ''}
+URL: ${url}
+${fetchError ? `(Fetch failed: ${fetchError} — infer from URL)` : ''}
+${themeColor ? `Meta theme-color: ${themeColor}` : ''}
+${googleFont ? `Google Font loaded: ${googleFont}` : ''}
 
-${title ? `Title: ${title}` : ''}
+## Page content
+Title: ${title}
 ${metaDesc || ogDesc ? `Description: ${metaDesc || ogDesc}` : ''}
-${textContent ? `Page text: ${textContent.slice(0, 800)}` : ''}
+Text: ${textContent.slice(0, 800)}
 
-Return this exact JSON structure:
+## CSS declarations (from <style>, inline styles, and main stylesheet)
+${cssDigest}
+
+## Task
+Analyze the CSS like a designer would. Look at:
+- CSS custom properties (--primary, --accent, --brand, --color-*, etc.) for the brand color
+- background-color and color declarations for bg/text colors
+- font-family declarations and Google Fonts imports for typography
+- CTA/button styles for the accent color
+- The overall color scheme (light/dark theme)
+
+Return ONLY valid JSON:
 {
-  "name": "company/product name",
+  "name": "product/company name",
   "description": "what this product does (1 sentence)",
   "audience": "who uses it (role + use case)",
-  "workflow": "main user journey",
+  "workflow": "main user journey (1 sentence)",
   "design": {
-    "accentColor": "#hex of the primary/brand color (buttons, links, CTA — look at the screenshot)",
-    "bgColor": "#hex of the page background",
-    "textColor": "#hex of the main body text",
-    "font": "primary font family name visible on the page"
+    "accentColor": "#hex (the PRIMARY brand color — used for buttons, CTAs, links. NOT gray, NOT black, NOT white)",
+    "bgColor": "#hex (page background color)",
+    "textColor": "#hex (main body text color)",
+    "font": "primary font family name (just the name, e.g. 'Inter')"
   }
 }
 
-IMPORTANT for design: Look at the SCREENSHOT to identify the exact colors. The accent color is the main brand color used for buttons, links, and CTAs — NOT a gray or neutral color.
-Return ONLY raw JSON.`
+Return ONLY raw JSON.`,
+        maxTokens: 1024,
+      })
 
-      const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = []
+      console.log(`[analyze-url] Gemini: ${result.text.slice(0, 300)}`)
 
-      if (screenshotBuffer) {
-        parts.push({ inlineData: { mimeType: 'image/png', data: screenshotBuffer.toString('base64') } })
-      }
-      parts.push({ text: prompt })
-
-      const result = await model.generateContent(parts)
-      const responseText = result.response.text()
-      console.log(`[analyze-url] Gemini response: ${responseText.slice(0, 300)}`)
-
-      // Parse response
+      // Parse
       let analysis: {
         name: string; description: string; audience: string; workflow: string
         design?: { accentColor: string; bgColor: string; textColor: string; font: string }
       } = { name: '', description: '', audience: '', workflow: '' }
       try {
-        let jsonStr = responseText.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
+        let jsonStr = result.text.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
         const s = jsonStr.indexOf('{'), e = jsonStr.lastIndexOf('}')
         if (s !== -1 && e > s) jsonStr = jsonStr.slice(s, e + 1)
         analysis = JSON.parse(jsonStr) as typeof analysis
-      } catch {
-        console.warn('[analyze-url] JSON parse failed')
-      }
+      } catch { console.warn('[analyze-url] JSON parse failed') }
 
       res.status(200).json(analysis)
     } catch (err) {
