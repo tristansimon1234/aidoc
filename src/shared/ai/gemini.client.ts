@@ -352,3 +352,66 @@ Remember: fewer, more meaningful steps is better than many granular ones.`,
 
   return parsed.data
 }
+
+/**
+ * Generate narration script by having Gemini WATCH the video.
+ * The model sees exactly what's on screen at each moment
+ * and writes narration that matches the visual content.
+ */
+export async function generateNarrationFromVideo(
+  videoBuffer: Buffer,
+  mimeType: string,
+  fileName: string,
+  prompt: string,
+): Promise<{ text: string; usage: GeminiUsage }> {
+  const genAI = getGenAI()
+  const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY!)
+
+  console.log(`[gemini] Uploading video for narration: ${fileName} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+
+  const { writeFileSync, unlinkSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const tempPath = join(tmpdir(), `aidoc-narration-${Date.now()}-${fileName}`)
+  writeFileSync(tempPath, videoBuffer)
+
+  let uploadedFile: { name: string; uri: string; mimeType: string; state: string }
+  try {
+    const uploadResult = await fileManager.uploadFile(tempPath, { mimeType, displayName: fileName })
+    uploadedFile = uploadResult.file as typeof uploadedFile
+  } finally {
+    unlinkSync(tempPath)
+  }
+
+  let file = uploadedFile
+  while (file.state === 'PROCESSING') {
+    console.log('[gemini] Waiting for video processing...')
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+    file = await fileManager.getFile(file.name) as typeof file
+  }
+
+  if (file.state === 'FAILED') throw new Error('Gemini failed to process the video file')
+
+  console.log('[gemini] Video ready — generating narration script...')
+
+  const model = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    generationConfig: { maxOutputTokens: 8192 },
+  })
+
+  const result = await withRetry(() => model.generateContent([
+    { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
+    { text: prompt },
+  ]))
+
+  await fileManager.deleteFile(file.name).catch(() => {})
+
+  const usage = result.response.usageMetadata
+  return {
+    text: result.response.text(),
+    usage: {
+      inputTokens: usage?.promptTokenCount ?? 0,
+      outputTokens: usage?.candidatesTokenCount ?? 0,
+    },
+  }
+}

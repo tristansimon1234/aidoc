@@ -279,9 +279,26 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
 
-      const { generateText } = await import('../../shared/ai/gemini.client.js')
-      const narrationResult = await generateText({
-        userPrompt: `You are writing a voice-over narration script for a product tutorial video. The narration plays alongside a screen recording — you guide the viewer through what's about to happen and WHY it matters.
+      // Download video for Gemini to watch while generating narration
+      const videoPath = summary?.videoPath as string | undefined
+      const { supabase } = await import('../../shared/db/supabase.client.js')
+      let videoBuffer: Buffer | null = null
+      let videoMimeType = 'video/mp4'
+      if (videoPath) {
+        try {
+          const { data: videoData, error: videoError } = await supabase.storage.from('artifacts').download(videoPath)
+          if (videoData && !videoError) {
+            videoBuffer = Buffer.from(await videoData.arrayBuffer())
+            videoMimeType = videoPath.endsWith('.webm') ? 'video/webm' : videoPath.endsWith('.mov') ? 'video/quicktime' : 'video/mp4'
+            console.log(`[voiceover] Video downloaded for narration: ${videoPath} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+          }
+        } catch (err) {
+          console.warn(`[voiceover] Could not download video, falling back to text-only: ${(err as Error).message}`)
+        }
+      }
+
+      // Generate narration — with video if available, text-only as fallback
+      const narrationPrompt = `You are writing a voice-over narration script for this product tutorial video. WATCH THE VIDEO CAREFULLY — your narration must describe exactly what's happening on screen at each moment.
 
 This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an essay.
 
@@ -289,37 +306,22 @@ This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an
 ${tone.direction}
 
 ## ElevenLabs v3 formatting rules (CRITICAL — follow exactly)
-The TTS engine interprets formatting as stage directions:
-
 **Punctuation controls delivery:**
-- Ellipsis (...) creates a natural pause or trailing off: "So basically... this is where the magic happens."
-- Em dash (—) creates a short punchy pause: "Click create — and you're done."
-- CAPS emphasize words: "This is REALLY important" → stress on "really"
-- Exclamation marks add energy: "That's it!" vs "That's it."
+- Ellipsis (...) creates a natural pause or trailing off
+- Em dash (—) creates a short punchy pause
+- CAPS emphasize words: "This is REALLY important"
 - Questions create natural rising intonation: "Pretty cool, right?"
-- Commas and periods = natural breathing rhythm
 
-**Line breaks matter:**
-Each line break creates a slight pause. Short lines = snappier delivery:
-"Click create.
-And just like that — your project is live."
+**Audio tags are stage directions** — place them between sentences:
+Emotional: [excited], [happy], [calm]
+Reactions: [laughs], [giggles], [sighs], [happy gasp]
+Delivery: [whispers], [cheerfully], [playfully], [sarcastic]
+Pacing: [short pause]
 
-**Audio tags are stage directions** — place them between sentences to shape emotion:
-Emotional: [excited], [happy], [calm], [nervous], [frustrated]
-Reactions: [laughs], [giggles], [sighs], [gasps], [happy gasp]
-Delivery: [whispers], [cheerfully], [playfully], [sarcastic], [deadpan]
-Pacing: [short pause], [long pause], [rushed], [drawn out]
-Cognitive: [hesitates], [matter-of-fact], [reflective]
+Tag rules: tags go BETWEEN sentences only, NEVER mid-sentence. Use 3-5 different tags.
 
-**Tag rules:**
-- Tags go BETWEEN sentences only: "First sentence. [laughs] Second sentence."
-- NEVER mid-sentence: NOT "Click the [pause] button"
-- Match tags to tone — don't whisper in an energetic script, don't shout in a calm one
-- Combine context + tag for best results: "No way... [happy gasp] it actually worked!" is better than just "[happy gasp] it worked"
-- Use 4-6 different tags across the full script for variety
-
-## Documentation source:
-${doc.markdownContent}
+## Documentation context (for terminology and feature names):
+${doc.markdownContent.slice(0, 3000)}
 
 ## Script structure — TIMING IS CRITICAL
 ${numStepsMerged} sections using [SECTION N] markers.
@@ -327,27 +329,39 @@ Total word budget: ~${totalMaxWords} words. The narration MUST fit within the vi
 
 ${sectionList}
 
-⚠️ WORD LIMITS ARE HARD LIMITS — NOT TARGETS.
-Each section's word count includes audio tags. If a section says "HARD LIMIT 15 words", your section MUST be ≤15 words. Going over means the narration will desync from the video — the viewer sees one thing while hearing about something else. This RUINS the experience.
-
-Prefer SHORT, punchy lines over long explanations. 1-2 sentences per section is usually enough. Leave breathing room — silence between sections is FINE and feels natural. It's FAR better to be slightly short than to overshoot.
+⚠️ WORD LIMITS ARE HARD LIMITS. Going over means desync. Be SHORT and punchy.
 
 ## Content rules
-- GREETING: Section 1 MUST start with a short greeting ("Hey!", "Welcome!", "Hi there!")
-- CLOSING: The LAST section (Section ${numStepsMerged}) MUST end with a closing phrase like "Thanks for watching!", "That's it — enjoy!", "See you next time!", "And that's a wrap!". This is NON-NEGOTIABLE — never end abruptly.
-- CONCISE: say it in fewer words. "Let's create a project" not "What we're going to do now is create a new project"
-- ANTICIPATORY: describe what we're ABOUT to do, not what just happened
-- EXPLAIN THE WHY: briefly — say WHY, not just WHAT
-- Skip: URLs, code, image references, technical IDs
-- Never say: "as you can see", "in this tutorial", "notice how", "in this video"
+- WATCH THE VIDEO: describe what you SEE happening, not what the doc says
+- ANTICIPATORY: narrate what's ABOUT to happen, just before it does
+- GREETING: Section 1 starts with a short greeting
+- CLOSING: Section ${numStepsMerged} MUST end with a closing phrase ("Thanks for watching!", "That's a wrap!")
+- CONCISE: 1-2 sentences per section max
+- Skip: URLs, code, technical IDs
+- Never say: "as you can see", "in this tutorial", "notice how"
 
-## Example output for this tone:
+## Example:
 ${tone.example}
 
 ## Output
-Start DIRECTLY with [SECTION 1]. No preamble, no commentary.`,
-        maxTokens: 8192,
-      })
+Start DIRECTLY with [SECTION 1]. No preamble.`
+
+      let narrationResult: { text: string }
+
+      if (videoBuffer) {
+        const { generateNarrationFromVideo } = await import('../../shared/ai/gemini.client.js')
+        narrationResult = await generateNarrationFromVideo(
+          videoBuffer,
+          videoMimeType,
+          videoPath?.split('/').pop() ?? 'video.mp4',
+          narrationPrompt,
+        )
+        console.log(`[voiceover] Narration generated from VIDEO (${narrationResult.text.length} chars)`)
+      } else {
+        const { generateText } = await import('../../shared/ai/gemini.client.js')
+        narrationResult = await generateText({ userPrompt: narrationPrompt, maxTokens: 8192 })
+        console.log(`[voiceover] Narration generated from TEXT-ONLY (${narrationResult.text.length} chars)`)
+      }
 
       // Parse [SECTION N] markers — strip any preamble before first [SECTION
       console.log(`[voiceover] Gemini narration raw output (${narrationResult.text.length} chars):\n${narrationResult.text.slice(0, 500)}`)
