@@ -242,17 +242,23 @@ export async function analyzeVideoWithGemini(
       },
     },
     {
-      text: `Analyze this screen recording of a web application. For each distinct action or screen change, identify what's happening.
+      text: `Analyze this screen recording of a web application. Identify the KEY steps — focus on significant actions that a user would need to document, not every micro-interaction.
+
+GROUPING RULES:
+- Group related actions into ONE step (e.g. "typed email, typed password, clicked Sign In" → one step: "User logged in")
+- Skip trivial actions: scrolling without purpose, mouse movements, brief hovers
+- Skip repeated similar actions (e.g. scrolling through a list → one step)
+- Aim for 5-10 steps for a typical 1-3 minute video. More only if the video covers many truly different features.
+- Each step should represent a meaningful state change or user accomplishment
 
 For each step:
 1. Provide the timestamp as a NUMBER OF SECONDS (integer or decimal). You MUST convert minutes to seconds:
    - 45 seconds → 45
    - 1 minute 27 seconds → 87 (= 1×60 + 27), NOT 127
    - 2 minutes 8 seconds → 128 (= 2×60 + 8), NOT 208
-   - 3 minutes 15 seconds → 195 (= 3×60 + 15), NOT 315
    The timestamp MUST be the moment AFTER the action completes, showing the RESULT on screen.
 2. Describe what's visible on screen AFTER the action (UI elements, page layout, text)
-3. Describe what the user did (clicked, typed, navigated, scrolled)
+3. Describe what the user accomplished (not each individual click — the outcome)
 4. If there's narration/voiceover, transcribe what's being said at that moment
 
 IMPORTANT:
@@ -266,15 +272,15 @@ Return ONLY valid JSON (no markdown fences):
 {
   "steps": [
     {
-      "timestamp": 1,
-      "screenDescription": "The login page with email and password fields, a 'Sign in' button, and company logo",
-      "userAction": "User is viewing the login page",
-      "narration": "Let me show you how to sign in to the platform"
+      "timestamp": 3,
+      "screenDescription": "The dashboard with a list of projects and a 'New Project' button",
+      "userAction": "User navigated to the dashboard after logging in",
+      "narration": null
     },
     {
-      "timestamp": 87,
-      "screenDescription": "The login form with email field filled in and cursor in password field",
-      "userAction": "User typed their email address and moved to the password field",
+      "timestamp": 15,
+      "screenDescription": "Project creation form with name and URL fields filled in",
+      "userAction": "User created a new project by entering the name and URL",
       "narration": null
     }
   ],
@@ -282,7 +288,7 @@ Return ONLY valid JSON (no markdown fences):
   "summary": "2-3 sentence summary of what this recording covers"
 }
 
-Be thorough — capture every meaningful action.`,
+Remember: fewer, more meaningful steps is better than many granular ones.`,
     },
   ]))
 
