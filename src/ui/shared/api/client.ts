@@ -128,6 +128,7 @@ export interface ProjectDTO {
   context: ProjectContextDTO | null
   discoveredContext: DiscoveredContextDTO | null
   design: ProjectDesignDTO | null
+  credentials: { label: string; username: string; password: string }[] | null
   widgetApiKey: string | null
   widgetEnabled: boolean
   walkthroughEnabled: boolean

@@ -218,6 +218,7 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     context: (row.context as ProjectDTO['context']) ?? null,
     discoveredContext: (row.discovered_context as ProjectDTO['discoveredContext']) ?? null,
     design: (row.design as ProjectDTO['design']) ?? null,
+    credentials: (row.credentials as ProjectDTO['credentials']) ?? null,
     widgetApiKey: (row.widget_api_key as string) ?? null,
     widgetEnabled: (row.widget_enabled as boolean) ?? false,
     walkthroughEnabled: (row.walkthrough_enabled as boolean) ?? false,

@@ -206,6 +206,22 @@ export function PublicDocs(): React.ReactElement {
     })()
   }, [projectId])
 
+  // Load Google Font if the design uses a custom font
+  const designFont = project?.design?.font
+  useEffect(() => {
+    if (!designFont) return
+    const match = designFont.match(/^["']?([^"',]+)/)
+    const fontName = match?.[1]?.trim()
+    if (!fontName || ['system', '-apple-system', 'georgia', 'jetbrains'].some((s) => fontName.toLowerCase().includes(s))) return
+    const id = `gf-${fontName.replace(/\s+/g, '-').toLowerCase()}`
+    if (document.getElementById(id)) return
+    const link = document.createElement('link')
+    link.id = id
+    link.rel = 'stylesheet'
+    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@300..800&display=swap`
+    document.head.appendChild(link)
+  }, [designFont])
+
   if (loading) {
     return <div className={styles.center}><Spinner size="lg" /></div>
   }
@@ -220,21 +236,6 @@ export function PublicDocs(): React.ReactElement {
 
   const design = project.design
   const themeStyle = design ? computeFullTheme(design) : undefined
-
-  // Load Google Font if the design uses a custom font
-  useEffect(() => {
-    if (!design?.font) return
-    const match = design.font.match(/^["']?([^"',]+)/)
-    const fontName = match?.[1]?.trim()
-    if (!fontName || ['system', '-apple-system', 'georgia', 'jetbrains'].some((s) => fontName.toLowerCase().includes(s))) return
-    const id = `gf-${fontName.replace(/\s+/g, '-').toLowerCase()}`
-    if (document.getElementById(id)) return
-    const link = document.createElement('link')
-    link.id = id
-    link.rel = 'stylesheet'
-    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@300..800&display=swap`
-    document.head.appendChild(link)
-  }, [design?.font])
 
   return (
     <div className={styles.shell} style={themeStyle} data-theme="light">

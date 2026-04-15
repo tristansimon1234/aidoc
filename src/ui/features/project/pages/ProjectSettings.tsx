@@ -20,7 +20,7 @@ export function ProjectSettings(): React.ReactElement {
   const [baseUrl, setBaseUrl] = useState(outletProject.baseUrl)
   const [context, setContext] = useState(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
   const [credentials, setCredentials] = useState<Credential[]>(
-    (outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [],
+    outletProject.credentials ?? [],
   )
   const [walkthroughEnabled, setWalkthroughEnabled] = useState(outletProject.walkthroughEnabled ?? false)
   const [saving, setSaving] = useState(false)
@@ -33,7 +33,7 @@ export function ProjectSettings(): React.ReactElement {
     setDescription(outletProject.description ?? '')
     setBaseUrl(outletProject.baseUrl)
     setContext(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
-    setCredentials((outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [])
+    setCredentials(outletProject.credentials ?? [])
     setWalkthroughEnabled(outletProject.walkthroughEnabled ?? false)
   }, [outletProject])
 
