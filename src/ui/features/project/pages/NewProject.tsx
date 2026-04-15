@@ -28,7 +28,7 @@ export function NewProject(): React.ReactElement {
   const [workflow, setWorkflow] = useState('')
 
   // Design (extracted from website)
-  const [design, setDesign] = useState<{ accentColor: string; bgColor: string; textColor: string; font: string } | null>(null)
+  const [design, setDesign] = useState<{ accentColor: string; bgColor: string; textColor: string; font: string; logoUrl?: string } | null>(null)
 
   // Test environment
   const [testUrl, setTestUrl] = useState('')
@@ -48,7 +48,11 @@ export function NewProject(): React.ReactElement {
       setDescription(result.description || '')
       setAudience(result.audience || '')
       setWorkflow(result.workflow || '')
-      if (result.design) setDesign(result.design)
+      if (result.design) {
+        const d = result.design
+        if (result.logoUrl) setDesign({ ...d, logoUrl: result.logoUrl })
+        else setDesign(d)
+      }
       setAnalyzed(true)
     } catch (err) {
       setError((err as Error).message)
@@ -243,6 +247,9 @@ export function NewProject(): React.ReactElement {
                     Detected brand
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
+                    {design.logoUrl && (
+                      <img src={design.logoUrl} alt="Logo" style={{ height: 28, maxWidth: 120, objectFit: 'contain', borderRadius: 'var(--radius-sm)' }} />
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
                       <div style={{ width: 24, height: 24, borderRadius: 'var(--radius-sm)', background: design.accentColor, border: '1px solid var(--color-border)' }} />
                       <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)' }}>{design.accentColor}</span>

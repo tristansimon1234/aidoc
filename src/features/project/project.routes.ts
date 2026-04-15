@@ -62,7 +62,16 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const themeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const ogImage = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const favicon = html.match(/<link[^>]*rel=["'](?:icon|shortcut icon|apple-touch-icon)["'][^>]*href=["']([^"']+)/i)?.[1] ?? ''
       const googleFont = html.match(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&:]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
+      // Find logo images
+      const logoImgs: string[] = []
+      const imgMatches = html.matchAll(/<img[^>]*(?:class=["'][^"']*logo[^"']*["']|alt=["'][^"']*logo[^"']*["']|src=["'][^"']*logo[^"']*["'])[^>]*src=["']([^"']+)/gi)
+      for (const m of imgMatches) { if (m[1]) logoImgs.push(m[1]) }
+      // Also try src before class/alt
+      const imgMatches2 = html.matchAll(/<img[^>]*src=["']([^"']*logo[^"']*)/gi)
+      for (const m of imgMatches2) { if (m[1]) logoImgs.push(m[1]) }
 
       // Strip to text
       const textContent = html
@@ -81,6 +90,9 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         (metaDesc || ogDesc) && `Description: ${metaDesc || ogDesc}`,
         themeColor && `Brand color (meta theme-color): ${themeColor}`,
         googleFont && `Google Font: ${googleFont}`,
+        ogImage && `OG image: ${ogImage}`,
+        favicon && `Favicon: ${favicon.startsWith('http') ? favicon : new URL(favicon, url).href}`,
+        logoImgs.length > 0 && `Logo images found: ${[...new Set(logoImgs)].slice(0, 3).map(l => l.startsWith('http') ? l : new URL(l, url).href).join(', ')}`,
         `Page text: ${textContent}`,
       ].filter(Boolean).join('\n')
 
@@ -89,25 +101,26 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       // Single Gemini call — product info + design
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const result = await generateText({
-        userPrompt: `Analyze this website. Return ONLY a short JSON.
+        userPrompt: `Analyze this website. Return ONLY valid JSON.
 
 ${info}
 
 {
-  "name": "company name",
-  "description": "max 15 words",
-  "audience": "max 10 words",
-  "workflow": "max 12 words",
+  "name": "company/product name",
+  "description": "what this product does",
+  "audience": "who uses it and why",
+  "workflow": "the main user journey",
   "design": {
-    "accentColor": "#hex brand color (NOT gray/black/white)",
-    "bgColor": "#hex background",
-    "textColor": "#hex text",
-    "font": "font name"
-  }
+    "accentColor": "#hex brand color used for buttons/CTAs (NOT gray/black/white)",
+    "bgColor": "#hex page background",
+    "textColor": "#hex body text color",
+    "font": "primary font family name"
+  },
+  "logoUrl": "absolute URL to the company logo (from og:image, favicon, or <img> with 'logo' in src/alt/class). null if not found."
 }
 
-KEEP VALUES VERY SHORT. Return ONLY raw JSON, no fences.`,
-        maxTokens: 512,
+Return ONLY raw JSON, no markdown fences.`,
+        maxTokens: 2048,
       })
 
       console.log(`[analyze-url] Gemini: ${result.text.slice(0, 300)}`)
@@ -116,6 +129,7 @@ KEEP VALUES VERY SHORT. Return ONLY raw JSON, no fences.`,
       let analysis: {
         name: string; description: string; audience: string; workflow: string
         design?: { accentColor: string; bgColor: string; textColor: string; font: string }
+        logoUrl?: string | null
       } = { name: '', description: '', audience: '', workflow: '' }
       try {
         let jsonStr = result.text.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
