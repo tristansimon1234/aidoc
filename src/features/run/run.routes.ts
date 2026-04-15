@@ -252,11 +252,11 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         return next - t
       })
       const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
-      const totalMaxWords = Math.floor(totalVideoTime * 1.5)
+      const totalMaxWords = Math.floor(totalVideoTime * 2)
       const sectionList = mergedTimestamps.map((_, i) => {
         const budget = timeBudgets[i]!
-        const minWords = Math.max(3, Math.floor(budget * 1.0))
-        const maxWords = Math.max(5, Math.floor(budget * 1.8))
+        const minWords = Math.max(4, Math.floor(budget * 1.5))
+        const maxWords = Math.max(6, Math.floor(budget * 2.0))
         return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → aim for ${minWords}-${maxWords} words)`
       }).join('\n')
 
@@ -390,7 +390,7 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
         // Enforce word limit — trim to budget if Gemini went way over
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(5, Math.floor(budget * 1.8))
+        const maxWords = Math.max(5, Math.floor(budget * 2.0))
         const words = text.split(/\s+/)
         if (words.length > maxWords * 1.2) {
           // Over by 20%+ — truncate to limit, ending at a sentence boundary if possible
@@ -405,7 +405,7 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       for (const s of stepsWithText) {
         const wordCount = s.text.split(/\s+/).length
         const budget = timeBudgets[s.stepIndex]!
-        const limit = Math.max(5, Math.floor(budget * 1.8))
+        const limit = Math.max(5, Math.floor(budget * 2.0))
         console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
       }
 
