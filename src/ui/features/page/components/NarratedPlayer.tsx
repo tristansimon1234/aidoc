@@ -119,9 +119,12 @@ export function NarratedPlayer({ videoUrl, audioUrl, onDurationChange }: Narrate
             }
           }}
           onTimeUpdate={() => {
-            // For .webm with Infinity duration: update duration as video plays
             const video = videoRef.current
-            if (video && video.currentTime > duration) setDuration(video.currentTime + 1)
+            if (video) {
+              setCurrentTime(video.currentTime)
+              // For .webm with Infinity duration: update duration as video plays
+              if (video.currentTime > duration) setDuration(video.currentTime + 1)
+            }
           }}
           onError={() => setPlayerState('error')}
           onEnded={() => { setPlaying(false); audioRef.current?.pause() }}
@@ -168,7 +171,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, onDurationChange }: Narrate
         </span>
 
         <div onClick={handleSeek} style={{ flex: 1, height: 4, background: 'var(--color-secondary)', borderRadius: 2, cursor: 'pointer' }}>
-          <div style={{ height: '100%', width: `${progress * 100}%`, background: 'var(--color-fg)', borderRadius: 2, transition: 'width 0.1s linear' }} />
+          <div style={{ height: '100%', width: `${progress * 100}%`, background: 'var(--color-fg)', borderRadius: 2 }} />
         </div>
 
         <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', minWidth: 32, textAlign: 'right' }}>
