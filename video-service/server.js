@@ -293,13 +293,13 @@ app.post('/concat-audio', async (req, res) => {
         })
       })
 
-      // Calculate silence needed before this segment
+      // Calculate silence needed — always relative to targetStart, not currentTime
+      // This prevents drift accumulation when segments are longer than expected
       const silenceNeeded = Math.max(0, targetStart - currentTime)
 
-      console.log(`[concat] Seg ${i}: target=${targetStart.toFixed(1)}s, current=${currentTime.toFixed(1)}s, silence=${silenceNeeded.toFixed(1)}s, audio=${segDuration.toFixed(1)}s`)
+      console.log(`[concat] Seg ${i}: target=${targetStart.toFixed(1)}s, current=${currentTime.toFixed(1)}s, silence=${silenceNeeded.toFixed(1)}s, audio=${segDuration.toFixed(1)}s${currentTime > targetStart ? ' ⚠️ OVERLAP' : ''}`)
 
       if (silenceNeeded > 0.05) {
-        // Generate silence
         const silPath = join(tmpDir, `silence-${i}.mp3`)
         await new Promise((resolve, reject) => {
           ffmpeg()
@@ -313,7 +313,30 @@ app.post('/concat-audio', async (req, res) => {
             .run()
         })
         parts.push(silPath)
+        currentTime += silenceNeeded
+      } else if (currentTime > targetStart + 0.5) {
+        // Segment overlaps — trim the audio to fit before next target
+        const maxDur = Math.max(1, (segments[i + 1]?.targetStartTime ?? (targetStart + 30)) - currentTime)
+        if (segDuration > maxDur) {
+          const trimmedPath = join(tmpDir, `seg-${i}-trimmed.mp3`)
+          await new Promise((resolve, reject) => {
+            ffmpeg(segPath)
+              .duration(maxDur)
+              .outputOptions(['-c:a', 'libmp3lame', '-b:a', '128k'])
+              .output(trimmedPath)
+              .on('end', resolve)
+              .on('error', reject)
+              .run()
+          })
+          parts.push(trimmedPath)
+          currentTime += maxDur
+          console.log(`[concat] Seg ${i}: trimmed to ${maxDur.toFixed(1)}s to prevent further drift`)
+          continue
+        }
       }
+
+      parts.push(segPath)
+      currentTime += segDuration
 
       parts.push(segPath)
       currentTime = targetStart + segDuration
