@@ -255,10 +255,15 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections (first: ${mergedTimestamps[0]?.toFixed(1)}s)`)
 
+      // Estimate video end from last original timestamp + small buffer
+      const estimatedVideoEnd = (timestamps[timestamps.length - 1] ?? 0) + 5
+
       const numStepsMerged = mergedTimestamps.length
       const timeBudgets = mergedTimestamps.map((t, i) => {
-        const next = mergedTimestamps[i + 1] ?? (t + 15)
-        return next - t
+        const next = mergedTimestamps[i + 1]
+        if (next != null) return next - t
+        // Last segment: cap at video end, min 5s
+        return Math.max(5, estimatedVideoEnd - t)
       })
       const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
       const totalMaxWords = Math.floor(totalVideoTime * 2)
