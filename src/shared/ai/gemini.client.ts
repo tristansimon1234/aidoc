@@ -160,6 +160,9 @@ export type VideoStep = z.infer<typeof VideoStepSchema>
 export function correctTimestamps(steps: VideoStep[], videoDurationSeconds: number): VideoStep[] {
   if (steps.length === 0) return steps
 
+  // If duration is unknown/infinite, skip correction
+  if (!isFinite(videoDurationSeconds) || videoDurationSeconds <= 0) return steps
+
   const maxTimestamp = Math.max(...steps.map((s) => s.timestamp))
 
   // If max timestamp is within video duration (+10% tolerance), timestamps are fine
