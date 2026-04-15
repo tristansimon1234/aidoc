@@ -42,11 +42,10 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
       const url = parsed.data.url
-      console.log(`[analyze-url] Starting: ${url}`)
+      console.log(`[analyze-url] ${url}`)
 
-      // 1. Fetch full HTML
+      // Fetch HTML
       let html = ''
-      let fetchError: string | null = null
       try {
         const resp = await fetch(url, {
           headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AiDoc/1.0)', Accept: 'text/html' },
@@ -54,96 +53,61 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
           redirect: 'follow',
         })
         html = await resp.text()
-        console.log(`[analyze-url] HTML: ${html.length} chars`)
-      } catch (err) { fetchError = (err as Error).message }
-
-      // 2. Extract <style> blocks + inline styles (design data)
-      const styleBlocks: string[] = []
-      html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_, s) => { styleBlocks.push(s as string); return '' })
-      const inlineStyles: string[] = []
-      html.replace(/style=["']([^"']+)/gi, (_, s) => { inlineStyles.push(s as string); return '' })
-
-      // 3. Quick fetch of main CSS file (2s timeout)
-      const cssLink = html.match(/<link[^>]*href=["']([^"']+\.css[^"']*)/i)?.[1]
-      let externalCss = ''
-      if (cssLink) {
-        try {
-          const cssUrl = cssLink.startsWith('http') ? cssLink : new URL(cssLink, url).href
-          const r = await fetch(cssUrl, { signal: AbortSignal.timeout(2000) })
-          externalCss = (await r.text()).slice(0, 15_000)
-        } catch { /* skip */ }
+      } catch (err) {
+        console.warn(`[analyze-url] Fetch failed: ${(err as Error).message}`)
       }
 
-      // 4. Build CSS digest for Gemini — all CSS vars, color declarations, font declarations
-      const allCss = styleBlocks.join('\n') + '\n' + inlineStyles.join('; ') + '\n' + externalCss
-      const cssLines: string[] = []
-
-      // CSS custom properties (ALL of them — they define the design system)
-      const varMatches = allCss.matchAll(/--[\w-]+\s*:\s*[^;}\n]+/gi)
-      for (const m of varMatches) cssLines.push(m[0])
-
-      // Color declarations
-      const colorMatches = allCss.matchAll(/(?:color|background(?:-color)?|border-color|fill|stroke)\s*:\s*[^;}\n]+/gi)
-      for (const m of colorMatches) cssLines.push(m[0])
-
-      // Font declarations
-      const fontMatches = allCss.matchAll(/font(?:-family|-weight|-size)?\s*:\s*[^;}\n]+/gi)
-      for (const m of fontMatches) cssLines.push(m[0])
-
-      const cssDigest = [...new Set(cssLines)].slice(0, 100).join('\n')
-
-      // 5. Extract text content
+      // Extract useful meta + text
       const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? ''
       const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const themeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
       const googleFont = html.match(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&:]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
-      const textContent = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1500)
 
-      console.log(`[analyze-url] CSS digest: ${cssDigest.length} chars, ${cssLines.length} declarations`)
+      // Strip to text
+      const textContent = html
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<svg[\s\S]*?<\/svg>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 2000)
 
-      // 6. Send to Gemini — act like a designer reading the source code
+      // Build compact info
+      const info = [
+        `URL: ${url}`,
+        title && `Title: ${title}`,
+        (metaDesc || ogDesc) && `Description: ${metaDesc || ogDesc}`,
+        themeColor && `Brand color (meta theme-color): ${themeColor}`,
+        googleFont && `Google Font: ${googleFont}`,
+        `Page text: ${textContent}`,
+      ].filter(Boolean).join('\n')
+
+      console.log(`[analyze-url] Info: ${info.length} chars`)
+
+      // Single Gemini call — product info + design
       const { generateText } = await import('../../shared/ai/gemini.client.js')
       const result = await generateText({
-        userPrompt: `You are a UI designer analyzing a website's source code to extract its design system.
+        userPrompt: `Analyze this website. Return ONLY a short JSON.
 
-URL: ${url}
-${fetchError ? `(Fetch failed: ${fetchError} — infer from URL)` : ''}
-${themeColor ? `Meta theme-color: ${themeColor}` : ''}
-${googleFont ? `Google Font loaded: ${googleFont}` : ''}
+${info}
 
-## Page content
-Title: ${title}
-${metaDesc || ogDesc ? `Description: ${metaDesc || ogDesc}` : ''}
-Text: ${textContent.slice(0, 800)}
-
-## CSS declarations (from <style>, inline styles, and main stylesheet)
-${cssDigest}
-
-## Task
-Analyze the CSS like a designer would. Look at:
-- CSS custom properties (--primary, --accent, --brand, --color-*, etc.) for the brand color
-- background-color and color declarations for bg/text colors
-- font-family declarations and Google Fonts imports for typography
-- CTA/button styles for the accent color
-- The overall color scheme (light/dark theme)
-
-Return ONLY valid JSON:
 {
-  "name": "product/company name",
-  "description": "what this product does (1 sentence)",
-  "audience": "who uses it (role + use case)",
-  "workflow": "main user journey (1 sentence)",
+  "name": "company name",
+  "description": "max 15 words",
+  "audience": "max 10 words",
+  "workflow": "max 12 words",
   "design": {
-    "accentColor": "#hex (the PRIMARY brand color — used for buttons, CTAs, links. NOT gray, NOT black, NOT white)",
-    "bgColor": "#hex (page background color)",
-    "textColor": "#hex (main body text color)",
-    "font": "primary font family name (just the name, e.g. 'Inter')"
+    "accentColor": "#hex brand color (NOT gray/black/white)",
+    "bgColor": "#hex background",
+    "textColor": "#hex text",
+    "font": "font name"
   }
 }
 
-Return ONLY raw JSON.`,
-        maxTokens: 1024,
+KEEP VALUES VERY SHORT. Return ONLY raw JSON, no fences.`,
+        maxTokens: 512,
       })
 
       console.log(`[analyze-url] Gemini: ${result.text.slice(0, 300)}`)
