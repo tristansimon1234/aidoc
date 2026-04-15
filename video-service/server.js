@@ -63,13 +63,11 @@ app.post('/convert', async (req, res) => {
         .outputOptions([
           '-c:v', 'libx264',
           '-preset', 'ultrafast',
-          '-crf', '30',
+          '-crf', '28',
           '-c:a', 'aac',
-          '-b:a', '96k',
+          '-b:a', '128k',
           '-movflags', '+faststart',
-          '-threads', '1',
-          '-max_muxing_queue_size', '64',
-          '-bufsize', '64k',
+          '-threads', '0',
         ])
         .output(tmpOut)
         .on('progress', (p) => console.log(`[convert] ${p.percent?.toFixed(0) ?? '?'}%`))
