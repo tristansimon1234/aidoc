@@ -57,7 +57,6 @@ export async function generateVoiceover(
 
     const rawStart = timestamps[i] ?? 0
     const nextStart = timestamps[i + 1]
-    const endTime = nextStart ?? (rawStart + 20)
 
     // Start narration before the action. If there's a long gap before this step,
     // start earlier to reduce dead silence (up to 3s early, minimum 1.5s)
@@ -72,10 +71,14 @@ export async function generateVoiceover(
     const segPath = `runs/${runId}/voiceover-seg-${i}.mp3`
     await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
 
-    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB`)
+    // Estimate audio duration from MP3 buffer size (~16KB/sec at 128kbps)
+    const estimatedDuration = Math.max(1, buffer.length / 16000)
+    const actualEnd = Math.min(startTime + estimatedDuration, nextStart ?? (rawStart + 20))
+
+    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB, ~${estimatedDuration.toFixed(1)}s audio`)
 
     segmentPaths.push({ audioPath: segPath, targetStartTime: startTime })
-    segments.push({ stepIndex: steps[i]!.stepIndex, startTime, endTime, text })
+    segments.push({ stepIndex: steps[i]!.stepIndex, startTime, endTime: actualEnd, text })
   }
 
   // Concatenate with silence padding via video service
