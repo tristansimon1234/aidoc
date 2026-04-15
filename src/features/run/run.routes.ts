@@ -217,13 +217,31 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
 
       // Build time budget — ~2.2 words/sec spoken, but budget at 1.8 to leave room for pauses + tags
-      const timeBudgets = timestamps.map((t, i) => {
-        const next = timestamps[i + 1] ?? (t + 15)
+      // Merge short sections (< 4s) with the next one to reduce segment count
+      const mergedTimestamps: number[] = []
+      for (let i = 0; i < timestamps.length; i++) {
+        const next = timestamps[i + 1] ?? (timestamps[i]! + 15)
+        const gap = next - timestamps[i]!
+        if (gap < 4 && i < timestamps.length - 1) {
+          // Skip this timestamp — it'll be covered by the next section
+          continue
+        }
+        mergedTimestamps.push(timestamps[i]!)
+      }
+      // Ensure at least the first timestamp is kept
+      if (mergedTimestamps.length === 0 && timestamps.length > 0) {
+        mergedTimestamps.push(timestamps[0]!)
+      }
+      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections`)
+
+      const numStepsMerged = mergedTimestamps.length
+      const timeBudgets = mergedTimestamps.map((t, i) => {
+        const next = mergedTimestamps[i + 1] ?? (t + 15)
         return next - t
       })
-      const totalVideoTime = (timestamps[timestamps.length - 1] ?? 0) - (timestamps[0] ?? 0) + 15
+      const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
       const totalMaxWords = Math.floor(totalVideoTime * 1.8)
-      const sectionList = timestamps.map((_, i) => {
+      const sectionList = mergedTimestamps.map((_, i) => {
         const budget = timeBudgets[i]!
         const maxWords = Math.max(4, Math.floor(budget * 1.8))
         return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → HARD LIMIT ${maxWords} words)`
@@ -304,7 +322,7 @@ Cognitive: [hesitates], [matter-of-fact], [reflective]
 ${doc.markdownContent}
 
 ## Script structure — TIMING IS CRITICAL
-${numSteps} sections using [SECTION N] markers.
+${numStepsMerged} sections using [SECTION N] markers.
 Total word budget: ~${totalMaxWords} words. The narration MUST fit within the video duration.
 
 ${sectionList}
@@ -316,7 +334,7 @@ Prefer SHORT, punchy lines over long explanations. 1-2 sentences per section is 
 
 ## Content rules
 - GREETING: Section 1 MUST start with a short greeting ("Hey!", "Welcome!", "Hi there!")
-- CLOSING: The LAST section (Section ${numSteps}) MUST end with a closing phrase like "Thanks for watching!", "That's it — enjoy!", "See you next time!", "And that's a wrap!". This is NON-NEGOTIABLE — never end abruptly.
+- CLOSING: The LAST section (Section ${numStepsMerged}) MUST end with a closing phrase like "Thanks for watching!", "That's it — enjoy!", "See you next time!", "And that's a wrap!". This is NON-NEGOTIABLE — never end abruptly.
 - CONCISE: say it in fewer words. "Let's create a project" not "What we're going to do now is create a new project"
 - ANTICIPATORY: describe what we're ABOUT to do, not what just happened
 - EXPLAIN THE WHY: briefly — say WHY, not just WHAT
@@ -336,8 +354,8 @@ Start DIRECTLY with [SECTION 1]. No preamble, no commentary.`,
       const firstSectionIdx = narrationResult.text.indexOf('[SECTION')
       const scriptText = firstSectionIdx >= 0 ? narrationResult.text.slice(firstSectionIdx) : narrationResult.text
       const rawSegments = scriptText.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
-      console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numSteps})`)
-      const stepsWithText = timestamps.map((_, i) => {
+      console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numStepsMerged})`)
+      const stepsWithText = mergedTimestamps.map((_, i) => {
         let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
         // Enforce word limit — trim to budget if Gemini went over
         const budget = timeBudgets[i]!
@@ -360,7 +378,7 @@ Start DIRECTLY with [SECTION 1]. No preamble, no commentary.`,
         console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
       }
 
-      const result = await generateVoiceover(params.data.id, stepsWithText, timestamps, {
+      const result = await generateVoiceover(params.data.id, stepsWithText, mergedTimestamps, {
         voiceId: body.voiceId,
         language: body.language,
       })
