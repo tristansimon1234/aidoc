@@ -133,13 +133,10 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
       }
 
       // 4. Extract frames client-side only if server couldn't
-      // Shift timestamps: use next step's timestamp to capture the RESULT of each action
       if (!result.framesExtracted && result.timestamps.length > 0) {
         setStatus('extracting')
-        const ts = result.timestamps
-        const shifted = ts.map((t, i) => i < ts.length - 1 ? ts[i + 1]! - 0.5 : t + 3)
         const videoBlob = file instanceof File ? file : new File([file], fileName, { type: 'video/webm' })
-        await extractAndUploadFrames(videoBlob, run.id, shifted)
+        await extractAndUploadFrames(videoBlob, run.id, result.timestamps)
       }
 
       // 5. Generate documentation
