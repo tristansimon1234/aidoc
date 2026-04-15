@@ -43,10 +43,11 @@ export function NewProject(): React.ReactElement {
     setError(null)
     try {
       const result = await api.projects.analyzeUrl(baseUrl)
+      console.log('[analyze] Result:', JSON.stringify(result))
       if (result.name && !name) setName(result.name)
-      if (result.description) setDescription(result.description)
-      if (result.audience) setAudience(result.audience)
-      if (result.workflow) setWorkflow(result.workflow)
+      setDescription(result.description || '')
+      setAudience(result.audience || '')
+      setWorkflow(result.workflow || '')
       if (result.design) setDesign(result.design)
       setAnalyzed(true)
     } catch (err) {
