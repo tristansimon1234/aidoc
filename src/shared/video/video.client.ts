@@ -57,9 +57,9 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>, t
   return res.json() as Promise<T>
 }
 
-/** Convert video to MP4. Returns the new path in Supabase storage. Timeout: 60s. */
+/** Convert video to MP4. Returns the new path in Supabase storage. Timeout: 30s. */
 export async function convertToMp4(videoPath: string, runId: string): Promise<string> {
-  const result = await callService<{ mp4Path: string; skipped?: boolean }>('/convert', { videoPath, runId }, 60_000)
+  const result = await callService<{ mp4Path: string; skipped?: boolean }>('/convert', { videoPath, runId }, 30_000)
   if (result.skipped) console.log('[video-service] Already MP4, skipped conversion')
   else console.log(`[video-service] Converted → ${result.mp4Path}`)
   return result.mp4Path

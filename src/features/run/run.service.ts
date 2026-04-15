@@ -318,7 +318,7 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     const { supabase } = await import('../../shared/db/supabase.client.js')
 
     // --- Step 1: Convert to MP4 via video microservice ---
-    const { isVideoServiceConfigured, extractFrames: extractFramesRemote } = await import('../../shared/video/video.client.js')
+    const { isVideoServiceConfigured, convertToMp4, extractFrames: extractFramesRemote } = await import('../../shared/video/video.client.js')
 
     let analyzeVideoPath = videoPath
     let playerVideoPath = videoPath
@@ -326,9 +326,18 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     console.log(`[video] Step 1: Convert — service=${videoServiceAvailable ? 'YES' : 'NO'}, path=${videoPath}`)
 
-    // Conversion temporarily skipped — Railway service hanging on /convert
-    // Re-enable when service is fixed
-    console.log(`[video] Skipping MP4 conversion — using ${videoPath} directly`)
+    if (!videoPath.endsWith('.mp4') && videoServiceAvailable) {
+      try {
+        const mp4Path = await convertToMp4(videoPath, runId)
+        analyzeVideoPath = mp4Path
+        playerVideoPath = mp4Path
+        console.log(`[video] Converted to MP4: ${mp4Path}`)
+      } catch (err) {
+        console.warn(`[video] MP4 conversion failed (using .webm — Gemini supports it): ${(err as Error).message}`)
+      }
+    } else {
+      console.log(`[video] Skipping conversion — ${!videoServiceAvailable ? 'no video service' : 'already MP4'}`)
+    }
     console.log(`[video] Using video: ${analyzeVideoPath}`)
 
     // --- Step 2: Download for Gemini analysis ---
