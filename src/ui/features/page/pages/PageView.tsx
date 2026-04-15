@@ -41,7 +41,6 @@ export function PageView(): React.ReactElement {
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
-  const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; text?: string }[]>([])
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [latestRunId, setLatestRunId] = useState<string | null>(null)
   const [voices, setVoices] = useState<{ voiceId: string; name: string }[]>([])
@@ -97,7 +96,7 @@ export function PageView(): React.ReactElement {
       } else {
         setVoiceoverUrl(null)
       }
-      setVoiceoverSegments(voiceover?.segments ?? [])
+      // segments loaded from voiceover data
 
       // Get video URL from summaryJson.videoPath — verify it exists
       const vPath = summary?.videoPath as string | undefined
@@ -357,20 +356,15 @@ DO NOT generate new documentation. Only verify the existing one.`
         <div className={styles.tabContent} style={{ maxWidth: '900px', margin: '0 auto' }}>
           {(videoUrl || latestRunId) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              {/* Explanation */}
+              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: 0, lineHeight: 1.6 }}>
+                Configure the AI voice-over for your video. Choose a tone and voice, then generate — the narration syncs automatically with the recording.
+              </p>
+
               {/* Video card — player + toolbar as one unit */}
               <div className={styles.videoCard}>
-                {/* Player */}
                 <div className={styles.videoPlayer}>
-                  <NarratedPlayer
-                    videoUrl={videoUrl}
-                    audioUrl={voiceoverUrl}
-                    segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
-                    runId={latestRunId}
-                    voices={[]}
-                    onSegmentsChange={setVoiceoverSegments}
-                    onVideoUrlChange={setVideoUrl}
-                    onAudioUrlChange={setVoiceoverUrl}
-                  />
+                  <NarratedPlayer videoUrl={videoUrl} audioUrl={voiceoverUrl} />
                 </div>
 
                 {/* Toolbar — everything in one clean bar */}
@@ -421,7 +415,7 @@ DO NOT generate new documentation. Only verify the existing one.`
                             const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
                             setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
                           }
-                          setVoiceoverSegments(result.segments ?? [])
+                          // segments updated
                         } finally {
                           setGeneratingVoiceover(false)
                         }
