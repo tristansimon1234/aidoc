@@ -66,6 +66,17 @@ export function PageView(): React.ReactElement {
     setLiveUrl(null)
     setStatusMessage(null)
     setActiveTab('doc')
+    // Reset run-dependent state
+    setVideoUrl(null)
+    setVoiceoverUrl(null)
+    setVoiceoverSegments([])
+    setLatestRunId(null)
+    setVideoDuration(0)
+    setTryReport(null)
+    setTryRunning(false)
+    setAnalyzing(false)
+    setTryStreamSteps([])
+    setGeneratingVoiceover(false)
   }
 
   const fetchData = useCallback(async () => {
