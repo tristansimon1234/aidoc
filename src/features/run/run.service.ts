@@ -388,13 +388,21 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     const timestamps = sortedSteps.map((s) => s.timestamp)
 
+    // Use NEXT step's timestamp for each screenshot — Gemini gives the timestamp
+    // of when the action STARTS, but we want the screenshot to show the RESULT
+    // (which is visible just before the next action begins)
+    const screenshotTimestamps = timestamps.map((t, i) => {
+      if (i < timestamps.length - 1) return timestamps[i + 1]! - 0.5
+      return t + 3 // last step: 3s after
+    })
+
     // --- Step 4: Extract frames via video microservice ---
     let framesExtracted = false
     let framePaths: (string | null)[] = []
 
     if (isVideoServiceConfigured()) {
       try {
-        framePaths = await extractFramesRemote(playerVideoPath, runId, timestamps)
+        framePaths = await extractFramesRemote(playerVideoPath, runId, screenshotTimestamps)
         framesExtracted = framePaths.some((p) => p !== null)
       } catch (err) {
         console.warn(`[video] Frame extraction failed: ${(err as Error).message}`)
