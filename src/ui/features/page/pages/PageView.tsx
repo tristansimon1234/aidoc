@@ -440,10 +440,7 @@ DO NOT generate new documentation. Only verify the existing one.`
               {generatingVoiceover && (
                 <ProgressLoader
                   steps={[
-                    { label: 'Analyzing video', estimatedSeconds: 20 },
-                    { label: 'Writing narration script', estimatedSeconds: 15 },
-                    { label: 'Generating audio segments', estimatedSeconds: 25 },
-                    { label: 'Assembling final audio', estimatedSeconds: 10 },
+                    { label: 'Generating voice-over — analyzing video, writing script, synthesizing audio...', estimatedSeconds: 90 },
                   ]}
                   activeStep={0}
                 />
