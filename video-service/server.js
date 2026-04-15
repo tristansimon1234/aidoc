@@ -54,34 +54,58 @@ app.post('/convert', async (req, res) => {
       return res.json({ mp4Path: videoPath, skipped: true })
     }
 
-    const tmpIn = join(tmpdir(), `in-${Date.now()}.webm`)
+    const ext = videoPath.substring(videoPath.lastIndexOf('.')) || '.webm'
+    const tmpIn = join(tmpdir(), `in-${Date.now()}${ext}`)
     const tmpOut = join(tmpdir(), `out-${Date.now()}.mp4`)
     writeFileSync(tmpIn, buffer)
 
-    await new Promise((resolve, reject) => {
-      ffmpeg(tmpIn)
-        .inputOptions(['-threads', '0'])
-        .outputOptions([
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-tune', 'zerolatency',
-          '-crf', '32',
-          '-vf', 'scale=1280:-2',
-          '-c:a', 'aac',
-          '-b:a', '96k',
-          '-ar', '44100',
-          '-ac', '1',
-          '-movflags', '+faststart',
-          '-threads', '0',
-        ])
-        .output(tmpOut)
-        .on('progress', (p) => {
-          if (p.timemark) console.log(`[convert] ${p.timemark}`)
+    // For .mov/.avi with H.264, try remux first (copy streams = instant)
+    const isMov = ext === '.mov' || ext === '.avi' || ext === '.mkv'
+    let converted = false
+
+    if (isMov) {
+      try {
+        await new Promise((resolve, reject) => {
+          ffmpeg(tmpIn)
+            .outputOptions(['-c:v', 'copy', '-c:a', 'aac', '-movflags', '+faststart'])
+            .output(tmpOut)
+            .on('end', resolve)
+            .on('error', reject)
+            .run()
         })
-        .on('end', resolve)
-        .on('error', reject)
-        .run()
-    })
+        converted = true
+        console.log(`[convert] Remuxed ${ext} → MP4 (no re-encode)`)
+      } catch {
+        console.log(`[convert] Remux failed, falling back to re-encode`)
+      }
+    }
+
+    if (!converted) {
+      await new Promise((resolve, reject) => {
+        ffmpeg(tmpIn)
+          .inputOptions(['-threads', '0'])
+          .outputOptions([
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-tune', 'zerolatency',
+            '-crf', '32',
+            '-vf', 'scale=1280:-2',
+            '-c:a', 'aac',
+            '-b:a', '96k',
+            '-ar', '44100',
+            '-ac', '1',
+            '-movflags', '+faststart',
+            '-threads', '0',
+          ])
+          .output(tmpOut)
+          .on('progress', (p) => {
+            if (p.timemark) console.log(`[convert] ${p.timemark}`)
+          })
+          .on('end', resolve)
+          .on('error', reject)
+          .run()
+      })
+    }
 
     const mp4Buffer = readFileSync(tmpOut)
     const mp4Path = videoPath.replace(/\.[^.]+$/, '.mp4')
