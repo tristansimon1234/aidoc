@@ -152,6 +152,34 @@ const VideoAnalysisSchema = z.object({
 export type VideoAnalysis = z.infer<typeof VideoAnalysisSchema>
 export type VideoStep = z.infer<typeof VideoStepSchema>
 
+/**
+ * Detect and correct Gemini's MM:SS concatenation bug.
+ * Gemini sometimes returns "127" meaning 1:27 (87s), not 127 seconds.
+ * We detect this by comparing max timestamp against actual video duration.
+ */
+export function correctTimestamps(steps: VideoStep[], videoDurationSeconds: number): VideoStep[] {
+  if (steps.length === 0) return steps
+
+  // If duration is unknown/infinite, skip correction
+  if (!isFinite(videoDurationSeconds) || videoDurationSeconds <= 0) return steps
+
+  const maxTimestamp = Math.max(...steps.map((s) => s.timestamp))
+
+  // If max timestamp is within video duration (+10% tolerance), timestamps are fine
+  if (maxTimestamp <= videoDurationSeconds * 1.1) return steps
+
+  // Timestamps likely in MM:SS concatenated format — convert
+  console.log(`[gemini] Detected MM:SS timestamps (max ${maxTimestamp}s > video ${videoDurationSeconds.toFixed(1)}s). Correcting...`)
+  return steps.map((s) => {
+    if (s.timestamp < 60) return s // sub-60 already correct
+    const minutes = Math.floor(s.timestamp / 100)
+    const seconds = s.timestamp % 100
+    if (seconds >= 60) return s // not MM:SS format
+    const corrected = minutes * 60 + seconds
+    return { ...s, timestamp: corrected }
+  })
+}
+
 export function isGeminiAvailable(): boolean {
   return !!env.GEMINI_API_KEY
 }
@@ -201,7 +229,10 @@ export async function analyzeVideoWithGemini(
   console.log(`[gemini] Video processed. Analyzing...`)
 
   // Analyze the video
-  const model = genAI.getGenerativeModel({ model: GEMINI_MODEL })
+  const model = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    generationConfig: { maxOutputTokens: 16384 },
+  })
 
   const result = await withRetry(() => model.generateContent([
     {
@@ -211,27 +242,45 @@ export async function analyzeVideoWithGemini(
       },
     },
     {
-      text: `Analyze this screen recording of a web application. For each distinct action or screen change, identify what's happening.
+      text: `Analyze this screen recording of a web application. Identify the KEY steps — focus on significant actions that a user would need to document, not every micro-interaction.
+
+GROUPING RULES:
+- Group related actions into ONE step (e.g. "typed email, typed password, clicked Sign In" → one step: "User logged in")
+- Skip trivial actions: scrolling without purpose, mouse movements, brief hovers
+- Skip repeated similar actions (e.g. scrolling through a list → one step)
+- Aim for 5-10 steps for a typical 1-3 minute video. More only if the video covers many truly different features.
+- Each step should represent a meaningful state change or user accomplishment
 
 For each step:
-1. Provide the timestamp in seconds
-2. Describe what's visible on screen (UI elements, page layout, text)
-3. Describe what the user is doing (clicking, typing, navigating, scrolling)
+1. Provide the timestamp as a NUMBER OF SECONDS (integer or decimal). You MUST convert minutes to seconds:
+   - 45 seconds → 45
+   - 1 minute 27 seconds → 87 (= 1×60 + 27), NOT 127
+   - 2 minutes 8 seconds → 128 (= 2×60 + 8), NOT 208
+   The timestamp MUST be the moment AFTER the action completes, showing the RESULT on screen.
+2. Describe what's visible on screen AFTER the action (UI elements, page layout, text)
+3. Describe what the user accomplished (not each individual click — the outcome)
 4. If there's narration/voiceover, transcribe what's being said at that moment
+
+IMPORTANT:
+- Steps MUST be in chronological order (timestamps ascending)
+- Each timestamp should show the RESULT state, not the initial state
+- Add 0.5-1 second after a click/navigation to capture the loaded result
+- Skip idle moments or pauses where nothing changes
+- Timestamps are in SECONDS — convert from MM:SS to seconds (e.g. 2:30 = 150, not 230)
 
 Return ONLY valid JSON (no markdown fences):
 {
   "steps": [
     {
-      "timestamp": 0,
-      "screenDescription": "The login page with email and password fields, a 'Sign in' button, and company logo",
-      "userAction": "User is viewing the login page",
-      "narration": "Let me show you how to sign in to the platform"
+      "timestamp": 3,
+      "screenDescription": "The dashboard with a list of projects and a 'New Project' button",
+      "userAction": "User navigated to the dashboard after logging in",
+      "narration": null
     },
     {
       "timestamp": 15,
-      "screenDescription": "The login form with email field filled in",
-      "userAction": "User types their email address in the email field",
+      "screenDescription": "Project creation form with name and URL fields filled in",
+      "userAction": "User created a new project by entering the name and URL",
       "narration": null
     }
   ],
@@ -239,22 +288,61 @@ Return ONLY valid JSON (no markdown fences):
   "summary": "2-3 sentence summary of what this recording covers"
 }
 
-Be thorough — capture every meaningful action. Skip idle moments or pauses where nothing changes.`,
+Remember: fewer, more meaningful steps is better than many granular ones.`,
     },
   ]))
 
   const text = result.response.text()
 
-  // Parse JSON response
+  // Extract JSON from Gemini response — handle markdown fences, leading/trailing text
   let jsonStr = text.trim()
-  if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+
+  // Strip markdown code fences (```json ... ``` or ``` ... ```)
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
+  if (fenceMatch) {
+    jsonStr = fenceMatch[1]!
   }
 
-  const parsed = VideoAnalysisSchema.safeParse(JSON.parse(jsonStr))
+  // If still not starting with {, find the first { and last }
+  const firstBrace = jsonStr.indexOf('{')
+  const lastBrace = jsonStr.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1)
+  }
+
+  let parsed
+  try {
+    parsed = VideoAnalysisSchema.safeParse(JSON.parse(jsonStr))
+  } catch {
+    // JSON might be truncated — try to repair by closing open brackets
+    console.warn('[gemini] JSON parse failed, attempting repair...')
+    let repaired = jsonStr
+
+    // Remove trailing incomplete object/value
+    repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
+    repaired = repaired.replace(/,\s*\{[^}]*$/, '')
+
+    // Count and close open brackets
+    const openBraces = (repaired.match(/\{/g) ?? []).length
+    const closeBraces = (repaired.match(/\}/g) ?? []).length
+    const openBrackets = (repaired.match(/\[/g) ?? []).length
+    const closeBrackets = (repaired.match(/\]/g) ?? []).length
+
+    repaired += ']'.repeat(Math.max(0, openBrackets - closeBrackets))
+    repaired += '}'.repeat(Math.max(0, openBraces - closeBraces))
+
+    try {
+      parsed = VideoAnalysisSchema.safeParse(JSON.parse(repaired))
+      console.log(`[gemini] JSON repaired successfully — ${parsed.success ? 'valid' : 'invalid schema'}`)
+    } catch (repairErr) {
+      console.error('[gemini] JSON repair also failed. First 500 chars:', jsonStr.slice(0, 500))
+      throw new Error(`Failed to parse Gemini video analysis JSON: ${(repairErr as Error).message}`)
+    }
+  }
+
   if (!parsed.success) {
     console.error('[gemini] Analysis validation failed:', parsed.error.flatten())
-    throw new Error('Failed to parse video analysis')
+    throw new Error('Failed to validate video analysis response')
   }
 
   console.log(`[gemini] Analysis complete: ${parsed.data.steps.length} steps, product: "${parsed.data.productName}"`)
@@ -263,4 +351,67 @@ Be thorough — capture every meaningful action. Skip idle moments or pauses whe
   await fileManager.deleteFile(file.name).catch(() => {})
 
   return parsed.data
+}
+
+/**
+ * Generate narration script by having Gemini WATCH the video.
+ * The model sees exactly what's on screen at each moment
+ * and writes narration that matches the visual content.
+ */
+export async function generateNarrationFromVideo(
+  videoBuffer: Buffer,
+  mimeType: string,
+  fileName: string,
+  prompt: string,
+): Promise<{ text: string; usage: GeminiUsage }> {
+  const genAI = getGenAI()
+  const fileManager = new GoogleAIFileManager(env.GEMINI_API_KEY!)
+
+  console.log(`[gemini] Uploading video for narration: ${fileName} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+
+  const { writeFileSync, unlinkSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  const { tmpdir } = await import('node:os')
+  const tempPath = join(tmpdir(), `aidoc-narration-${Date.now()}-${fileName}`)
+  writeFileSync(tempPath, videoBuffer)
+
+  let uploadedFile: { name: string; uri: string; mimeType: string; state: string }
+  try {
+    const uploadResult = await fileManager.uploadFile(tempPath, { mimeType, displayName: fileName })
+    uploadedFile = uploadResult.file as typeof uploadedFile
+  } finally {
+    unlinkSync(tempPath)
+  }
+
+  let file = uploadedFile
+  while (file.state === 'PROCESSING') {
+    console.log('[gemini] Waiting for video processing...')
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+    file = await fileManager.getFile(file.name) as typeof file
+  }
+
+  if (file.state === 'FAILED') throw new Error('Gemini failed to process the video file')
+
+  console.log('[gemini] Video ready — generating narration script...')
+
+  const model = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    generationConfig: { maxOutputTokens: 8192 },
+  })
+
+  const result = await withRetry(() => model.generateContent([
+    { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
+    { text: prompt },
+  ]))
+
+  await fileManager.deleteFile(file.name).catch(() => {})
+
+  const usage = result.response.usageMetadata
+  return {
+    text: result.response.text(),
+    usage: {
+      inputTokens: usage?.promptTokenCount ?? 0,
+      outputTokens: usage?.candidatesTokenCount ?? 0,
+    },
+  }
 }

@@ -3,46 +3,46 @@
 
 /* ===== LIGHT MODE (default) ===== */
 :root {
-  /* background */
-  --color-bg: oklch(0.974 0.005 245);            /* #F6F9FC */
+  /* background — clean white, like ElevenLabs */
+  --color-bg: #FFFFFF;
   --color-card: #FFFFFF;
-  --color-secondary: oklch(0.945 0.008 240);     /* very light gray */
+  --color-secondary: #F7F7F8;                     /* very subtle warm gray */
 
   /* foreground */
-  --color-fg: oklch(0.13 0.04 255);              /* #0A2540 */
-  --color-muted-fg: oklch(0.52 0.03 255);        /* #425466 */
+  --color-fg: #1A1A1A;
+  --color-muted-fg: #6B7280;
 
-  /* primary (Stripe indigo) */
-  --color-primary: oklch(0.56 0.22 277);          /* #635BFF */
-  --color-primary-hover: oklch(0.50 0.22 277);    /* #4F46E5 */
+  /* primary — warm black (ElevenLabs style) */
+  --color-primary: #1A1A1A;
+  --color-primary-hover: #333333;
 
   /* semantic */
-  --color-destructive: oklch(0.51 0.19 358);      /* #CD3D64 */
-  --color-success: oklch(0.49 0.13 162);           /* #09825D */
-  --color-warning: oklch(0.685 0.182 47.6);        /* orange */
+  --color-destructive: #EF4444;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
 
-  /* border */
-  --color-border: oklch(0.905 0.012 245);          /* #E6EBF1 */
+  /* border — very subtle */
+  --color-border: #E5E7EB;
 
   /* accent bg */
-  --color-accent: oklch(0.95 0.025 277);           /* light indigo tint */
+  --color-accent: #F3F4F6;
 
   /* status (light mode) */
-  --color-status-pending-bg: #F0F0F3;
-  --color-status-pending-text: #425466;
-  --color-status-pending-border: #E6EBF1;
-  --color-status-running-bg: #EEF0FF;
-  --color-status-running-text: #635BFF;
-  --color-status-running-border: #D4D0FF;
-  --color-status-blocked-bg: #FFF5E6;
-  --color-status-blocked-text: #B87A00;
-  --color-status-blocked-border: #FFE0A3;
-  --color-status-completed-bg: #E8F7F0;
-  --color-status-completed-text: #09825D;
-  --color-status-completed-border: #B4E6D0;
-  --color-status-failed-bg: #FDE8EC;
-  --color-status-failed-text: #CD3D64;
-  --color-status-failed-border: #F9C2CE;
+  --color-status-pending-bg: #F3F4F6;
+  --color-status-pending-text: #6B7280;
+  --color-status-pending-border: #E5E7EB;
+  --color-status-running-bg: #EFF6FF;
+  --color-status-running-text: #2563EB;
+  --color-status-running-border: #BFDBFE;
+  --color-status-blocked-bg: #FFFBEB;
+  --color-status-blocked-text: #D97706;
+  --color-status-blocked-border: #FDE68A;
+  --color-status-completed-bg: #ECFDF5;
+  --color-status-completed-text: #059669;
+  --color-status-completed-border: #A7F3D0;
+  --color-status-failed-bg: #FEF2F2;
+  --color-status-failed-text: #DC2626;
+  --color-status-failed-border: #FECACA;
 
   /* spacing */
   --space-xs: 4px;
@@ -52,20 +52,20 @@
   --space-xl: 40px;
   --space-2xl: 64px;
 
-  /* radius */
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius: 6px;
-  --radius-lg: 6px;
-  --radius-xl: 10px;
+  /* radius — generous rounding (ElevenLabs style) */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-full: 9999px;
 
   /* fonts */
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
-  --heading-stretch: 90%;
-  --heading-tracking: -0.02em;
+  --heading-stretch: normal;
+  --heading-tracking: -0.025em;
 
   /* font sizes */
   --text-xs: 11px;
@@ -76,10 +76,10 @@
   --text-xl: 28px;
   --text-2xl: 40px;
 
-  /* shadows (light) */
-  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.05);
-  --shadow-md: 0 4px 12px oklch(0 0 0 / 0.08);
-  --shadow-lg: 0 12px 40px oklch(0 0 0 / 0.12);
+  /* shadows — soft and subtle */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
 
   /* ===== Legacy aliases (backward compat — remove in Phase 4) ===== */
   --color-bg-base: var(--color-bg);
@@ -185,7 +185,7 @@ code, pre {
 }
 
 ::selection {
-  background: oklch(from var(--color-primary) l c h / 0.2);
+  background: rgba(26, 26, 26, 0.12);
 }
 
 /* Thin scrollbars */
@@ -211,6 +211,11 @@ code, pre {
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
+}
+
+@keyframes fadeSlideIn {
+  0% { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {

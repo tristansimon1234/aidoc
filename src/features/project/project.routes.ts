@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
-import { CreateProjectSchema, UpdateProjectSchema, ProjectIdParamSchema } from './project.schema.js'
+import { CreateProjectSchema, UpdateProjectSchema, ProjectIdParamSchema, AnalyzeUrlSchema } from './project.schema.js'
 import * as projectService from './project.service.js'
 
 export const projectRouter = Router()
@@ -28,6 +28,117 @@ projectRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
       const project = await projectService.createProject(getUserId(req), parsed.data)
       res.status(201).json(project)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Analyze a URL to auto-fill project details
+projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const parsed = AnalyzeUrlSchema.safeParse(req.body)
+      if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+
+      const url = parsed.data.url
+      console.log(`[analyze-url] ${url}`)
+
+      // Fetch HTML
+      let html = ''
+      try {
+        const resp = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AiDoc/1.0)', Accept: 'text/html' },
+          signal: AbortSignal.timeout(10000),
+          redirect: 'follow',
+        })
+        html = await resp.text()
+      } catch (err) {
+        console.warn(`[analyze-url] Fetch failed: ${(err as Error).message}`)
+      }
+
+      // Extract useful meta + text
+      const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.trim() ?? ''
+      const metaDesc = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const ogDesc = html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const themeColor = html.match(/<meta[^>]*name=["']theme-color["'][^>]*content=["']([^"']+)/i)?.[1] ?? ''
+      const googleFont = html.match(/fonts\.googleapis\.com\/css2?\?[^"']*family=([^"'&:]+)/i)?.[1]?.replace(/\+/g, ' ') ?? ''
+
+      // Strip to text
+      const textContent = html
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<svg[\s\S]*?<\/svg>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 2000)
+
+      // Build compact info
+      const info = [
+        `URL: ${url}`,
+        title && `Title: ${title}`,
+        (metaDesc || ogDesc) && `Description: ${metaDesc || ogDesc}`,
+        themeColor && `Brand color (meta theme-color): ${themeColor}`,
+        googleFont && `Google Font: ${googleFont}`,
+        `Page text: ${textContent}`,
+      ].filter(Boolean).join('\n')
+
+      console.log(`[analyze-url] Info: ${info.length} chars`)
+
+      // Single Gemini call — product info + design
+      const { generateText } = await import('../../shared/ai/gemini.client.js')
+      const result = await generateText({
+        userPrompt: `Analyze this website. Return ONLY valid JSON.
+
+${info}
+
+{
+  "name": "company name (short)",
+  "description": "1 sentence, max 20 words",
+  "audience": "1 sentence, max 15 words",
+  "workflow": "1 sentence, max 15 words",
+  "design": {
+    "accentColor": "#hex — the PRIMARY brand color (buttons, CTAs, links). If unknown, pick a color that matches the brand's industry. NEVER return null — always provide a valid hex.",
+    "bgColor": "#hex — page background. Default #FFFFFF if unknown.",
+    "textColor": "#hex — body text. Default #1A1A1A if unknown.",
+    "font": "font name. Default 'Inter' if unknown."
+  },
+}
+
+RULES:
+- ALL design values must be valid hex (no null). Guess from the brand if needed.
+- Keep text values SHORT.
+- Return ONLY raw JSON, no markdown fences.`,
+        maxTokens: 2048,
+      })
+
+      console.log(`[analyze-url] Gemini raw:`, result.text)
+
+      // Parse
+      let analysis: {
+        name: string; description: string; audience: string; workflow: string
+        design?: { accentColor: string; bgColor: string; textColor: string; font: string }
+      } = { name: '', description: '', audience: '', workflow: '' }
+      try {
+        let jsonStr = result.text.replace(/```json?\s*/g, '').replace(/```/g, '').trim()
+        const s = jsonStr.indexOf('{'), e = jsonStr.lastIndexOf('}')
+        if (s !== -1 && e > s) jsonStr = jsonStr.slice(s, e + 1)
+        analysis = JSON.parse(jsonStr) as typeof analysis
+      } catch { console.warn('[analyze-url] JSON parse failed') }
+
+      // Ensure design has no null values — fallback to defaults
+      if (analysis.design) {
+        analysis.design = {
+          accentColor: analysis.design.accentColor || '#2563EB',
+          bgColor: analysis.design.bgColor || '#FFFFFF',
+          textColor: analysis.design.textColor || '#1A1A1A',
+          font: analysis.design.font || '',
+        }
+      }
+
+      console.log(`[analyze-url] Parsed:`, JSON.stringify(analysis))
+      res.status(200).json(analysis)
     } catch (err) {
       next(err)
     }

@@ -5,6 +5,54 @@ import type { ProjectDesignDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
 import styles from './PublicDocs.module.css'
 
+/** Lightweight narrated video player for public docs — syncs video + voiceover audio */
+function NarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: string }): React.ReactElement {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  const syncAudio = (): void => {
+    const video = videoRef.current
+    const audio = audioRef.current
+    if (!video || !audio) return
+    if (Math.abs(video.currentTime - audio.currentTime) > 0.3) {
+      audio.currentTime = video.currentTime
+    }
+  }
+
+  const handlePlay = (): void => {
+    const audio = audioRef.current
+    const video = videoRef.current
+    if (audio && video) {
+      audio.currentTime = video.currentTime
+      void audio.play()
+    }
+  }
+
+  const handlePause = (): void => { audioRef.current?.pause() }
+  const handleSeeked = (): void => { syncAudio() }
+
+  return (
+    <div style={{
+      marginBottom: 'var(--space-lg)', borderRadius: 'var(--radius-xl)',
+      overflow: 'hidden', background: '#000',
+    }}>
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        controls
+        preload="metadata"
+        muted={Boolean(audioUrl)}
+        onPlay={handlePlay}
+        onPause={handlePause}
+        onSeeked={handleSeeked}
+        onTimeUpdate={syncAudio}
+        style={{ width: '100%', display: 'block', maxHeight: '420px' }}
+      />
+      {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
+    </div>
+  )
+}
+
 interface PublicPage {
   id: string
   title: string
@@ -12,6 +60,8 @@ interface PublicPage {
   content: string | null
   parentId: string | null
   sortOrder: number
+  videoUrl?: string | null
+  audioUrl?: string | null
 }
 
 interface PublicProject {
@@ -156,6 +206,22 @@ export function PublicDocs(): React.ReactElement {
     })()
   }, [projectId])
 
+  // Load Google Font if the design uses a custom font
+  const designFont = project?.design?.font
+  useEffect(() => {
+    if (!designFont) return
+    const match = designFont.match(/^["']?([^"',]+)/)
+    const fontName = match?.[1]?.trim()
+    if (!fontName || ['system', '-apple-system', 'georgia', 'jetbrains'].some((s) => fontName.toLowerCase().includes(s))) return
+    const id = `gf-${fontName.replace(/\s+/g, '-').toLowerCase()}`
+    if (document.getElementById(id)) return
+    const link = document.createElement('link')
+    link.id = id
+    link.rel = 'stylesheet'
+    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@300..800&display=swap`
+    document.head.appendChild(link)
+  }, [designFont])
+
   if (loading) {
     return <div className={styles.center}><Spinner size="lg" /></div>
   }
@@ -219,6 +285,9 @@ export function PublicDocs(): React.ReactElement {
             {activePage && (
               <>
                 <h1 className={styles.pageTitle}>{activePage.title}</h1>
+                {activePage.videoUrl && (
+                  <NarratedVideo videoUrl={activePage.videoUrl} audioUrl={activePage.audioUrl ?? undefined} />
+                )}
                 {activePage.content ? (
                   <MarkdownRenderer content={activePage.content} />
                 ) : (

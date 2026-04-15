@@ -66,20 +66,6 @@ pageRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
-// Auto-generate documentation structure — agent scans site and creates pages
-pageRouter.post('/auto-generate', (req: Request, res: Response, next: NextFunction) => {
-  void (async () => {
-    try {
-      const params = ProjectIdParam.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      const pages = await pageService.autoGenerateStructure(params.data.projectId)
-      res.status(201).json(pages)
-    } catch (err) {
-      next(err)
-    }
-  })()
-})
-
 pageRouter.put('/reorder', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { ValidationError } from '../../shared/middleware/error.middleware.js'
+import { ValidationError, AppError } from '../../shared/middleware/error.middleware.js'
 import { CreateRunSchema, RunIdParamSchema } from './run.schema.js'
 import * as runService from './run.service.js'
 
@@ -148,8 +148,422 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
+
+      // Verify run has steps before generating
+      const steps = await runService.getRunSteps(params.data.id)
+      if (steps.length === 0) {
+        throw new AppError('No steps found — the video analysis didn\'t detect any actions. Try re-uploading.', 'NO_STEPS', 400)
+      }
+
       const doc = await runService.generateDoc(params.data.id)
       res.status(200).json(doc)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Get available ElevenLabs voices
+runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const { isElevenLabsConfigured, getAvailableVoices } = await import('../../shared/ai/elevenlabs.client.js')
+      if (!isElevenLabsConfigured()) {
+        res.json({ voices: [] })
+        return
+      }
+      const voices = await getAvailableVoices()
+      console.log(`[voices] Returning ${voices.length} voices`)
+      res.json({ voices })
+    } catch (err) {
+      console.error('[voices] Error:', err)
+      next(err)
+    }
+  })()
+})
+
+// Generate voice-over narration from documentation
+runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { voiceId?: string; language?: string; tone?: string }
+
+      // Check ElevenLabs is configured before attempting
+      const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
+      if (!isElevenLabsConfigured()) {
+        throw new AppError('Voice-over requires ELEVENLABS_API_KEY to be configured', 'ELEVENLABS_NOT_CONFIGURED', 400)
+      }
+
+      const { generateVoiceover } = await import('../documentation/voiceover.service.js')
+
+      // Get the generated doc content — this is the quality source
+      const run = await runService.getRun(params.data.id)
+      if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+
+      const { findDocByRunId } = await import('../documentation/documentation.repository.js')
+      const doc = await findDocByRunId(params.data.id)
+      if (!doc?.markdownContent) {
+        throw new AppError('Generate documentation first before creating voice-over', 'DOC_NOT_FOUND', 404)
+      }
+
+      // Get timestamps from run summary
+      const summary = run.summaryJson as Record<string, unknown> | null
+      const timestamps = (summary?.stepTimestamps as number[]) ?? []
+      const numSteps = timestamps.length || 1
+
+      console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
+      console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
+
+      // Build time budget — ~2.2 words/sec spoken, but budget at 1.8 to leave room for pauses + tags
+      // Merge short sections (< 4s) with the next one to reduce segment count
+      const mergedTimestamps: number[] = []
+      for (let i = 0; i < timestamps.length; i++) {
+        const next = timestamps[i + 1] ?? (timestamps[i]! + 15)
+        const gap = next - timestamps[i]!
+        if (gap < 4 && i < timestamps.length - 1) {
+          // Skip this timestamp — it'll be covered by the next section
+          continue
+        }
+        mergedTimestamps.push(timestamps[i]!)
+      }
+      // Ensure at least the first timestamp is kept
+      if (mergedTimestamps.length === 0 && timestamps.length > 0) {
+        mergedTimestamps.push(timestamps[0]!)
+      }
+      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections`)
+
+      const numStepsMerged = mergedTimestamps.length
+      const timeBudgets = mergedTimestamps.map((t, i) => {
+        const next = mergedTimestamps[i + 1] ?? (t + 15)
+        return next - t
+      })
+      const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
+      const totalMaxWords = Math.floor(totalVideoTime * 1.8)
+      const sectionList = mergedTimestamps.map((_, i) => {
+        const budget = timeBudgets[i]!
+        const minWords = Math.max(3, Math.floor(budget * 1.2))
+        const maxWords = Math.max(5, Math.floor(budget * 2.2))
+        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → aim for ${minWords}-${maxWords} words)`
+      }).join('\n')
+
+      // Ask Gemini to transform the DOC into a narration script
+      // Tone presets — controls voice delivery style
+      const TONE_PRESETS: Record<string, { label: string; direction: string; example: string }> = {
+        friendly: {
+          label: 'Friendly & Casual',
+          direction: `Warm, upbeat, conversational. Use contractions, light humor. Keep it SHORT — say it in one sentence when you can.`,
+          example: `[SECTION 1]\nHey! [excited] Let's set up your workspace.\n[SECTION 2]\nCreate a new project — this is home base for your docs. [laughs] Easy.`,
+        },
+        professional: {
+          label: 'Professional & Clear',
+          direction: `Polished, confident, measured. Clear and articulate, no filler. One precise sentence per idea.`,
+          example: `[SECTION 1]\nWelcome. Let's set up your workspace.\n[SECTION 2]\nFirst, create a project. [short pause] Each project groups docs for one product.`,
+        },
+        energetic: {
+          label: 'Energetic & Hyped',
+          direction: `High-energy, PUMPED. CAPS for emphasis, short punchy sentences. [excited], [laughs], [happy gasp].`,
+          example: `[SECTION 1]\n[excited] Let's GO! Time to set up your workspace.\n[SECTION 2]\nCreate a project — [happy gasp] watch how fast this is!`,
+        },
+        calm: {
+          label: 'Calm & Reassuring',
+          direction: `Gentle, patient. Ellipses for breathing room... reassuring phrases. [whispers] for tips.`,
+          example: `[SECTION 1]\nHi... welcome. [calm] Let's set up your workspace together.\n[SECTION 2]\nCreate a project... [whispers] it only takes a moment.`,
+        },
+        playful: {
+          label: 'Playful & Fun',
+          direction: `Witty, cheeky. Light sarcasm, playful asides. [giggles], [whispers], [sarcastic].`,
+          example: `[SECTION 1]\n[laughs] Alright — workspace time. [whispers] Very official.\n[SECTION 2]\nCreate a project. [giggles] Groundbreaking, I know.`,
+        },
+      }
+
+      const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
+
+      // Download video for Gemini to watch while generating narration
+      const videoPath = summary?.videoPath as string | undefined
+      const { supabase } = await import('../../shared/db/supabase.client.js')
+      let videoBuffer: Buffer | null = null
+      let videoMimeType = 'video/mp4'
+      if (videoPath) {
+        try {
+          const { data: videoData, error: videoError } = await supabase.storage.from('artifacts').download(videoPath)
+          if (videoData && !videoError) {
+            videoBuffer = Buffer.from(await videoData.arrayBuffer())
+            videoMimeType = videoPath.endsWith('.webm') ? 'video/webm' : videoPath.endsWith('.mov') ? 'video/quicktime' : 'video/mp4'
+            console.log(`[voiceover] Video downloaded for narration: ${videoPath} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+          }
+        } catch (err) {
+          console.warn(`[voiceover] Could not download video, falling back to text-only: ${(err as Error).message}`)
+        }
+      }
+
+      // Generate narration — with video if available, text-only as fallback
+      const narrationPrompt = `You are writing a voice-over narration script for this product tutorial video. WATCH THE VIDEO CAREFULLY — your narration must describe exactly what's happening on screen at each moment.
+
+This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an essay.
+
+## Tone: ${tone.label}
+${tone.direction}
+
+## ElevenLabs v3 formatting rules (CRITICAL — follow exactly)
+**Punctuation controls delivery:**
+- Ellipsis (...) creates a natural pause or trailing off
+- Em dash (—) creates a short punchy pause
+- CAPS emphasize words: "This is REALLY important"
+- Questions create natural rising intonation: "Pretty cool, right?"
+
+**Audio tags are stage directions** — place them between sentences:
+Emotional: [excited], [happy], [calm]
+Reactions: [laughs], [giggles], [sighs], [happy gasp]
+Delivery: [whispers], [cheerfully], [playfully], [sarcastic]
+Pacing: [short pause]
+
+Tag rules: tags go BETWEEN sentences only, NEVER mid-sentence. Use 3-5 different tags.
+
+## Documentation context (for terminology and feature names):
+${doc.markdownContent.slice(0, 3000)}
+
+## Script structure — TIMING IS CRITICAL
+${numStepsMerged} sections using [SECTION N] markers.
+Total word budget: ~${totalMaxWords} words. The narration MUST fit within the video duration.
+
+${sectionList}
+
+⚠️ FILL THE TIME. Each section has a word RANGE (min-max). Aim for the MIDDLE of the range.
+- Too short = awkward silence between sections. AVOID this.
+- Too long = narration overlaps the next action. Also bad.
+- For long sections (10s+): explain WHY the feature matters, add context, give tips — don't just describe the click.
+- For short sections (3-5s): one punchy sentence is enough.
+
+## Content rules
+- WATCH THE VIDEO: describe what you SEE happening, not what the doc says
+- ANTICIPATORY: narrate what's ABOUT to happen, just before it does
+- GREETING: Section 1 starts with a short greeting
+- CLOSING: Section ${numStepsMerged} MUST end with a closing phrase ("Thanks for watching!", "That's a wrap!")
+- CONCISE: 1-2 sentences per section max
+- Skip: URLs, code, technical IDs
+- Never say: "as you can see", "in this tutorial", "notice how"
+
+## Example:
+${tone.example}
+
+## Output
+Start DIRECTLY with [SECTION 1]. No preamble.`
+
+      let narrationResult: { text: string }
+
+      if (videoBuffer) {
+        const { generateNarrationFromVideo } = await import('../../shared/ai/gemini.client.js')
+        narrationResult = await generateNarrationFromVideo(
+          videoBuffer,
+          videoMimeType,
+          videoPath?.split('/').pop() ?? 'video.mp4',
+          narrationPrompt,
+        )
+        console.log(`[voiceover] Narration generated from VIDEO (${narrationResult.text.length} chars)`)
+      } else {
+        const { generateText } = await import('../../shared/ai/gemini.client.js')
+        narrationResult = await generateText({ userPrompt: narrationPrompt, maxTokens: 8192 })
+        console.log(`[voiceover] Narration generated from TEXT-ONLY (${narrationResult.text.length} chars)`)
+      }
+
+      // Parse [SECTION N] markers — strip any preamble before first [SECTION
+      console.log(`[voiceover] Gemini narration raw output (${narrationResult.text.length} chars):\n${narrationResult.text.slice(0, 500)}`)
+      const firstSectionIdx = narrationResult.text.indexOf('[SECTION')
+      const scriptText = firstSectionIdx >= 0 ? narrationResult.text.slice(firstSectionIdx) : narrationResult.text
+      const rawSegments = scriptText.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
+      console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numStepsMerged})`)
+      const stepsWithText = mergedTimestamps.map((_, i) => {
+        let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
+        // Enforce word limit — trim to budget if Gemini went way over
+        const budget = timeBudgets[i]!
+        const maxWords = Math.max(5, Math.floor(budget * 2.2))
+        const words = text.split(/\s+/)
+        if (words.length > maxWords * 1.2) {
+          // Over by 20%+ — truncate to limit, ending at a sentence boundary if possible
+          const truncated = words.slice(0, maxWords)
+          const joined = truncated.join(' ')
+          const lastSentence = joined.lastIndexOf('.')
+          text = lastSentence > joined.length * 0.5 ? joined.slice(0, lastSentence + 1) : joined + '.'
+          console.log(`[voiceover] Step ${i}: TRIMMED from ${words.length} to ~${maxWords} words (budget: ${budget.toFixed(0)}s)`)
+        }
+        return { stepIndex: i, text }
+      })
+      for (const s of stepsWithText) {
+        const wordCount = s.text.split(/\s+/).length
+        const budget = timeBudgets[s.stepIndex]!
+        const limit = Math.max(5, Math.floor(budget * 2.2))
+        console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
+      }
+
+      const result = await generateVoiceover(params.data.id, stepsWithText, mergedTimestamps, {
+        voiceId: body.voiceId,
+        language: body.language,
+      })
+
+      // Store voiceover info in run summary
+      const existingSummary = run.summaryJson ?? {}
+      const { updateRunSummary } = await import('./run.repository.js')
+      await updateRunSummary(params.data.id, { ...existingSummary, voiceover: result })
+
+      res.status(200).json(result)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Regenerate a single voiceover segment
+runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { stepIndex: number; text?: string; voiceId?: string }
+      if (body.stepIndex == null) throw new ValidationError('stepIndex is required')
+
+      const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
+      if (!isElevenLabsConfigured()) {
+        throw new AppError('ELEVENLABS_API_KEY required', 'ELEVENLABS_NOT_CONFIGURED', 400)
+      }
+
+      const { synthesizeSpeech } = await import('../../shared/ai/elevenlabs.client.js')
+      const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
+
+      // Get existing voiceover data
+      const run = await runService.getRun(params.data.id)
+      if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+      const summary = run.summaryJson as Record<string, unknown> | null
+      const voiceover = summary?.voiceover as { segments?: Array<Record<string, unknown>> } | undefined
+      if (!voiceover?.segments) throw new AppError('No voiceover to edit', 'NO_VOICEOVER', 404)
+
+      // If custom text provided, use it. Otherwise use existing text.
+      const existingSeg = voiceover.segments.find((s) => (s.stepIndex as number) === body.stepIndex)
+      const text = body.text ?? (existingSeg?.text as string) ?? `Step ${body.stepIndex + 1}`
+
+      // Synthesize new segment audio — use same naming as generateVoiceover
+      const buffer = await synthesizeSpeech(text, { voiceId: body.voiceId })
+      const segPath = `runs/${params.data.id}/voiceover-seg-${body.stepIndex}.mp3`
+      await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
+
+      // Update the segment in the summary
+      const updatedSegments = voiceover.segments.map((s) =>
+        (s.stepIndex as number) === body.stepIndex
+          ? { ...s, audioPath: segPath, text }
+          : s,
+      )
+
+      // Re-concat ALL segments to rebuild voiceover.mp3
+      const { isVideoServiceConfigured, concatAudio } = await import('../../shared/video/video.client.js')
+      let mainAudioUrl = ''
+      let mainAudioPath = ''
+
+      if (isVideoServiceConfigured()) {
+        const concatSegments = updatedSegments
+          .sort((a, b) => (a.stepIndex as number) - (b.stepIndex as number))
+          .map((s) => ({
+            audioPath: (s.audioPath as string) ?? `runs/${params.data.id}/voiceover-seg-${s.stepIndex as number}.mp3`,
+            targetStartTime: Math.max(0, (s.startTime as number) - 1.5),
+          }))
+        mainAudioPath = await concatAudio(params.data.id, concatSegments)
+        mainAudioUrl = `${getPublicUrl('artifacts', mainAudioPath) ?? ''}?v=${Date.now()}`
+      }
+
+      const { updateRunSummary } = await import('./run.repository.js')
+      await updateRunSummary(params.data.id, {
+        ...summary,
+        voiceover: {
+          ...voiceover,
+          segments: updatedSegments,
+          ...(mainAudioPath ? { audioPath: mainAudioPath, audioUrl: mainAudioUrl } : {}),
+        },
+      })
+
+      res.status(200).json({ stepIndex: body.stepIndex, audioUrl: mainAudioUrl, text })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Update voiceover segment timing (drag to reposition)
+runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { segments: Array<{ stepIndex: number; startTime: number; endTime: number }> }
+      if (!Array.isArray(body.segments)) throw new ValidationError('segments array required')
+
+      const run = await runService.getRun(params.data.id)
+      if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+      const summary = run.summaryJson as Record<string, unknown> | null
+      const voiceover = summary?.voiceover as { segments?: Array<Record<string, unknown>> } | undefined
+      if (!voiceover?.segments) throw new AppError('No voiceover to edit', 'NO_VOICEOVER', 404)
+
+      // Merge timing updates into existing segments
+      const updatedSegments = voiceover.segments.map((s) => {
+        const update = body.segments.find((u) => u.stepIndex === (s.stepIndex as number))
+        return update ? { ...s, startTime: update.startTime, endTime: update.endTime } : s
+      })
+
+      const { updateRunSummary } = await import('./run.repository.js')
+      await updateRunSummary(params.data.id, {
+        ...summary,
+        voiceover: { ...voiceover, segments: updatedSegments },
+      })
+
+      res.status(200).json({ segments: updatedSegments })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Trim/cut video to a time range
+runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { startTime: number; endTime: number }
+      if (body.startTime == null || body.endTime == null) throw new ValidationError('startTime and endTime required')
+      if (body.startTime >= body.endTime) throw new ValidationError('startTime must be before endTime')
+
+      const run = await runService.getRun(params.data.id)
+      if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+
+      const summary = run.summaryJson as Record<string, unknown> | null
+      const videoPath = summary?.videoPath as string | undefined
+      if (!videoPath) throw new AppError('No video found', 'NO_VIDEO', 404)
+
+      // Trim via video microservice
+      const { isVideoServiceConfigured, trimVideo } = await import('../../shared/video/video.client.js')
+      if (!isVideoServiceConfigured()) {
+        throw new AppError('Video service not configured — set VIDEO_SERVICE_URL', 'VIDEO_SERVICE_NOT_CONFIGURED', 400)
+      }
+
+      const trimmedPath = await trimVideo(videoPath, params.data.id, body.startTime, body.endTime)
+
+      // Update summary with new video path + adjust timestamps for trimmed range
+      const { updateRunSummary } = await import('./run.repository.js')
+      const oldTimestamps = (summary?.stepTimestamps as number[]) ?? []
+      const trimmedDuration = body.endTime - body.startTime
+      const adjustedTimestamps = oldTimestamps
+        .map((t) => t - body.startTime)
+        .filter((t) => t >= 0 && t <= trimmedDuration)
+
+      await updateRunSummary(params.data.id, {
+        ...summary,
+        videoPath: trimmedPath,
+        stepTimestamps: adjustedTimestamps,
+        trimApplied: { startTime: body.startTime, endTime: body.endTime },
+      })
+
+      const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
+      const videoUrl = getPublicUrl('artifacts', trimmedPath) ?? ''
+      res.status(200).json({ videoPath: trimmedPath, videoUrl })
     } catch (err) {
       next(err)
     }

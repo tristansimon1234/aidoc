@@ -128,6 +128,7 @@ export interface ProjectDTO {
   context: ProjectContextDTO | null
   discoveredContext: DiscoveredContextDTO | null
   design: ProjectDesignDTO | null
+  credentials: { label: string; username: string; password: string }[] | null
   widgetApiKey: string | null
   widgetEnabled: boolean
   walkthroughEnabled: boolean
@@ -175,6 +176,8 @@ export const api = {
     update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>
       request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (id: string): Promise<void> => request(`/projects/${id}`, { method: 'DELETE' }),
+    analyzeUrl: (url: string): Promise<{ name: string; description: string; audience: string; workflow: string; design?: { accentColor: string; bgColor: string; textColor: string; font: string } }> =>
+      request('/projects/analyze-url', { method: 'POST', body: JSON.stringify({ url }) }),
     generateWidgetKey: (id: string): Promise<{ widgetApiKey: string; widgetEnabled: boolean }> =>
       request(`/projects/${id}/widget-key`, { method: 'POST' }),
     disableWidget: (id: string): Promise<{ widgetEnabled: boolean }> =>
@@ -196,8 +199,6 @@ export const api = {
       request(`/projects/${projectId}/pages/${pageId}/doc`),
     latestRun: (projectId: string, pageId: string): Promise<RunDTO | null> =>
       request<RunDTO>(`/projects/${projectId}/pages/${pageId}/run`).catch(() => null),
-    autoGenerate: (projectId: string): Promise<DocPageDTO[]> =>
-      request(`/projects/${projectId}/pages/auto-generate`, { method: 'POST' }),
     reorder: (projectId: string, items: { id: string; parentId: string | null; sortOrder: number }[]): Promise<void> =>
       request(`/projects/${projectId}/pages/reorder`, { method: 'PUT', body: JSON.stringify(items) }),
   },
@@ -265,6 +266,16 @@ export const api = {
     },
     generateDoc: (id: string): Promise<GeneratedDocDTO> =>
       request(`/runs/${id}/generate-doc`, { method: 'POST' }),
+    getVoices: (): Promise<{ voices: { voiceId: string; name: string; category: string; labels: Record<string, string> }[] }> =>
+      request('/runs/voices'),
+    generateVoiceover: (id: string, options?: { voiceId?: string; language?: string; tone?: string }): Promise<{ audioPath: string; audioUrl: string; duration: number }> =>
+      request(`/runs/${id}/generate-voiceover`, { method: 'POST', body: JSON.stringify(options ?? {}) }),
+    regenerateSegment: (id: string, stepIndex: number, text?: string, voiceId?: string): Promise<{ stepIndex: number; audioUrl: string; text: string }> =>
+      request(`/runs/${id}/regenerate-segment`, { method: 'POST', body: JSON.stringify({ stepIndex, text, voiceId }) }),
+    updateSegmentTiming: (id: string, segments: { stepIndex: number; startTime: number; endTime: number }[]): Promise<unknown> =>
+      request(`/runs/${id}/voiceover-segments`, { method: 'PUT', body: JSON.stringify({ segments }) }),
+    trimVideo: (id: string, startTime: number, endTime: number): Promise<{ videoPath: string; videoUrl: string }> =>
+      request(`/runs/${id}/trim-video`, { method: 'POST', body: JSON.stringify({ startTime, endTime }) }),
     analyzeTry: (id: string, pageContent: string, pageTitle: string, pageId: string): Promise<TryDocReportDTO> =>
       request(`/runs/${id}/analyze-try`, { method: 'POST', body: JSON.stringify({ pageContent, pageTitle, pageId }) }),
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),

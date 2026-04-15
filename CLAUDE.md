@@ -10,13 +10,13 @@
 
 AiDoc is a **project-based documentation platform** that generates user-facing product guides and deploys them as **embeddable AI chat widgets** on client apps. A **Try Doc** feature lets users test their documentation against the live product — an AI agent follows the doc steps as a naive user and generates a structured quality report.
 
-**Two generation methods**:
-1. **Screen recording (recommended)** — User uploads a video → Gemini analyzes every action → extracts screenshots at key moments → Gemini generates structured documentation
-2. **Auto-exploration (beta)** — AI agent navigates the app autonomously via cloud browser → captures screenshots → generates docs
+**Screen recording** is the primary (and only) documentation generation method. Users record their screen (or upload a video) → Gemini analyzes every action → extracts screenshots at key moments → generates structured documentation → ElevenLabs generates voice-over narration.
+
+**Try Doc**: An AI agent (Stagehand) follows the doc steps as a naive user on the live product and generates a structured quality report.
 
 **Chat & Widget**: Users chat with their documentation (RAG-powered). The same chat can be embedded as a widget on client apps via a single `<script>` tag.
 
-**Core flow**: Upload video or auto-explore → AI generates doc with screenshots → User reviews/edits → Enable chat widget → Embed on client app
+**Core flow**: Record screen or upload video → AI generates doc with screenshots + voice-over → User reviews/edits → Enable chat widget → Embed on client app
 
 ---
 
@@ -26,9 +26,10 @@ AiDoc is a **project-based documentation platform** that generates user-facing p
 |---|---|
 | Runtime | Node.js 20+ / TypeScript 5.9 (strict: true) |
 | Backend | Express 5 (serverless on Vercel) |
-| Browser Automation | Stagehand 3 (Browserbase cloud browsers) — beta exploration + doc testing |
+| Browser Automation | Stagehand 3 (Browserbase cloud browsers) — Try Doc testing |
+| AI (voice-over) | ElevenLabs TTS — multilingual voice-over narration for documentation |
 | AI (primary) | Gemini 2.5 Flash — doc generation, structure gen, context enrichment, chat, video analysis |
-| AI (exploration) | Claude Sonnet 4 via Stagehand (`STAGEHAND_MODEL`) — beta only |
+| AI (Try Doc) | Claude Sonnet 4 via Stagehand (`STAGEHAND_MODEL`) — Try Doc testing only |
 | AI (embeddings) | Gemini embedding model (auto-discovered via ListModels API) — 768-dim vectors |
 | Vector Search | pgvector in Supabase (HNSW index, cosine similarity) |
 | Database | Supabase (Postgres + Auth + Storage + RLS + pgvector) |
@@ -55,7 +56,7 @@ src/
       page.types.ts
       page.schema.ts
       page.repository.ts
-      page.service.ts     # includes autoGenerateStructure()
+      page.service.ts
       page.routes.ts
     run/                  # Exploration run lifecycle
       run.types.ts
@@ -72,6 +73,7 @@ src/
       documentation.generator.ts  # calls Gemini 2.5 Flash, parses markdown + JSON
       documentation.service.ts    # orchestrates: fetch steps → resolve screenshots → generate
       documentation.repository.ts # findDocByRunId, findDocByPageId, upsertDoc
+      voiceover.service.ts         # ElevenLabs TTS voice-over generation
       documentation.routes.ts
     chat/                 # RAG chat + embeddable widget
       chat.types.ts           # ChatMessage, ChatResponse, DocChunk, UserContext
@@ -91,6 +93,7 @@ src/
       gemini.client.ts      # Gemini SDK: generateText(), embedTexts(), analyzeVideoWithGemini()
       anthropic.client.ts   # Anthropic SDK (optional, for Stagehand only)
       anthropic.types.ts
+      elevenlabs.client.ts     # ElevenLabs TTS: synthesizeSpeech(), getAvailableVoices()
       prompt.builder.ts     # buildDocumentationPrompt() — ALL doc gen prompts
     browser/
       playwright.client.ts  # launchBrowser(), closeBrowser(), getSessionId()
@@ -172,12 +175,12 @@ docs/
 ### Gemini-first stack
 - **Doc generation**: Gemini 2.5 Flash via `generateText()` in `gemini.client.ts`
 - **Video analysis**: Gemini 2.5 Flash with Files API for native video understanding
-- **Structure auto-gen**: Gemini 2.5 Flash (proposes 5-15 doc pages from site content)
+- **Voice-over**: ElevenLabs TTS (`eleven_multilingual_v2`) — generates narration from documentation text
 - **Context enrichment**: Gemini 2.5 Flash — fire-and-forget (in `run.service.ts`)
 - **Chat (RAG)**: Gemini 2.5 Flash with pgvector-retrieved context
 - **Embeddings**: Auto-discovered Gemini embedding model, 768-dim output
 - **Try Doc analysis**: Gemini 2.5 Flash — analyzes Stagehand test results into structured JSON report (7 sections)
-- **Stagehand (beta exploration)**: `STAGEHAND_MODEL` constant (`anthropic/claude-sonnet-4-20250514`) — requires `ANTHROPIC_API_KEY`
+- **Stagehand (Try Doc)**: `STAGEHAND_MODEL` constant (`anthropic/claude-sonnet-4-20250514`) — requires `ANTHROPIC_API_KEY`
 
 ### Prompt rules
 - All doc generation prompts live in `shared/ai/prompt.builder.ts`
@@ -233,6 +236,7 @@ See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 15 mig
 /api/runs/:id/explore                      # POST: SSE stream (live exploration)
 /api/runs/:id/analyze-video                # POST: Gemini video analysis
 /api/runs/:id/generate-doc                 # POST: Doc generation
+/api/runs/:id/generate-voiceover           # POST: ElevenLabs TTS voice-over
 /api/runs/:id/signed-upload-url            # POST: Get signed URL for direct upload
 /api/runs/:id/steps/:idx/screenshot        # POST: Update step screenshot path
 /api/runs/:id/steps                        # Run steps
@@ -299,7 +303,8 @@ NODE_ENV, PORT, SUPABASE_URL, SUPABASE_SERVICE_KEY,
 GEMINI_API_KEY, BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
 
 # Optional
-ANTHROPIC_API_KEY    # Only needed for beta auto-exploration (Stagehand)
+ANTHROPIC_API_KEY    # Only needed for Try Doc testing (Stagehand)
+ELEVENLABS_API_KEY   # Optional — voice-over narration
 ```
 
 **Frontend** (Vite prefix):
@@ -327,7 +332,7 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [ ] `run.service.ts` imports `questions.repository` directly (cross-feature)
 - [ ] No tests (Vitest configured but unused)
 - [ ] No pagination on list endpoints
-- [ ] Legacy RunDashboard/NewRun pages still exist (pre-project model)
+- [x] ~~Legacy RunDashboard/NewRun pages~~ — removed (auto-explore removed)
 - [ ] Widget: no domain restriction (Origin header check) — API key is public
 - [x] ~~Chat suggestions cache is in-memory~~ — widget endpoint has in-memory cache + edge caching
 - [ ] No usage analytics/logging for widget chat messages

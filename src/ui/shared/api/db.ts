@@ -60,6 +60,7 @@ export async function fetchProjects(): Promise<ProjectDTO[]> {
 export async function createProject(body: {
   name: string
   baseUrl: string
+  description?: string
   context?: ProjectContextDTO
   credentials?: { label: string; username: string; password: string }[]
 }): Promise<ProjectDTO> {
@@ -72,6 +73,7 @@ export async function createProject(body: {
       user_id: user.id,
       name: body.name,
       base_url: body.baseUrl,
+      description: body.description ?? null,
       context: body.context ?? null,
       credentials: body.credentials ?? null,
     })
@@ -150,8 +152,18 @@ export async function updatePage(
   if (body.content !== undefined) updates.content = body.content
   if (body.customPrompt !== undefined) updates.custom_prompt = body.customPrompt
   if (body.briefing !== undefined) updates.briefing = body.briefing
+  if (body.isPublic !== undefined) updates.is_public = body.isPublic
 
   const { data, error } = await supabase.from('doc_pages').update(updates).eq('id', pageId).select('*').single()
+
+  // If is_public column doesn't exist yet, retry without it
+  if (error?.message?.includes('is_public')) {
+    delete updates.is_public
+    const retry = await supabase.from('doc_pages').update(updates).eq('id', pageId).select('*').single()
+    if (retry.error) throw new Error(retry.error.message)
+    return mapPage(retry.data)
+  }
+
   if (error) throw new Error(error.message)
   return mapPage(data)
 }
@@ -206,6 +218,7 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     context: (row.context as ProjectDTO['context']) ?? null,
     discoveredContext: (row.discovered_context as ProjectDTO['discoveredContext']) ?? null,
     design: (row.design as ProjectDTO['design']) ?? null,
+    credentials: (row.credentials as ProjectDTO['credentials']) ?? null,
     widgetApiKey: (row.widget_api_key as string) ?? null,
     widgetEnabled: (row.widget_enabled as boolean) ?? false,
     walkthroughEnabled: (row.walkthrough_enabled as boolean) ?? false,

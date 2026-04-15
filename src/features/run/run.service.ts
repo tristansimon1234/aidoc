@@ -119,7 +119,7 @@ async function enrichBriefingWithFileContents(
 
   const { supabase } = await import('../../shared/db/supabase.client.js')
   const enrichedResources = await Promise.all(
-    briefing.resources.map(async (r) => {
+    (briefing.resources ?? []).map(async (r) => {
       if (r.type !== 'file' || !r.value) return r
       try {
         console.log(`[briefing] Downloading file resource: ${r.value}`)
@@ -282,6 +282,10 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
           {
             let jsonStr = response.text.trim()
             if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+            // Extract JSON object if surrounded by extra text
+            const braceStart = jsonStr.indexOf('{')
+            const braceEnd = jsonStr.lastIndexOf('}')
+            if (braceStart !== -1 && braceEnd > braceStart) jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
             const { DiscoveredContextSchema } = await import('../project/project.schema.js')
             const parsed = DiscoveredContextSchema.safeParse(JSON.parse(jsonStr))
             if (parsed.success) {
@@ -308,31 +312,98 @@ export async function cancelExploration(id: string): Promise<void> {
   cancelRun(id)
 }
 
-export async function analyzeVideo(runId: string, videoPath: string): Promise<{ timestamps: number[] }> {
+export async function analyzeVideo(runId: string, videoPath: string): Promise<{ timestamps: number[]; framesExtracted: boolean }> {
   const run = await runRepo.findRunById(runId)
   if (!run) throw new NotFoundError('Run')
 
   await runRepo.updateRunStatus(runId, 'running')
 
   try {
-    // Download video from Supabase Storage
     const { supabase } = await import('../../shared/db/supabase.client.js')
-    const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
-    if (error || !data) throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
+
+    // --- Step 1: Convert to MP4 via video microservice ---
+    const { isVideoServiceConfigured, convertToMp4, extractFrames: extractFramesRemote } = await import('../../shared/video/video.client.js')
+
+    let analyzeVideoPath = videoPath
+    let playerVideoPath = videoPath
+
+    if (isVideoServiceConfigured() && !videoPath.endsWith('.mp4')) {
+      try {
+        const mp4Path = await convertToMp4(videoPath, runId)
+        analyzeVideoPath = mp4Path
+        playerVideoPath = mp4Path
+      } catch (err) {
+        console.warn(`[video] Conversion failed, using original: ${(err as Error).message}`)
+      }
+    }
+    console.log(`[video] Using video: ${analyzeVideoPath}`)
+
+    // --- Step 2: Download for Gemini analysis ---
+    console.log(`[video] Step 2: Download ${analyzeVideoPath} from storage`)
+    const { data, error } = await supabase.storage.from('artifacts').download(analyzeVideoPath)
+    if (error || !data) {
+      console.error(`[video] Download FAILED: ${error?.message ?? 'no data'}`)
+      throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
+    }
 
     const buffer = Buffer.from(await data.arrayBuffer())
-    const mimeType = videoPath.endsWith('.webm') ? 'video/webm'
-      : videoPath.endsWith('.mov') ? 'video/quicktime'
-      : 'video/mp4'
-    const fileName = videoPath.split('/').pop() ?? 'video.mp4'
+    const mimeType = analyzeVideoPath.endsWith('.mp4') ? 'video/mp4'
+      : analyzeVideoPath.endsWith('.webm') ? 'video/webm'
+      : 'video/quicktime'
+    const fileName = analyzeVideoPath.split('/').pop() ?? 'video.mp4'
 
-    // Analyze with Gemini
-    const { analyzeVideoWithGemini } = await import('../../shared/ai/gemini.client.js')
+    // --- Step 3: Analyze with Gemini ---
+    const { analyzeVideoWithGemini, correctTimestamps } = await import('../../shared/ai/gemini.client.js')
     const analysis = await analyzeVideoWithGemini(buffer, mimeType, fileName)
 
-    // Create RunSteps from analysis
-    for (let i = 0; i < analysis.steps.length; i++) {
-      const s = analysis.steps[i]!
+    console.log(`[video] Gemini returned ${analysis.steps.length} steps (raw):`)
+    for (const s of analysis.steps) {
+      console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction}`)
+    }
+
+    if (analysis.steps.length === 0) {
+      await runRepo.updateRunStatus(runId, 'failed')
+      throw new Error('Could not detect any actions in the video. Try a longer recording with clear interactions.')
+    }
+
+    // --- Step 3b: Correct MM:SS concatenation bug ---
+    const { probeVideo } = await import('../../shared/video/video.client.js')
+    let videoDuration = Infinity
+    if (isVideoServiceConfigured()) {
+      try {
+        const probe = await probeVideo(playerVideoPath)
+        videoDuration = probe.durationSeconds
+      } catch (err) {
+        console.warn(`[video] Probe failed, skipping timestamp correction: ${(err as Error).message}`)
+      }
+    }
+
+    const correctedSteps = correctTimestamps(analysis.steps, videoDuration)
+    const sortedSteps = [...correctedSteps].sort((a, b) => a.timestamp - b.timestamp)
+
+    console.log(`[video] Final ${sortedSteps.length} steps:`)
+    for (const s of sortedSteps) {
+      console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction}`)
+    }
+
+    const timestamps = sortedSteps.map((s) => s.timestamp)
+
+    // --- Step 4: Extract frames via video microservice ---
+    let framesExtracted = false
+    let framePaths: (string | null)[] = []
+
+    if (isVideoServiceConfigured()) {
+      try {
+        framePaths = await extractFramesRemote(playerVideoPath, runId, timestamps)
+        framesExtracted = framePaths.some((p) => p !== null)
+      } catch (err) {
+        console.warn(`[video] Frame extraction failed: ${(err as Error).message}`)
+      }
+    }
+
+    // --- Step 5: Create run steps ---
+    for (let i = 0; i < sortedSteps.length; i++) {
+      const s = sortedSteps[i]!
       const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
       await runRepo.createRunStep({
         runId,
@@ -340,31 +411,35 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
         title: s.userAction,
         action: s.userAction,
         observation: `${s.screenDescription}${narrationText}`,
+        screenshotPath: framePaths[i] ?? undefined,
         status: 'completed',
       })
     }
 
-    // Build summary
+    // --- Step 6: Summary ---
     await runRepo.updateRunSummary(runId, {
       sections: [{
         url: 'video',
         label: analysis.productName || run.featureName,
         status: 'documented',
-        stepCount: analysis.steps.length,
+        stepCount: sortedSteps.length,
       }],
       blockers: [],
       agentMessage: analysis.summary,
+      videoPath: playerVideoPath,
+      stepTimestamps: timestamps,
     })
 
     await runRepo.updateRunStatus(runId, 'completed')
 
-    return { timestamps: analysis.steps.map((s) => s.timestamp) }
+    return { timestamps, framesExtracted }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')
     throw err
   }
 }
+
 
 export async function getRun(id: string): Promise<Run> {
   const run = await runRepo.findRunById(id)
@@ -432,13 +507,13 @@ export async function analyzeTryDoc(
   const { TryDocReportSchema } = await import('./run.schema.js')
   const parsed = TryDocReportSchema.parse(JSON.parse(jsonStr))
 
-  // Attach screenshot public URLs to step results
+  // Attach screenshot URLs to step results
   const stepsWithScreenshots = parsed.steps.map((stepResult) => {
     const matchingStep = steps.find((s) => s.stepIndex === stepResult.stepIndex)
-    const screenshotPath = matchingStep?.screenshotPath
+    const screenshotUrl = matchingStep?.screenshotPath
       ? getPublicUrl('artifacts', matchingStep.screenshotPath)
       : null
-    return { ...stepResult, screenshotPath }
+    return { ...stepResult, screenshotPath: screenshotUrl }
   })
 
   const report: TryDocReport = {

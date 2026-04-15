@@ -51,3 +51,7 @@ export const UpdateProjectSchema = z.object({
 })
 
 export const ProjectIdParamSchema = UuidParamSchema
+
+export const AnalyzeUrlSchema = z.object({
+  url: z.string().url('Must be a valid URL'),
+})

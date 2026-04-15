@@ -1,18 +1,19 @@
-import { type ChangeEvent, useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useOutletContext, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams, useOutletContext, Link } from 'react-router-dom'
 import {
   Button,
-  Badge,
   Spinner,
-  StatusIndicator,
   BlockEditor,
   EmptyState,
   TableOfContents,
+  ProgressLoader,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type GeneratedDocDTO, type ProjectDTO, type RunDTO, type StepEventDTO, type PageBriefingDTO, type PageResourceDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
-import { fetchPageFull, updatePage as dbUpdatePage, createPage as dbCreatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
+import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
+import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
-import { ExplorationAssistant } from '../components/ExplorationAssistant.js'
+import { NarratedPlayer } from '../components/NarratedPlayer.js'
+import { VideoTimeline } from '../components/VideoTimeline.js'
+import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
 import styles from './PageView.module.css'
 
@@ -20,11 +21,6 @@ interface PageContext {
   project: ProjectDTO
   pages: DocPageDTO[]
   refetchPages: () => Promise<void>
-}
-
-interface ActivityEntry {
-  text: string
-  timestamp: number
 }
 
 export function PageView(): React.ReactElement {
@@ -35,23 +31,25 @@ export function PageView(): React.ReactElement {
   const cachedPage = context.pages.find((p) => p.id === pageId) ?? null
 
   const [page, setPage] = useState<DocPageDTO | null>(cachedPage)
-  const [doc, setDoc] = useState<GeneratedDocDTO | null>(null)
-  const [latestRun, setLatestRun] = useState<RunDTO | null>(null)
   const [loading, setLoading] = useState(!cachedPage)
-  const [exploring, setExploring] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [activity, setActivity] = useState<ActivityEntry[]>([])
   const abortRef = useRef<AbortController | null>(null)
-  const runIdRef = useRef<string | null>(null)
   const [liveUrl, setLiveUrl] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'test'>('doc')
-  const [genMethod, setGenMethod] = useState<'video' | 'explore'>('video')
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test'>('doc')
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
+  const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; text?: string }[]>([])
+  const [videoUrl, setVideoUrl] = useState<string | null>(null)
+  const [videoDuration, setVideoDuration] = useState(0)
+  const [latestRunId, setLatestRunId] = useState<string | null>(null)
+  const [voices, setVoices] = useState<{ voiceId: string; name: string }[]>([])
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
+  const [selectedTone, setSelectedTone] = useState<string>('friendly')
+  const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -64,15 +62,21 @@ export function PageView(): React.ReactElement {
       setPage(null)
       setLoading(true)
     }
-    setDoc(null)
-    setLatestRun(null)
     setError(null)
-    setActivity([])
     setLiveUrl(null)
-    setExploring(false)
-    setGenerating(false)
     setStatusMessage(null)
     setActiveTab('doc')
+    // Reset run-dependent state
+    setVideoUrl(null)
+    setVoiceoverUrl(null)
+    setVoiceoverSegments([])
+    setLatestRunId(null)
+    setVideoDuration(0)
+    setTryReport(null)
+    setTryRunning(false)
+    setAnalyzing(false)
+    setTryStreamSteps([])
+    setGeneratingVoiceover(false)
   }
 
   const fetchData = useCallback(async () => {
@@ -84,9 +88,50 @@ export function PageView(): React.ReactElement {
       ])
       const { page: pageData, latestRun: runData, doc: docData } = fullData
       setPage(pageData)
-      setDoc(docData)
-      setLatestRun(runData)
       setTryReport(testReport)
+
+      // Track latest run ID for voiceover generation
+      setLatestRunId(runData?.id ?? null)
+
+      // Extract voiceover + video URLs from latest run summary
+      // Uses public URLs (artifacts bucket is public)
+      const summary = runData?.summaryJson as Record<string, unknown> | null
+      const voiceover = summary?.voiceover as {
+        audioPath?: string
+        audioUrl?: string
+        segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+      } | undefined
+
+      if (voiceover?.audioUrl) {
+        setVoiceoverUrl(voiceover.audioUrl)
+      } else if (voiceover?.audioPath) {
+        const { data: audioData } = supabase.storage.from('artifacts').getPublicUrl(voiceover.audioPath)
+        setVoiceoverUrl(audioData?.publicUrl ?? null)
+      } else {
+        setVoiceoverUrl(null)
+      }
+      setVoiceoverSegments(voiceover?.segments ?? [])
+
+      // Get video URL from summaryJson.videoPath — verify it exists
+      const vPath = summary?.videoPath as string | undefined
+      if (vPath && runData?.id) {
+        const { data: vData } = supabase.storage.from('artifacts').getPublicUrl(vPath)
+        // HEAD check to verify file exists (catches stale .mp4 paths from failed ffmpeg)
+        const check = await fetch(vData?.publicUrl ?? '', { method: 'HEAD' }).catch(() => null)
+        if (check?.ok) {
+          setVideoUrl(vData?.publicUrl ?? null)
+        } else {
+          // Try fallback: original upload format (.webm, .mp4, .mov)
+          const basePath = `runs/${runData.id}/video`
+          for (const ext of ['.webm', '.mp4', '.mov']) {
+            const { data: fallback } = supabase.storage.from('artifacts').getPublicUrl(basePath + ext)
+            const fbCheck = await fetch(fallback?.publicUrl ?? '', { method: 'HEAD' }).catch(() => null)
+            if (fbCheck?.ok) { setVideoUrl(fallback?.publicUrl ?? null); break }
+          }
+        }
+      } else {
+        setVideoUrl(null)
+      }
 
       // If doc exists but page.content is empty, copy it over
       if (docData?.markdownContent && !pageData.content) {
@@ -104,143 +149,33 @@ export function PageView(): React.ReactElement {
     void fetchData()
   }, [fetchData])
 
-  const runExploration = async (runId: string, customPrompt?: string): Promise<void> => {
-    setExploring(true)
-    setError(null)
-    setActivity([])
-    setLiveUrl(null)
-    setStatusMessage('Launching browser...')
-
-    const controller = new AbortController()
-    abortRef.current = controller
-    runIdRef.current = runId
-
-    try {
-      await api.runs.exploreStream(
-        runId,
-        (event: StepEventDTO) => {
-          switch (event.type) {
-            case 'live': setLiveUrl(event.liveUrl ?? null); break
-            case 'status':
-              if (event.message && event.message.length > 15) {
-                setActivity((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
-              }
-              setStatusMessage(event.message ?? null)
-              break
-            case 'step':
-              if (event.message && event.message.length > 15) {
-                setActivity((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
-              }
-              break
-            case 'done': setStatusMessage(event.message ?? 'Exploration complete'); break
-            case 'blocked': setStatusMessage(event.message ?? 'Agent needs help'); break
-            case 'cancelled': setStatusMessage('Exploration stopped'); break
-            case 'error': setStatusMessage(event.message ?? 'Error'); break
-          }
-        },
-        customPrompt,
-        controller.signal,
-      )
-
-      // Stream ended — generate doc from whatever we have (skip if cancelled)
-      if (controller.signal.aborted) {
-        await fetchData()
-        await context.refetchPages()
-        return
-      }
-
-      setLiveUrl(null)
-      const updatedRun = await api.runs.get(runId)
-
-      // If Vercel killed the function mid-exploration, the run is stuck as 'running'.
-      // Mark it as failed so we can still generate doc from partial data.
-      if (updatedRun.status === 'running' || updatedRun.status === 'pending') {
-        try {
-          await dbUpdatePage(projectId!, pageId!, { status: 'draft' })
-          await fetchData()
-          await context.refetchPages()
-          setStatusMessage('Exploration timed out — you can retry or generate doc from what was captured')
-          return
-        } catch {
-          // ignore
-        }
-      }
-
-      if (updatedRun.status === 'completed' || updatedRun.status === 'blocked' || updatedRun.status === 'failed') {
-        setStatusMessage('Generating documentation...')
-        setGenerating(true)
-
-        try {
-          const generatedDoc = await api.runs.generateDoc(runId)
-          setDoc(generatedDoc)
-          await dbUpdatePage(projectId!, pageId!, { status: 'published' })
-        } catch (genErr) {
-          console.error('Doc generation failed:', genErr)
-        }
-
-        if (updatedRun.status === 'blocked') {
-          setStatusMessage('Exploration paused — you can continue anytime')
-        } else if (updatedRun.status === 'failed') {
-          setStatusMessage('Exploration stopped — partial doc generated')
-        } else {
-          setStatusMessage(null)
-        }
-      }
-
-      await fetchData()
-      await context.refetchPages()
-    } catch (err) {
-      // AbortError is expected when user cancels — not a real error
-      if ((err as Error).name !== 'AbortError') {
-        setError((err as Error).message)
-      }
-    } finally {
-      abortRef.current = null
-      runIdRef.current = null
-      setExploring(false)
-      setGenerating(false)
-    }
-  }
-
-  const handleNewExploration = async (mode: 'complete' | 'replace' = 'replace'): Promise<void> => {
-    if (!projectId || !pageId || !page) return
-    const startUrl = page.startUrl ?? context.project.baseUrl
-    const run = await api.runs.create({
-      featureName: page.title,
-      startUrl,
-      goal: page.goal ?? `Document the "${page.title}" feature`,
-      docPageId: pageId,
+  // Fetch available ElevenLabs voices (once on mount)
+  useEffect(() => {
+    api.runs.getVoices().then((r) => {
+      const v = r.voices.map((voice) => ({ voiceId: voice.voiceId, name: voice.name }))
+      console.log(`[voices] Loaded ${v.length} voices`)
+      setVoices(v)
+      if (v.length > 0) setSelectedVoiceId(v[0]!.voiceId)
+    }).catch((err) => {
+      console.warn('[voices] Failed to load:', err)
     })
-    await dbUpdatePage(projectId, pageId, { status: 'exploring' })
-
-    // In "complete" mode, pass existing doc as context so the agent fills gaps
-    let exploreContext: string | undefined
-    if (mode === 'complete' && page.content) {
-      exploreContext = `## Existing Documentation (DO NOT repeat — focus on gaps and missing sections)\n\n${page.content}`
-    }
-
-    await runExploration(run.id, exploreContext)
-  }
-
-  const handleCancel = async (): Promise<void> => {
-    if (runIdRef.current) {
-      await api.runs.cancel(runIdRef.current).catch(() => {})
-    }
-    abortRef.current?.abort()
-  }
+  }, [])
 
   const handleTryDoc = async (): Promise<void> => {
     if (!projectId || !pageId || !page?.content) return
-    const startUrl = page.startUrl ?? context.project.baseUrl
+    const briefingData = page.briefing as Record<string, unknown> | null
+    const testUrl = (briefingData?.testUrl as string) || page.startUrl || context.project.baseUrl
+    const testNotes = (briefingData?.testNotes as string) || ''
 
     const tryDocPrompt = `You are simulating a NAIVE USER who has ONLY the documentation below. You have never used this product before. You know NOTHING about it except what the documentation tells you.
 
 ## Documentation to verify:
 
 ${page.content}
+${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
 ## Your task:
-1. Navigate to: ${startUrl}
+1. Navigate to: ${testUrl}
 2. Follow EACH step in the documentation IN ORDER, exactly as written
 3. For EVERY step, report your experience clearly:
    - PASS: if the step works exactly as documented
@@ -269,7 +204,7 @@ DO NOT generate new documentation. Only verify the existing one.`
     try {
       const run = await api.runs.create({
         featureName: `[Test] ${page.title}`,
-        startUrl,
+        startUrl: testUrl,
         goal: `Verify documentation for "${page.title}"`,
         docPageId: pageId,
       })
@@ -344,11 +279,6 @@ DO NOT generate new documentation. Only verify the existing one.`
     }
   }, [projectId, pageId])
 
-  // Auto-switch to exploration tab when agent is active
-  useEffect(() => {
-    if (exploring || generating) setActiveTab('exploration')
-  }, [exploring, generating])
-
   const handleSaveContent = async (markdown: string): Promise<void> => {
     if (!projectId || !pageId) return
     await dbUpdatePage(projectId, pageId, { content: markdown })
@@ -357,72 +287,51 @@ DO NOT generate new documentation. Only verify the existing one.`
   if (loading) return <Spinner size="lg" />
   if (!page) return <EmptyState title="Page not found" />
 
-  const statusMap: Record<string, 'pending' | 'running' | 'completed'> = {
-    draft: 'pending',
-    exploring: 'running',
-    published: 'completed',
-  }
+
 
   return (
     <div>
-      {/* Header — status + publish toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-          <StatusIndicator status={statusMap[page.status] ?? 'pending'} label={page.status} />
-          {page.startUrl && <Badge color="blue">{page.startUrl}</Badge>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-          <Button
-            size="sm"
-            variant={page.isPublic ? 'secondary' : 'ghost'}
-            onClick={() => {
-              const newVal = !page.isPublic
-              setPage({ ...page, isPublic: newVal })
-              void dbUpdatePage(projectId!, pageId!, { isPublic: newVal })
-            }}
-          >
-            {page.isPublic ? (
-              <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg> Published</>
-            ) : (
-              <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg> Draft</>
+      {/* Header — publish toggle */}
+      <div className={styles.pageHeader}>
+        <div className={styles.tabBar}>
+          <button className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`} onClick={() => setActiveTab('doc')}>Documentation</button>
+          <button className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`} onClick={() => setActiveTab('exploration')}>Generate</button>
+          <button className={`${styles.tab} ${activeTab === 'video' ? styles.tabActive : ''}`} onClick={() => setActiveTab('video')}>
+            Video
+            {(voiceoverUrl || videoUrl) && <span className={`${styles.tabDot} ${styles.tabDotPass}`} />}
+          </button>
+          <button className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`} onClick={() => setActiveTab('test')}>
+            Test
+            {(tryRunning || analyzing) && <Spinner size="sm" />}
+            {!tryRunning && !analyzing && tryReport && (
+              <span className={`${styles.tabDot} ${
+                tryReport.summary.overallVerdict === 'pass' ? styles.tabDotPass :
+                tryReport.summary.overallVerdict === 'fail' ? styles.tabDotFail :
+                styles.tabDotPartial
+              }`} />
             )}
-          </Button>
+          </button>
         </div>
-      </div>
-
-      <div className={styles.tabBar}>
-        <button
-          className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`}
-          onClick={() => setActiveTab('doc')}
+        <div
+          className={styles.publishToggle}
+          onClick={() => {
+            const newVal = !page.isPublic
+            setPage({ ...page, isPublic: newVal })
+            void dbUpdatePage(projectId!, pageId!, { isPublic: newVal }).then(() => context.refetchPages())
+          }}
         >
-          Documentation
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`}
-          onClick={() => setActiveTab('exploration')}
-        >
-          Generate
-          {(exploring || generating) && <Spinner size="sm" />}
-        </button>
-        <button
-          className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`}
-          onClick={() => setActiveTab('test')}
-        >
-          Test
-          {(tryRunning || analyzing) && <Spinner size="sm" />}
-          {!tryRunning && !analyzing && tryReport && (
-            <span className={`${styles.tabDot} ${
-              tryReport.summary.overallVerdict === 'pass' ? styles.tabDotPass :
-              tryReport.summary.overallVerdict === 'fail' ? styles.tabDotFail :
-              styles.tabDotPartial
-            }`} />
-          )}
-        </button>
+          <span style={{ color: page.isPublic ? 'var(--color-success)' : 'var(--color-muted-fg)' }}>
+            {page.isPublic ? 'Published' : 'Draft'}
+          </span>
+          <div className={`${styles.toggleTrack} ${page.isPublic ? styles.toggleTrackOn : ''}`}>
+            <div className={`${styles.toggleKnob} ${page.isPublic ? styles.toggleKnobOn : ''}`} />
+          </div>
+        </div>
       </div>
 
       {/* ===== DOCUMENTATION TAB ===== */}
       {activeTab === 'doc' && (
-        <div className={styles.tabContent}>
+        <div className={styles.tabContent} style={{ maxWidth: '820px', margin: '0 auto' }}>
           <input
             className={styles.pageTitle}
             type="text"
@@ -456,237 +365,230 @@ DO NOT generate new documentation. Only verify the existing one.`
         </div>
       )}
 
-      {/* ===== EXPLORATION TAB ===== */}
-      {activeTab === 'exploration' && (
-        <div className={styles.tabContent}>
+      {/* ===== VIDEO TAB ===== */}
+      {activeTab === 'video' && (
+        <div className={styles.tabContent} style={{ maxWidth: '960px', margin: '0 auto' }}>
+          {(videoUrl || latestRunId) ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              {/* Explanation */}
+              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: 0, lineHeight: 1.6 }}>
+                Configure the AI voice-over for your video. Choose a tone and voice, then generate — the narration syncs automatically with the recording.
+              </p>
 
-          {/* Briefing config — collapsible during exploration */}
-          <BriefingSection
-            page={page}
-            pageId={pageId!}
-            briefing={page.briefing ?? { objective: '', knowledge: '', resources: [] }}
-            collapsed={exploring || generating}
-            onPageUpdate={(updates) => {
-              setPage({ ...page, ...updates })
-              void debouncedPageUpdate(updates)
-            }}
-            onBriefingChange={(briefing) => {
-              setPage({ ...page, briefing })
-              void debouncedPageUpdate({ briefing })
-            }}
-          />
-
-          {/* Generation methods — segmented control + content */}
-          {!exploring && !generating && (
-            <>
-            <div className={styles.methodToggle}>
-              <button
-                className={`${styles.methodOption} ${genMethod === 'video' ? styles.methodOptionActive : ''}`}
-                onClick={() => setGenMethod('video')}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
-                Screen recording
-                <Badge color="green">recommended</Badge>
-              </button>
-              <button
-                className={`${styles.methodOption} ${genMethod === 'explore' ? styles.methodOptionActive : ''}`}
-                onClick={() => setGenMethod('explore')}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" /></svg>
-                Auto-exploration
-                <Badge color="amber">beta</Badge>
-              </button>
-            </div>
-
-            {genMethod === 'video' && (
-              <div className={styles.methodContent}>
-                <div className={styles.methodInfo}>
-                  <div className={styles.methodInfoText}>
-                    <p className={styles.methodInfoDesc}>
-                      Upload a screen recording of your product workflow. AI watches every click, extracts screenshots at key moments, and writes step-by-step documentation automatically.
-                    </p>
-                    <div className={styles.methodInfoTags}>
-                      <span className={styles.methodTag}>.mp4, .webm, .mov</span>
-                      <span className={styles.methodTag}>up to 500MB</span>
-                      <span className={styles.methodTag}>Best for: tutorials, onboarding flows</span>
-                    </div>
-                  </div>
+              {/* Controls bar */}
+              <div className={styles.videoToolbar} style={{ borderRadius: 'var(--radius-xl)', border: '1px solid var(--color-border)' }}>
+                <div className={styles.videoToolbarGroup}>
+                  <span className={styles.videoToolbarLabel}>Tone</span>
+                  <select value={selectedTone} onChange={(e) => setSelectedTone(e.target.value)} className={styles.videoSelect}>
+                    <option value="friendly">Friendly</option>
+                    <option value="professional">Professional</option>
+                    <option value="energetic">Energetic</option>
+                    <option value="calm">Calm</option>
+                    <option value="playful">Playful</option>
+                  </select>
                 </div>
-                <VideoUploader
-                  projectId={projectId!}
-                  pageId={pageId!}
-                  page={page}
-                  onComplete={async () => {
-                    await fetchData()
-                    await context.refetchPages()
-                    setActiveTab('doc')
+                {voices.length > 0 && (
+                  <div className={styles.videoToolbarGroup}>
+                    <span className={styles.videoToolbarLabel}>Voice</span>
+                    <select value={selectedVoiceId ?? ''} onChange={(e) => setSelectedVoiceId(e.target.value)} className={styles.videoSelect}>
+                      {voices.map((v) => <option key={v.voiceId} value={v.voiceId}>{v.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div style={{ flex: 1 }} />
+
+                {/* Replace video */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', padding: '4px 8px', borderRadius: 'var(--radius-md)', transition: 'color 0.15s' }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></svg>
+                  Replace
+                  <input type="file" accept="video/mp4,video/webm,video/quicktime" style={{ display: 'none' }} onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    void (async () => {
+                      try {
+                        const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
+                        const path = `runs/${latestRunId}/video${ext}`
+                        // Delete existing file first, then upload (signed URL fails if file exists)
+                        await supabase.storage.from('artifacts').remove([path])
+                        const { error: upErr } = await supabase.storage.from('artifacts').upload(path, file, { contentType: file.type, upsert: true })
+                        if (upErr) throw new Error(upErr.message)
+                        const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
+                        if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
+                        setVoiceoverUrl(null)
+                        setVoiceoverSegments([])
+                      } catch (err) {
+                        console.error('[replace] Failed:', (err as Error).message)
+                      }
+                    })()
+                  }} />
+                </label>
+
+                {/* Publish toggle */}
+                <div
+                  className={styles.videoPublish}
+                  onClick={() => {
+                    const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
+                    const newVal = !current
+                    const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
+                    setPage({ ...page, briefing: newBriefing })
+                    void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
                   }}
+                >
+                  <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
+                    <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
+                  </div>
+                  <span style={{
+                    fontSize: 'var(--text-xs)', fontWeight: 500,
+                    color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-success)' : 'var(--color-muted-fg)',
+                  }}>
+                    {(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'Published' : 'Hidden'}
+                  </span>
+                </div>
+                {latestRunId && page.content && (
+                  <Button size="sm" disabled={generatingVoiceover} onClick={() => {
+                    void (async () => {
+                      setGeneratingVoiceover(true)
+                      try {
+                        const result = await api.runs.generateVoiceover(latestRunId, {
+                          voiceId: selectedVoiceId,
+                          tone: selectedTone,
+                        }) as {
+                          segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+                          audioPath?: string
+                          audioUrl?: string
+                        }
+                        const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
+                        if (result.audioUrl) {
+                          setVoiceoverUrl(bust(result.audioUrl))
+                        } else if (result.audioPath) {
+                          const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                          setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
+                        }
+                        setVoiceoverSegments(result.segments ?? [])
+                      } finally {
+                        setGeneratingVoiceover(false)
+                      }
+                    })()
+                  }}>
+                    {voiceoverUrl ? 'Regenerate' : 'Generate voice-over'}
+                  </Button>
+                )}
+              </div>
+
+              {/* Generation progress */}
+              {generatingVoiceover && (
+                <ProgressLoader
+                  steps={[
+                    { label: 'Generating voice-over — analyzing video, writing script, synthesizing audio...', estimatedSeconds: 90 },
+                  ]}
+                  activeStep={0}
                 />
-              </div>
-            )}
-
-            {genMethod === 'explore' && (
-              <div className={styles.methodContent}>
-                <div className={styles.methodInfo}>
-                  <div className={styles.methodInfoText}>
-                    <p className={styles.methodInfoDesc}>
-                      An AI agent opens your app in a cloud browser, navigates autonomously, captures screenshots, and generates documentation — no recording needed.
-                    </p>
-                    <div className={styles.methodInfoTags}>
-                      <span className={styles.methodTag}>Requires Anthropic + Browserbase keys</span>
-                      <span className={styles.methodTag}>Best for: full site coverage</span>
-                    </div>
-                  </div>
-                </div>
-                <div className={styles.methodActions}>
-                  {latestRun && page.content ? (
-                    <>
-                      <Button
-                        variant={page.briefing?.objective ? undefined : 'secondary'}
-                        onClick={() => void handleNewExploration('complete')}
-                      >
-                        Complete documentation
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        onClick={() => void handleNewExploration('replace')}
-                      >
-                        Start from scratch
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      variant={page.briefing?.objective ? undefined : 'secondary'}
-                      onClick={() => void handleNewExploration('replace')}
-                    >
-                      Explore & Document
-                    </Button>
-                  )}
-                  {!page.briefing?.objective && (
-                    <span className={styles.methodHint}>Add an objective for better results</span>
-                  )}
-                </div>
-              </div>
-            )}
-            </>
-          )}
-
-          {/* Live exploration feed — activity left, video right */}
-          {(exploring || generating) && (
-            <div>
-              <div className={styles.liveFeedHeader}>
-                <Spinner size="sm" />
-                <span className={styles.liveFeedStatus} style={{ color: generating ? 'var(--color-accent-green)' : 'var(--color-accent-blue)' }}>
-                  {statusMessage}
-                </span>
-                {exploring && !generating && (
-                  <Button size="sm" variant="ghost" onClick={() => void handleCancel()}>Stop</Button>
-                )}
-              </div>
-
-              <div className={styles.liveLayout}>
-                <div className={styles.activityLog}>
-                  <div className={styles.activityHeader}>
-                    reasoning ({activity.length})
-                  </div>
-                  {activity.map((entry, i) => (
-                    <div key={i} className={styles.activityEntry}>
-                      {entry.text}
-                    </div>
-                  ))}
-                </div>
-
-                {liveUrl ? (
-                  <div className={styles.replayContainer}>
-                    <div className={styles.replayHeader}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: 'var(--radius-full)', backgroundColor: 'var(--color-accent-green)', animation: 'pulse 2s infinite' }} />
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>live</span>
-                      </span>
-                    </div>
-                    <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
-                  </div>
-                ) : (
-                  <div className={styles.section} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '300px' }}>
-                    <Spinner size="lg" />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Reasoning persists after exploration */}
-          {!exploring && !generating && activity.length > 0 && (
-            <div className={styles.activityLog} style={{ maxHeight: '200px', marginBottom: 'var(--space-md)' }}>
-              <div className={styles.activityHeader}>
-                exploration reasoning ({activity.length})
-              </div>
-              {activity.map((entry, i) => (
-                <div key={i} className={styles.activityEntry}>
-                  {entry.text}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Post-exploration dashboard */}
-          {!exploring && !generating && latestRun && (
-            <div>
-              {/* Completeness bar — full width on top */}
-              {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
-                <CompletenessBar assessment={(doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment} />
               )}
 
-              {/* Two columns: exploration status (left) + gaps (right) */}
-              <div className={styles.dashboardGrid}>
+              {/* Video player */}
+              <div className={styles.videoCard}>
+                <NarratedPlayer videoUrl={videoUrl} audioUrl={voiceoverUrl} onDurationChange={setVideoDuration} />
+              </div>
+
+              {/* Segment timeline + text editor */}
+              {voiceoverSegments.length > 0 && latestRunId && videoDuration > 0 && (
+                <>
+                  <div className={styles.section} style={{ padding: 0, overflow: 'hidden' }}>
+                    <VideoTimeline
+                      runId={latestRunId}
+                      duration={videoDuration}
+                      segments={voiceoverSegments}
+                      voiceId={selectedVoiceId}
+                      onSegmentsChange={setVoiceoverSegments}
+                      onVideoTrimmed={(url) => setVideoUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
+                      onAudioUrlChange={(url) => setVoiceoverUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
+                    />
+                  </div>
+                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: 0, lineHeight: 1.5 }}>
+                    Click any segment text to edit it, then press Enter or the refresh icon to regenerate just that segment.
+                    Drag the blue trim handles on the timeline to cut the video start/end.
+                  </p>
+                </>
+              )}
+            </div>
+          ) : (
+            <EmptyState
+              title="No video yet"
+              description="Record or upload a video in the Generate tab to create a narrated walkthrough."
+            />
+          )}
+        </div>
+      )}
+
+      {/* ===== GENERATE TAB ===== */}
+      {activeTab === 'exploration' && (
+        <div className={styles.tabContent}>
+          {/* Explanation */}
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.6 }}>
+            Record your screen or upload a video — the AI analyzes every action, extracts key screenshots, and generates structured documentation automatically.
+          </p>
+
+          {/* Two-column layout: briefing + actions */}
+          <div className={styles.generateGrid}>
+            {/* Left — Briefing */}
+            <div className={styles.section} style={{ margin: 0 }}>
+              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
+                Briefing
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
                 <div>
-                  <ExplorationAssistant
-                    run={latestRun}
-                    onContinue={async (ctx) => {
-                      if (!latestRun || !projectId || !pageId) return
-                      await dbUpdatePage(projectId, pageId, { status: 'exploring' })
-                      await runExploration(latestRun.id, ctx)
+                  <label className={styles.briefingFieldLabel}>Goal</label>
+                  <input type="text" value={page.goal ?? ''} onChange={(e) => {
+                    setPage({ ...page, goal: e.target.value })
+                    void debouncedPageUpdate({ goal: e.target.value })
+                  }} placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
+                </div>
+
+                <div>
+                  <label className={styles.briefingFieldLabel}>What to document</label>
+                  <textarea
+                    value={(page.briefing as Record<string, unknown> | null)?.objective as string ?? ''}
+                    onChange={(e) => {
+                      const newBriefing = { ...(page.briefing ?? {}), objective: e.target.value } as typeof page.briefing
+                      setPage({ ...page, briefing: newBriefing })
+                      void debouncedPageUpdate({ briefing: newBriefing })
                     }}
-                    onSkipAndGenerate={async () => {
-                      if (!latestRun) return
-                      try {
-                        const generatedDoc = await api.runs.generateDoc(latestRun.id)
-                        setDoc(generatedDoc)
-                        if (projectId && pageId) await dbUpdatePage(projectId, pageId, { status: 'published' })
-                        await fetchData()
-                        await context.refetchPages()
-                      } catch (err) {
-                        setError((err as Error).message)
-                      }
-                    }}
-                    onReExplore={() => handleNewExploration('replace')}
+                    placeholder="e.g. Document how a new user creates an account and completes onboarding"
+                    rows={2} className={styles.briefingTextarea}
                   />
                 </div>
 
                 <div>
-                  {/* Gaps */}
-                  {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
-                    <GapsPanel gaps={((doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment).gaps} />
-                  )}
-
-                  {/* Session replay */}
-                  <SessionReplay runId={latestRun.id} />
+                  <label className={styles.briefingFieldLabel}>What the agent can&apos;t see</label>
+                  <textarea
+                    value={(page.briefing as Record<string, unknown> | null)?.knowledge as string ?? ''}
+                    onChange={(e) => {
+                      const newBriefing = { ...(page.briefing ?? {}), knowledge: e.target.value } as typeof page.briefing
+                      setPage({ ...page, briefing: newBriefing })
+                      void debouncedPageUpdate({ briefing: newBriefing })
+                    }}
+                    placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries."
+                    rows={2} className={styles.briefingTextarea}
+                  />
                 </div>
               </div>
-
-              {/* Suggested next pages — full width */}
-              {doc?.jsonContent && hasSelfAssessment(doc.jsonContent) && (
-                <NextPagesPanel
-                  nextSteps={((doc.jsonContent as Record<string, unknown>).selfAssessment as SelfAssessment).nextSteps}
-                  projectId={projectId!}
-                  onPageCreated={async () => {
-                    await fetchData()
-                    await context.refetchPages()
-                  }}
-                />
-              )}
             </div>
-          )}
+
+            {/* Right — Record / Upload */}
+            <div>
+              <ScreenRecorder
+                projectId={projectId!}
+                pageId={pageId!}
+                page={page}
+                onComplete={async () => {
+                  await fetchData()
+                  await context.refetchPages()
+                  setActiveTab('doc')
+                }}
+              />
+            </div>
+          </div>
 
           {error && <EmptyState title="Error" description={error} />}
         </div>
@@ -695,73 +597,99 @@ DO NOT generate new documentation. Only verify the existing one.`
       {/* ===== TEST TAB ===== */}
       {activeTab === 'test' && (
         <div className={styles.tabContent}>
-          <div className={styles.tryHeader}>
-            <div className={styles.tryTitleRow}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m9 15 2 2 4-4" /></svg>
-              <h2 className={styles.tryTitle}>Documentation Test</h2>
-              {(tryRunning || analyzing) && <Spinner size="sm" />}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <p className={styles.trySubtitle}>
-                {tryRunning
-                  ? statusMessage ?? 'AI is following your documentation steps...'
-                  : analyzing
-                    ? 'Analyzing results with Gemini...'
-                    : tryReport
-                      ? `Last tested ${new Date(tryReport.executedAt).toLocaleDateString()}`
-                      : 'Verify your documentation against the live application'}
-              </p>
-              {!tryRunning && !analyzing && (
-                <Button size="sm" onClick={() => void handleTryDoc()} disabled={!page.content}>
-                  {tryReport ? 'Re-test' : 'Run Test'}
-                </Button>
-              )}
-            </div>
-          </div>
+          {/* Not running — show config + run button or results */}
+          {!tryRunning && !analyzing && (
+            <>
+              {/* Two-column: config + action */}
+              <div className={styles.generateGrid}>
+                {/* Left — Test configuration */}
+                <TestConfig
+                  page={page}
+                  project={context.project}
+                  pageId={pageId!}
+                  onBriefingChange={(newBriefing) => {
+                    setPage({ ...page, briefing: newBriefing })
+                    void debouncedPageUpdate({ briefing: newBriefing })
+                  }}
+                />
 
-          {/* Live browser during test */}
-          {tryRunning && liveUrl && (
-            <div className={styles.replayContainer} style={{ marginBottom: 'var(--space-md)' }}>
-              <div className={styles.replayHeader}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-success)', animation: 'pulse 2s infinite' }} />
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>live</span>
-                </span>
+                {/* Right — Run action + status */}
+                <div className={styles.section} style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
+                      Documentation Test
+                    </div>
+                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.5 }}>
+                      An AI agent follows your documentation step-by-step as a naive user on the live application and reports what works and what doesn&apos;t.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+                    {tryReport && (
+                      <div style={{
+                        padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-secondary)',
+                        borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
+                      }}>
+                        Last tested {new Date(tryReport.executedAt).toLocaleDateString()} — {tryReport.summary.overallVerdict}
+                      </div>
+                    )}
+                    <Button onClick={() => void handleTryDoc()} disabled={!page.content}>
+                      {tryReport ? 'Re-test documentation' : 'Run test'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Report below */}
+              {tryReport && (
+                <div style={{ marginTop: 'var(--space-md)' }}>
+                  <TryDocReport report={tryReport} />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Running — live browser + steps */}
+          {tryRunning && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                  <Spinner size="sm" />
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
+                    {statusMessage ?? 'AI is following your documentation steps...'}
+                  </span>
+                </div>
                 <Button size="sm" variant="ghost" onClick={() => abortRef.current?.abort()}>Stop</Button>
               </div>
-              <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
+
+              {liveUrl && (
+                <div className={styles.replayContainer}>
+                  <div className={styles.replayHeader}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-success)', animation: 'pulse 2s infinite' }} />
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>live</span>
+                    </span>
+                  </div>
+                  <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
+                </div>
+              )}
+
+              {tryStreamSteps.length > 0 && (
+                <div className={styles.activityLog} style={{ maxHeight: '300px' }}>
+                  <div className={styles.activityHeader}>verification steps ({tryStreamSteps.length})</div>
+                  {tryStreamSteps.map((step, i) => (
+                    <div key={i} className={styles.activityEntry}>{step.text}</div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Live streaming steps */}
-          {tryRunning && tryStreamSteps.length > 0 && (
-            <div className={styles.activityLog} style={{ maxHeight: '300px', marginBottom: 'var(--space-md)' }}>
-              <div className={styles.activityHeader}>verification steps ({tryStreamSteps.length})</div>
-              {tryStreamSteps.map((step, i) => (
-                <div key={i} className={styles.activityEntry}>{step.text}</div>
-              ))}
-            </div>
-          )}
-
-          {/* Analyzing state */}
+          {/* Analyzing */}
           {analyzing && (
-            <div className={styles.section} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '200px', gap: 'var(--space-md)' }}>
-              <Spinner size="lg" />
-              <span style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--text-sm)' }}>Generating structured test report...</span>
-            </div>
-          )}
-
-          {/* Structured report */}
-          {!tryRunning && !analyzing && tryReport && (
-            <TryDocReport report={tryReport} />
-          )}
-
-          {/* Empty state */}
-          {!tryRunning && !analyzing && !tryReport && (
-            <EmptyState
-              title="No test results yet"
-              description="Run a test to verify your documentation against the live application. The AI will follow each step as a naive user and report what works and what doesn't."
-              action={<Button onClick={() => void handleTryDoc()} disabled={!page.content}>Run Test</Button>}
+            <ProgressLoader
+              steps={[{ label: 'Generating structured test report', estimatedSeconds: 20 }]}
+              activeStep={0}
             />
           )}
         </div>
@@ -770,523 +698,140 @@ DO NOT generate new documentation. Only verify the existing one.`
   )
 }
 
-function hasSelfAssessment(json: Record<string, unknown>): boolean {
-  return json.selfAssessment != null && typeof json.selfAssessment === 'object'
+// --- Test Configuration ---
+
+const TEST_FILE_EXTENSIONS = ['.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml', '.pdf']
+const TEST_MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB
+
+interface TestResource {
+  type: 'url' | 'file' | 'note'
+  label: string
+  value: string
 }
 
-// --- Briefing Section (collapsible, numbered steps) ---
-
-const RESOURCE_TYPES: PageResourceDTO['type'][] = ['url', 'credential', 'endpoint', 'file', 'note']
-const ALLOWED_FILE_EXTENSIONS = ['.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml']
-const MAX_FILE_SIZE = 500 * 1024
-
-function BriefingSection({
-  page,
-  pageId,
-  briefing,
-  collapsed,
-  onPageUpdate,
-  onBriefingChange,
-}: {
+function TestConfig({ page, project, pageId, onBriefingChange }: {
   page: DocPageDTO
+  project: ProjectDTO
   pageId: string
-  briefing: PageBriefingDTO
-  collapsed: boolean
-  onPageUpdate: (updates: Record<string, unknown>) => void
-  onBriefingChange: (briefing: PageBriefingDTO) => void
+  onBriefingChange: (briefing: DocPageDTO['briefing']) => void
 }): React.ReactElement {
-  const [open, setOpen] = useState(!collapsed)
+  const briefing = page.briefing as Record<string, unknown> | null
+  const testUrl = (briefing?.testUrl as string) ?? ''
+  const testNotes = (briefing?.testNotes as string) ?? ''
+  const testResources = (briefing?.testResources as TestResource[]) ?? []
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [showExample, setShowExample] = useState(false)
 
-  // Auto-collapse when exploration starts
-  useEffect(() => {
-    if (collapsed) setOpen(false)
-  }, [collapsed])
-
-  const update = (partial: Partial<PageBriefingDTO>): void => {
-    onBriefingChange({ ...briefing, ...partial })
+  const update = (field: string, value: unknown): void => {
+    onBriefingChange({ ...(page.briefing ?? {}), [field]: value } as typeof page.briefing)
   }
 
   const addResource = (): void => {
-    update({ resources: [...briefing.resources, { type: 'note', label: '', value: '' }] })
+    update('testResources', [...testResources, { type: 'note', label: '', value: '' }])
   }
 
-  const updateResource = (index: number, field: keyof PageResourceDTO, value: string): void => {
-    update({ resources: briefing.resources.map((r, i) => i === index ? { ...r, [field]: value } : r) })
+  const updateResource = (i: number, field: keyof TestResource, val: string): void => {
+    update('testResources', testResources.map((r, j) => j === i ? { ...r, [field]: val } : r))
   }
 
-  const removeResource = (index: number): void => {
-    update({ resources: briefing.resources.filter((_, i) => i !== index) })
+  const removeResource = (i: number): void => {
+    update('testResources', testResources.filter((_, j) => j !== i))
   }
 
-  const handleFileUpload = async (index: number, e: ChangeEvent<HTMLInputElement>): Promise<void> => {
+  const handleFileUpload = async (i: number, e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const file = e.target.files?.[0]
     if (!file) return
     setUploadError(null)
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
-    if (!ALLOWED_FILE_EXTENSIONS.includes(ext)) { setUploadError(`Unsupported type. Accepted: ${ALLOWED_FILE_EXTENSIONS.join(', ')}`); return }
-    if (file.size > MAX_FILE_SIZE) { setUploadError('File too large (max 500KB)'); return }
-    const path = `pages/${pageId}/${file.name}`
+    if (!TEST_FILE_EXTENSIONS.includes(ext)) { setUploadError(`Unsupported type. Accepted: ${TEST_FILE_EXTENSIONS.join(', ')}`); return }
+    if (file.size > TEST_MAX_FILE_SIZE) { setUploadError('File too large (max 2MB)'); return }
+    const path = `pages/${pageId}/test/${file.name}`
     const { error } = await supabase.storage.from('briefing-files').upload(path, file, { upsert: true })
     if (error) { setUploadError(`Upload failed: ${error.message}`); return }
-    update({ resources: briefing.resources.map((r, i) => i === index ? { ...r, value: path, label: r.label || file.name } : r) })
+    update('testResources', testResources.map((r, j) => j === i ? { ...r, value: path, label: r.label || file.name } : r))
   }
 
-  // Count filled fields for the summary badge
-  const filledCount = [page.goal, page.startUrl, briefing.objective, briefing.knowledge].filter(Boolean).length + briefing.resources.length
-
   return (
-    <div className={styles.section}>
-      <button type="button" onClick={() => setOpen(!open)} className={styles.briefingHeader}>
-        <div className={styles.briefingTitle}>
-          <span className={styles.briefingTitleText}>Agent Briefing</span>
-          <span className={`${styles.briefingBadge} ${filledCount > 2 ? styles.briefingBadgeReady : styles.briefingBadgePartial}`}>
-            {filledCount > 2 ? 'ready' : `${filledCount}/4`}
-          </span>
+    <div className={styles.section} style={{ marginBottom: 'var(--space-md)' }}>
+      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
+        Test Configuration
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+        <div>
+          <label className={styles.briefingFieldLabel}>Test URL</label>
+          <input type="text"
+            value={testUrl || page.startUrl || project.baseUrl || ''}
+            onChange={(e) => update('testUrl', e.target.value)}
+            placeholder={page.startUrl ?? project.baseUrl ?? 'https://...'}
+            className={styles.briefingInput}
+            style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
+          />
         </div>
-        <span className={`${styles.briefingChevron} ${open ? styles.briefingChevronOpen : ''}`}>&#9662;</span>
-      </button>
+        <div>
+          <label className={styles.briefingFieldLabel}>Additional context</label>
+          <textarea
+            value={testNotes}
+            onChange={(e) => update('testNotes', e.target.value)}
+            placeholder="e.g. Test with an expired subscription. The Reset button should show a confirmation dialog."
+            rows={2} className={styles.briefingTextarea}
+          />
+        </div>
 
-      {!open && (
-        <p className={styles.briefingPreview}>
-          {briefing.objective ? briefing.objective.slice(0, 80) + (briefing.objective.length > 80 ? '...' : '') : 'No objective set — click to expand'}
-        </p>
-      )}
-
-      {open && (
-        <div className={styles.briefingBody}>
-          <p className={styles.briefingHint}>
-            The more precise your briefing, the better the documentation.
-          </p>
-
-          {/* Step 1: Goal + URL */}
-          <div>
-            <div className={styles.briefingStepHeader}>
-              <span className={styles.stepNumber}>1</span>
-              <span className={styles.briefingStepTitle}>Where to explore</span>
-            </div>
-            <div className={styles.briefingGrid}>
-              <div>
-                <label className={styles.briefingFieldLabel}>Start URL</label>
-                <input type="text" value={page.startUrl ?? ''} onChange={(e) => onPageUpdate({ startUrl: e.target.value })}
-                  placeholder="e.g. /pricing" className={`${styles.briefingInput} ${styles.briefingInputMono}`} />
-              </div>
-              <div>
-                <label className={styles.briefingFieldLabel}>Goal</label>
-                <input type="text" value={page.goal ?? ''} onChange={(e) => onPageUpdate({ goal: e.target.value })}
-                  placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
-              </div>
-            </div>
+        {/* Resources */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
+            <label className={styles.briefingFieldLabel} style={{ margin: 0 }}>Resources</label>
+            <button type="button" onClick={addResource} style={{
+              background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+              cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
+              fontFamily: 'var(--font-mono)', padding: '2px 8px',
+            }}>+ add</button>
           </div>
-
-          {/* Step 2: Objective */}
-          <div>
-            <div className={styles.briefingStepBetween}>
-              <div className={styles.briefingStepHeader} style={{ marginBottom: 0 }}>
-                <span className={styles.stepNumber}>2</span>
-                <span className={styles.briefingStepTitle}>What to document</span>
-              </div>
-              <button type="button" onClick={() => setShowExample(!showExample)} className={styles.briefingExampleToggle}>
-                {showExample ? 'hide example' : 'see example'}
-              </button>
-            </div>
-            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
-              What should the user learn from this page? Be specific.
-            </p>
-            {showExample && (
-              <div className={styles.briefingExample}>
-                <p className={styles.briefingExampleBad}>Bad: &quot;Document pricing&quot;</p>
-                <p className={styles.briefingExampleGood}>Good: &quot;Document the pricing page: compare plans, show upgrade flow from free to pro&quot;</p>
-              </div>
-            )}
-            <textarea value={briefing.objective} onChange={(e) => update({ objective: e.target.value })}
-              placeholder="e.g. Document how a new user creates an account and completes onboarding" rows={3} className={styles.briefingTextarea} />
-          </div>
-
-          {/* Step 3: Domain knowledge */}
-          <div>
-            <div className={styles.briefingStepHeader}>
-              <span className={styles.stepNumber}>3</span>
-              <span className={styles.briefingStepTitle}>What the agent can&apos;t see</span>
-            </div>
-            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
-              Business rules, edge cases, hidden behaviors.
-            </p>
-            <textarea value={briefing.knowledge} onChange={(e) => update({ knowledge: e.target.value })}
-              placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries." rows={3} className={styles.briefingTextarea} />
-          </div>
-
-          {/* Step 4: Resources */}
-          <div>
-            <div className={styles.briefingStepBetween}>
-              <div className={styles.briefingStepHeader} style={{ marginBottom: 0 }}>
-                <span className={styles.stepNumber}>4</span>
-                <span className={styles.briefingStepTitle}>Resources</span>
-                <span className={styles.briefingHint}>optional</span>
-              </div>
-              <button type="button" onClick={addResource} className={styles.briefingAddBtn}>+ add</button>
-            </div>
-            <p className={styles.briefingHint} style={{ marginBottom: 'var(--space-sm)' }}>
-              Files the agent can upload, or reference URLs.
-            </p>
-            {uploadError && <p className={styles.briefingError}>{uploadError}</p>}
-            {briefing.resources.map((r, i) => (
-              <div key={i} className={styles.briefingResourceRow}>
-                <select value={r.type} onChange={(e) => updateResource(i, 'type', e.target.value)} className={styles.briefingResourceSelect}>
-                  {RESOURCE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                </select>
-                <input type="text" value={r.label} onChange={(e) => updateResource(i, 'label', e.target.value)}
-                  placeholder="label" className={styles.briefingResourceSmallInput} />
-                {r.type === 'file' ? (
-                  r.value ? (
-                    <span className={styles.briefingHint}>{r.value.split('/').pop()}</span>
-                  ) : (
-                    <input type="file" accept={ALLOWED_FILE_EXTENSIONS.join(',')} onChange={(e) => void handleFileUpload(i, e)}
-                      className={styles.briefingHint} />
-                  )
+          {uploadError && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', margin: '0 0 var(--space-sm)' }}>{uploadError}</p>}
+          {testResources.map((r, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 2fr auto', gap: 'var(--space-xs)', marginBottom: 'var(--space-xs)', alignItems: 'center' }}>
+              <select value={r.type} onChange={(e) => updateResource(i, 'type', e.target.value)} style={{
+                background: 'var(--color-secondary)', border: '1px solid transparent', borderRadius: 'var(--radius-md)',
+                padding: '6px 8px', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)',
+              }}>
+                <option value="url">URL</option>
+                <option value="file">File</option>
+                <option value="note">Note</option>
+              </select>
+              <input type="text" value={r.label} onChange={(e) => updateResource(i, 'label', e.target.value)}
+                placeholder="label" style={{
+                  width: '100%', padding: '6px 8px', fontSize: 'var(--text-xs)', color: 'var(--color-fg)',
+                  background: 'var(--color-secondary)', border: '1px solid transparent', borderRadius: 'var(--radius-md)',
+                  fontFamily: 'var(--font-sans)', outline: 'none',
+                }} />
+              {r.type === 'file' ? (
+                r.value ? (
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', padding: '6px 8px' }}>{r.value.split('/').pop()}</span>
                 ) : (
-                  <input type="text" value={r.value} onChange={(e) => updateResource(i, 'value', e.target.value)}
-                    placeholder="value" className={styles.briefingResourceSmallInput} />
-                )}
-                <button type="button" onClick={() => removeResource(i)} className={styles.briefingResourceRemove}>x</button>
-              </div>
-            ))}
-            {briefing.resources.length === 0 && <p className={styles.briefingEmpty}>No resources added</p>}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// --- Session Replay ---
-
-function SessionReplay({ runId }: { runId: string }): React.ReactElement {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [status, setStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading')
-
-  useEffect(() => {
-    let cancelled = false
-
-    const loadRecording = async (): Promise<void> => {
-      try {
-        // Get public URL for the recording
-        const { data } = supabase.storage.from('artifacts').getPublicUrl(`runs/${runId}/recording.json`)
-        if (!data.publicUrl) { setStatus('empty'); return }
-
-        const res = await fetch(data.publicUrl)
-        if (!res.ok) { setStatus('empty'); return }
-
-        const events = await res.json() as unknown[]
-        if (cancelled || !containerRef.current || events.length === 0) { setStatus('empty'); return }
-
-        // Dynamic import to avoid bundling rrweb for all pages
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const rrweb = await import('rrweb') as any
-        containerRef.current.innerHTML = ''
-        new rrweb.Replayer(events, {
-          root: containerRef.current,
-          skipInactive: true,
-          showWarning: false,
-          showDebug: false,
-          blockClass: 'rr-block',
-          speed: 1,
-        })
-        setStatus('ready')
-      } catch {
-        if (!cancelled) setStatus('error')
-      }
-    }
-
-    void loadRecording()
-    return () => { cancelled = true }
-  }, [runId])
-
-  if (status === 'empty') return <></>
-
-  return (
-    <div className={styles.section}>
-      <p style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-text-muted)', margin: '0 0 var(--space-sm)' }}>
-        session replay
-      </p>
-      {status === 'loading' && <Spinner size="sm" />}
-      {status === 'error' && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)' }}>Recording unavailable</span>}
-      <div ref={containerRef} className={styles.replayContainer} />
-    </div>
-  )
-}
-
-// --- Self-Assessment + Suggestions Panel ---
-
-interface SelfAssessment {
-  overallCompleteness: number
-  gaps: { area: string; reason: string; severity: string }[]
-  nextSteps: { suggestion: string; reason: string; priority: string }[]
-}
-
-// --- Video Uploader ---
-
-function VideoUploader({
-  projectId,
-  pageId,
-  page,
-  onComplete,
-}: {
-  projectId: string
-  pageId: string
-  page: DocPageDTO
-  onComplete: () => Promise<void>
-}): React.ReactElement {
-  const [status, setStatus] = useState<'idle' | 'uploading' | 'analyzing' | 'generating' | 'extracting'>('idle')
-  const [error, setError] = useState<string | null>(null)
-
-  const handleVideoUpload = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setError(null)
-
-    if (file.size > 500 * 1024 * 1024) {
-      setError('Video too large (max 500MB)')
-      return
-    }
-
-    try {
-      // 1. Create a run
-      const run = await api.runs.create({
-        featureName: page.title,
-        startUrl: page.startUrl ?? '',
-        goal: page.goal || 'Document from screen recording',
-        docPageId: pageId,
-      })
-
-      // 2. Upload video directly to Supabase via signed URL
-      setStatus('uploading')
-      const videoPath = `runs/${run.id}/video${file.name.substring(file.name.lastIndexOf('.'))}`
-      const { signedUrl } = await api.runs.getSignedUploadUrl(run.id, videoPath)
-      const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
-      if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
-
-      // 3. Analyze with Gemini — returns timestamps for each step
-      setStatus('analyzing')
-      const { timestamps } = await api.runs.analyzeVideo(run.id, videoPath)
-
-      // 4. Extract frames at exact Gemini timestamps and upload as screenshots
-      setStatus('extracting')
-      await extractAndUploadFrames(file, run.id, timestamps)
-
-      // 5. Generate doc
-      setStatus('generating')
-      await api.runs.generateDoc(run.id)
-      await dbUpdatePage(projectId, pageId, { status: 'published' })
-
-      await onComplete()
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setStatus('idle')
-    }
-  }
-
-  if (status !== 'idle') {
-    return (
-      <div className={styles.methodProgress}>
-        <Spinner size="sm" />
-        <span>
-          {status === 'uploading' && 'Uploading video...'}
-          {status === 'analyzing' && 'Analyzing video with AI — this may take a minute...'}
-          {status === 'extracting' && 'Extracting screenshots...'}
-          {status === 'generating' && 'Generating documentation...'}
-        </span>
-      </div>
-    )
-  }
-
-  return (
-    <div>
-      <label className={styles.dropZone}>
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-primary)', marginBottom: 'var(--space-sm)' }}>
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" />
-        </svg>
-        <span className={styles.dropZoneTitle}>Drop a screen recording here</span>
-        <span className={styles.dropZoneHint}>or click to browse — .mp4, .webm, .mov up to 500MB</span>
-        <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleVideoUpload(e)}
-          style={{ display: 'none' }} />
-      </label>
-      {error && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-accent-red)', marginTop: 'var(--space-sm)' }}>{error}</p>}
-    </div>
-  )
-}
-
-// Extract frames from video at exact Gemini timestamps and upload via backend
-async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
-  if (timestamps.length === 0) return
-
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (!ctx) { resolve(); return }
-
-    video.onloadedmetadata = () => {
-      canvas.width = Math.min(video.videoWidth, 1280)
-      canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
-
-      let i = 0
-
-      const extractNext = (): void => {
-        if (i >= timestamps.length) { resolve(); return }
-        video.currentTime = timestamps[i]!
-      }
-
-      video.onseeked = () => {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const stepIndex = i
-        canvas.toBlob(async (blob) => {
-          if (blob) {
-            const path = `runs/${runId}/frame-${stepIndex}.jpg`
-            const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
-            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-            await api.runs.updateStepScreenshot(runId, stepIndex, path)
-          }
-          i++
-          extractNext()
-        }, 'image/jpeg', 0.8)
-      }
-
-      video.onerror = () => reject(new Error('Failed to load video'))
-      extractNext()
-    }
-
-    video.onerror = () => reject(new Error('Failed to load video'))
-    video.src = URL.createObjectURL(videoFile)
-  })
-}
-
-function getCompletenessColor(pct: number): string {
-  if (pct >= 70) return 'var(--color-accent-green)'
-  if (pct >= 40) return 'var(--color-accent-amber)'
-  return 'var(--color-accent-red)'
-}
-
-function CompletenessBar({ assessment }: { assessment: SelfAssessment }): React.ReactElement {
-  const color = getCompletenessColor(assessment.overallCompleteness)
-  return (
-    <div style={{
-      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-      marginBottom: 'var(--space-md)',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-sm)' }}>
-        <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-secondary)' }}>Documentation Completeness</span>
-        <span style={{ fontSize: 'var(--text-md)', fontWeight: 600, fontFamily: 'var(--font-mono)', color }}>{assessment.overallCompleteness}%</span>
-      </div>
-      <div style={{ height: '6px', backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)', overflow: 'hidden' }}>
-        <div style={{ height: '100%', width: `${assessment.overallCompleteness}%`, backgroundColor: color, borderRadius: 'var(--radius-full)', transition: 'width 0.5s ease' }} />
-      </div>
-    </div>
-  )
-}
-
-function GapsPanel({ gaps }: { gaps: SelfAssessment['gaps'] }): React.ReactElement {
-  if (gaps.length === 0) return <></>
-  return (
-    <div style={{
-      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-      marginBottom: 'var(--space-md)',
-    }}>
-      <h3 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-sm)', color: 'var(--color-accent-amber)', margin: '0 0 var(--space-sm)' }}>
-        Gaps ({gaps.length})
-      </h3>
-      {gaps.map((gap, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)', marginBottom: 'var(--space-xs)' }}>
-          <span style={{
-            fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', padding: '1px 6px',
-            borderRadius: 'var(--radius-sm)', flexShrink: 0,
-            backgroundColor: gap.severity === 'major' ? 'rgba(255,77,77,0.15)' : 'rgba(245,166,35,0.15)',
-            color: gap.severity === 'major' ? 'var(--color-accent-red)' : 'var(--color-accent-amber)',
-          }}>
-            {gap.severity}
-          </span>
-          <div>
-            <span style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)' }}>{gap.area}</span>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>{gap.reason}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function NextPagesPanel({
-  nextSteps,
-  projectId,
-  onPageCreated,
-}: {
-  nextSteps: SelfAssessment['nextSteps']
-  projectId: string
-  onPageCreated: () => Promise<void>
-}): React.ReactElement {
-  const [creatingIndex, setCreatingIndex] = useState<number | null>(null)
-  const navigate = useNavigate()
-
-  if (nextSteps.length === 0) return <></>
-
-  const handleCreatePage = async (ns: { suggestion: string; reason: string }, index: number): Promise<void> => {
-    setCreatingIndex(index)
-    try {
-      const slug = ns.suggestion.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50)
-      const newPage = await dbCreatePage(projectId, {
-        title: ns.suggestion,
-        slug: slug || `page-${Date.now()}`,
-        goal: ns.reason,
-      })
-      await onPageCreated()
-      navigate(`/projects/${projectId}/pages/${newPage.id}`)
-    } catch {
-      // ignore
-    } finally {
-      setCreatingIndex(null)
-    }
-  }
-
-  return (
-    <div style={{
-      padding: 'var(--space-md)', backgroundColor: 'var(--color-bg-surface)',
-      border: '1px solid var(--color-border-subtle)', borderRadius: 'var(--radius-lg)',
-    }}>
-      <h3 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-md)', color: 'var(--color-accent-blue)', margin: '0 0 var(--space-md)' }}>
-        Suggested Next Pages
-      </h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-        {nextSteps.map((ns, i) => (
-          <div key={i} style={{
-            display: 'flex', alignItems: 'center', gap: 'var(--space-md)',
-            padding: 'var(--space-sm) var(--space-md)',
-            backgroundColor: 'var(--color-bg-elevated)',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid var(--color-border-subtle)',
-          }}>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-text-primary)', margin: 0, fontWeight: 500 }}>
-                {ns.suggestion}
-              </p>
-              <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', margin: '2px 0 0' }}>
-                {ns.reason}
-              </p>
+                  <input type="file" accept={TEST_FILE_EXTENSIONS.join(',')} onChange={(e) => void handleFileUpload(i, e)}
+                    style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }} />
+                )
+              ) : (
+                <input type="text" value={r.value} onChange={(e) => updateResource(i, 'value', e.target.value)}
+                  placeholder={r.type === 'url' ? 'https://...' : 'info...'} style={{
+                    width: '100%', padding: '6px 8px', fontSize: 'var(--text-xs)', color: 'var(--color-fg)',
+                    background: 'var(--color-secondary)', border: '1px solid transparent', borderRadius: 'var(--radius-md)',
+                    fontFamily: r.type === 'url' ? 'var(--font-mono)' : 'var(--font-sans)', outline: 'none',
+                  }} />
+              )}
+              <button type="button" onClick={() => removeResource(i)} style={{
+                background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)',
+                color: 'var(--color-muted-fg)', padding: 4, borderRadius: 'var(--radius-sm)',
+              }}>x</button>
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={creatingIndex === i}
-              onClick={() => void handleCreatePage(ns, i)}
-            >
-              {creatingIndex === i ? '...' : 'Create Page'}
-            </Button>
-          </div>
-        ))}
+          ))}
+          {testResources.length === 0 && (
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic', margin: 0 }}>
+              No resources — add PDFs, URLs, or notes for the test agent.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )
 }
+

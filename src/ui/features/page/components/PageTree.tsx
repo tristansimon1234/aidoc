@@ -355,7 +355,7 @@ function SortablePageNode({
         className={`${styles.node} ${isActive ? styles.active : ''}`}
         onClick={() => navigate(`/projects/${projectId}/pages/${page.id}`)}
       >
-        <span className={`${styles.statusDot} ${styles[page.status]}`} />
+        <span className={`${styles.statusDot} ${page.isPublic ? styles.published : styles.draft}`} />
         <span className={styles.label}>{page.title}</span>
       </button>
 

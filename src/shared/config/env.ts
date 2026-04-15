@@ -9,6 +9,8 @@ const EnvSchema = z.object({
   BROWSERBASE_API_KEY: z.string().min(1),
   BROWSERBASE_PROJECT_ID: z.string().min(1),
   GEMINI_API_KEY: z.string().min(1),
+  ELEVENLABS_API_KEY: z.string().optional(),
+  VIDEO_SERVICE_URL: z.string().url().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>

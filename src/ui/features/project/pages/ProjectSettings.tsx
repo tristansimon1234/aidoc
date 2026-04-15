@@ -8,7 +8,7 @@ import styles from './ProjectSettings.module.css'
 
 interface Credential { label: string; username: string; password: string }
 
-type SettingsTab = 'general' | 'context' | 'credentials' | 'knowledge'
+type SettingsTab = 'general' | 'knowledge' | 'credentials'
 
 export function ProjectSettings(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
@@ -16,10 +16,11 @@ export function ProjectSettings(): React.ReactElement {
   const [project, setProject] = useState<ProjectDTO>(outletProject)
   const [activeTab, setActiveTab] = useState<SettingsTab>('general')
   const [name, setName] = useState(outletProject.name)
+  const [description, setDescription] = useState(outletProject.description ?? '')
   const [baseUrl, setBaseUrl] = useState(outletProject.baseUrl)
   const [context, setContext] = useState(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
   const [credentials, setCredentials] = useState<Credential[]>(
-    (outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [],
+    outletProject.credentials ?? [],
   )
   const [walkthroughEnabled, setWalkthroughEnabled] = useState(outletProject.walkthroughEnabled ?? false)
   const [saving, setSaving] = useState(false)
@@ -29,9 +30,10 @@ export function ProjectSettings(): React.ReactElement {
   useEffect(() => {
     setProject(outletProject)
     setName(outletProject.name)
+    setDescription(outletProject.description ?? '')
     setBaseUrl(outletProject.baseUrl)
     setContext(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
-    setCredentials((outletProject as ProjectDTO & { credentials?: Credential[] | null }).credentials ?? [])
+    setCredentials(outletProject.credentials ?? [])
     setWalkthroughEnabled(outletProject.walkthroughEnabled ?? false)
   }, [outletProject])
 
@@ -41,7 +43,7 @@ export function ProjectSettings(): React.ReactElement {
     try {
       const validCreds = credentials.filter((c) => c.label && c.username && c.password)
       const updated = await updateProject(projectId, {
-        name, baseUrl,
+        name, baseUrl, description: description || undefined,
         context: (context.audience || context.workflow || context.quirks) ? context : undefined,
         credentials: validCreds.length > 0 ? validCreds : undefined,
         walkthroughEnabled,
@@ -54,11 +56,10 @@ export function ProjectSettings(): React.ReactElement {
     finally { setSaving(false) }
   }
 
-  const tabs: { id: SettingsTab; label: string; highlight?: boolean }[] = [
+  const tabs: { id: SettingsTab; label: string }[] = [
     { id: 'general', label: 'General' },
-    { id: 'context', label: 'AI Context' },
-    { id: 'credentials', label: 'Credentials' },
     { id: 'knowledge', label: 'Knowledge' },
+    { id: 'credentials', label: 'Test Environment' },
   ]
 
   return (
@@ -75,7 +76,6 @@ export function ProjectSettings(): React.ReactElement {
               onClick={() => setActiveTab(t.id)}
             >
               {t.label}
-              {t.highlight && <span className={styles.tabBadge} />}
             </button>
           ))}
         </div>
@@ -93,9 +93,16 @@ export function ProjectSettings(): React.ReactElement {
                   <input className={styles.input} value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
                 <div className={styles.field}>
-                  <label className={styles.label}>URL</label>
-                  <input className={styles.inputMono} type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+                  <label className={styles.label}>Website URL</label>
+                  <input className={styles.inputMono} type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+                    placeholder="https://yourproduct.com" />
+                  <p className={styles.sectionDesc} style={{ marginTop: 4 }}>Your production website. Used for analysis and public docs branding.</p>
                 </div>
+              </div>
+              <div className={`${styles.field} ${styles.fieldFull}`} style={{ marginTop: 'var(--space-sm)' }}>
+                <label className={styles.label}>Description</label>
+                <textarea className={styles.textarea} value={description} onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What does your product do?" rows={2} />
               </div>
               <div className={styles.field} style={{ marginTop: 'var(--space-md)' }}>
                 <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
@@ -116,47 +123,68 @@ export function ProjectSettings(): React.ReactElement {
             </div>
           )}
 
-          {activeTab === 'context' && (
-            <div className={styles.section}>
-              <div className={styles.sectionHeader}>
-                <h2 className={styles.sectionTitle}>AI Context</h2>
-                <p className={styles.sectionDesc}>Help the AI understand your product. Better context = better documentation and chat answers.</p>
-              </div>
-              <div className={styles.fieldGrid}>
-                <div className={`${styles.field} ${styles.fieldFull}`}>
-                  <label className={styles.label}>Target audience</label>
-                  <textarea className={styles.textarea} value={context.audience}
-                    onChange={(e) => setContext({ ...context, audience: e.target.value })}
-                    placeholder="e.g. SaaS product managers who need to track feature adoption" rows={2} />
+          {activeTab === 'knowledge' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              {/* Your context — manual */}
+              <div className={styles.section}>
+                <div className={styles.sectionHeader}>
+                  <h2 className={styles.sectionTitle}>Your context</h2>
+                  <p className={styles.sectionDesc}>Help the AI understand your product. Better context = better documentation and chat.</p>
                 </div>
-                <div className={`${styles.field} ${styles.fieldFull}`}>
-                  <label className={styles.label}>Key workflow</label>
-                  <textarea className={styles.textarea} value={context.workflow}
-                    onChange={(e) => setContext({ ...context, workflow: e.target.value })}
-                    placeholder="e.g. User creates a project, adds team members, runs first report" rows={2} />
+                {description && (
+                  <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-md)', lineHeight: 1.5, fontStyle: 'italic' }}>
+                    {description}
+                  </p>
+                )}
+                <div className={styles.fieldGrid}>
+                  <div className={`${styles.field} ${styles.fieldFull}`}>
+                    <label className={styles.label}>Target audience</label>
+                    <textarea className={styles.textarea} value={context.audience}
+                      onChange={(e) => setContext({ ...context, audience: e.target.value })}
+                      placeholder="e.g. SaaS product managers who need to track feature adoption" rows={2} />
+                  </div>
+                  <div className={`${styles.field} ${styles.fieldFull}`}>
+                    <label className={styles.label}>Key workflow</label>
+                    <textarea className={styles.textarea} value={context.workflow}
+                      onChange={(e) => setContext({ ...context, workflow: e.target.value })}
+                      placeholder="e.g. User creates a project, adds team members, runs first report" rows={2} />
+                  </div>
+                  <div className={`${styles.field} ${styles.fieldFull}`}>
+                    <label className={styles.label}>Domain knowledge</label>
+                    <textarea className={styles.textarea} value={context.quirks}
+                      onChange={(e) => setContext({ ...context, quirks: e.target.value })}
+                      placeholder="e.g. 'Workspace' means a team account. Archive is hidden until 5+ items." rows={2} />
+                  </div>
                 </div>
-                <div className={`${styles.field} ${styles.fieldFull}`}>
-                  <label className={styles.label}>Domain knowledge</label>
-                  <textarea className={styles.textarea} value={context.quirks}
-                    onChange={(e) => setContext({ ...context, quirks: e.target.value })}
-                    placeholder="e.g. 'Workspace' means a team account. Archive is hidden until 5+ items." rows={2} />
+                <div className={styles.saveBar}>
+                  <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
+                    {saving ? 'Saving...' : 'Save'}
+                  </Button>
+                  {saved && <span className={`${styles.saveMsg} ${styles.success}`}>Saved</span>}
                 </div>
               </div>
-              <div className={styles.saveBar}>
-                <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
-                  {saving ? 'Saving...' : 'Save'}
-                </Button>
-                {saved && <span className={`${styles.saveMsg} ${styles.success}`}>Saved</span>}
-              </div>
+
+              {/* Discovered — auto-generated */}
+              <KnowledgeTab context={project.discoveredContext} projectId={projectId!}
+                onSaved={(updated) => { setProject({ ...project, discoveredContext: updated }); setParentProject({ ...project, discoveredContext: updated }) }} />
             </div>
           )}
 
           {activeTab === 'credentials' && (
             <div className={styles.section}>
               <div className={styles.sectionHeader}>
-                <h2 className={styles.sectionTitle}>Test Credentials</h2>
-                <p className={styles.sectionDesc}>Used by the AI agent to log in during auto-exploration.</p>
+                <h2 className={styles.sectionTitle}>Test Environment</h2>
+                <p className={styles.sectionDesc}>The AI agent uses this URL and credentials to explore your product.</p>
               </div>
+              <div className={styles.field} style={{ marginBottom: 'var(--space-md)' }}>
+                <label className={styles.label}>Test / staging URL</label>
+                <input className={styles.inputMono} type="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://staging.myapp.com" />
+                <p className={styles.sectionDesc} style={{ marginTop: 4, color: 'var(--color-warning)' }}>
+                  Non-production only — the AI will interact with this URL.
+                </p>
+              </div>
+              <label className={styles.label}>Credentials</label>
               {credentials.map((cred, i) => (
                 <div key={i} className={styles.credRow}>
                   <input className={styles.credInput} value={cred.label}
@@ -185,10 +213,6 @@ export function ProjectSettings(): React.ReactElement {
             </div>
           )}
 
-          {activeTab === 'knowledge' && (
-            <KnowledgeTab context={project.discoveredContext} projectId={projectId!}
-              onSaved={(updated) => setProject({ ...project, discoveredContext: updated })} />
-          )}
         </div>
     </div>
   )
@@ -201,7 +225,7 @@ function KnowledgeTab({ context, projectId, onSaved }: {
 }): React.ReactElement {
   const [summary, setSummary] = useState(context?.summary ?? '')
   const [terminology, setTerminology] = useState<[string, string][]>(
-    context?.terminology ? Object.entries(context.terminology) : [],
+    context?.terminology ? Object.entries(context.terminology) as [string, string][] : [],
   )
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -210,9 +234,9 @@ function KnowledgeTab({ context, projectId, onSaved }: {
     return (
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Knowledge Base</h2>
+          <h2 className={styles.sectionTitle}>Discovered by AI</h2>
           <p className={styles.sectionDesc}>
-            The AI builds this automatically as it generates documentation. Generate docs for any page to get started.
+            Auto-generated as the AI explores and generates documentation. Generate docs for any page to get started.
           </p>
         </div>
       </div>
@@ -238,14 +262,14 @@ function KnowledgeTab({ context, projectId, onSaved }: {
   return (
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
-        <h2 className={styles.sectionTitle}>Knowledge Base</h2>
-        <p className={styles.sectionDesc}>Auto-generated by the AI. You can edit to correct mistakes.</p>
+        <h2 className={styles.sectionTitle}>Discovered by AI</h2>
+        <p className={styles.sectionDesc}>Auto-generated as the AI generates documentation. You can edit to correct mistakes.</p>
       </div>
 
       <div className={styles.statRow}>
-        <span className={styles.stat}>{context.features.length} features</span>
-        <span className={styles.stat}>{context.siteStructure.length} pages</span>
-        <span className={styles.stat}>{Object.keys(context.terminology).length} terms</span>
+        <span className={styles.stat}>{context.features?.length ?? 0} features</span>
+        <span className={styles.stat}>{context.siteStructure?.length ?? 0} pages</span>
+        <span className={styles.stat}>{Object.keys(context.terminology ?? {}).length} terms</span>
         {ago && <span className={styles.stat}>updated {ago}</span>}
       </div>
 
@@ -276,7 +300,7 @@ function KnowledgeTab({ context, projectId, onSaved }: {
           ))}
         </div>
 
-        {context.features.length > 0 && (
+        {(context.features?.length ?? 0) > 0 && (
           <div>
             <p className={styles.subLabel}>Features</p>
             <div className={styles.tagList}>
@@ -285,7 +309,7 @@ function KnowledgeTab({ context, projectId, onSaved }: {
           </div>
         )}
 
-        {context.siteStructure.length > 0 && (
+        {(context.siteStructure?.length ?? 0) > 0 && (
           <div>
             <p className={styles.subLabel}>Site structure</p>
             <div className={styles.urlList}>

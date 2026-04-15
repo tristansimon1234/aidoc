@@ -9,11 +9,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-md);
+  padding: 0 var(--space-lg);
   gap: var(--space-md);
   border-bottom: 1px solid var(--color-border);
   background-color: var(--color-card);
-  height: 48px;
+  height: 56px;
   flex-shrink: 0;
   position: sticky;
   top: 0;
@@ -66,10 +66,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background: none;
   color: var(--color-muted-fg);
   cursor: pointer;
