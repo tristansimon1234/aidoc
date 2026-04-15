@@ -354,56 +354,59 @@ DO NOT generate new documentation. Only verify the existing one.`
 
       {/* ===== VIDEO TAB ===== */}
       {activeTab === 'video' && (
-        <div className={styles.tabContent}>
+        <div className={styles.tabContent} style={{ maxWidth: '900px' }}>
           {(videoUrl || latestRunId) ? (
-            <>
-              {/* Video player — always visible */}
-              <NarratedPlayer
-                videoUrl={videoUrl}
-                audioUrl={voiceoverUrl}
-                segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
-                runId={latestRunId}
-                voices={[]}
-                onSegmentsChange={setVoiceoverSegments}
-                onVideoUrlChange={setVideoUrl}
-                onAudioUrlChange={setVoiceoverUrl}
-              />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              {/* Video player */}
+              <div style={{ borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+                <NarratedPlayer
+                  videoUrl={videoUrl}
+                  audioUrl={voiceoverUrl}
+                  segments={voiceoverSegments.length > 0 ? voiceoverSegments : undefined}
+                  runId={latestRunId}
+                  voices={[]}
+                  onSegmentsChange={setVoiceoverSegments}
+                  onVideoUrlChange={setVideoUrl}
+                  onAudioUrlChange={setVoiceoverUrl}
+                />
+              </div>
 
-              {/* Voice & tone controls */}
-              <div className={styles.section} style={{ marginTop: 'var(--space-md)' }}>
-                {/* Tone row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)', flexWrap: 'wrap' }}>
-                  <span className={styles.briefingFieldLabel} style={{ margin: 0, whiteSpace: 'nowrap' }}>Tone</span>
-                  {[
-                    { id: 'friendly', label: 'Friendly' },
-                    { id: 'professional', label: 'Professional' },
-                    { id: 'energetic', label: 'Energetic' },
-                    { id: 'calm', label: 'Calm' },
-                    { id: 'playful', label: 'Playful' },
-                  ].map((t) => (
-                    <button key={t.id} type="button" onClick={() => setSelectedTone(t.id)}
-                      className={`${styles.tonePill} ${selectedTone === t.id ? styles.tonePillActive : ''}`}>
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
+              {/* Voice-over controls — two-column */}
+              <div className={styles.generateGrid}>
+                {/* Left — Tone & Voice */}
+                <div className={styles.section} style={{ margin: 0 }}>
+                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
+                    Voice-over
+                  </div>
 
-                {/* Voice + regenerate row */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+                  <div style={{ marginBottom: 'var(--space-md)' }}>
+                    <label className={styles.briefingFieldLabel}>Tone</label>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {[
+                        { id: 'friendly', label: 'Friendly' },
+                        { id: 'professional', label: 'Professional' },
+                        { id: 'energetic', label: 'Energetic' },
+                        { id: 'calm', label: 'Calm' },
+                        { id: 'playful', label: 'Playful' },
+                      ].map((t) => (
+                        <button key={t.id} type="button" onClick={() => setSelectedTone(t.id)}
+                          className={`${styles.tonePill} ${selectedTone === t.id ? styles.tonePillActive : ''}`}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {voices.length > 0 && (
-                    <>
-                      <span className={styles.briefingFieldLabel} style={{ margin: 0 }}>Voice</span>
+                    <div style={{ marginBottom: 'var(--space-md)' }}>
+                      <label className={styles.briefingFieldLabel}>Voice</label>
                       <select value={selectedVoiceId ?? ''} onChange={(e) => setSelectedVoiceId(e.target.value)}
-                        style={{
-                          fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
-                          background: 'var(--color-secondary)', color: 'var(--color-fg)',
-                          border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)',
-                          padding: '6px 10px', cursor: 'pointer',
-                        }}>
+                        className={styles.briefingInput} style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}>
                         {voices.map((v) => <option key={v.voiceId} value={v.voiceId}>{v.name}</option>)}
                       </select>
-                    </>
+                    </div>
                   )}
+
                   {latestRunId && page.content && (
                     <Button size="sm" disabled={generatingVoiceover} onClick={() => {
                       void (async () => {
@@ -435,45 +438,52 @@ DO NOT generate new documentation. Only verify the existing one.`
                   )}
                 </div>
 
-                {/* Voiceover generation progress */}
-                {generatingVoiceover && (
-                  <ProgressLoader
-                    steps={[
-                      { label: 'Writing narration script', estimatedSeconds: 15 },
-                      { label: 'Generating audio segments', estimatedSeconds: 25 },
-                      { label: 'Assembling final audio', estimatedSeconds: 10 },
-                    ]}
-                    activeStep={0}
-                  />
-                )}
+                {/* Right — Publishing */}
+                <div className={styles.section} style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
+                      Publishing
+                    </div>
+                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.5 }}>
+                      When enabled, the video appears at the top of your published documentation page.
+                    </p>
+                  </div>
+                  <div
+                    className={styles.publishToggle}
+                    onClick={() => {
+                      const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
+                      const newVal = !current
+                      const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
+                      setPage({ ...page, briefing: newBriefing })
+                      void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
+                    }}
+                    style={{ padding: 'var(--space-md)', background: 'var(--color-secondary)', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                  >
+                    <span style={{
+                      fontSize: 'var(--text-sm)', fontWeight: 500,
+                      color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-success)' : 'var(--color-muted-fg)',
+                    }}>
+                      {(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'Visible on public page' : 'Hidden from public page'}
+                    </span>
+                    <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
+                      <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {/* Show on public page */}
-              <div className={styles.section} style={{ marginTop: 'var(--space-sm)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
-                    Display video on published page
-                  </div>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
-                    Show this video at the top of the public documentation page
-                  </div>
-                </div>
-                <div
-                  className={styles.publishToggle}
-                  onClick={() => {
-                    const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
-                    const newVal = !current
-                    const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
-                    setPage({ ...page, briefing: newBriefing })
-                    void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
-                  }}
-                >
-                  <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
-                    <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
-                  </div>
-                </div>
-              </div>
-            </>
+              {/* Voiceover generation progress — full width */}
+              {generatingVoiceover && (
+                <ProgressLoader
+                  steps={[
+                    { label: 'Writing narration script', estimatedSeconds: 15 },
+                    { label: 'Generating audio segments', estimatedSeconds: 25 },
+                    { label: 'Assembling final audio', estimatedSeconds: 10 },
+                  ]}
+                  activeStep={0}
+                />
+              )}
+            </div>
           ) : (
             <EmptyState
               title="No video yet"
@@ -560,86 +570,99 @@ DO NOT generate new documentation. Only verify the existing one.`
       {/* ===== TEST TAB ===== */}
       {activeTab === 'test' && (
         <div className={styles.tabContent}>
-          {/* Test configuration */}
+          {/* Not running — show config + run button or results */}
           {!tryRunning && !analyzing && (
-            <TestConfig
-              page={page}
-              project={context.project}
-              pageId={pageId!}
-              onBriefingChange={(newBriefing) => {
-                setPage({ ...page, briefing: newBriefing })
-                void debouncedPageUpdate({ briefing: newBriefing })
-              }}
-            />
+            <>
+              {/* Two-column: config + action */}
+              <div className={styles.generateGrid}>
+                {/* Left — Test configuration */}
+                <TestConfig
+                  page={page}
+                  project={context.project}
+                  pageId={pageId!}
+                  onBriefingChange={(newBriefing) => {
+                    setPage({ ...page, briefing: newBriefing })
+                    void debouncedPageUpdate({ briefing: newBriefing })
+                  }}
+                />
+
+                {/* Right — Run action + status */}
+                <div className={styles.section} style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
+                      Documentation Test
+                    </div>
+                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.5 }}>
+                      An AI agent follows your documentation step-by-step as a naive user on the live application and reports what works and what doesn&apos;t.
+                    </p>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+                    {tryReport && (
+                      <div style={{
+                        padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-secondary)',
+                        borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
+                      }}>
+                        Last tested {new Date(tryReport.executedAt).toLocaleDateString()} — {tryReport.summary.overallVerdict}
+                      </div>
+                    )}
+                    <Button onClick={() => void handleTryDoc()} disabled={!page.content}>
+                      {tryReport ? 'Re-test documentation' : 'Run test'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Report below */}
+              {tryReport && (
+                <div style={{ marginTop: 'var(--space-md)' }}>
+                  <TryDocReport report={tryReport} />
+                </div>
+              )}
+            </>
           )}
 
-          <div className={styles.tryHeader}>
-            <div className={styles.tryTitleRow}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" /><polyline points="14 2 14 8 20 8" /><path d="m9 15 2 2 4-4" /></svg>
-              <h2 className={styles.tryTitle}>Documentation Test</h2>
-              {(tryRunning || analyzing) && <Spinner size="sm" />}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <p className={styles.trySubtitle}>
-                {tryRunning
-                  ? statusMessage ?? 'AI is following your documentation steps...'
-                  : analyzing
-                    ? 'Analyzing results with Gemini...'
-                    : tryReport
-                      ? `Last tested ${new Date(tryReport.executedAt).toLocaleDateString()}`
-                      : 'Verify your documentation against the live application'}
-              </p>
-              {!tryRunning && !analyzing && (
-                <Button size="sm" onClick={() => void handleTryDoc()} disabled={!page.content}>
-                  {tryReport ? 'Re-test' : 'Run Test'}
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* Live browser during test */}
-          {tryRunning && liveUrl && (
-            <div className={styles.replayContainer} style={{ marginBottom: 'var(--space-md)' }}>
-              <div className={styles.replayHeader}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-success)', animation: 'pulse 2s infinite' }} />
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>live</span>
-                </span>
+          {/* Running — live browser + steps */}
+          {tryRunning && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                  <Spinner size="sm" />
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
+                    {statusMessage ?? 'AI is following your documentation steps...'}
+                  </span>
+                </div>
                 <Button size="sm" variant="ghost" onClick={() => abortRef.current?.abort()}>Stop</Button>
               </div>
-              <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
+
+              {liveUrl && (
+                <div className={styles.replayContainer}>
+                  <div className={styles.replayHeader}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'var(--color-success)', animation: 'pulse 2s infinite' }} />
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>live</span>
+                    </span>
+                  </div>
+                  <iframe src={liveUrl} title="Live browser" className={styles.replayIframe} />
+                </div>
+              )}
+
+              {tryStreamSteps.length > 0 && (
+                <div className={styles.activityLog} style={{ maxHeight: '300px' }}>
+                  <div className={styles.activityHeader}>verification steps ({tryStreamSteps.length})</div>
+                  {tryStreamSteps.map((step, i) => (
+                    <div key={i} className={styles.activityEntry}>{step.text}</div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Live streaming steps */}
-          {tryRunning && tryStreamSteps.length > 0 && (
-            <div className={styles.activityLog} style={{ maxHeight: '300px', marginBottom: 'var(--space-md)' }}>
-              <div className={styles.activityHeader}>verification steps ({tryStreamSteps.length})</div>
-              {tryStreamSteps.map((step, i) => (
-                <div key={i} className={styles.activityEntry}>{step.text}</div>
-              ))}
-            </div>
-          )}
-
-          {/* Analyzing state */}
+          {/* Analyzing */}
           {analyzing && (
             <ProgressLoader
               steps={[{ label: 'Generating structured test report', estimatedSeconds: 20 }]}
               activeStep={0}
-            />
-          )}
-
-          {/* Structured report */}
-          {!tryRunning && !analyzing && tryReport && (
-            <TryDocReport report={tryReport} />
-          )}
-
-          {/* Empty state */}
-          {!tryRunning && !analyzing && !tryReport && (
-            <EmptyState
-              title="No test results yet"
-              description="Run a test to verify your documentation against the live application. The AI will follow each step as a naive user and report what works and what doesn't."
-              action={<Button onClick={() => void handleTryDoc()} disabled={!page.content}>Run Test</Button>}
             />
           )}
         </div>

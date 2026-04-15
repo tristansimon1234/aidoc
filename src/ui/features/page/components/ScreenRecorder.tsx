@@ -352,10 +352,20 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
         <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
           Record Screen
         </span>
-        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
-          {micEnabled ? 'Screen + microphone — ' : 'Screen only — '}
-          <button type="button" onClick={(e) => { e.stopPropagation(); setMicEnabled(!micEnabled) }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-sans)', padding: 0 }}>
-            {micEnabled ? 'disable mic' : 'enable mic'}
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button type="button" onClick={(e) => { e.stopPropagation(); setMicEnabled(!micEnabled) }} style={{
+            display: 'flex', alignItems: 'center', gap: '4px',
+            background: micEnabled ? 'rgba(16, 185, 129, 0.1)' : 'var(--color-secondary)',
+            border: `1px solid ${micEnabled ? 'var(--color-success)' : 'var(--color-border)'}`,
+            borderRadius: 'var(--radius-full)', cursor: 'pointer',
+            fontSize: 'var(--text-xs)', fontFamily: 'var(--font-sans)', padding: '2px 10px',
+            color: micEnabled ? 'var(--color-success)' : 'var(--color-muted-fg)',
+            transition: 'all 0.15s',
+          }}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+            </svg>
+            {micEnabled ? 'Mic on' : 'Mic off'}
           </button>
         </span>
       </button>
