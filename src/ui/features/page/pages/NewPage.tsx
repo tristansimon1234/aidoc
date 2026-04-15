@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
 import { createPage } from '../../../shared/api/db.js'
 
 export function NewPage(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
+  const { refetchPages } = useOutletContext<{ refetchPages: () => Promise<void> }>()
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -24,7 +25,8 @@ export function NewPage(): React.ReactElement {
     setError(null)
 
     createPage(projectId, { title, slug })
-      .then((page) => {
+      .then(async (page) => {
+        await refetchPages()
         if (mode === 'record') {
           navigate(`/projects/${projectId}/pages/${page.id}?tab=exploration`)
         } else {
