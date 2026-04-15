@@ -316,10 +316,6 @@ app.post('/concat-audio', async (req, res) => {
       }
 
       parts.push(segPath)
-      // Reset currentTime to targetStart + actual audio — keeps sync honest
-      currentTime = targetStart + segDuration
-
-      parts.push(segPath)
       currentTime = targetStart + segDuration
     }
 
