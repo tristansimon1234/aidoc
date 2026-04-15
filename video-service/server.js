@@ -313,30 +313,11 @@ app.post('/concat-audio', async (req, res) => {
             .run()
         })
         parts.push(silPath)
-        currentTime += silenceNeeded
-      } else if (currentTime > targetStart + 0.5) {
-        // Segment overlaps — trim the audio to fit before next target
-        const maxDur = Math.max(1, (segments[i + 1]?.targetStartTime ?? (targetStart + 30)) - currentTime)
-        if (segDuration > maxDur) {
-          const trimmedPath = join(tmpDir, `seg-${i}-trimmed.mp3`)
-          await new Promise((resolve, reject) => {
-            ffmpeg(segPath)
-              .duration(maxDur)
-              .outputOptions(['-c:a', 'libmp3lame', '-b:a', '128k'])
-              .output(trimmedPath)
-              .on('end', resolve)
-              .on('error', reject)
-              .run()
-          })
-          parts.push(trimmedPath)
-          currentTime += maxDur
-          console.log(`[concat] Seg ${i}: trimmed to ${maxDur.toFixed(1)}s to prevent further drift`)
-          continue
-        }
       }
 
       parts.push(segPath)
-      currentTime += segDuration
+      // Reset currentTime to targetStart + actual audio — keeps sync honest
+      currentTime = targetStart + segDuration
 
       parts.push(segPath)
       currentTime = targetStart + segDuration
