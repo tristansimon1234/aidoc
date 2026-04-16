@@ -5,8 +5,8 @@ import { env } from '../config/env.js'
 export type StagehandSession = Stagehand
 
 export async function launchBrowser(existingSessionId?: string): Promise<StagehandSession> {
-  if (!env.ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY is required for auto-exploration. Configure it in your environment variables.')
+  if (!env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY is required for auto-exploration. Configure it in your environment variables.')
   }
 
   const stagehand = new Stagehand({
@@ -15,7 +15,7 @@ export async function launchBrowser(existingSessionId?: string): Promise<Stageha
     projectId: env.BROWSERBASE_PROJECT_ID,
     model: {
       modelName: STAGEHAND_MODEL,
-      apiKey: env.ANTHROPIC_API_KEY,
+      apiKey: env.GEMINI_API_KEY,
     },
     ...(existingSessionId ? { browserbaseSessionID: existingSessionId } : {}),
     keepAlive: true,

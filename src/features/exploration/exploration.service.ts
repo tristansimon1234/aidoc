@@ -217,7 +217,7 @@ Rules:
     const agent = session.agent({
       model: {
         modelName: STAGEHAND_MODEL,
-        apiKey: process.env.ANTHROPIC_API_KEY,
+        apiKey: process.env.GEMINI_API_KEY,
       },
       mode: 'hybrid',
     })

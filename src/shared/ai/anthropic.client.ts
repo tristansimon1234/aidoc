@@ -1,9 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { env } from '../config/env.js'
 
-export const STAGEHAND_MODEL = 'anthropic/claude-sonnet-4-20250514'
+export const STAGEHAND_MODEL = 'google/gemini-2.5-flash'
 
-// Anthropic is only used for Stagehand (beta exploration) — optional
+// Anthropic is only used as a fallback — optional
 export const anthropic = env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
   : null
