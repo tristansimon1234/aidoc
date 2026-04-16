@@ -353,8 +353,21 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     if (isVideoServiceConfigured() && !videoPath.endsWith('.mp4')) {
       try {
         const mp4Path = await convertToMp4(videoPath, runId)
-        analyzeVideoPath = mp4Path
-        playerVideoPath = mp4Path
+        // Wait for the converted file to be available in Supabase
+        // (video service may respond before the upload is fully committed)
+        let fileReady = false
+        for (let attempt = 0; attempt < 15; attempt++) {
+          const { data: headCheck } = await supabase.storage.from('artifacts').download(mp4Path)
+          if (headCheck && headCheck.size > 0) { fileReady = true; break }
+          console.log(`[video] Waiting for mp4 to be available (attempt ${attempt + 1}/15)...`)
+          await new Promise((r) => setTimeout(r, 2000))
+        }
+        if (fileReady) {
+          analyzeVideoPath = mp4Path
+          playerVideoPath = mp4Path
+        } else {
+          console.warn(`[video] MP4 not available after 30s, using original`)
+        }
       } catch (err) {
         console.warn(`[video] Conversion failed, using original: ${(err as Error).message}`)
       }
