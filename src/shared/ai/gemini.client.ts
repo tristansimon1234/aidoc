@@ -310,6 +310,14 @@ Remember: fewer, more meaningful steps is better than many granular ones.`,
     jsonStr = jsonStr.slice(firstBrace, lastBrace + 1)
   }
 
+  // Fix Gemini returning timestamps as MM:SS or M:SS instead of seconds
+  jsonStr = jsonStr.replace(/"timestamp"\s*:\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\b/g, (_match, p1, p2, p3) => {
+    const mins = parseInt(p1 as string, 10)
+    const secs = parseInt(p2 as string, 10)
+    const hundredths = p3 ? parseInt(p3 as string, 10) : 0
+    return `"timestamp": ${mins * 60 + secs + hundredths / 100}`
+  })
+
   let parsed
   try {
     parsed = VideoAnalysisSchema.safeParse(JSON.parse(jsonStr))
