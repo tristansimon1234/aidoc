@@ -135,19 +135,40 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
         throw new ValidationError('videoPath is required')
       }
 
-      // Analyze video (blocking — keeps HTTP connection open)
-      const result = await runService.analyzeVideo(params.data.id, body.videoPath)
-
-      // If generateDoc flag is set, also generate doc before responding
+      // If generateDoc flag is set, create a DB job and run the full pipeline.
+      // The HTTP connection stays open — fetch survives client-side navigation.
+      // The job row in DB survives browser refresh.
       if (body.generateDoc) {
-        await runService.generateDoc(params.data.id)
         const run = await runService.getRun(params.data.id)
-        if (run.docPageId) {
-          const { updatePage } = await import('../page/page.repository.js')
-          await updatePage(run.docPageId, { status: 'published' })
+        if (!run.docPageId) throw new AppError('Run has no linked page', 'NO_PAGE', 400)
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
+        const { createJob, updateJobStatus } = await import('./job.repository.js')
+        const job = await createJob({
+          runId: params.data.id,
+          pageId: run.docPageId,
+          projectId: page.projectId,
+          type: 'doc-gen',
+        })
+
+        try {
+          await runService.analyzeVideo(params.data.id, body.videoPath)
+          await runService.generateDoc(params.data.id)
+          if (run.docPageId) {
+            const { updatePage } = await import('../page/page.repository.js')
+            await updatePage(run.docPageId, { status: 'published' })
+          }
+          await updateJobStatus(job.id, 'completed')
+        } catch (pipelineErr) {
+          await updateJobStatus(job.id, 'failed', (pipelineErr as Error).message).catch(() => {})
+          throw pipelineErr
         }
+        res.status(200).json({ jobId: job.id })
+        return
       }
 
+      const result = await runService.analyzeVideo(params.data.id, body.videoPath)
       res.status(200).json(result)
     } catch (err) {
       next(err)

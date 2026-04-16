@@ -3,9 +3,9 @@ import { supabase } from '../api/supabase.js'
 import { useJobs } from './JobContext.js'
 
 /**
- * Poll run status for tracked jobs.
- * Checks every 5s if a running job's run has completed/failed.
- * More reliable than Realtime (which misses updates when status doesn't change).
+ * Poll the jobs table for status updates.
+ * Checks every 5s if any running job has completed or failed.
+ * Jobs live in DB so they survive browser refresh and tab changes.
  */
 export function useJobRealtime(): void {
   const { jobs, updateJob } = useJobs()
@@ -18,62 +18,28 @@ export function useJobRealtime(): void {
       return
     }
 
+    const runningIds = runningJobs.map((j) => j.runId)
+
     const poll = async (): Promise<void> => {
-      for (const job of runningJobs) {
-        try {
-          const { data } = await supabase
-            .from('runs')
-            .select('status, summary_json')
-            .eq('id', job.runId)
-            .single()
+      try {
+        const { data } = await supabase
+          .from('jobs')
+          .select('id, run_id, status, error')
+          .in('run_id', runningIds)
+          .order('created_at', { ascending: false })
 
-          if (!data) continue
-
-          const status = data.status as string
-          const summary = data.summary_json as Record<string, unknown> | null
-
-          // For doc-gen: check that doc generation actually completed (not just video analysis)
-          if (job.type === 'doc-gen') {
-            // If run failed, mark job failed
-            if (status === 'failed') {
-              updateJob(job.runId, { status: 'failed' })
-              continue
-            }
-            // Check if generated_docs exists for this run (means doc gen completed)
-            const { data: docData } = await supabase
-              .from('generated_docs')
-              .select('id')
-              .eq('run_id', job.runId)
-              .maybeSingle()
-            if (docData) {
-              updateJob(job.runId, { status: 'completed' })
-            }
-            continue
+        if (!data) return
+        for (const row of data) {
+          const status = row.status as string
+          if (status === 'completed' || status === 'failed') {
+            updateJob(row.run_id as string, { status: status as 'completed' | 'failed' })
           }
-
-          // For voiceover: check if summary has voiceover data
-          if (job.type === 'voiceover') {
-            if (summary?.voiceover) {
-              updateJob(job.runId, { status: 'completed' })
-            } else if (status === 'failed') {
-              updateJob(job.runId, { status: 'failed' })
-            }
-            continue
-          }
-
-          // For other job types: just check run status
-          if (status === 'completed') {
-            updateJob(job.runId, { status: 'completed' })
-          } else if (status === 'failed') {
-            updateJob(job.runId, { status: 'failed' })
-          }
-        } catch {
-          // Query failed — skip this cycle
         }
+      } catch {
+        // Query failed — retry next cycle
       }
     }
 
-    // Poll immediately + every 5s
     void poll()
     intervalRef.current = setInterval(() => void poll(), 5000)
 
@@ -81,4 +47,52 @@ export function useJobRealtime(): void {
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
     }
   }, [jobs, updateJob])
+}
+
+/**
+ * Load running jobs from DB on mount.
+ * Called once per project to restore job state after browser refresh.
+ */
+export function useLoadJobsFromDB(projectId: string | undefined): void {
+  const { addJob } = useJobs()
+  const loadedRef = useRef(false)
+
+  useEffect(() => {
+    if (!projectId || loadedRef.current) return
+    loadedRef.current = true
+
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('jobs')
+          .select('run_id, page_id, type, status, created_at')
+          .eq('project_id', projectId)
+          .in('status', ['running'])
+          .order('created_at', { ascending: false })
+
+        if (!data) return
+
+        // Also fetch page titles for display
+        const pageIds = [...new Set(data.map((j) => j.page_id as string))]
+        const { data: pages } = await supabase
+          .from('doc_pages')
+          .select('id, title')
+          .in('id', pageIds)
+
+        const titleMap = new Map((pages ?? []).map((p) => [p.id as string, p.title as string]))
+
+        for (const row of data) {
+          addJob({
+            runId: row.run_id as string,
+            pageId: row.page_id as string,
+            pageTitle: titleMap.get(row.page_id as string) ?? 'Page',
+            type: row.type as 'doc-gen' | 'voiceover' | 'try-doc',
+            status: 'running',
+          })
+        }
+      } catch {
+        // Failed to load — jobs will appear when created
+      }
+    })()
+  }, [projectId, addJob])
 }
