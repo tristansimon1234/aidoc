@@ -150,6 +150,11 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
             }
           } catch (err) {
             console.error(`[process-video] Background pipeline failed for ${params.data.id}:`, err)
+            // Mark run as failed so polling picks it up
+            try {
+              const { updateRunStatus } = await import('./run.repository.js')
+              await updateRunStatus(params.data.id, 'failed')
+            } catch { /* ignore */ }
           }
         })()
         return
