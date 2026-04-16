@@ -157,7 +157,7 @@ Use these credentials to log in when you encounter a login page. The values are 
           parts.push(`**Reference materials**:\n${contextBlocks.join('\n')}`)
         }
         if (uploadable.length > 0) {
-          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. The file is pre-loaded into file inputs automatically. When you see a file upload area, look for the file input and interact with it — the file should already be attached. If the upload shows a filename or progress, it worked. Move on to the next step.`)
+          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. Files are automatically pre-loaded into file inputs. Do NOT click on file upload zones or buttons — the file is already attached to the input. Look for the filename or a progress indicator to confirm. If you see the file is attached, proceed to the next step (e.g. click Submit or the next action).`)
         }
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
@@ -182,15 +182,16 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // Upload files to Browserbase cloud session, then auto-fill file inputs via setInputFiles
-    // Per Browserbase docs: upload via REST API → file at /tmp/.uploads/{name} in cloud browser
-    // → use setInputFiles with that path (works because path resolves in cloud browser)
+    // Upload files to Browserbase cloud session, then auto-fill file inputs
+    // via a background polling loop (NOT in onStepFinish — that callback is too late
+    // because clicking a file input opens the OS dialog which blocks the step)
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
       )
 
     let uploadedFilePath: string | null = null
+    let filePollingActive = false
 
     if (briefingFiles.length > 0) {
       const sessionId = session.browserbaseSessionID
@@ -198,7 +199,7 @@ Rules:
         try {
           const firstFile = briefingFiles[0]!
 
-          // Upload file to Browserbase cloud session via REST API
+          // Step 1: Upload file to Browserbase cloud session via REST API
           const formData = new FormData()
           formData.append('file', new Blob([firstFile.fileBuffer]), firstFile.fileName)
           const uploadRes = await fetch(
@@ -214,6 +215,34 @@ Rules:
           } else {
             uploadedFilePath = `/tmp/.uploads/${firstFile.fileName}`
             console.log(`[exploration] File uploaded to Browserbase session: ${firstFile.fileName} → ${uploadedFilePath}`)
+          }
+
+          // Step 2: Start background polling — scan for file inputs every 2s
+          // and fill them BEFORE the agent clicks (so no file picker opens)
+          if (uploadedFilePath) {
+            filePollingActive = true
+            const remotePath = uploadedFilePath
+            void (async () => {
+              while (filePollingActive) {
+                try {
+                  const page = session.context.activePage()
+                  if (page) {
+                    const inputs = await page.locator('input[type="file"]').all()
+                    for (const input of inputs) {
+                      const filled = await input.getAttribute('data-aidoc-filled').catch(() => null)
+                      if (!filled) {
+                        await input.setInputFiles(remotePath)
+                        await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
+                        console.log(`[exploration] File pre-filled via setInputFiles: ${remotePath}`)
+                      }
+                    }
+                  }
+                } catch {
+                  // Page navigated or closed — ignore
+                }
+                await new Promise((r) => setTimeout(r, 2000))
+              }
+            })()
           }
         } catch (err) {
           console.warn(`[exploration] Browserbase file upload failed:`, err)
@@ -263,26 +292,6 @@ Rules:
           // Debug: log event keys for first few steps to understand Gemini's output shape
           if (!agentText && stepCounter < 3) {
             console.log(`[exploration] Step ${stepCounter} event keys (no reasoning text):`, Object.keys(eventObj).join(', '))
-          }
-
-          // Auto-fill file inputs after each step (if file was uploaded to Browserbase)
-          if (uploadedFilePath) {
-            try {
-              const page = session.context.activePage()
-              if (page) {
-                const fileInputs = await page.locator('input[type="file"]').all()
-                for (const input of fileInputs) {
-                  const filled = await input.getAttribute('data-aidoc-filled').catch(() => null)
-                  if (!filled) {
-                    await input.setInputFiles(uploadedFilePath)
-                    await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
-                    console.log(`[exploration] File injected into input via setInputFiles: ${uploadedFilePath}`)
-                  }
-                }
-              }
-            } catch {
-              // Page navigated or input gone — ignore
-            }
           }
 
           // Capture the ACTUAL browser URL (not tool arg URL)
@@ -370,6 +379,9 @@ Rules:
         },
       },
     })
+
+    // Stop file polling
+    filePollingActive = false
 
     if (result.usage) {
       await deps.incrementTokenUsage(
