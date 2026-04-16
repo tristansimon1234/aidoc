@@ -305,12 +305,33 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
               console.warn('[context-enrichment] No valid JSON object found in response, skipping')
             } else {
               jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
-              const { DiscoveredContextSchema } = await import('../project/project.schema.js')
-              const parsed = DiscoveredContextSchema.safeParse(JSON.parse(jsonStr))
-              if (parsed.success) {
-                await updateDiscoveredContext(project.id, parsed.data)
-              } else {
-                console.error('Context enrichment validation failed:', parsed.error.flatten())
+              let parsed
+              try {
+                parsed = JSON.parse(jsonStr) as unknown
+              } catch {
+                // JSON truncated — attempt repair by closing open strings/arrays/objects
+                const repaired = jsonStr
+                  .replace(/,\s*$/, '')          // trailing comma
+                  .replace(/,\s*}/, '}')         // comma before closing brace
+                  .replace(/,\s*]/, ']')         // comma before closing bracket
+                  + (jsonStr.split('"').length % 2 === 0 ? '"' : '')  // close open string
+                  + ']}'.repeat(Math.max(0, (jsonStr.split('[').length - jsonStr.split(']').length)))  // close arrays
+                  + '}'.repeat(Math.max(0, (jsonStr.split('{').length - jsonStr.split('}').length)))  // close objects
+                try {
+                  parsed = JSON.parse(repaired) as unknown
+                  console.warn('[context-enrichment] Repaired truncated JSON')
+                } catch {
+                  console.warn('[context-enrichment] JSON repair failed, skipping enrichment')
+                }
+              }
+              if (parsed) {
+                const { DiscoveredContextSchema } = await import('../project/project.schema.js')
+                const validated = DiscoveredContextSchema.safeParse(parsed)
+                if (validated.success) {
+                  await updateDiscoveredContext(project.id, validated.data)
+                } else {
+                  console.error('Context enrichment validation failed:', validated.error.flatten())
+                }
               }
             }
           }
