@@ -231,9 +231,9 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         mergedTimestamps.push(timestamps[i]!)
       }
 
-      // Cap segments: ~1 per 15s of video, min 3, max 12
+      // Cap segments: ~1 per 20s of video, min 3, max 10
       const videoDur = (timestamps[timestamps.length - 1] ?? 60) - (timestamps[0] ?? 0)
-      const maxSegments = Math.max(3, Math.min(12, Math.ceil(videoDur / 15)))
+      const maxSegments = Math.max(3, Math.min(10, Math.ceil(videoDur / 20)))
       while (mergedTimestamps.length > maxSegments) {
         // Find the smallest gap between consecutive timestamps
         let minGap = Infinity
@@ -250,13 +250,18 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         mergedTimestamps.unshift(0)
       }
 
-      // NO outro — the last section's closing phrase is enough
-      // Adding an extra timestamp after the video causes segments past the end
+      // Drop last timestamp if too close to video end (< 5s remaining = not enough for a segment)
+      const estimatedVideoEnd = (timestamps[timestamps.length - 1] ?? 0) + 5
+      while (mergedTimestamps.length > 1) {
+        const last = mergedTimestamps[mergedTimestamps.length - 1]!
+        if (estimatedVideoEnd - last < 5) {
+          mergedTimestamps.pop()
+        } else {
+          break
+        }
+      }
 
       console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections: [${mergedTimestamps.map(t => t.toFixed(1)).join(', ')}]`)
-
-      // Estimate video end from last original timestamp + small buffer
-      const estimatedVideoEnd = (timestamps[timestamps.length - 1] ?? 0) + 5
 
       const numStepsMerged = mergedTimestamps.length
       const timeBudgets = mergedTimestamps.map((t, i) => {
