@@ -26,7 +26,7 @@ interface TryDocReportDTO {
     screenshotPath: string | null
   }[]
   failures: {
-    stepIndex: number
+    stepIndex: number | null
     issueType: 'doc' | 'product'
     title: string
     description: string
