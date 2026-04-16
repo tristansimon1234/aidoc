@@ -48,10 +48,36 @@ function formatStepsRich(steps: StepSummary[]): string {
       if (s.observation) {
         entry += `\n- Agent reasoning: ${s.observation.slice(0, isKey ? 500 : 100)}`
       }
-      if (s.screenshotUrl && s.screenshotUrl.startsWith('http')) entry += `\n- Screenshot: ![Step ${i + 1}](${s.screenshotUrl})`
+      // Use placeholder instead of raw URL — Gemini corrupts UUIDs when copying verbatim
+      if (s.screenshotUrl && s.screenshotUrl.startsWith('http')) entry += `\n- Screenshot: ![Step ${i + 1}]({{SCREENSHOT_${i}}})`
       return entry
     })
     .join('\n\n')
+}
+
+/**
+ * Build a map of screenshot placeholders to actual URLs.
+ * Call after Gemini returns to replace {{SCREENSHOT_0}} etc. with real URLs.
+ */
+export function buildScreenshotMap(steps: StepSummary[]): Map<string, string> {
+  const map = new Map<string, string>()
+  steps.forEach((s, i) => {
+    if (s.screenshotUrl && s.screenshotUrl.startsWith('http')) {
+      map.set(`{{SCREENSHOT_${i}}}`, s.screenshotUrl)
+    }
+  })
+  return map
+}
+
+/**
+ * Replace screenshot placeholders in generated markdown with actual URLs.
+ */
+export function replaceScreenshotPlaceholders(markdown: string, screenshotMap: Map<string, string>): string {
+  let result = markdown
+  for (const [placeholder, url] of screenshotMap) {
+    result = result.replaceAll(placeholder, url)
+  }
+  return result
 }
 
 function countByImportance(steps: StepSummary[]): { key: number; supporting: number; withScreenshots: number } {
@@ -75,7 +101,7 @@ export const VIDEO_DOC_SYSTEM_PROMPT = `You are an expert product documentation 
 
 The steps below were extracted from a screen recording of a web application (not a live exploration). Each step describes what was visible on screen and what the user was doing. Some steps may include narration from the person recording.
 
-Write a **user-facing product guide** — the kind of documentation you'd find in a help center. Follow the same structure as for live explorations: Introduction, Getting Started, Walkthrough (group into logical flows), Key Features, FAQ/Tips. Embed screenshots at relevant steps using ![caption](url).
+Write a **user-facing product guide** — the kind of documentation you'd find in a help center. Follow the same structure as for live explorations: Introduction, Getting Started, Walkthrough (group into logical flows), Key Features, FAQ/Tips. Embed screenshots at relevant steps using their {{SCREENSHOT_N}} placeholders exactly as provided — e.g. ![caption]({{SCREENSHOT_0}}).
 
 After the markdown, add "---JSON---" and the self-assessment JSON (same schema as live explorations).`
 
@@ -120,8 +146,9 @@ Do NOT include "Known Gaps", "Suggested Next Steps", or any meta-commentary abou
 ### Screenshot Rules (MANDATORY)
 - EVERY walkthrough step MUST include its screenshot if one is available
 - Place screenshots inline at the step — NOT grouped at the end
-- Use: ![Descriptive caption](screenshot_url)
-- If a step has no screenshot, describe the screen in vivid visual detail
+- Screenshots use placeholders like {{SCREENSHOT_0}}, {{SCREENSHOT_1}}, etc. — use them EXACTLY as provided: ![Descriptive caption]({{SCREENSHOT_N}})
+- Do NOT modify, rewrite, or skip these placeholders — they will be replaced with real URLs automatically
+- If a step has no screenshot placeholder, describe the screen in vivid visual detail
 - In self-assessment, flag any key step missing a screenshot as a critical gap
 
 ### Self-Assessment JSON
