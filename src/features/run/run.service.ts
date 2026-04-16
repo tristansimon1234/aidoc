@@ -117,9 +117,14 @@ async function enrichBriefingWithFileContents(
 ): Promise<PageBriefingWithContent | undefined> {
   if (!briefing) return undefined
 
+  // Merge testResources (from Test tab) into resources so test files are available during exploration
+  const rawBriefing = briefing as Record<string, unknown>
+  const testResources = (rawBriefing.testResources as import('../page/page.types.js').PageResource[] | undefined) ?? []
+  const allResources = [...(briefing.resources ?? []), ...testResources]
+
   const { supabase } = await import('../../shared/db/supabase.client.js')
   const enrichedResources = await Promise.all(
-    (briefing.resources ?? []).map(async (r) => {
+    allResources.map(async (r) => {
       if (r.type !== 'file' || !r.value) return r
       try {
         console.log(`[briefing] Downloading file resource: ${r.value}`)

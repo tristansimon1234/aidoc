@@ -78,7 +78,7 @@ export async function runPreflight(pageId: string, projectId: string): Promise<P
     maxTokens: 4096,
   })
 
-  // Parse Gemini response
+  // Parse Gemini response — graceful fallback if JSON is malformed
   let jsonStr = result.text.trim()
   if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   const braceStart = jsonStr.indexOf('{')
@@ -86,7 +86,15 @@ export async function runPreflight(pageId: string, projectId: string): Promise<P
   if (braceStart !== -1 && braceEnd > braceStart) jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
 
   const { DocRequirementsAnalysisSchema } = await import('./page.schema.js')
-  const analysis = DocRequirementsAnalysisSchema.parse(JSON.parse(jsonStr))
+
+  let analysis: { testPlan: string; estimatedSteps: number; requirements: { category: 'file' | 'prerequisite'; label: string; reason: string }[] }
+  try {
+    analysis = DocRequirementsAnalysisSchema.parse(JSON.parse(jsonStr))
+  } catch {
+    // If Gemini returns broken JSON, proceed with hardcoded checks only
+    console.warn('[preflight] Failed to parse Gemini response, proceeding with basic checks')
+    analysis = { testPlan: `Verify documentation for "${page.title}"`, estimatedSteps: 0, requirements: [] }
+  }
 
   // Gather available resources
   const briefing = page.briefing as Record<string, unknown> | null
