@@ -16,6 +16,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initializedRef = useRef(false)
   const lastContentRef = useRef('')
+  const suppressNextChangeRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { lightbox, openLightbox } = useImageLightbox()
 
@@ -51,6 +52,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
 
     void (async () => {
       try {
+        suppressNextChangeRef.current = true
         const blocks = await editor.tryParseMarkdownToBlocks(content)
         editor.replaceBlocks(editor.document, blocks)
       } catch {
@@ -80,6 +82,12 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
 
   const handleChange = useCallback(() => {
     if (readOnly) return
+
+    // Skip save when content was loaded programmatically (not user edit)
+    if (suppressNextChangeRef.current) {
+      suppressNextChangeRef.current = false
+      return
+    }
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
