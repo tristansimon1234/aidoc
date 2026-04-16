@@ -52,27 +52,40 @@ export async function generateVoiceover(
   const segmentPaths: { audioPath: string; targetStartTime: number }[] = []
 
   for (let i = 0; i < steps.length; i++) {
-    const text = stepTexts[i] ?? steps[i]!.text
+    let text = stepTexts[i] ?? steps[i]!.text
     if (!text || text.length < 3) continue
 
-    const rawStart = timestamps[i] ?? 0
+    const startTime = timestamps[i] ?? 0
     const nextStart = timestamps[i + 1]
-    const endTime = nextStart ?? (rawStart + 20)
+    const slotDuration = (nextStart ?? (startTime + 15)) - startTime
 
-    // Start narration before the action. If there's a long gap before this step,
-    // start earlier to reduce dead silence (up to 3s early, minimum 1.5s)
-    const prevEnd = segmentPaths.length > 0 ? segmentPaths[segmentPaths.length - 1]!.targetStartTime + 5 : 0
-    const gapBefore = rawStart - prevEnd
-    const anticipation = gapBefore > 5 ? 3 : 1.5
-    const startTime = Math.max(0, rawStart - anticipation)
+    // Synthesize — retry with shorter text if audio overflows the slot
+    let buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
+    let estimatedDuration = Math.max(1, buffer.length / 16000)
 
-    console.log(`[voiceover] Segment ${i}: "${text.slice(0, 60)}${text.length > 60 ? '...' : ''}" (${text.length} chars, ${startTime.toFixed(1)}s, gap=${gapBefore.toFixed(1)}s)`)
+    if (estimatedDuration > slotDuration * 1.1 && text.split(/\s+/).length > 6) {
+      const isLastSegment = i === steps.length - 1
+      const words = text.split(/\s+/)
+      const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration))
+      const shortened = words.slice(0, Math.max(4, targetWords)).join(' ')
+      const lastDot = shortened.lastIndexOf('.')
+      text = lastDot > shortened.length * 0.4 ? shortened.slice(0, lastDot + 1) : shortened + '.'
+      // Preserve closing phrase for last segment
+      if (isLastSegment && !text.match(/thanks|bye|wrap|watching/i)) {
+        text += ' Thanks for watching!'
+      }
 
-    const buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
+      console.log(`[voiceover] Segment ${i}: overflow (${estimatedDuration.toFixed(1)}s > ${slotDuration.toFixed(1)}s slot) — retrying with ${text.split(/\s+/).length} words`)
+
+      buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
+      estimatedDuration = Math.max(1, buffer.length / 16000)
+    }
+
     const segPath = `runs/${runId}/voiceover-seg-${i}.mp3`
     await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
 
-    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB`)
+    const endTime = startTime + estimatedDuration
+    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB, ~${estimatedDuration.toFixed(1)}s/${slotDuration.toFixed(0)}s slot, ${startTime.toFixed(1)}→${endTime.toFixed(1)}s`)
 
     segmentPaths.push({ audioPath: segPath, targetStartTime: startTime })
     segments.push({ stepIndex: steps[i]!.stepIndex, startTime, endTime, text })

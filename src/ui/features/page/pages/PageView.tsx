@@ -370,6 +370,36 @@ DO NOT generate new documentation. Only verify the existing one.`
         <div className={styles.tabContent} style={{ maxWidth: '960px', margin: '0 auto' }}>
           {(videoUrl || latestRunId) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              {/* Publish toggle — show video on public documentation page */}
+              <div
+                onClick={() => {
+                  const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
+                  const newVal = !current
+                  const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
+                  setPage({ ...page, briefing: newBriefing })
+                  void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: 'var(--space-sm) var(--space-md)',
+                  background: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-status-completed-bg)' : 'var(--color-secondary)',
+                  border: `1px solid ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-status-completed-border)' : 'var(--color-border)'}`,
+                  borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'all 0.15s',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
+                    Show video on published page
+                  </div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+                    Display this video at the top of your public documentation
+                  </div>
+                </div>
+                <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
+                  <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
+                </div>
+              </div>
+
               {/* Explanation */}
               <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: 0, lineHeight: 1.6 }}>
                 Configure the AI voice-over for your video. Choose a tone and voice, then generate — the narration syncs automatically with the recording.
@@ -403,19 +433,20 @@ DO NOT generate new documentation. Only verify the existing one.`
                   Replace
                   <input type="file" accept="video/mp4,video/webm,video/quicktime" style={{ display: 'none' }} onChange={(e) => {
                     const file = e.target.files?.[0]
-                    if (!file) return
+                    if (!file || !latestRunId) return
                     void (async () => {
                       try {
                         const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
                         const path = `runs/${latestRunId}/video${ext}`
-                        // Delete existing file first, then upload (signed URL fails if file exists)
-                        await supabase.storage.from('artifacts').remove([path])
-                        const { error: upErr } = await supabase.storage.from('artifacts').upload(path, file, { contentType: file.type, upsert: true })
-                        if (upErr) throw new Error(upErr.message)
+                        const { signedUrl } = await api.runs.getSignedUploadUrl(latestRunId, path)
+                        const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+                        if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
                         const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
                         if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
                         setVoiceoverUrl(null)
                         setVoiceoverSegments([])
+                        // Refresh to pick up new video path
+                        await fetchData()
                       } catch (err) {
                         console.error('[replace] Failed:', (err as Error).message)
                       }
@@ -423,27 +454,6 @@ DO NOT generate new documentation. Only verify the existing one.`
                   }} />
                 </label>
 
-                {/* Publish toggle */}
-                <div
-                  className={styles.videoPublish}
-                  onClick={() => {
-                    const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
-                    const newVal = !current
-                    const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
-                    setPage({ ...page, briefing: newBriefing })
-                    void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
-                  }}
-                >
-                  <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
-                    <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
-                  </div>
-                  <span style={{
-                    fontSize: 'var(--text-xs)', fontWeight: 500,
-                    color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-success)' : 'var(--color-muted-fg)',
-                  }}>
-                    {(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'Published' : 'Hidden'}
-                  </span>
-                </div>
                 {latestRunId && page.content && (
                   <Button size="sm" disabled={generatingVoiceover} onClick={() => {
                     void (async () => {
@@ -452,6 +462,7 @@ DO NOT generate new documentation. Only verify the existing one.`
                         const result = await api.runs.generateVoiceover(latestRunId, {
                           voiceId: selectedVoiceId,
                           tone: selectedTone,
+                          videoDuration: videoDuration || undefined,
                         }) as {
                           segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
                           audioPath?: string
@@ -465,6 +476,8 @@ DO NOT generate new documentation. Only verify the existing one.`
                           setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
                         }
                         setVoiceoverSegments(result.segments ?? [])
+                        // Re-fetch to ensure video URL is fresh (summary may have changed)
+                        await fetchData()
                       } finally {
                         setGeneratingVoiceover(false)
                       }
@@ -493,6 +506,19 @@ DO NOT generate new documentation. Only verify the existing one.`
               {/* Segment timeline + text editor */}
               {voiceoverSegments.length > 0 && latestRunId && videoDuration > 0 && (
                 <>
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)',
+                    padding: 'var(--space-sm) var(--space-md)',
+                    background: 'var(--color-status-running-bg)',
+                    border: '1px solid var(--color-status-running-border)',
+                    borderRadius: 'var(--radius-lg)',
+                    fontSize: 'var(--text-xs)', color: 'var(--color-status-running-text)', lineHeight: 1.5,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+                    <span>
+                      <strong>Tip:</strong> Click any segment text to edit it, then press Enter to regenerate just that section. Use the trim handles on the timeline to cut the video start/end.
+                    </span>
+                  </div>
                   <div className={styles.section} style={{ padding: 0, overflow: 'hidden' }}>
                     <VideoTimeline
                       runId={latestRunId}
@@ -504,10 +530,6 @@ DO NOT generate new documentation. Only verify the existing one.`
                       onAudioUrlChange={(url) => setVoiceoverUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
                     />
                   </div>
-                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: 0, lineHeight: 1.5 }}>
-                    Click any segment text to edit it, then press Enter or the refresh icon to regenerate just that segment.
-                    Drag the blue trim handles on the timeline to cut the video start/end.
-                  </p>
                 </>
               )}
             </div>
@@ -524,9 +546,23 @@ DO NOT generate new documentation. Only verify the existing one.`
       {activeTab === 'exploration' && (
         <div className={styles.tabContent}>
           {/* Explanation */}
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.6 }}>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-sm)', lineHeight: 1.6 }}>
             Record your screen or upload a video — the AI analyzes every action, extracts key screenshots, and generates structured documentation automatically.
           </p>
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)',
+            padding: 'var(--space-sm) var(--space-md)',
+            background: 'var(--color-status-running-bg)',
+            border: '1px solid var(--color-status-running-border)',
+            borderRadius: 'var(--radius-lg)',
+            marginBottom: 'var(--space-lg)',
+            fontSize: 'var(--text-xs)', color: 'var(--color-status-running-text)', lineHeight: 1.5,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+            <span>
+              <strong>Tip:</strong> For best results, narrate your actions while recording — describe what you&apos;re doing and why. The AI uses your voice to understand the context and generate better documentation.
+            </span>
+          </div>
 
           {/* Two-column layout: briefing + actions */}
           <div className={styles.generateGrid}>

@@ -188,7 +188,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const body = req.body as { voiceId?: string; language?: string; tone?: string }
+      const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
 
       // Check ElevenLabs is configured before attempting
       const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
@@ -216,37 +216,80 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
       console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
 
-      // Build time budget — ~2.2 words/sec spoken, but budget at 1.8 to leave room for pauses + tags
-      // Merge short sections (< 4s) with the next one to reduce segment count
+      // Build time budget — merge short sections, add intro/outro
       const mergedTimestamps: number[] = []
-      for (let i = 0; i < timestamps.length; i++) {
-        const next = timestamps[i + 1] ?? (timestamps[i]! + 15)
-        const gap = next - timestamps[i]!
-        if (gap < 4 && i < timestamps.length - 1) {
-          // Skip this timestamp — it'll be covered by the next section
-          continue
-        }
-        mergedTimestamps.push(timestamps[i]!)
-      }
-      // Ensure at least the first timestamp is kept
-      if (mergedTimestamps.length === 0 && timestamps.length > 0) {
+
+      // Always keep the first timestamp
+      if (timestamps.length > 0) {
         mergedTimestamps.push(timestamps[0]!)
       }
-      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections`)
+      // Merge subsequent timestamps that are too close (< 8s gap)
+      for (let i = 1; i < timestamps.length; i++) {
+        const prev = mergedTimestamps[mergedTimestamps.length - 1]!
+        const gap = timestamps[i]! - prev
+        if (gap < 8) continue
+        mergedTimestamps.push(timestamps[i]!)
+      }
+
+      // Cap segments: ~1 per 20s of video, min 3, max 10
+      const videoDur = (timestamps[timestamps.length - 1] ?? 60) - (timestamps[0] ?? 0)
+      const maxSegments = Math.max(3, Math.min(10, Math.ceil(videoDur / 20)))
+      while (mergedTimestamps.length > maxSegments) {
+        // Find the smallest gap between consecutive timestamps
+        let minGap = Infinity
+        let minIdx = 1
+        for (let i = 1; i < mergedTimestamps.length; i++) {
+          const gap = mergedTimestamps[i]! - mergedTimestamps[i - 1]!
+          if (gap < minGap) { minGap = gap; minIdx = i }
+        }
+        mergedTimestamps.splice(minIdx, 1)
+      }
+
+      // Intro: if first action starts late (> 3s), prepend a timestamp at 0 for greeting
+      if (mergedTimestamps.length > 0 && mergedTimestamps[0]! > 3) {
+        mergedTimestamps.unshift(0)
+      }
+
+      // Drop last timestamp if too close to video end (< 5s remaining = not enough for a segment)
+      // Use actual video duration if provided by frontend, otherwise estimate
+      const estimatedVideoEnd = (body.videoDuration && body.videoDuration > 0)
+        ? body.videoDuration
+        : (timestamps[timestamps.length - 1] ?? 0) + 5
+      console.log(`[voiceover] Video end: ${estimatedVideoEnd.toFixed(1)}s${body.videoDuration ? ' (from player)' : ' (estimated)'}`)
+      while (mergedTimestamps.length > 1) {
+        const last = mergedTimestamps[mergedTimestamps.length - 1]!
+        if (estimatedVideoEnd - last < 5) {
+          mergedTimestamps.pop()
+        } else {
+          break
+        }
+      }
+
+      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections: [${mergedTimestamps.map(t => t.toFixed(1)).join(', ')}]`)
 
       const numStepsMerged = mergedTimestamps.length
       const timeBudgets = mergedTimestamps.map((t, i) => {
-        const next = mergedTimestamps[i + 1] ?? (t + 15)
-        return next - t
+        const next = mergedTimestamps[i + 1]
+        if (next != null) return next - t
+        // Last segment: cap at video end, min 5s
+        return Math.max(5, estimatedVideoEnd - t)
       })
       const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
-      const totalMaxWords = Math.floor(totalVideoTime * 1.8)
-      const sectionList = mergedTimestamps.map((_, i) => {
+      const totalMaxWords = Math.floor(totalVideoTime * 2)
+      const sectionList = mergedTimestamps.map((t, i) => {
         const budget = timeBudgets[i]!
-        const minWords = Math.max(3, Math.floor(budget * 1.2))
-        const maxWords = Math.max(5, Math.floor(budget * 2.2))
-        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → aim for ${minWords}-${maxWords} words)`
+        const minWords = Math.max(4, Math.floor(budget * 1.5))
+        const maxWords = Math.max(6, Math.floor(budget * 2.0))
+        const nextT = mergedTimestamps[i + 1]
+        const timeRange = nextT != null ? `${formatTime(t)}–${formatTime(nextT)}` : `${formatTime(t)}–end`
+        return `[SECTION ${i + 1}] (${timeRange}, ${budget.toFixed(0)}s → ${minWords}-${maxWords} words)`
       }).join('\n')
+
+      function formatTime(s: number): string {
+        const m = Math.floor(s / 60)
+        const sec = Math.floor(s % 60)
+        return `${m}:${sec.toString().padStart(2, '0')}`
+      }
 
       // Ask Gemini to transform the DOC into a narration script
       // Tone presets — controls voice delivery style
@@ -330,18 +373,18 @@ Total word budget: ~${totalMaxWords} words. The narration MUST fit within the vi
 
 ${sectionList}
 
-⚠️ FILL THE TIME. Each section has a word RANGE (min-max). Aim for the MIDDLE of the range.
-- Too short = awkward silence between sections. AVOID this.
-- Too long = narration overlaps the next action. Also bad.
-- For long sections (10s+): explain WHY the feature matters, add context, give tips — don't just describe the click.
-- For short sections (3-5s): one punchy sentence is enough.
+⚠️ FILL THE TIME — this is the #1 priority. Each section has a word RANGE (min-max). You MUST write at least the minimum number of words. Silence between sections ruins the experience.
+- Count your words for each section. If the minimum says 45 words, write at least 45 words.
+- For long sections (15s+): explain the WHY, add context, give tips, describe what's on screen in detail. Use 3-5 sentences.
+- For medium sections (8-15s): 2-3 sentences with context.
+- For short sections (3-8s): 1-2 punchy sentences.
+- Too short = dead silence = BAD. Too long = minor overlap = acceptable.
 
 ## Content rules
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
 - GREETING: Section 1 starts with a short greeting
 - CLOSING: Section ${numStepsMerged} MUST end with a closing phrase ("Thanks for watching!", "That's a wrap!")
-- CONCISE: 1-2 sentences per section max
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 
@@ -378,7 +421,7 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
         // Enforce word limit — trim to budget if Gemini went way over
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(5, Math.floor(budget * 2.2))
+        const maxWords = Math.max(5, Math.floor(budget * 2.0))
         const words = text.split(/\s+/)
         if (words.length > maxWords * 1.2) {
           // Over by 20%+ — truncate to limit, ending at a sentence boundary if possible
@@ -393,11 +436,14 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       for (const s of stepsWithText) {
         const wordCount = s.text.split(/\s+/).length
         const budget = timeBudgets[s.stepIndex]!
-        const limit = Math.max(5, Math.floor(budget * 2.2))
+        const limit = Math.max(5, Math.floor(budget * 2.0))
         console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
       }
 
-      const result = await generateVoiceover(params.data.id, stepsWithText, mergedTimestamps, {
+      // Pass timestamps + video end sentinel so the service knows the last segment's limit
+      const timestampsWithEnd = [...mergedTimestamps, estimatedVideoEnd]
+
+      const result = await generateVoiceover(params.data.id, stepsWithText, timestampsWithEnd, {
         voiceId: body.voiceId,
         language: body.language,
       })

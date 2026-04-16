@@ -96,7 +96,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, onDurationChange }: Narrate
     return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`
   }
 
-  const progress = duration > 0 ? currentTime / duration : 0
+  const progress = (duration > 0 && isFinite(duration)) ? currentTime / duration : 0
 
   if (!videoUrl) return <></>
 
@@ -111,7 +111,20 @@ export function NarratedPlayer({ videoUrl, audioUrl, onDurationChange }: Narrate
           muted={hasNarration}
           onLoadedMetadata={() => {
             const d = videoRef.current?.duration ?? 0
-            if (d > 0 && isFinite(d)) { setDuration(d); setPlayerState('ready'); onDurationChange?.(d) }
+            if (d > 0 && isFinite(d)) {
+              setDuration(d); setPlayerState('ready'); onDurationChange?.(d)
+            } else {
+              // .webm files often report Infinity duration — mark ready anyway
+              setPlayerState('ready')
+            }
+          }}
+          onTimeUpdate={() => {
+            const video = videoRef.current
+            if (video) {
+              setCurrentTime(video.currentTime)
+              // For .webm with Infinity duration: update duration as video plays
+              if (video.currentTime > duration) setDuration(video.currentTime + 1)
+            }
           }}
           onError={() => setPlayerState('error')}
           onEnded={() => { setPlaying(false); audioRef.current?.pause() }}
@@ -158,7 +171,7 @@ export function NarratedPlayer({ videoUrl, audioUrl, onDurationChange }: Narrate
         </span>
 
         <div onClick={handleSeek} style={{ flex: 1, height: 4, background: 'var(--color-secondary)', borderRadius: 2, cursor: 'pointer' }}>
-          <div style={{ height: '100%', width: `${progress * 100}%`, background: 'var(--color-fg)', borderRadius: 2, transition: 'width 0.1s linear' }} />
+          <div style={{ height: '100%', width: `${progress * 100}%`, background: 'var(--color-fg)', borderRadius: 2 }} />
         </div>
 
         <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', minWidth: 32, textAlign: 'right' }}>

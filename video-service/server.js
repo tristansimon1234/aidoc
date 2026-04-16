@@ -264,10 +264,12 @@ app.post('/trim', async (req, res) => {
 app.post('/concat-audio', async (req, res) => {
   const start = Date.now()
   try {
-    const { runId, segments } = req.body
-    if (!runId || !segments?.length) {
+    const { runId, segments: rawSegments } = req.body
+    if (!runId || !rawSegments?.length) {
       return res.status(400).json({ error: 'runId and segments required' })
     }
+    // Sort by targetStartTime to ensure correct silence calculation
+    const segments = [...rawSegments].sort((a, b) => a.targetStartTime - b.targetStartTime)
 
     const supabase = getSupabase(req.body)
     const tmpDir = join(tmpdir(), `concat-${Date.now()}`)
@@ -293,13 +295,13 @@ app.post('/concat-audio', async (req, res) => {
         })
       })
 
-      // Calculate silence needed before this segment
+      // Calculate silence needed — always relative to targetStart, not currentTime
+      // This prevents drift accumulation when segments are longer than expected
       const silenceNeeded = Math.max(0, targetStart - currentTime)
 
-      console.log(`[concat] Seg ${i}: target=${targetStart.toFixed(1)}s, current=${currentTime.toFixed(1)}s, silence=${silenceNeeded.toFixed(1)}s, audio=${segDuration.toFixed(1)}s`)
+      console.log(`[concat] Seg ${i}: target=${targetStart.toFixed(1)}s, current=${currentTime.toFixed(1)}s, silence=${silenceNeeded.toFixed(1)}s, audio=${segDuration.toFixed(1)}s${currentTime > targetStart ? ' ⚠️ OVERLAP' : ''}`)
 
       if (silenceNeeded > 0.05) {
-        // Generate silence
         const silPath = join(tmpDir, `silence-${i}.mp3`)
         await new Promise((resolve, reject) => {
           ffmpeg()

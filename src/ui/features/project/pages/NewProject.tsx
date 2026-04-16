@@ -85,7 +85,9 @@ export function NewProject(): React.ReactElement {
     setError(null)
 
     const validCreds = credentials.filter((c) => c.label && c.username && c.password)
-    const context = (audience || workflow) ? { audience, workflow, quirks: '' } : undefined
+    const context = analyzed ? { audience, workflow, quirks: '' } : undefined
+
+    console.log('[create] audience:', JSON.stringify(audience), 'workflow:', JSON.stringify(workflow), 'context:', JSON.stringify(context))
 
     createProject({
         name,
@@ -95,6 +97,15 @@ export function NewProject(): React.ReactElement {
         credentials: validCreds.length > 0 ? validCreds : undefined,
       })
       .then(async (p) => {
+        console.log('[create] Project created:', p.id, 'context:', JSON.stringify(p.context))
+        // Save context + design explicitly (createProject may not save context reliably)
+        const updates: Record<string, unknown> = {}
+        if (audience || workflow) updates.context = { audience, workflow, quirks: '' }
+        if (description) updates.description = description
+        if (Object.keys(updates).length > 0) {
+          const { updateProject } = await import('../../../shared/api/db.js')
+          await updateProject(p.id, updates).catch((err) => { console.error('[create] updateProject failed:', (err as Error).message) })
+        }
         // Apply discovered design if available — normalize font to CSS font-family
         if (design) {
           const fontName = design.font?.trim()

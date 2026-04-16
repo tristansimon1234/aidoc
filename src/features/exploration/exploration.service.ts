@@ -177,6 +177,8 @@ Rules:
 - Budget: 50 actions max. Prioritize the most important sections. Wrap up at ~40.
 - Login wall without credentials → call done immediately
 - Action fails twice → move on
+- Stuck on same page for 3+ actions → call done immediately. Do NOT overthink or retry endlessly.
+- Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
     // Make briefing files available for upload via CDP file chooser interception
