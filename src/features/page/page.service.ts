@@ -75,7 +75,7 @@ export async function runPreflight(pageId: string, projectId: string): Promise<P
   const result = await generateText({
     systemPrompt: PREFLIGHT_SYSTEM_PROMPT,
     userPrompt: buildPreflightAnalysisPrompt(page.content, page.title),
-    maxTokens: 1024,
+    maxTokens: 4096,
   })
 
   // Parse Gemini response
