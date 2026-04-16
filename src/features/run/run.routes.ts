@@ -239,6 +239,7 @@ runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
 
 // Generate voice-over narration from documentation
 runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: NextFunction) => {
+  let voiceoverJobId: string | null = null
   void (async () => {
     try {
       const params = RunIdParamSchema.safeParse(req.params)
@@ -256,6 +257,19 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       // Get the generated doc content — this is the quality source
       const run = await runService.getRun(params.data.id)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+
+      // Create a DB job so tracker survives navigation + refresh
+      if (run.docPageId) {
+        try {
+          const { findPageById } = await import('../page/page.repository.js')
+          const page = await findPageById(run.docPageId)
+          if (page) {
+            const { createJob } = await import('./job.repository.js')
+            const job = await createJob({ runId: params.data.id, pageId: run.docPageId, projectId: page.projectId, type: 'voiceover' })
+            voiceoverJobId = job.id
+          }
+        } catch { /* duplicate job or missing page — continue without tracking */ }
+      }
 
       const { findDocByRunId } = await import('../documentation/documentation.repository.js')
       const doc = await findDocByRunId(params.data.id)
@@ -503,14 +517,23 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         language: body.language,
       })
 
-      // Store voiceover info in run summary + trigger Realtime
+      // Store voiceover info in run summary
       const existingSummary = run.summaryJson ?? {}
-      const { updateRunSummary, updateRunStatus } = await import('./run.repository.js')
+      const { updateRunSummary } = await import('./run.repository.js')
       await updateRunSummary(params.data.id, { ...existingSummary, voiceover: result })
-      await updateRunStatus(params.data.id, 'completed')
+
+      // Mark job completed
+      if (voiceoverJobId) {
+        const { updateJobStatus } = await import('./job.repository.js')
+        await updateJobStatus(voiceoverJobId, 'completed').catch(() => {})
+      }
 
       res.status(200).json(result)
     } catch (err) {
+      if (voiceoverJobId) {
+        const { updateJobStatus } = await import('./job.repository.js')
+        await updateJobStatus(voiceoverJobId, 'failed', (err as Error).message).catch(() => {})
+      }
       next(err)
     }
   })()

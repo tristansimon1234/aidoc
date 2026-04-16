@@ -98,8 +98,19 @@ export async function generateVoiceover(
   if (isVideoServiceConfigured() && segmentPaths.length > 1) {
     console.log(`[voiceover] Concatenating ${segmentPaths.length} segments...`)
     audioPath = await concatAudio(runId, segmentPaths)
+
+    // Wait for concatenated file to be available in Supabase
+    // (Railway service may respond before the upload is fully committed)
+    const { supabase } = await import('../../shared/db/supabase.client.js')
+    const folder = audioPath.substring(0, audioPath.lastIndexOf('/'))
+    const fileName = audioPath.substring(audioPath.lastIndexOf('/') + 1)
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const { data: files } = await supabase.storage.from('artifacts').list(folder, { search: fileName })
+      if (files?.some((f) => f.name === fileName)) break
+      console.log(`[voiceover] Waiting for concat audio (attempt ${attempt + 1}/10)...`)
+      await new Promise((r) => setTimeout(r, 1000))
+    }
   } else {
-    // Fallback: use first segment only
     audioPath = segmentPaths[0]?.audioPath ?? `runs/${runId}/voiceover.mp3`
   }
 
