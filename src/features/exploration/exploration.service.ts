@@ -7,7 +7,6 @@ import { STAGEHAND_MODEL } from '../../shared/ai/anthropic.client.js'
 import * as explorationBrowser from './exploration.browser.js'
 import type { AgentActionRecord, StepEvent, ExplorationSummary, ExplorationBlocker } from './exploration.types.js'
 import type { PageBriefingWithContent, PageResourceWithContent } from '../page/page.types.js'
-import { env } from '../../shared/config/env.js'
 
 // In-memory cancellation signal — same process handles exploration + cancel request
 const cancelledRuns = new Set<string>()
@@ -183,15 +182,15 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // File upload: intercept clicks on file inputs and inject the file via JS.
-    // Agent clicks upload normally → our click handler catches it → injects file
-    // → dispatches change/input events → component reacts. No file picker opens.
+    // File upload: intercept file-input clicks via a capture-phase document listener.
+    // Installed immediately on the current page AND via addInitScript for future navigations.
+    // The capture phase fires before any other handler, letting us preventDefault() reliably
+    // so the native file picker never opens — even for CDP-dispatched (trusted) clicks.
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
       )
 
-    let fileUploadPolling = false
     if (briefingFiles.length > 0) {
       const firstFile = briefingFiles[0]!
       const mimeType = firstFile.fileName.endsWith('.webm') ? 'video/webm'
@@ -200,76 +199,44 @@ Rules:
             : firstFile.fileName.endsWith('.pdf') ? 'application/pdf'
               : 'application/octet-stream'
       const base64 = firstFile.fileBuffer.toString('base64')
-      console.log(`[exploration] File ready for click interception: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
+      console.log(`[file-upload] Ready: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
 
-      // Install click interceptors on file inputs via polling
-      // Once installed, clicking the input injects the file instead of opening the picker
-      fileUploadPolling = true
-      void (async () => {
-        let pollCount = 0
-        while (fileUploadPolling) {
-          await new Promise((resolve) => setTimeout(resolve, 2000))
-          if (!fileUploadPolling) break
-          pollCount++
-          try {
-            const page = session.context.activePage()
-            if (!page) continue
+      const fileUploadInterceptor = ({ b64, fileName, mime }: { b64: string; fileName: string; mime: string }) => {
+        if ((window as unknown as Record<string, unknown>).__aidocFileReady) return
+        ;(window as unknown as Record<string, unknown>).__aidocFileReady = true
 
-            const installed = await page.evaluate(
-              ({ b64, fileName, mime }: { b64: string; fileName: string; mime: string }) => {
-                let count = 0
-                document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => {
-                  if (input.dataset.aidocIntercepted) return
-                  input.dataset.aidocIntercepted = 'true'
-                  count++
-                  // Intercept click: prevent file picker, inject file instead
-                  input.addEventListener('click', (e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
-                    const file = new File([bytes], fileName, { type: mime })
-                    const dt = new DataTransfer()
-                    dt.items.add(file)
-                    input.files = dt.files
-                    input.dispatchEvent(new Event('input', { bubbles: true }))
-                    input.dispatchEvent(new Event('change', { bubbles: true }))
-                  })
-                })
-                // Also watch for dynamically added file inputs
-                if (!(window as Record<string, unknown>).__aidocFileObserver) {
-                  (window as Record<string, unknown>).__aidocFileObserver = true
-                  new MutationObserver(() => {
-                    document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((inp) => {
-                      if (inp.dataset.aidocIntercepted) return
-                      inp.dataset.aidocIntercepted = 'true'
-                      inp.addEventListener('click', (e) => {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
-                        const file = new File([bytes], fileName, { type: mime })
-                        const dt = new DataTransfer()
-                        dt.items.add(file)
-                        inp.files = dt.files
-                        inp.dispatchEvent(new Event('input', { bubbles: true }))
-                        inp.dispatchEvent(new Event('change', { bubbles: true }))
-                      })
-                    })
-                  }).observe(document.body, { childList: true, subtree: true })
-                }
-                return count
-              },
-              { b64: base64, fileName: firstFile.fileName, mime: mimeType },
-            ) as number
-
-            if (installed > 0) {
-              console.log(`[file-poll] #${pollCount} interceptors installed on ${installed} file input(s)`)
-            } else if (pollCount <= 5) {
-              console.log(`[file-poll] #${pollCount} no file inputs on page yet`)
-            }
-          } catch {
-            // Page navigated — re-install on next poll
-          }
+        function injectFile(input: HTMLInputElement) {
+          const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+          const file = new File([bytes], fileName, { type: mime })
+          const dt = new DataTransfer()
+          dt.items.add(file)
+          input.files = dt.files
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          input.dispatchEvent(new Event('change', { bubbles: true }))
         }
+
+        // Capture-phase listener fires before all other handlers on the page
+        document.addEventListener('click', (e) => {
+          const target = e.target as HTMLElement | null
+          if (!target) return
+          // Direct click on a file input
+          if (target.matches?.('input[type="file"]')) {
+            e.preventDefault()
+            e.stopImmediatePropagation()
+            injectFile(target as HTMLInputElement)
+          }
+        }, true)
+      }
+
+      const fileData = { b64: base64, fileName: firstFile.fileName, mime: mimeType }
+      const activePage = session.context.activePage()
+      if (activePage) {
+        // Install immediately on the current page
+        await activePage.evaluate(fileUploadInterceptor, fileData)
+        // Auto-install on every future navigation (survives page reloads + new pages)
+        await session.context.addInitScript(fileUploadInterceptor, fileData)
+        console.log(`[file-upload] Capture-phase interceptor installed`)
+      }
     }
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
@@ -388,8 +355,6 @@ Rules:
         },
       },
     })
-
-    fileUploadPolling = false
 
     if (result.usage) {
       await deps.incrementTokenUsage(
