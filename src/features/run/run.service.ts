@@ -201,6 +201,8 @@ export async function exploreWithEvents(
 
   const fullContext = [additionalContext, answeredContext].filter(Boolean).join('\n\n') || undefined
 
+  const isTryDoc = run.featureName.startsWith('[Test]')
+
   await exploreRun(id, buildRunDeps(), {
     additionalContext: fullContext,
     projectContext: awareness.projectContext,
@@ -208,6 +210,7 @@ export async function exploreWithEvents(
     credentials: awareness.credentials,
     customPrompt: awareness.customPrompt,
     briefing: awareness.briefing,
+    skipScreenshots: isTryDoc,
     onEvent: (event) => {
       onEvent(event)
 

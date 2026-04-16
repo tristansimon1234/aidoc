@@ -52,6 +52,7 @@ export interface ExploreOptions {
   customPrompt?: string
   briefing?: PageBriefingWithContent
   onEvent?: (event: StepEvent) => void
+  skipScreenshots?: boolean
 }
 
 export async function exploreRun(
@@ -368,11 +369,13 @@ Rules:
               reasoning: fullObservation || null,
             }
 
-            const screenshotPath = await explorationBrowser.captureScreenshot(
-              session,
-              runId,
-              stepOffset + stepCounter,
-            )
+            const screenshotPath = options?.skipScreenshots
+              ? null
+              : await explorationBrowser.captureScreenshot(
+                  session,
+                  runId,
+                  stepOffset + stepCounter,
+                )
 
             // Derive step status from tool result
             const stepStatus = deriveStepStatus(toolResult)
