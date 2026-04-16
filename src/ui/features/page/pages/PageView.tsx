@@ -710,7 +710,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
       {activeTab === 'test' && (
         <div className={styles.tabContent}>
           {/* Not running — show config + run button or results */}
-          {!tryRunning && !analyzing && (
+          {!tryRunning && !analyzing && !(activeTryDocJob?.status === 'running' && liveUrl) && (
             <>
               {/* Two-column: config + action */}
               <div className={styles.generateGrid}>
