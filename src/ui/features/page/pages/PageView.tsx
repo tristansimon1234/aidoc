@@ -187,7 +187,7 @@ export function PageView(): React.ReactElement {
     const testUrl = (briefingData?.testUrl as string) || page.startUrl || context.project.baseUrl
     const testNotes = (briefingData?.testNotes as string) || ''
 
-    const tryDocPrompt = `You are simulating a NAIVE USER who has ONLY the documentation below. You have never used this product before. You know NOTHING about it except what the documentation tells you.
+    const tryDocPrompt = `You are a STRICT DOCUMENTATION TESTER. You follow the documentation below step-by-step, exactly as written, and report what works and what doesn't.
 
 ## Documentation to verify:
 
@@ -202,14 +202,17 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
    - FAIL: if something doesn't match — explain what's different
    - AMBIGUOUS: if the instruction is vague or could be interpreted multiple ways
 
-NAIVE USER RULES:
-- Do NOT fill in gaps in the documentation with your own knowledge
-- If the doc says "click Settings" and you see "Preferences" — that is a FAIL
-- If the doc assumes you know something it never explained — note it
-- If the product shows an error — note the exact error message
-- Take a screenshot after each major step
-
-DO NOT generate new documentation. Only verify the existing one.`
+## CRITICAL RULES:
+- Follow the documentation steps IN STRICT ORDER. Do NOT skip ahead or reorder.
+- If a step FAILS or you cannot proceed: STOP IMMEDIATELY. Report the failure and call done.
+- Do NOT try workarounds, alternative paths, or detours. If it doesn't work as documented, it's a FAIL — stop there.
+- Do NOT explore other parts of the application. Stay on the documented path only.
+- Do NOT fill in gaps in the documentation with your own knowledge.
+- If the doc says "click Settings" and you see "Preferences" — that is a FAIL. Stop.
+- If the doc assumes you know something it never explained — that is a FAIL. Stop.
+- If the product shows an error — note the exact error message and STOP.
+- Take a screenshot after each major step.
+- Do NOT generate new documentation. Only verify the existing one.`
 
     setTryRunning(true)
     setTryStreamSteps([])
