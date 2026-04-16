@@ -7,6 +7,7 @@ import { STAGEHAND_MODEL } from '../../shared/ai/anthropic.client.js'
 import * as explorationBrowser from './exploration.browser.js'
 import type { AgentActionRecord, StepEvent, ExplorationSummary, ExplorationBlocker } from './exploration.types.js'
 import type { PageBriefingWithContent, PageResourceWithContent } from '../page/page.types.js'
+import { env } from '../../shared/config/env.js'
 
 // In-memory cancellation signal — same process handles exploration + cancel request
 const cancelledRuns = new Set<string>()
@@ -51,6 +52,7 @@ export interface ExploreOptions {
   customPrompt?: string
   briefing?: PageBriefingWithContent
   onEvent?: (event: StepEvent) => void
+  skipScreenshots?: boolean
 }
 
 export async function exploreRun(
@@ -156,7 +158,7 @@ Use these credentials to log in when you encounter a login page. The values are 
           parts.push(`**Reference materials**:\n${contextBlocks.join('\n')}`)
         }
         if (uploadable.length > 0) {
-          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. When you encounter a file upload input in the application, click it — the file will be provided automatically.`)
+          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. When you encounter a file upload input, click it normally — the file will be provided automatically (no manual selection needed).`)
         }
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
@@ -181,49 +183,93 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // Make briefing files available for upload via CDP file chooser interception
+    // File upload: intercept clicks on file inputs and inject the file via JS.
+    // Agent clicks upload normally → our click handler catches it → injects file
+    // → dispatches change/input events → component reacts. No file picker opens.
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
       )
 
+    let fileUploadPolling = false
     if (briefingFiles.length > 0) {
-      const activePage = session.context.activePage()
-      const firstFile = briefingFiles[0]
-      if (activePage && firstFile) {
-        const base64 = firstFile.fileBuffer.toString('base64')
-        await activePage.evaluate(
-          ({ b64, name }: { b64: string; name: string }) => {
-            // Store file data globally for file input auto-fill
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const w = window as any
-            w.__aidocFile = { b64, name }
+      const firstFile = briefingFiles[0]!
+      const mimeType = firstFile.fileName.endsWith('.webm') ? 'video/webm'
+        : firstFile.fileName.endsWith('.mp4') ? 'video/mp4'
+          : firstFile.fileName.endsWith('.mov') ? 'video/quicktime'
+            : firstFile.fileName.endsWith('.pdf') ? 'application/pdf'
+              : 'application/octet-stream'
+      const base64 = firstFile.fileBuffer.toString('base64')
+      console.log(`[exploration] File ready for click interception: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
 
-            const fillFileInputs = (): void => {
-              document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => {
-                if (input.dataset.aidocFilled) return
-                input.dataset.aidocFilled = 'true'
-                input.addEventListener('click', (e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  const stored = w.__aidocFile as { b64: string; name: string }
-                  const bytes = Uint8Array.from(atob(stored.b64), (c) => c.charCodeAt(0))
-                  const f = new File([bytes], stored.name, { type: 'application/octet-stream' })
-                  const dt = new DataTransfer()
-                  dt.items.add(f)
-                  input.files = dt.files
-                  input.dispatchEvent(new Event('change', { bubbles: true }))
-                }, { once: true })
-              })
+      // Install click interceptors on file inputs via polling
+      // Once installed, clicking the input injects the file instead of opening the picker
+      fileUploadPolling = true
+      void (async () => {
+        let pollCount = 0
+        while (fileUploadPolling) {
+          await new Promise((resolve) => setTimeout(resolve, 2000))
+          if (!fileUploadPolling) break
+          pollCount++
+          try {
+            const page = session.context.activePage()
+            if (!page) continue
+
+            const installed = await page.evaluate(
+              ({ b64, fileName, mime }: { b64: string; fileName: string; mime: string }) => {
+                let count = 0
+                document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => {
+                  if (input.dataset.aidocIntercepted) return
+                  input.dataset.aidocIntercepted = 'true'
+                  count++
+                  // Intercept click: prevent file picker, inject file instead
+                  input.addEventListener('click', (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+                    const file = new File([bytes], fileName, { type: mime })
+                    const dt = new DataTransfer()
+                    dt.items.add(file)
+                    input.files = dt.files
+                    input.dispatchEvent(new Event('input', { bubbles: true }))
+                    input.dispatchEvent(new Event('change', { bubbles: true }))
+                  })
+                })
+                // Also watch for dynamically added file inputs
+                if (!(window as Record<string, unknown>).__aidocFileObserver) {
+                  (window as Record<string, unknown>).__aidocFileObserver = true
+                  new MutationObserver(() => {
+                    document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((inp) => {
+                      if (inp.dataset.aidocIntercepted) return
+                      inp.dataset.aidocIntercepted = 'true'
+                      inp.addEventListener('click', (e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+                        const file = new File([bytes], fileName, { type: mime })
+                        const dt = new DataTransfer()
+                        dt.items.add(file)
+                        inp.files = dt.files
+                        inp.dispatchEvent(new Event('input', { bubbles: true }))
+                        inp.dispatchEvent(new Event('change', { bubbles: true }))
+                      })
+                    })
+                  }).observe(document.body, { childList: true, subtree: true })
+                }
+                return count
+              },
+              { b64: base64, fileName: firstFile.fileName, mime: mimeType },
+            ) as number
+
+            if (installed > 0) {
+              console.log(`[file-poll] #${pollCount} interceptors installed on ${installed} file input(s)`)
+            } else if (pollCount <= 5) {
+              console.log(`[file-poll] #${pollCount} no file inputs on page yet`)
             }
-
-            fillFileInputs()
-            new MutationObserver(fillFileInputs).observe(document.body, { childList: true, subtree: true })
-          },
-          { b64: base64, name: firstFile.fileName },
-        )
-        console.log(`[exploration] File upload helper injected: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
-      }
+          } catch {
+            // Page navigated — re-install on next poll
+          }
+        }
     }
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
@@ -261,9 +307,10 @@ Rules:
             if (callId) resultMap.set(callId, trObj.result)
           }
 
+          // Extract agent reasoning
           const agentText = event.text ?? ''
 
-          // FIX 1: Capture the ACTUAL browser URL (not tool arg URL)
+          // Capture the ACTUAL browser URL (not tool arg URL)
           const activePage = session.context.activePage()
           const currentUrl = activePage ? activePage.url() : run.startUrl
 
@@ -275,17 +322,19 @@ Rules:
             const toolResult = resultMap.get(toolCallId) as Record<string, unknown> | undefined
 
             if (toolName === 'think') continue
+            // Skip screenshot tool calls entirely for Try Doc tests — wastes steps
+            if (toolName === 'screenshot' && options?.skipScreenshots) continue
 
             const description = buildToolDescription(toolName, args, toolResult)
 
-            // FIX 2: Capture tool result (success/failure) alongside reasoning
+            // Capture tool result (success/failure) alongside reasoning
             const toolResultStr = toolResult
               ? JSON.stringify(toolResult).slice(0, 2000)
               : ''
             const fullObservation = [
               agentText.slice(0, 4000),
               toolResultStr ? `\n[Tool result: ${toolResultStr}]` : '',
-            ].join('')
+            ].join('') || description
 
             const record: AgentActionRecord = {
               type: toolName,
@@ -294,11 +343,13 @@ Rules:
               reasoning: fullObservation || null,
             }
 
-            const screenshotPath = await explorationBrowser.captureScreenshot(
-              session,
-              runId,
-              stepOffset + stepCounter,
-            )
+            const screenshotPath = options?.skipScreenshots
+              ? null
+              : await explorationBrowser.captureScreenshot(
+                  session,
+                  runId,
+                  stepOffset + stepCounter,
+                )
 
             // Derive step status from tool result
             const stepStatus = deriveStepStatus(toolResult)
@@ -327,7 +378,7 @@ Rules:
               })
             }
 
-            // Stream agent reasoning as a status update (what it's thinking)
+            // Stream agent reasoning as a status update
             if (agentText && agentText.length > 10) {
               emit({ type: 'status', message: agentText.slice(0, 500) })
             }
@@ -337,6 +388,8 @@ Rules:
         },
       },
     })
+
+    fileUploadPolling = false
 
     if (result.usage) {
       await deps.incrementTokenUsage(

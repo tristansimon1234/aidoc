@@ -264,6 +264,65 @@ ${stepsText}
 }`
 }
 
+// --- Pre-flight Verification ---
+
+export const PREFLIGHT_SYSTEM_PROMPT = `You are a test readiness analyst. Given a documentation page, identify ONLY the external resources that must be provided BEFORE the test can run.
+
+The test agent is a browser automation tool. It can navigate, click, type, scroll, and upload files on its own — those are NOT requirements.
+
+IMPORTANT: A "requirement" is something the test agent CANNOT do by itself. It is an EXTERNAL resource that must be prepared in advance.
+
+Requirements are ONLY:
+- A file that must be uploaded (PDF, video, image, spreadsheet, etc.)
+- A specific precondition that must exist before the test (e.g. "a project must already exist in the account")
+
+Things that are NOT requirements (do NOT list them):
+- Navigating to a page or tab — the agent does that itself
+- Clicking buttons, filling forms — the agent does that itself
+- Accessing a URL — already configured separately
+- Login credentials — already handled separately
+- Anything described AS A STEP in the documentation
+
+Return ONLY valid JSON (no markdown fences, no extra text).`
+
+export function buildPreflightAnalysisPrompt(
+  pageContent: string,
+  pageTitle: string,
+): string {
+  return `## Documentation: "${pageTitle}"
+
+${pageContent.slice(0, 8000)}
+
+---
+
+Identify ONLY the external resources needed BEFORE this test can start.
+
+Return JSON:
+{
+  "testPlan": "1-2 sentence summary of what the test will verify — write in the SAME LANGUAGE as the documentation",
+  "estimatedSteps": <number of distinct user actions the agent will perform>,
+  "requirements": [
+    {
+      "category": "file" | "prerequisite",
+      "label": "what is needed (same language as the doc)",
+      "reason": "why this must be prepared before the test"
+    }
+  ]
+}
+
+Categories:
+- "file": A specific file that must be uploaded during the test (PDF, video, image, spreadsheet, document, etc.)
+- "prerequisite": A precondition that must be true (e.g. "an existing project must exist", "a subscription must be active")
+
+Rules:
+- ONLY include items that are truly external resources the agent cannot create on its own
+- If the doc mentions uploading a file → add a "file" requirement
+- If the doc requires pre-existing data that can't be created during the test → add a "prerequisite"
+- Do NOT include URL, credentials, navigation steps, or UI actions — those are handled separately
+- Keep the list SHORT — typically 0-3 items. An empty requirements array is perfectly fine
+- Do NOT repeat documentation steps as requirements`
+}
+
 // --- Walkthrough (progressive AI-guided DOM highlighting) ---
 
 import type { CompletedStep } from '../../features/chat/walkthrough.types.js'

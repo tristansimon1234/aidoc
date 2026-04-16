@@ -6,7 +6,21 @@ import { type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/
 import { updateProject } from '../../../shared/api/db.js'
 import styles from './ProjectSettings.module.css'
 
+import { supabase } from '../../../shared/api/supabase.js'
+
 interface Credential { label: string; username: string; password: string }
+interface Resource { type: 'url' | 'file' | 'note'; label: string; value: string }
+
+const RESOURCE_FILE_EXTENSIONS = [
+  '.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml',
+  '.pdf',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',
+  '.mp4', '.webm', '.mov',
+  '.xlsx', '.xls',
+  '.pptx', '.ppt',
+  '.docx', '.doc',
+]
+const RESOURCE_MAX_FILE_SIZE = 50 * 1024 * 1024
 
 type SettingsTab = 'general' | 'knowledge' | 'credentials'
 
@@ -22,6 +36,10 @@ export function ProjectSettings(): React.ReactElement {
   const [credentials, setCredentials] = useState<Credential[]>(
     outletProject.credentials ?? [],
   )
+  const [resources, setResources] = useState<Resource[]>(
+    outletProject.resources ?? [],
+  )
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const [walkthroughEnabled, setWalkthroughEnabled] = useState(outletProject.walkthroughEnabled ?? false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -34,6 +52,7 @@ export function ProjectSettings(): React.ReactElement {
     setBaseUrl(outletProject.baseUrl)
     setContext(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
     setCredentials(outletProject.credentials ?? [])
+    setResources(outletProject.resources ?? [])
     setWalkthroughEnabled(outletProject.walkthroughEnabled ?? false)
   }, [outletProject])
 
@@ -42,10 +61,12 @@ export function ProjectSettings(): React.ReactElement {
     setSaving(true); setError(null); setSaved(false)
     try {
       const validCreds = credentials.filter((c) => c.label && c.username && c.password)
+      const validResources = resources.filter((r) => r.label && r.value)
       const updated = await updateProject(projectId, {
         name, baseUrl, description: description || undefined,
         context: (context.audience || context.workflow || context.quirks) ? context : undefined,
         credentials: validCreds.length > 0 ? validCreds : undefined,
+        resources: validResources,
         walkthroughEnabled,
       })
       setProject(updated)
@@ -204,6 +225,59 @@ export function ProjectSettings(): React.ReactElement {
               <button className={styles.addBtn} onClick={() => setCredentials([...credentials, { label: '', username: '', password: '' }])}>
                 + Add credential
               </button>
+
+              <label className={styles.label} style={{ marginTop: 'var(--space-lg)' }}>Test Resources</label>
+              <p className={styles.sectionDesc} style={{ marginBottom: 'var(--space-sm)' }}>
+                Files, URLs, or notes available to the AI agent during all tests across pages.
+              </p>
+              {uploadError && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', margin: '0 0 var(--space-sm)' }}>{uploadError}</p>}
+              {resources.map((r, i) => (
+                <div key={i} className={styles.credRow}>
+                  <select value={r.type} onChange={(e) => setResources(resources.map((res, j) => j === i ? { ...res, type: e.target.value as Resource['type'] } : res))}
+                    className={styles.credInput} style={{ padding: '6px 8px' }}>
+                    <option value="url">URL</option>
+                    <option value="file">File</option>
+                    <option value="note">Note</option>
+                  </select>
+                  <input className={styles.credInput} value={r.label}
+                    onChange={(e) => setResources(resources.map((res, j) => j === i ? { ...res, label: e.target.value } : res))}
+                    placeholder="Label" />
+                  {r.type === 'file' ? (
+                    r.value ? (
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', padding: '6px 8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.value.split('/').pop()}
+                      </span>
+                    ) : (
+                      <input type="file" accept={RESOURCE_FILE_EXTENSIONS.join(',')}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          setUploadError(null)
+                          const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
+                          if (!RESOURCE_FILE_EXTENSIONS.includes(ext)) { setUploadError(`Unsupported type. Accepted: ${RESOURCE_FILE_EXTENSIONS.join(', ')}`); return }
+                          if (file.size > RESOURCE_MAX_FILE_SIZE) { setUploadError('File too large (max 50MB)'); return }
+                          const path = `projects/${projectId}/resources/${file.name}`
+                          void supabase.storage.from('briefing-files').upload(path, file, { upsert: true }).then(({ error: uploadErr }) => {
+                            if (uploadErr) { setUploadError(`Upload failed: ${uploadErr.message}`); return }
+                            setResources(resources.map((res, j) => j === i ? { ...res, value: path, label: res.label || file.name } : res))
+                          })
+                        }}
+                        style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }} />
+                    )
+                  ) : (
+                    <input className={styles.credInput} value={r.value}
+                      onChange={(e) => setResources(resources.map((res, j) => j === i ? { ...res, value: e.target.value } : res))}
+                      placeholder={r.type === 'url' ? 'https://...' : 'info...'} style={{ fontFamily: r.type === 'url' ? 'var(--font-mono)' : 'var(--font-sans)' }} />
+                  )}
+                  <button className={styles.removeBtn} onClick={() => setResources(resources.filter((_, j) => j !== i))}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                  </button>
+                </div>
+              ))}
+              <button className={styles.addBtn} onClick={() => setResources([...resources, { type: 'note', label: '', value: '' }])}>
+                + Add resource
+              </button>
+
               <div className={styles.saveBar}>
                 <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
                   {saving ? 'Saving...' : 'Save'}

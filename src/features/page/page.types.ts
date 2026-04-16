@@ -77,3 +77,23 @@ export interface ReorderItem {
   parentId: string | null
   sortOrder: number
 }
+
+// --- Pre-flight verification ---
+
+export type PreflightCheckCategory = 'url' | 'credentials' | 'file' | 'navigation' | 'prerequisite'
+export type PreflightCheckStatus = 'ready' | 'missing' | 'warning'
+
+export interface PreflightCheck {
+  category: PreflightCheckCategory
+  label: string
+  status: PreflightCheckStatus
+  detail: string
+  resolution: string | null
+}
+
+export interface PreflightResult {
+  ready: boolean
+  testPlan: string
+  estimatedSteps: number
+  checks: PreflightCheck[]
+}

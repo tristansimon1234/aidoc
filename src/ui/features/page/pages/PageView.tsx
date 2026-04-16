@@ -8,13 +8,14 @@ import {
   TableOfContents,
   ProgressLoader,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
+import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { VideoTimeline } from '../components/VideoTimeline.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
+import { PreflightPanel } from '../components/PreflightPanel.js'
 import styles from './PageView.module.css'
 
 interface PageContext {
@@ -41,6 +42,8 @@ export function PageView(): React.ReactElement {
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [preflightResult, setPreflightResult] = useState<PreflightResultDTO | null>(null)
+  const [preflightLoading, setPreflightLoading] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; text?: string }[]>([])
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
@@ -76,6 +79,8 @@ export function PageView(): React.ReactElement {
     setTryRunning(false)
     setAnalyzing(false)
     setTryStreamSteps([])
+    setPreflightResult(null)
+    setPreflightLoading(false)
     setGeneratingVoiceover(false)
   }
 
@@ -161,13 +166,28 @@ export function PageView(): React.ReactElement {
     })
   }, [])
 
+  const handlePreflight = async (): Promise<void> => {
+    if (!projectId || !pageId || !page?.content) return
+    setPreflightLoading(true)
+    setPreflightResult(null)
+    setError(null)
+    try {
+      const result = await api.pages.preflight(projectId, pageId)
+      setPreflightResult(result)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setPreflightLoading(false)
+    }
+  }
+
   const handleTryDoc = async (): Promise<void> => {
     if (!projectId || !pageId || !page?.content) return
     const briefingData = page.briefing as Record<string, unknown> | null
     const testUrl = (briefingData?.testUrl as string) || page.startUrl || context.project.baseUrl
     const testNotes = (briefingData?.testNotes as string) || ''
 
-    const tryDocPrompt = `You are simulating a NAIVE USER who has ONLY the documentation below. You have never used this product before. You know NOTHING about it except what the documentation tells you.
+    const tryDocPrompt = `You are a STRICT DOCUMENTATION TESTER. You follow the documentation below step-by-step, exactly as written, and report what works and what doesn't.
 
 ## Documentation to verify:
 
@@ -177,19 +197,24 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 ## Your task:
 1. Navigate to: ${testUrl}
 2. Follow EACH step in the documentation IN ORDER, exactly as written
-3. For EVERY step, report your experience clearly:
-   - PASS: if the step works exactly as documented
-   - FAIL: if something doesn't match — explain what's different
-   - AMBIGUOUS: if the instruction is vague or could be interpreted multiple ways
+3. For EVERY step you must:
+   a. DESCRIBE what you see on screen before acting (e.g. "I see a login page with email and password fields")
+   b. DESCRIBE what you are about to do (e.g. "I will type the email and click Login")
+   c. PERFORM the action
+   d. REPORT the result: PASS / FAIL / AMBIGUOUS with a clear explanation
 
-NAIVE USER RULES:
-- Do NOT fill in gaps in the documentation with your own knowledge
-- If the doc says "click Settings" and you see "Preferences" — that is a FAIL
-- If the doc assumes you know something it never explained — note it
-- If the product shows an error — note the exact error message
-- Take a screenshot after each major step
-
-DO NOT generate new documentation. Only verify the existing one.`
+## CRITICAL RULES:
+- Be VERBOSE: explicitly describe what you see, what you do, and what happens. This is essential for the test report.
+- Follow the documentation steps IN STRICT ORDER. Do NOT skip ahead or reorder.
+- If a step FAILS or you cannot proceed: STOP IMMEDIATELY. Report the failure and call done.
+- Do NOT try workarounds, alternative paths, or detours. If it doesn't work as documented, it's a FAIL — stop there.
+- Do NOT explore other parts of the application. Stay on the documented path only.
+- Do NOT fill in gaps in the documentation with your own knowledge.
+- If the doc says "click Settings" and you see "Preferences" — that is a FAIL. Stop.
+- If the doc assumes you know something it never explained — that is a FAIL. Stop.
+- If the product shows an error — note the exact error message and STOP.
+- Do NOT take screenshots — they are handled automatically.
+- Do NOT generate new documentation. Only verify the existing one.`
 
     setTryRunning(true)
     setTryStreamSteps([])
@@ -642,7 +667,6 @@ DO NOT generate new documentation. Only verify the existing one.`
                 <TestConfig
                   page={page}
                   project={context.project}
-                  pageId={pageId!}
                   onBriefingChange={(newBriefing) => {
                     setPage({ ...page, briefing: newBriefing })
                     void debouncedPageUpdate({ briefing: newBriefing })
@@ -661,7 +685,7 @@ DO NOT generate new documentation. Only verify the existing one.`
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-                    {tryReport && (
+                    {tryReport && !preflightResult && (
                       <div style={{
                         padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-secondary)',
                         borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
@@ -669,12 +693,31 @@ DO NOT generate new documentation. Only verify the existing one.`
                         Last tested {new Date(tryReport.executedAt).toLocaleDateString()} — {tryReport.summary.overallVerdict}
                       </div>
                     )}
-                    <Button onClick={() => void handleTryDoc()} disabled={!page.content}>
-                      {tryReport ? 'Re-test documentation' : 'Run test'}
-                    </Button>
+                    {preflightLoading && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0' }}>
+                        <Spinner size="sm" />
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Checking test readiness...</span>
+                      </div>
+                    )}
+                    {!preflightResult && !preflightLoading && (
+                      <Button onClick={() => void handlePreflight()} disabled={!page.content}>
+                        {tryReport ? 'Re-test documentation' : 'Run test'}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
+
+              {/* Pre-flight check results */}
+              {preflightResult && (
+                <div style={{ marginTop: 'var(--space-md)' }}>
+                  <PreflightPanel
+                    result={preflightResult}
+                    onConfirm={() => { setPreflightResult(null); void handleTryDoc() }}
+                    onDismiss={() => setPreflightResult(null)}
+                  />
+                </div>
+              )}
 
               {/* Report below */}
               {tryReport && (
@@ -736,54 +779,26 @@ DO NOT generate new documentation. Only verify the existing one.`
 
 // --- Test Configuration ---
 
-const TEST_FILE_EXTENSIONS = ['.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml', '.pdf']
-const TEST_MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB
-
-interface TestResource {
-  type: 'url' | 'file' | 'note'
-  label: string
-  value: string
-}
-
-function TestConfig({ page, project, pageId, onBriefingChange }: {
+function TestConfig({ page, project, onBriefingChange }: {
   page: DocPageDTO
   project: ProjectDTO
-  pageId: string
   onBriefingChange: (briefing: DocPageDTO['briefing']) => void
 }): React.ReactElement {
   const briefing = page.briefing as Record<string, unknown> | null
   const testUrl = (briefing?.testUrl as string) ?? ''
   const testNotes = (briefing?.testNotes as string) ?? ''
-  const testResources = (briefing?.testResources as TestResource[]) ?? []
-  const [uploadError, setUploadError] = useState<string | null>(null)
+  const projectResources = project.resources ?? []
+  const selectedResources = (briefing?.selectedResources as number[]) ?? []
 
   const update = (field: string, value: unknown): void => {
     onBriefingChange({ ...(page.briefing ?? {}), [field]: value } as typeof page.briefing)
   }
 
-  const addResource = (): void => {
-    update('testResources', [...testResources, { type: 'note', label: '', value: '' }])
-  }
-
-  const updateResource = (i: number, field: keyof TestResource, val: string): void => {
-    update('testResources', testResources.map((r, j) => j === i ? { ...r, [field]: val } : r))
-  }
-
-  const removeResource = (i: number): void => {
-    update('testResources', testResources.filter((_, j) => j !== i))
-  }
-
-  const handleFileUpload = async (i: number, e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploadError(null)
-    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
-    if (!TEST_FILE_EXTENSIONS.includes(ext)) { setUploadError(`Unsupported type. Accepted: ${TEST_FILE_EXTENSIONS.join(', ')}`); return }
-    if (file.size > TEST_MAX_FILE_SIZE) { setUploadError('File too large (max 2MB)'); return }
-    const path = `pages/${pageId}/test/${file.name}`
-    const { error } = await supabase.storage.from('briefing-files').upload(path, file, { upsert: true })
-    if (error) { setUploadError(`Upload failed: ${error.message}`); return }
-    update('testResources', testResources.map((r, j) => j === i ? { ...r, value: path, label: r.label || file.name } : r))
+  const toggleResource = (index: number): void => {
+    const next = selectedResources.includes(index)
+      ? selectedResources.filter((i) => i !== index)
+      : [...selectedResources, index]
+    update('selectedResources', next)
   }
 
   return (
@@ -812,57 +827,29 @@ function TestConfig({ page, project, pageId, onBriefingChange }: {
           />
         </div>
 
-        {/* Resources */}
+        {/* Project resources — checkboxes to select which ones to use */}
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-sm)' }}>
-            <label className={styles.briefingFieldLabel} style={{ margin: 0 }}>Resources</label>
-            <button type="button" onClick={addResource} style={{
-              background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
-              fontFamily: 'var(--font-mono)', padding: '2px 8px',
-            }}>+ add</button>
-          </div>
-          {uploadError && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', margin: '0 0 var(--space-sm)' }}>{uploadError}</p>}
-          {testResources.map((r, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 2fr auto', gap: 'var(--space-xs)', marginBottom: 'var(--space-xs)', alignItems: 'center' }}>
-              <select value={r.type} onChange={(e) => updateResource(i, 'type', e.target.value)} style={{
-                background: 'var(--color-secondary)', border: '1px solid transparent', borderRadius: 'var(--radius-md)',
-                padding: '6px 8px', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)',
-              }}>
-                <option value="url">URL</option>
-                <option value="file">File</option>
-                <option value="note">Note</option>
-              </select>
-              <input type="text" value={r.label} onChange={(e) => updateResource(i, 'label', e.target.value)}
-                placeholder="label" style={{
-                  width: '100%', padding: '6px 8px', fontSize: 'var(--text-xs)', color: 'var(--color-fg)',
-                  background: 'var(--color-secondary)', border: '1px solid transparent', borderRadius: 'var(--radius-md)',
-                  fontFamily: 'var(--font-sans)', outline: 'none',
-                }} />
-              {r.type === 'file' ? (
-                r.value ? (
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', padding: '6px 8px' }}>{r.value.split('/').pop()}</span>
-                ) : (
-                  <input type="file" accept={TEST_FILE_EXTENSIONS.join(',')} onChange={(e) => void handleFileUpload(i, e)}
-                    style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }} />
-                )
-              ) : (
-                <input type="text" value={r.value} onChange={(e) => updateResource(i, 'value', e.target.value)}
-                  placeholder={r.type === 'url' ? 'https://...' : 'info...'} style={{
-                    width: '100%', padding: '6px 8px', fontSize: 'var(--text-xs)', color: 'var(--color-fg)',
-                    background: 'var(--color-secondary)', border: '1px solid transparent', borderRadius: 'var(--radius-md)',
-                    fontFamily: r.type === 'url' ? 'var(--font-mono)' : 'var(--font-sans)', outline: 'none',
-                  }} />
-              )}
-              <button type="button" onClick={() => removeResource(i)} style={{
-                background: 'none', border: 'none', cursor: 'pointer', fontSize: 'var(--text-xs)',
-                color: 'var(--color-muted-fg)', padding: 4, borderRadius: 'var(--radius-sm)',
-              }}>x</button>
+          <label className={styles.briefingFieldLabel} style={{ margin: 0 }}>Resources</label>
+          {projectResources.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', marginTop: 'var(--space-xs)' }}>
+              {projectResources.map((r, i) => (
+                <label key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
+                  padding: '6px 8px', background: 'var(--color-secondary)', borderRadius: 'var(--radius-md)',
+                  fontSize: 'var(--text-xs)', cursor: 'pointer',
+                  border: selectedResources.includes(i) ? '1px solid var(--color-primary)' : '1px solid transparent',
+                }}>
+                  <input type="checkbox" checked={selectedResources.includes(i)}
+                    onChange={() => toggleResource(i)}
+                    style={{ accentColor: 'var(--color-primary)' }} />
+                  <span style={{ fontFamily: 'var(--font-mono)', textTransform: 'uppercase', fontSize: '10px', color: 'var(--color-muted-fg)' }}>{r.type}</span>
+                  <span style={{ color: 'var(--color-fg)' }}>{r.label || r.value.split('/').pop()}</span>
+                </label>
+              ))}
             </div>
-          ))}
-          {testResources.length === 0 && (
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic', margin: 0 }}>
-              No resources — add PDFs, URLs, or notes for the test agent.
+          ) : (
+            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic', margin: 'var(--space-xs) 0 0' }}>
+              No resources configured. Add files, URLs, or notes in Project Settings.
             </p>
           )}
         </div>

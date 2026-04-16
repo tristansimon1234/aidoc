@@ -101,6 +101,7 @@ export async function updateProject(id: string, body: Record<string, unknown>): 
   if (body.description !== undefined) updates.description = body.description
   if (body.context !== undefined) updates.context = body.context
   if (body.credentials !== undefined) updates.credentials = body.credentials
+  if (body.resources !== undefined) updates.resources = body.resources
   if (body.discoveredContext !== undefined) updates.discovered_context = body.discoveredContext
   if (body.design !== undefined) updates.design = body.design
   if (body.walkthroughEnabled !== undefined) updates.walkthrough_enabled = body.walkthroughEnabled
@@ -231,6 +232,7 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     discoveredContext: parseJsonbField(row.discovered_context) as ProjectDTO['discoveredContext'] ?? null,
     design: parseJsonbField(row.design) as ProjectDTO['design'] ?? null,
     credentials: parseJsonbField(row.credentials) as ProjectDTO['credentials'] ?? null,
+    resources: parseJsonbField(row.resources) as ProjectDTO['resources'] ?? null,
     widgetApiKey: (row.widget_api_key as string) ?? null,
     widgetEnabled: (row.widget_enabled as boolean) ?? false,
     walkthroughEnabled: (row.walkthrough_enabled as boolean) ?? false,

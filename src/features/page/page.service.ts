@@ -1,5 +1,5 @@
-import { NotFoundError } from '../../shared/middleware/error.middleware.js'
-import type { DocPage, DocPageTreeNode, CreatePageInput, UpdatePageInput, ReorderItem } from './page.types.js'
+import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
+import type { DocPage, DocPageTreeNode, CreatePageInput, UpdatePageInput, ReorderItem, PreflightCheck, PreflightResult } from './page.types.js'
 import * as pageRepo from './page.repository.js'
 
 export async function createPage(input: CreatePageInput): Promise<DocPage> {
@@ -53,4 +53,113 @@ export async function deletePage(id: string): Promise<void> {
 
 export async function reorderPages(items: ReorderItem[]): Promise<void> {
   return pageRepo.reorderPages(items)
+}
+
+// --- Pre-flight verification ---
+
+export async function runPreflight(pageId: string, projectId: string): Promise<PreflightResult> {
+  const page = await pageRepo.findPageById(pageId)
+  if (!page) throw new NotFoundError('Page')
+  if (!page.content || page.content.trim().length < 20) {
+    throw new AppError('Page has no documentation content to test', 'NO_CONTENT', 400)
+  }
+
+  const { findProjectById } = await import('../project/project.repository.js')
+  const project = await findProjectById(projectId)
+  if (!project) throw new NotFoundError('Project')
+
+  // Call Gemini to analyze doc requirements
+  const { generateText } = await import('../../shared/ai/gemini.client.js')
+  const { PREFLIGHT_SYSTEM_PROMPT, buildPreflightAnalysisPrompt } = await import('../../shared/ai/prompt.builder.js')
+
+  const result = await generateText({
+    systemPrompt: PREFLIGHT_SYSTEM_PROMPT,
+    userPrompt: buildPreflightAnalysisPrompt(page.content, page.title),
+    maxTokens: 4096,
+  })
+
+  // Parse Gemini response — graceful fallback if JSON is malformed
+  let jsonStr = result.text.trim()
+  if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+  const braceStart = jsonStr.indexOf('{')
+  const braceEnd = jsonStr.lastIndexOf('}')
+  if (braceStart !== -1 && braceEnd > braceStart) jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
+
+  const { DocRequirementsAnalysisSchema } = await import('./page.schema.js')
+
+  let analysis: { testPlan: string; estimatedSteps: number; requirements: { category: 'file' | 'prerequisite'; label: string; reason: string }[] }
+  try {
+    analysis = DocRequirementsAnalysisSchema.parse(JSON.parse(jsonStr))
+  } catch {
+    // If Gemini returns broken JSON, proceed with hardcoded checks only
+    console.warn('[preflight] Failed to parse Gemini response, proceeding with basic checks')
+    analysis = { testPlan: `Verify documentation for "${page.title}"`, estimatedSteps: 0, requirements: [] }
+  }
+
+  // Gather available resources — filter by page-level selection
+  const briefing = page.briefing as Record<string, unknown> | null
+  const testUrl = (briefing?.testUrl as string) || page.startUrl || project.baseUrl
+  const allProjectResources = project.resources ?? []
+  const selectedIndices = (briefing?.selectedResources as number[] | undefined) ?? []
+  const projectResources = selectedIndices.length > 0
+    ? allProjectResources.filter((_, i) => selectedIndices.includes(i))
+    : []
+  const credentials = project.credentials ?? []
+
+  // --- Hardcoded checks (always present) ---
+  const checks: PreflightCheck[] = []
+
+  // 1. Test URL — always required
+  checks.push({
+    category: 'url',
+    label: 'Test URL',
+    status: testUrl ? 'ready' : 'missing',
+    detail: testUrl ?? 'No test URL configured',
+    resolution: testUrl ? null : 'Set a test URL in the Test Configuration panel, or set a base URL on the project.',
+  })
+
+  // 2. Credentials — always required (all tests are behind login)
+  checks.push({
+    category: 'credentials',
+    label: 'Login credentials',
+    status: credentials.length > 0 ? 'ready' : 'missing',
+    detail: credentials.length > 0
+      ? `${credentials.length} credential set(s): ${credentials.map((c) => c.label).join(', ')}`
+      : 'No credentials configured',
+    resolution: credentials.length > 0 ? null : 'Add test credentials in Project Settings.',
+  })
+
+  // --- AI-driven checks (file uploads, prerequisites) ---
+  for (const req of analysis.requirements) {
+    if (req.category === 'file') {
+      const fileResources = projectResources.filter((r) => r.type === 'file' && r.value)
+      const hasFiles = fileResources.length > 0
+      checks.push({
+        category: 'file',
+        label: req.label,
+        status: hasFiles ? 'ready' : 'missing',
+        detail: hasFiles
+          ? `File(s): ${fileResources.map((r) => r.label || r.value.split('/').pop()).join(', ')}`
+          : 'No test files uploaded',
+        resolution: hasFiles ? null : 'Add a file resource in the Test Configuration panel.',
+      })
+    } else if (req.category === 'prerequisite') {
+      checks.push({
+        category: 'prerequisite',
+        label: req.label,
+        status: 'warning',
+        detail: req.reason,
+        resolution: 'Consider adding this context in "Additional context" so the test agent is aware.',
+      })
+    }
+  }
+
+  const hasMissing = checks.some((c) => c.status === 'missing')
+
+  return {
+    ready: !hasMissing,
+    testPlan: analysis.testPlan,
+    estimatedSteps: analysis.estimatedSteps,
+    checks,
+  }
 }

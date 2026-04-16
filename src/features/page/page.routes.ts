@@ -189,6 +189,20 @@ pageRouter.get('/:pageId/test-report', (req: Request, res: Response, next: NextF
   })()
 })
 
+// Pre-flight verification before Try Doc test
+pageRouter.post('/:pageId/preflight', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = PageParams.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const result = await pageService.runPreflight(params.data.pageId, params.data.projectId)
+      res.status(200).json(result)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 pageRouter.delete('/:pageId', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {

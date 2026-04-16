@@ -102,24 +102,37 @@ async function getProjectAwareness(docPageId: string): Promise<{
     }
   }
 
+  // Filter project resources by page-level selection
+  const allProjectResources = project.resources ?? []
+  const rawBriefing = page.briefing as Record<string, unknown> | null
+  const selectedIndices = (rawBriefing?.selectedResources as number[] | undefined) ?? []
+  const selectedProjectResources = selectedIndices.length > 0
+    ? allProjectResources.filter((_, i) => selectedIndices.includes(i))
+    : []
+
   return {
     projectContext: fullProjectContext.trim() || undefined,
     tableOfContents: toc || undefined,
     credentials: project.credentials ?? undefined,
     customPrompt: page.customPrompt ?? undefined,
-    briefing: await enrichBriefingWithFileContents(page.briefing),
+    briefing: await enrichBriefingWithFileContents(page.briefing, selectedProjectResources.length > 0 ? selectedProjectResources : undefined),
     existingPageSummaries: summaries.length > 0 ? summaries : undefined,
   }
 }
 
 async function enrichBriefingWithFileContents(
   briefing: import('../page/page.types.js').PageBriefing | null,
+  projectResources?: import('../project/project.types.js').ProjectResource[],
 ): Promise<PageBriefingWithContent | undefined> {
   if (!briefing) return undefined
 
+  // Merge project-level resources into page briefing resources
+  const projRes = (projectResources ?? []).map((r) => ({ type: r.type, label: r.label, value: r.value }))
+  const allResources = [...(briefing.resources ?? []), ...projRes]
+
   const { supabase } = await import('../../shared/db/supabase.client.js')
   const enrichedResources = await Promise.all(
-    (briefing.resources ?? []).map(async (r) => {
+    allResources.map(async (r) => {
       if (r.type !== 'file' || !r.value) return r
       try {
         console.log(`[briefing] Downloading file resource: ${r.value}`)
@@ -188,6 +201,8 @@ export async function exploreWithEvents(
 
   const fullContext = [additionalContext, answeredContext].filter(Boolean).join('\n\n') || undefined
 
+  const isTryDoc = run.featureName.startsWith('[Test]')
+
   await exploreRun(id, buildRunDeps(), {
     additionalContext: fullContext,
     projectContext: awareness.projectContext,
@@ -195,6 +210,7 @@ export async function exploreWithEvents(
     credentials: awareness.credentials,
     customPrompt: awareness.customPrompt,
     briefing: awareness.briefing,
+    skipScreenshots: isTryDoc,
     onEvent: (event) => {
       onEvent(event)
 
