@@ -288,6 +288,41 @@
   color: var(--color-muted-fg);
 }
 
+/* Resource type toggle */
+.typeToggle {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.typeBtn {
+  padding: 5px 10px;
+  font-size: var(--text-xs);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  color: var(--color-muted-fg);
+  background: var(--color-bg);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  border-right: 1px solid var(--color-border);
+}
+
+.typeBtn:last-child {
+  border-right: none;
+}
+
+.typeBtn:hover {
+  color: var(--color-fg);
+}
+
+.typeBtnActive {
+  background: var(--color-secondary);
+  color: var(--color-fg);
+}
+
 /* Widget */
 .codeBlock {
   background: var(--color-bg);

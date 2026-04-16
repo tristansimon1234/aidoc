@@ -43,7 +43,7 @@ export const TryDocReportSchema = z.object({
     screenshotPath: z.string().nullable().default(null),
   })).default([]),
   failures: z.array(z.object({
-    stepIndex: z.number(),
+    stepIndex: z.number().nullable().catch(null),
     issueType: z.enum(['doc', 'product']).catch('doc'),
     title: z.string(),
     description: z.string(),

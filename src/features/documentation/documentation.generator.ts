@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { generateText, type GeminiUsage } from '../../shared/ai/gemini.client.js'
-import { buildDocumentationPrompt, getDocSystemPrompt, VIDEO_DOC_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
+import { buildDocumentationPrompt, getDocSystemPrompt, VIDEO_DOC_SYSTEM_PROMPT, buildScreenshotMap, replaceScreenshotPlaceholders } from '../../shared/ai/prompt.builder.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
 const StepAssessmentSchema = z.object({
@@ -74,7 +74,9 @@ export async function generateDocumentation(context: {
   })
 
   const parts = response.text.split('---JSON---')
-  const markdown = parts[0]?.trim() ?? ''
+  // Replace screenshot placeholders with actual URLs (Gemini can't reproduce UUIDs reliably)
+  const screenshotMap = buildScreenshotMap(context.steps)
+  const markdown = replaceScreenshotPlaceholders(parts[0]?.trim() ?? '', screenshotMap)
   const jsonStr = parts[1]?.trim() ?? '{}'
 
   let json: Record<string, unknown>

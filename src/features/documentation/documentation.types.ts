@@ -66,7 +66,7 @@ export interface TryDocStepResult {
 }
 
 export interface TryDocFailure {
-  stepIndex: number
+  stepIndex: number | null
   issueType: 'doc' | 'product'
   title: string
   description: string

@@ -330,7 +330,7 @@ export interface TryDocReportDTO {
   executedAt: string
   summary: { totalSteps: number; passed: number; failed: number; ambiguous: number; overallVerdict: 'pass' | 'fail' | 'partial' }
   steps: { stepIndex: number; instruction: string; action: string; pageUrl: string | null; status: 'pass' | 'fail' | 'ambiguous'; issueType: 'doc' | 'product' | null; detail: string; screenshotPath: string | null }[]
-  failures: { stepIndex: number; issueType: 'doc' | 'product'; title: string; description: string; severity: 'critical' | 'major' | 'minor'; suggestion: string }[]
+  failures: { stepIndex: number | null; issueType: 'doc' | 'product'; title: string; description: string; severity: 'critical' | 'major' | 'minor'; suggestion: string }[]
   docIssues: { clarityScore: number; missingSections: string[]; ambiguousInstructions: string[]; implicitAssumptions: string[] }
   uxInsights: { category: string; description: string; stepIndex: number | null; severity: 'high' | 'medium' | 'low' }[]
   recommendations: { type: 'fix-doc' | 'fix-product' | 'improve-ux'; title: string; description: string; priority: 'high' | 'medium' | 'low' }[]
