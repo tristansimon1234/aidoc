@@ -55,9 +55,10 @@ interface ScreenRecorderProps {
   pageId: string
   page: DocPageDTO
   onComplete: () => Promise<void>
+  hasExistingVoiceover?: boolean
 }
 
-export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRecorderProps): React.ReactElement {
+export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistingVoiceover }: ScreenRecorderProps): React.ReactElement {
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
@@ -92,6 +93,7 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete }: ScreenRe
   }, [])
 
   const processVideo = async (file: File | Blob, fileName: string, domEvents?: DomEvent[]): Promise<void> => {
+    if (hasExistingVoiceover && !window.confirm('Uploading a new video will replace the current video and voice-over. Continue?')) return
     setError(null)
     try {
       // 1. Create a run

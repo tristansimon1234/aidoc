@@ -643,6 +643,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                 projectId={projectId!}
                 pageId={pageId!}
                 page={page}
+                hasExistingVoiceover={!!voiceoverUrl}
                 onComplete={async () => {
                   await fetchData()
                   await context.refetchPages()
