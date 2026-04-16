@@ -253,7 +253,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       // NO outro — the last section's closing phrase is enough
       // Adding an extra timestamp after the video causes segments past the end
 
-      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections (first: ${mergedTimestamps[0]?.toFixed(1)}s)`)
+      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections: [${mergedTimestamps.map(t => t.toFixed(1)).join(', ')}]`)
 
       // Estimate video end from last original timestamp + small buffer
       const estimatedVideoEnd = (timestamps[timestamps.length - 1] ?? 0) + 5
