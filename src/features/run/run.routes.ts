@@ -267,12 +267,20 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       })
       const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
       const totalMaxWords = Math.floor(totalVideoTime * 2)
-      const sectionList = mergedTimestamps.map((_, i) => {
+      const sectionList = mergedTimestamps.map((t, i) => {
         const budget = timeBudgets[i]!
         const minWords = Math.max(4, Math.floor(budget * 1.5))
         const maxWords = Math.max(6, Math.floor(budget * 2.0))
-        return `[SECTION ${i + 1}] (${budget.toFixed(0)}s → aim for ${minWords}-${maxWords} words)`
+        const nextT = mergedTimestamps[i + 1]
+        const timeRange = nextT != null ? `${formatTime(t)}–${formatTime(nextT)}` : `${formatTime(t)}–end`
+        return `[SECTION ${i + 1}] (${timeRange}, ${budget.toFixed(0)}s → ${minWords}-${maxWords} words)`
       }).join('\n')
+
+      function formatTime(s: number): string {
+        const m = Math.floor(s / 60)
+        const sec = Math.floor(s % 60)
+        return `${m}:${sec.toString().padStart(2, '0')}`
+      }
 
       // Ask Gemini to transform the DOC into a narration script
       // Tone presets — controls voice delivery style
@@ -356,18 +364,18 @@ Total word budget: ~${totalMaxWords} words. The narration MUST fit within the vi
 
 ${sectionList}
 
-⚠️ FILL THE TIME. Each section has a word RANGE (min-max). Aim for the MIDDLE of the range.
-- Too short = awkward silence between sections. AVOID this.
-- Too long = narration overlaps the next action. Also bad.
-- For long sections (10s+): explain WHY the feature matters, add context, give tips — don't just describe the click.
-- For short sections (3-5s): one punchy sentence is enough.
+⚠️ FILL THE TIME — this is the #1 priority. Each section has a word RANGE (min-max). You MUST write at least the minimum number of words. Silence between sections ruins the experience.
+- Count your words for each section. If the minimum says 45 words, write at least 45 words.
+- For long sections (15s+): explain the WHY, add context, give tips, describe what's on screen in detail. Use 3-5 sentences.
+- For medium sections (8-15s): 2-3 sentences with context.
+- For short sections (3-8s): 1-2 punchy sentences.
+- Too short = dead silence = BAD. Too long = minor overlap = acceptable.
 
 ## Content rules
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
 - GREETING: Section 1 starts with a short greeting
 - CLOSING: Section ${numStepsMerged} MUST end with a closing phrase ("Thanks for watching!", "That's a wrap!")
-- CONCISE: 1-2 sentences per section max
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 
