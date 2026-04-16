@@ -305,6 +305,8 @@ Rules:
             const toolResult = resultMap.get(toolCallId) as Record<string, unknown> | undefined
 
             if (toolName === 'think') continue
+            // Skip screenshot tool calls entirely for Try Doc tests — wastes steps
+            if (toolName === 'screenshot' && options?.skipScreenshots) continue
 
             const description = buildToolDescription(toolName, args, toolResult)
 
