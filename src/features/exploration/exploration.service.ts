@@ -259,7 +259,7 @@ Rules:
         modelName: STAGEHAND_MODEL,
         apiKey: process.env.GEMINI_API_KEY,
       },
-      mode: 'hybrid',
+      mode: 'act',
     })
 
     const result = await agent.execute({
