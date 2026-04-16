@@ -63,14 +63,10 @@ export async function generateVoiceover(
     let buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
     let estimatedDuration = Math.max(1, buffer.length / 16000)
 
-    const isLastSegment = i === steps.length - 1
-    // Allow last segment to overflow slightly (2s) — better to end naturally than leave silence
-    const overflowThreshold = isLastSegment ? 1.25 : 1.1
-
-    if (estimatedDuration > slotDuration * overflowThreshold && text.split(/\s+/).length > 6) {
+    if (estimatedDuration > slotDuration * 1.1 && text.split(/\s+/).length > 6) {
+      const isLastSegment = i === steps.length - 1
       const words = text.split(/\s+/)
-      // Target 95% of slot to leave minimal margin
-      const targetWords = Math.ceil(words.length * (slotDuration / estimatedDuration) * 1.05)
+      const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration))
       const shortened = words.slice(0, Math.max(4, targetWords)).join(' ')
       const lastDot = shortened.lastIndexOf('.')
       text = lastDot > shortened.length * 0.4 ? shortened.slice(0, lastDot + 1) : shortened + '.'
