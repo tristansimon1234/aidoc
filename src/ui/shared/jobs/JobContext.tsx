@@ -10,12 +10,13 @@ export interface Job {
   type: JobType
   status: JobStatus
   startedAt: number
+  liveUrl?: string
 }
 
 interface JobContextValue {
   jobs: Job[]
   addJob: (job: Omit<Job, 'startedAt'>) => void
-  updateJob: (runId: string, updates: Partial<Pick<Job, 'status'>>) => void
+  updateJob: (runId: string, updates: Partial<Pick<Job, 'status' | 'liveUrl'>>) => void
   removeJob: (runId: string) => void
   getJobForPage: (pageId: string, type: JobType) => Job | undefined
 }

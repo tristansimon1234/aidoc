@@ -56,10 +56,18 @@ export function PageView(): React.ReactElement {
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
   const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
-  const { addJob, getJobForPage } = useJobs()
+  const { addJob, updateJob, getJobForPage } = useJobs()
   const activeDocGenJob = getJobForPage(pageId ?? '', 'doc-gen')
   const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
   const activeTryDocJob = getJobForPage(pageId ?? '', 'try-doc')
+
+  // Restore live browser URL from job context when returning to a page with active test
+  useEffect(() => {
+    if (activeTryDocJob?.status === 'running' && activeTryDocJob.liveUrl && !liveUrl) {
+      setLiveUrl(activeTryDocJob.liveUrl)
+    }
+  }, [activeTryDocJob, liveUrl])
+
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -268,7 +276,10 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         run.id,
         (event: StepEventDTO) => {
           switch (event.type) {
-            case 'live': setLiveUrl(event.liveUrl ?? null); break
+            case 'live':
+              setLiveUrl(event.liveUrl ?? null)
+              if (event.liveUrl) updateJob(run.id, { liveUrl: event.liveUrl })
+              break
             case 'status':
             case 'step':
               if (event.message && event.message.length > 10) {
@@ -768,8 +779,8 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
             </>
           )}
 
-          {/* Running — live browser + steps */}
-          {tryRunning && (
+          {/* Running — live browser + steps (also shows when returning to page with active test) */}
+          {(tryRunning || (activeTryDocJob?.status === 'running' && liveUrl)) && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
