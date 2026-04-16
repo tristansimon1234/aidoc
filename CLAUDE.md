@@ -81,7 +81,8 @@ src/
       chat.repository.ts      # doc_embeddings CRUD + pgvector search
       chat.service.ts         # chunking, indexing, RAG pipeline, suggestions
       chat.routes.ts          # POST /chat, POST /index, GET /suggestions
-      widget.routes.ts        # Public API: POST /widget/:key/chat, GET /config
+      widget.routes.ts        # Public API: POST /widget/:key/chat, GET /config, POST /widget/:key/walkthrough
+      walkthrough.types.ts    # DomSnapshot for AI-guided walkthrough
     questions/            # Blocker questions during exploration
       questions.types.ts
       questions.schema.ts
@@ -114,8 +115,11 @@ src/
       globals.css            # CSS variables mapped to tokens
       components/            # Button, Badge, Card, StatusIndicator, CodeBlock,
                              # MarkdownRenderer, Field, Spinner, EmptyState,
+                             # BlockEditor (BlockNote-based markdown editor),
                              # ImageLightbox (click-to-fullscreen image overlay),
-                             # TableOfContents (floating TOC with heading tracking)
+                             # ConfirmDialog (portal-based confirm, useConfirmDialog hook),
+                             # TableOfContents (floating TOC with heading tracking),
+                             # ProgressLoader (multi-step progress indicator)
                              # Each: Component.tsx + Component.module.css
                              # Barrel export in index.ts (only allowed barrel)
     features/
@@ -216,7 +220,7 @@ Every DB call through `*.repository.ts`. Services NEVER call Supabase directly.
 - After generation → auto-copied to `doc_pages.content`
 
 ### Full schema reference
-See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 15 migrations.
+See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 20 migrations.
 
 ---
 
@@ -234,9 +238,13 @@ See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 15 mig
 # Runs
 /api/runs                                  # Run CRUD
 /api/runs/:id/explore                      # POST: SSE stream (live exploration)
+/api/runs/:id/cancel                       # POST: Cancel running exploration
 /api/runs/:id/analyze-video                # POST: Gemini video analysis
 /api/runs/:id/generate-doc                 # POST: Doc generation
 /api/runs/:id/generate-voiceover           # POST: ElevenLabs TTS voice-over
+/api/runs/:id/regenerate-segment           # POST: Regenerate single voiceover segment
+/api/runs/:id/voiceover-segments           # PUT: Adjust voiceover segment timing
+/api/runs/:id/trim-video                   # POST: Trim video to time range
 /api/runs/:id/signed-upload-url            # POST: Get signed URL for direct upload
 /api/runs/:id/steps/:idx/screenshot        # POST: Update step screenshot path
 /api/runs/:id/steps                        # Run steps
@@ -250,13 +258,21 @@ See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 15 mig
 # Try Doc
 /api/runs/:id/analyze-try                  # POST: Gemini analysis of test run
 /api/projects/:pid/pages/:id/test-report   # GET: latest test report for page
+/api/projects/:pid/pages/:id/preflight     # POST: pre-flight check before Try Doc
+/api/projects/:pid/pages/:id/full          # GET: combined page + run + doc data
 
 # Project assets
 /api/projects/:pid/logo                    # POST: upload project logo
+/api/projects/:pid/analyze-url             # POST: auto-fill project from URL
+
+# Public docs (no auth — per-page is_public flag)
+/api/docs/:projectId                       # GET: public pages list
+/api/docs/:projectId/:slug                 # GET: public page content
 
 # Widget (public — API key auth, no JWT)
 /api/widget/:key/chat                      # POST: Public chat (rate limited 30/min)
 /api/widget/:key/config                    # GET: Widget config + suggestions
+/api/widget/:key/walkthrough               # POST: AI-guided walkthrough (rate limited 10/min)
 ```
 
 ### Error format
@@ -282,6 +298,9 @@ HTTP status codes: 200, 201, 400, 401, 404, 422, 500.
 - Status always uses the status color tokens
 - `MarkdownRenderer` for rich doc display (react-markdown)
 - `CodeBlock` for raw code display
+- `BlockEditor` — BlockNote (TipTap/ProseMirror) markdown editor with auto-save
+- `ConfirmDialog` (via `useConfirmDialog` hook) — portal-based confirm with danger/primary variants
+- `ProgressLoader` — multi-step progress with animated indicators
 - `TableOfContents` — floating side indicator, expands on hover to show headings
 - `ImageLightbox` (via `useImageLightbox` hook) — click any doc image to fullscreen
 
@@ -332,7 +351,7 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [ ] `run.service.ts` imports `questions.repository` directly (cross-feature)
 - [ ] No tests (Vitest configured but unused)
 - [ ] No pagination on list endpoints
-- [x] ~~Legacy RunDashboard/NewRun pages~~ — removed (auto-explore removed)
+- [ ] Legacy RunDashboard/NewRun pages still in codebase (auto-explore removed but pages remain)
 - [ ] Widget: no domain restriction (Origin header check) — API key is public
 - [x] ~~Chat suggestions cache is in-memory~~ — widget endpoint has in-memory cache + edge caching
 - [ ] No usage analytics/logging for widget chat messages
@@ -341,5 +360,5 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 
 ---
 
-*Last updated: 2026-04-13*
+*Last updated: 2026-04-16*
 *Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19*

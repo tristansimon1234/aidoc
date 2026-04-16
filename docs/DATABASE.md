@@ -120,13 +120,20 @@ created_at        timestamptz DEFAULT now()
 **RLS**: Via `project_id → projects.user_id`
 **Function**: `match_doc_chunks(project_id, embedding, match_count, threshold)` — cosine similarity search
 
-### projects (additional columns)
+### projects (additional columns added via migrations)
 ```sql
 widget_api_key    text UNIQUE                 -- API key for embeddable widget
 widget_enabled    boolean NOT NULL DEFAULT false
 design            jsonb                       -- widget design config {logoUrl?: string, ...}
+walkthrough_enabled boolean NOT NULL DEFAULT false  -- AI-guided walkthrough in widget
+resources         jsonb                       -- [{type, label, value}] test resources for AI agent
 ```
 **Index**: `idx_projects_widget_api_key`
+
+### doc_pages (additional columns added via migrations)
+```sql
+is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing toggle
+```
 
 ## Migrations (chronological)
 
@@ -148,6 +155,11 @@ design            jsonb                       -- widget design config {logoUrl?:
 | 14 | `20260331000002_add_composite_run_index.sql` | Composite index on runs |
 | 15 | `20260408000000_add_doc_embeddings.sql` | doc_embeddings table with pgvector for RAG chat |
 | 16 | `20260408000001_add_widget_api_key.sql` | Widget API key + enabled flag on projects |
+| 17 | `20260408000002_add_page_public.sql` | Add `is_public` boolean to doc_pages |
+| 18 | `20260409000001_add_project_design.sql` | Add `design` JSONB to projects (widget customization) |
+| 19 | `20260413000000_add_walkthrough_enabled.sql` | Add `walkthrough_enabled` to projects |
+| 20 | `20260413000001_make_artifacts_bucket_public.sql` | Make artifacts storage bucket public |
+| 21 | `20260416000000_add_project_resources.sql` | Add `resources` JSONB to projects (test resources) |
 
 ## Relationships
 

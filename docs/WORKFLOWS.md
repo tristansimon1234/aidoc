@@ -3,8 +3,8 @@
 ## Core User Journey
 
 ```
-Login → Projects → Create Project → Generate Docs (Video or Auto-explore) → 
-Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
+Login → Projects → Create Project → Record/Upload Video → AI Generates Docs →
+Edit Docs → Generate Voice-over → Chat with Docs → Enable Widget → Embed on Client App
 ```
 
 ## Video-to-Doc Flow (Recommended)
@@ -53,8 +53,9 @@ Edit Docs → Chat with Docs → Enable Widget → Embed on Client App
 4. Auto-detects current URL (`window.location.href`) for page-aware suggestions
 5. Messages sent to `POST /api/widget/:key/chat` (rate limited 30 req/min)
 6. Same RAG pipeline as internal chat, with user context for personalization
-7. Suggestions cached in-memory with 1h TTL
-8. Floating button (bottom-right) + popup panel, dark theme, mobile responsive
+7. AI-guided walkthrough via `POST /api/widget/:key/walkthrough` (rate limited 10/min)
+8. Suggestions cached in-memory with 1h TTL
+9. Floating button (bottom-right) + popup panel, dark theme, mobile responsive
 
 ## 1. Project Creation
 
@@ -228,12 +229,54 @@ Frontend renders:
 8. Report stored in `runs.summary_json.tryDocReport`
 9. Test tab shows persisted report with verdict badge (green/red/amber)
 
+## 11. Voice-over Narration
+
+**Trigger**: User clicks "Generate voice-over" in the Video tab
+**Flow**:
+1. Frontend sends `POST /api/runs/:id/generate-voiceover` with voice ID, tone, video duration
+2. Backend downloads video from Supabase Storage
+3. Merges step timestamps into segments (min 3s gap to avoid micro-segments)
+4. Gemini 2.5 Flash generates narration script watching the actual video, split into `[SECTION N]` markers
+5. Word count enforced per segment based on time budget (~2 words/sec)
+6. ElevenLabs TTS (`eleven_multilingual_v2`) synthesizes each segment as MP3
+7. Segments concatenated with silence padding into single `voiceover.mp3`
+8. Stored in `runs.summary_json.voiceover` (audioPath, audioUrl, segments[])
+9. Frontend shows narrated video player with synced timeline
+
+**Editing**:
+- Click segment text → edit → `POST /runs/:id/regenerate-segment` re-synthesizes that segment only
+- Drag timeline handles → `PUT /runs/:id/voiceover-segments` adjusts timing
+- "Regenerate" button re-generates entire voice-over (confirmation dialog if existing)
+
+**Cost**: ~$0.005 per segment (ElevenLabs) + ~$0.02 Gemini narration script
+
+## 12. Public Documentation Pages
+
+**Trigger**: User toggles "Public" on a page
+**Flow**:
+1. Sets `doc_pages.is_public = true`
+2. Page content accessible at `GET /api/docs/:projectId/:slug` (no auth required)
+3. Project page list at `GET /api/docs/:projectId`
+
+## 13. Project URL Analysis
+
+**Trigger**: User enters a URL when creating a project
+**Flow**:
+1. `POST /api/projects/:pid/analyze-url` with the base URL
+2. Gemini analyzes the page to extract: product name, description, audience, features
+3. Auto-fills project fields
+
 ## Cost Per Run
 
 | Phase | Model | Approx Cost |
 |---|---|---|
-| Exploration (25 steps) | Claude Sonnet 4 via Stagehand | ~$0.09 |
+| Video analysis | Gemini 2.5 Flash | ~$0.05 |
 | Doc generation | Gemini 2.5 Flash | ~$0.08 |
-| **Total per page** | | **~$0.17** |
+| Voice-over script | Gemini 2.5 Flash | ~$0.02 |
+| Voice-over TTS | ElevenLabs | ~$0.05 |
+| **Total per page (video-to-doc + voice-over)** | | **~$0.20** |
+| Try Doc test (25 steps) | Claude Sonnet 4 via Stagehand | ~$0.09 |
+| Try Doc analysis | Gemini 2.5 Flash | ~$0.03 |
 
 Auto-generate structure: ~$0.03 (one-time per project)
+Context enrichment: ~$0.001 per generation
