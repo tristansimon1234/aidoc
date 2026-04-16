@@ -157,7 +157,7 @@ Use these credentials to log in when you encounter a login page. The values are 
           parts.push(`**Reference materials**:\n${contextBlocks.join('\n')}`)
         }
         if (uploadable.length > 0) {
-          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. Files are automatically pre-loaded into file inputs. Do NOT click on file upload zones or buttons — the file is already attached to the input. Look for the filename or a progress indicator to confirm. If you see the file is attached, proceed to the next step (e.g. click Submit or the next action).`)
+          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. When you need to upload a file, click the upload area or button normally — the file will be provided automatically when the file dialog opens. Just click and wait, the file selection will happen on its own.`)
         }
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
@@ -182,24 +182,23 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // Upload files to Browserbase cloud session, then auto-fill file inputs
-    // via a background polling loop (NOT in onStepFinish — that callback is too late
-    // because clicking a file input opens the OS dialog which blocks the step)
+    // File upload: upload to Browserbase cloud → CDP intercepts file picker on click
+    // Agent clicks upload zone normally → OS file picker opens → CDP provides the file
+    // → dialog closes → component receives the file and triggers its action
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
       )
 
-    let uploadedFilePath: string | null = null
-    let filePollingActive = false
-
     if (briefingFiles.length > 0) {
       const sessionId = session.browserbaseSessionID
-      if (sessionId) {
+      const activePage = session.context.activePage()
+      if (sessionId && activePage) {
         try {
           const firstFile = briefingFiles[0]!
 
           // Step 1: Upload file to Browserbase cloud session via REST API
+          // File becomes available at /tmp/.uploads/{name} inside the cloud browser
           const formData = new FormData()
           formData.append('file', new Blob([firstFile.fileBuffer]), firstFile.fileName)
           const uploadRes = await fetch(
@@ -213,39 +212,30 @@ Rules:
           if (!uploadRes.ok) {
             console.error(`[exploration] Browserbase upload failed: ${uploadRes.status} ${await uploadRes.text()}`)
           } else {
-            uploadedFilePath = `/tmp/.uploads/${firstFile.fileName}`
-            console.log(`[exploration] File uploaded to Browserbase session: ${firstFile.fileName} → ${uploadedFilePath}`)
+            console.log(`[exploration] File uploaded to Browserbase session: ${firstFile.fileName}`)
           }
 
-          // Step 2: Start background polling — scan for file inputs every 2s
-          // and fill them BEFORE the agent clicks (so no file picker opens)
-          if (uploadedFilePath) {
-            filePollingActive = true
-            const remotePath = uploadedFilePath
-            void (async () => {
-              while (filePollingActive) {
-                try {
-                  const page = session.context.activePage()
-                  if (page) {
-                    const inputs = await page.locator('input[type="file"]').all()
-                    for (const input of inputs) {
-                      const filled = await input.getAttribute('data-aidoc-filled').catch(() => null)
-                      if (!filled) {
-                        await input.setInputFiles(remotePath)
-                        await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
-                        console.log(`[exploration] File pre-filled via setInputFiles: ${remotePath}`)
-                      }
-                    }
-                  }
-                } catch {
-                  // Page navigated or closed — ignore
-                }
-                await new Promise((r) => setTimeout(r, 2000))
-              }
-            })()
-          }
+          const remotePath = `/tmp/.uploads/${firstFile.fileName}`
+
+          // Step 2: CDP file chooser interception — intercepts the OS file dialog
+          // when the agent clicks a file input, provides the file from the REMOTE
+          // cloud browser filesystem, then the dialog closes automatically
+          const cdp = await activePage.context().newCDPSession(activePage)
+          await cdp.send('Page.setInterceptFileChooserDialog', { enabled: true })
+          cdp.on('Page.fileChooserOpened', () => {
+            console.log(`[exploration] File chooser opened — providing: ${remotePath}`)
+            cdp.send('Page.handleFileChooser', {
+              action: 'accept',
+              files: [remotePath],
+            }).then(() => {
+              console.log(`[exploration] File provided via CDP file chooser: ${firstFile.fileName}`)
+            }).catch((err: unknown) => {
+              console.error(`[exploration] CDP handleFileChooser failed:`, err)
+            })
+          })
+          console.log(`[exploration] CDP file chooser ready: click upload → auto-provide ${firstFile.fileName}`)
         } catch (err) {
-          console.warn(`[exploration] Browserbase file upload failed:`, err)
+          console.warn(`[exploration] File upload setup failed:`, err)
         }
       }
     }
@@ -379,9 +369,6 @@ Rules:
         },
       },
     })
-
-    // Stop file polling
-    filePollingActive = false
 
     if (result.usage) {
       await deps.incrementTokenUsage(
