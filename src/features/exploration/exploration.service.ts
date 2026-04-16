@@ -7,6 +7,7 @@ import { STAGEHAND_MODEL } from '../../shared/ai/anthropic.client.js'
 import * as explorationBrowser from './exploration.browser.js'
 import type { AgentActionRecord, StepEvent, ExplorationSummary, ExplorationBlocker } from './exploration.types.js'
 import type { PageBriefingWithContent, PageResourceWithContent } from '../page/page.types.js'
+import { env } from '../../shared/config/env.js'
 
 // In-memory cancellation signal — same process handles exploration + cancel request
 const cancelledRuns = new Set<string>()
@@ -181,9 +182,9 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // Set up file upload interception via CDP
-    // Best practice: agent clicks file input normally → OS file picker opens →
-    // CDP intercepts it → we provide the file → dialog closes automatically
+    // Upload files to Browserbase session + set up CDP file chooser interception
+    // Flow: upload file to cloud session → agent clicks file input → file picker opens →
+    // CDP intercepts → provides file from /tmp/.uploads/ → dialog closes
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
@@ -191,38 +192,48 @@ Rules:
 
     if (briefingFiles.length > 0) {
       const activePage = session.context.activePage()
-      if (activePage) {
+      const sessionId = session.browserbaseSessionID
+      if (activePage && sessionId) {
         try {
-          const fs = await import('node:fs')
-          const path = await import('node:path')
+          const firstFile = briefingFiles[0]!
 
-          // Write ALL files to /tmp so CDP can reference them by path
-          const tmpPaths: string[] = []
-          for (const file of briefingFiles) {
-            const tmpPath = path.join('/tmp', `aidoc-upload-${Date.now()}-${file.fileName}`)
-            fs.writeFileSync(tmpPath, file.fileBuffer)
-            tmpPaths.push(tmpPath)
-            console.log(`[exploration] File ready: ${file.fileName} (${file.fileBuffer.length} bytes) → ${tmpPath}`)
+          // Step 1: Upload file to Browserbase cloud session via REST API
+          // File becomes available at /tmp/.uploads/{fileName} inside the cloud browser
+          const formData = new FormData()
+          formData.append('file', new Blob([firstFile.fileBuffer]), firstFile.fileName)
+          const uploadRes = await fetch(
+            `https://api.browserbase.com/v1/sessions/${sessionId}/uploads`,
+            {
+              method: 'POST',
+              headers: { 'x-bb-api-key': env.BROWSERBASE_API_KEY },
+              body: formData,
+            },
+          )
+          if (!uploadRes.ok) {
+            console.error(`[exploration] Browserbase upload failed: ${uploadRes.status} ${await uploadRes.text()}`)
+          } else {
+            console.log(`[exploration] File uploaded to Browserbase session: ${firstFile.fileName}`)
           }
 
-          // Set up CDP file chooser interception — when the agent clicks a file
-          // input, the OS picker opens, CDP intercepts, provides ALL files.
-          // The browser filters by the input's accept attribute automatically.
+          const remotePath = `/tmp/.uploads/${firstFile.fileName}`
+
+          // Step 2: CDP file chooser interception — when agent clicks a file input,
+          // provide the file from the cloud browser's filesystem
           const cdp = await activePage.context().newCDPSession(activePage)
           await cdp.send('Page.setInterceptFileChooserDialog', { enabled: true })
           cdp.on('Page.fileChooserOpened', () => {
             cdp.send('Page.handleFileChooser', {
               action: 'accept',
-              files: tmpPaths,
+              files: [remotePath],
             }).then(() => {
-              console.log(`[exploration] Files provided via CDP: ${briefingFiles.map((f) => f.fileName).join(', ')}`)
+              console.log(`[exploration] File provided via CDP file chooser: ${remotePath}`)
             }).catch((err: unknown) => {
               console.error(`[exploration] CDP handleFileChooser failed:`, err)
             })
           })
-          console.log(`[exploration] CDP file chooser interceptor ready for ${briefingFiles.length} file(s)`)
+          console.log(`[exploration] CDP file chooser interceptor ready: ${firstFile.fileName} → ${remotePath}`)
         } catch (err) {
-          console.warn(`[exploration] CDP file chooser setup failed, file upload may not work:`, err)
+          console.warn(`[exploration] File upload setup failed:`, err)
         }
       }
     }
