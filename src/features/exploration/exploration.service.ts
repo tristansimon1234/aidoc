@@ -185,8 +185,9 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // File upload: poll for file inputs and inject file via setInputFiles with buffer
-    // No Browserbase upload API needed — pass the buffer directly to Playwright
+    // File upload via JS evaluate — bypasses Stagehand's locator wrapper entirely.
+    // Converts buffer to base64, sends to browser, creates a File object in JS,
+    // sets it on the input and dispatches change+input events.
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
@@ -195,21 +196,19 @@ Rules:
     let fileUploadPolling = false
     if (briefingFiles.length > 0) {
       const firstFile = briefingFiles[0]!
-      const filePayload = {
-        name: firstFile.fileName,
-        mimeType: firstFile.fileName.endsWith('.webm') ? 'video/webm'
-          : firstFile.fileName.endsWith('.mp4') ? 'video/mp4'
-            : firstFile.fileName.endsWith('.mov') ? 'video/quicktime'
-              : 'application/octet-stream',
-        buffer: firstFile.fileBuffer,
-      }
-      console.log(`[exploration] File ready for injection: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
+      const mimeType = firstFile.fileName.endsWith('.webm') ? 'video/webm'
+        : firstFile.fileName.endsWith('.mp4') ? 'video/mp4'
+          : firstFile.fileName.endsWith('.mov') ? 'video/quicktime'
+            : firstFile.fileName.endsWith('.pdf') ? 'application/pdf'
+              : 'application/octet-stream'
+      const base64 = firstFile.fileBuffer.toString('base64')
+      console.log(`[exploration] File ready for JS injection: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes, ${base64.length} chars b64)`)
 
-      // Background polling: every 2s, find file inputs and call setInputFiles with buffer
       fileUploadPolling = true
       void (async () => {
         let pollCount = 0
-        while (fileUploadPolling) {
+        let injected = false
+        while (fileUploadPolling && !injected) {
           await new Promise((resolve) => setTimeout(resolve, 2000))
           if (!fileUploadPolling) break
           pollCount++
@@ -217,25 +216,44 @@ Rules:
             const page = session.context.activePage()
             if (!page) continue
 
-            const inputs = await page.locator('input[type="file"]').all()
-            if (pollCount <= 5 || inputs.length > 0) {
-              console.log(`[file-poll] #${pollCount} found ${inputs.length} file input(s)`)
-            }
-            for (const input of inputs) {
-              const filled = await input.getAttribute('data-aidoc-filled').catch(() => null)
-              if (filled) continue
-              try {
-                await input.setInputFiles(filePayload)
-                await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
-                console.log(`[file-poll] setInputFiles with buffer OK: ${firstFile.fileName}`)
-              } catch (setErr) {
-                console.log(`[file-poll] setInputFiles failed: ${(setErr as Error).message}`)
-              }
+            // Use page.evaluate to find file inputs and inject file via JS
+            const result = await page.evaluate(
+              ({ b64, fileName, mime }: { b64: string; fileName: string; mime: string }) => {
+                const inputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]')
+                if (inputs.length === 0) return { found: 0, filled: false }
+                for (const input of inputs) {
+                  if (input.dataset.aidocFilled) continue
+                  try {
+                    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+                    const file = new File([bytes], fileName, { type: mime })
+                    const dt = new DataTransfer()
+                    dt.items.add(file)
+                    input.files = dt.files
+                    input.dataset.aidocFilled = 'true'
+                    // Dispatch both events — React listens on 'input', native on 'change'
+                    input.dispatchEvent(new Event('input', { bubbles: true }))
+                    input.dispatchEvent(new Event('change', { bubbles: true }))
+                    return { found: inputs.length, filled: true }
+                  } catch (err) {
+                    return { found: inputs.length, filled: false, error: String(err) }
+                  }
+                }
+                return { found: inputs.length, filled: false }
+              },
+              { b64: base64, fileName: firstFile.fileName, mime: mimeType },
+            ) as { found: number; filled: boolean; error?: string }
+
+            if (result.found > 0) {
+              console.log(`[file-poll] #${pollCount} found ${result.found} input(s), filled=${result.filled}${result.error ? ` error=${result.error}` : ''}`)
+              if (result.filled) injected = true
+            } else if (pollCount <= 5) {
+              console.log(`[file-poll] #${pollCount} no file inputs on page yet`)
             }
           } catch {
             // Page navigated — ignore
           }
         }
+        if (injected) console.log(`[file-poll] file injection complete`)
       })()
     }
 
