@@ -436,7 +436,10 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
       }
 
-      const result = await generateVoiceover(params.data.id, stepsWithText, mergedTimestamps, {
+      // Pass timestamps + video end sentinel so the service knows the last segment's limit
+      const timestampsWithEnd = [...mergedTimestamps, estimatedVideoEnd]
+
+      const result = await generateVoiceover(params.data.id, stepsWithText, timestampsWithEnd, {
         voiceId: body.voiceId,
         language: body.language,
       })
