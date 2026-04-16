@@ -192,28 +192,35 @@ Rules:
     if (briefingFiles.length > 0) {
       const activePage = session.context.activePage()
       if (activePage) {
-        const firstFile = briefingFiles[0]!
         try {
-          // Write file to /tmp so CDP can reference it by path
           const fs = await import('node:fs')
           const path = await import('node:path')
-          const tmpPath = path.join('/tmp', `aidoc-upload-${Date.now()}-${firstFile.fileName}`)
-          fs.writeFileSync(tmpPath, firstFile.fileBuffer)
 
-          // Set up CDP file chooser interception
+          // Write ALL files to /tmp so CDP can reference them by path
+          const tmpPaths: string[] = []
+          for (const file of briefingFiles) {
+            const tmpPath = path.join('/tmp', `aidoc-upload-${Date.now()}-${file.fileName}`)
+            fs.writeFileSync(tmpPath, file.fileBuffer)
+            tmpPaths.push(tmpPath)
+            console.log(`[exploration] File ready: ${file.fileName} (${file.fileBuffer.length} bytes) → ${tmpPath}`)
+          }
+
+          // Set up CDP file chooser interception — when the agent clicks a file
+          // input, the OS picker opens, CDP intercepts, provides ALL files.
+          // The browser filters by the input's accept attribute automatically.
           const cdp = await activePage.context().newCDPSession(activePage)
           await cdp.send('Page.setInterceptFileChooserDialog', { enabled: true })
           cdp.on('Page.fileChooserOpened', () => {
             cdp.send('Page.handleFileChooser', {
               action: 'accept',
-              files: [tmpPath],
+              files: tmpPaths,
             }).then(() => {
-              console.log(`[exploration] File provided via CDP file chooser: ${firstFile.fileName}`)
+              console.log(`[exploration] Files provided via CDP: ${briefingFiles.map((f) => f.fileName).join(', ')}`)
             }).catch((err: unknown) => {
               console.error(`[exploration] CDP handleFileChooser failed:`, err)
             })
           })
-          console.log(`[exploration] CDP file chooser interceptor ready: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes) → ${tmpPath}`)
+          console.log(`[exploration] CDP file chooser interceptor ready for ${briefingFiles.length} file(s)`)
         } catch (err) {
           console.warn(`[exploration] CDP file chooser setup failed, file upload may not work:`, err)
         }
