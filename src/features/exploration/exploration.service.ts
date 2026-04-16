@@ -174,7 +174,9 @@ Start: ${run.startUrl}${isResuming ? ' (RESUMING — skip already-covered sectio
 ${briefingBlock}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}
 
 Rules:
+- IMPORTANT: For EVERY action you take, explicitly describe what you see on screen, what you are about to do, and why. Example: "I see a login form with email and password fields. I will fill in the test credentials and click Sign In."
 - Explore systematically: navigate sections, click buttons, fill forms with test data
+- After each action, report the result: what changed on screen, did it succeed or fail
 - Budget: 50 actions max. Prioritize the most important sections. Wrap up at ~40.
 - Login wall without credentials → call done immediately
 - Action fails twice → move on

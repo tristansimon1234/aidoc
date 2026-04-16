@@ -197,12 +197,14 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 ## Your task:
 1. Navigate to: ${testUrl}
 2. Follow EACH step in the documentation IN ORDER, exactly as written
-3. For EVERY step, report your experience clearly:
-   - PASS: if the step works exactly as documented
-   - FAIL: if something doesn't match — explain what's different
-   - AMBIGUOUS: if the instruction is vague or could be interpreted multiple ways
+3. For EVERY step you must:
+   a. DESCRIBE what you see on screen before acting (e.g. "I see a login page with email and password fields")
+   b. DESCRIBE what you are about to do (e.g. "I will type the email and click Login")
+   c. PERFORM the action
+   d. REPORT the result: PASS / FAIL / AMBIGUOUS with a clear explanation
 
 ## CRITICAL RULES:
+- Be VERBOSE: explicitly describe what you see, what you do, and what happens. This is essential for the test report.
 - Follow the documentation steps IN STRICT ORDER. Do NOT skip ahead or reorder.
 - If a step FAILS or you cannot proceed: STOP IMMEDIATELY. Report the failure and call done.
 - Do NOT try workarounds, alternative paths, or detours. If it doesn't work as documented, it's a FAIL — stop there.
