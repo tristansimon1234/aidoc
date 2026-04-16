@@ -142,7 +142,8 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
   })()
 })
 
-// Generate SOP doc
+// Generate SOP doc — responds immediately, generates in background.
+// Client tracks progress via Supabase Realtime on runs.status.
 runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
@@ -155,8 +156,18 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
         throw new AppError('No steps found — the video analysis didn\'t detect any actions. Try re-uploading.', 'NO_STEPS', 400)
       }
 
-      const doc = await runService.generateDoc(params.data.id)
-      res.status(200).json(doc)
+      const async = req.query.async === '1'
+      if (async) {
+        // Non-blocking: respond immediately, generate in background
+        res.status(202).json({ runId: params.data.id, status: 'running' })
+        void runService.generateDoc(params.data.id).catch((err) =>
+          console.error(`[generate-doc] Background generation failed for ${params.data.id}:`, err),
+        )
+      } else {
+        // Legacy blocking mode (for backwards compat)
+        const doc = await runService.generateDoc(params.data.id)
+        res.status(200).json(doc)
+      }
     } catch (err) {
       next(err)
     }
@@ -452,6 +463,10 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       const existingSummary = run.summaryJson ?? {}
       const { updateRunSummary } = await import('./run.repository.js')
       await updateRunSummary(params.data.id, { ...existingSummary, voiceover: result })
+
+      // Mark run completed so Realtime triggers frontend notification
+      const { updateRunStatus } = await import('./run.repository.js')
+      await updateRunStatus(params.data.id, 'completed')
 
       res.status(200).json(result)
     } catch (err) {

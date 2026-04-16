@@ -317,6 +317,9 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
     }
   }
 
+  // Mark run completed so Realtime triggers frontend notification
+  await runRepo.updateRunStatus(id, 'completed')
+
   return doc
 }
 

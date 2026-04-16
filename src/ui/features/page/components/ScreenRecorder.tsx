@@ -2,6 +2,7 @@ import { type ChangeEvent, useState, useRef, useEffect } from 'react'
 import { Button, ProgressLoader, useConfirmDialog } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO } from '../../../shared/api/client.js'
 import { updatePage as dbUpdatePage } from '../../../shared/api/db.js'
+import { useJobs } from '../../../shared/jobs/JobContext.js'
 import styles from '../pages/PageView.module.css'
 
 type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 'generating'
@@ -62,6 +63,7 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
+  const { addJob } = useJobs()
   const [elapsed, setElapsed] = useState(0)
   const [hasExtension, setHasExtension] = useState(false)
   const [micEnabled, setMicEnabled] = useState(true)
@@ -145,10 +147,10 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
         await extractAndUploadFrames(videoBlob, run.id, result.timestamps)
       }
 
-      // 5. Generate documentation
-      setStatus('generating')
-      await api.runs.generateDoc(run.id)
-      await dbUpdatePage(projectId, pageId, { status: 'published' })
+      // 5. Generate documentation (async — runs in background)
+      void api.runs.generateDoc(run.id, { async: true })
+      void dbUpdatePage(projectId, pageId, { status: 'published' })
+      addJob({ runId: run.id, pageId, pageTitle: page.title, type: 'doc-gen', status: 'running' })
 
       await onComplete()
     } catch (err) {

@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './shared/hooks/useAuth.js'
 import { Spinner } from './design-system/components/index.js'
+import { JobProvider } from './shared/jobs/JobContext.js'
 import { Login } from './features/auth/pages/Login.js'
 import { ProjectList } from './features/project/pages/ProjectList.js'
 import { NewProject } from './features/project/pages/NewProject.js'
@@ -25,6 +26,7 @@ export function App(): React.ReactElement {
   }
 
   return (
+    <JobProvider>
     <BrowserRouter>
       <Routes>
         {/* Public — no auth */}
@@ -54,5 +56,6 @@ export function App(): React.ReactElement {
         )}
       </Routes>
     </BrowserRouter>
+    </JobProvider>
   )
 }

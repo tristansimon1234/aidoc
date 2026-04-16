@@ -267,8 +267,8 @@ export const api = {
         }
       }
     },
-    generateDoc: (id: string): Promise<GeneratedDocDTO> =>
-      request(`/runs/${id}/generate-doc`, { method: 'POST' }),
+    generateDoc: (id: string, options?: { async?: boolean }): Promise<GeneratedDocDTO | { runId: string; status: string }> =>
+      request(`/runs/${id}/generate-doc${options?.async ? '?async=1' : ''}`, { method: 'POST' }),
     getVoices: (): Promise<{ voices: { voiceId: string; name: string; category: string; labels: Record<string, string> }[] }> =>
       request('/runs/voices'),
     generateVoiceover: (id: string, options?: { voiceId?: string; language?: string; tone?: string; videoDuration?: number }): Promise<{ audioPath: string; audioUrl: string; duration: number }> =>

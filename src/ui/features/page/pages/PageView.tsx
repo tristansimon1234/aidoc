@@ -12,6 +12,7 @@ import {
 import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
+import { useJobs } from '../../../shared/jobs/JobContext.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { VideoTimeline } from '../components/VideoTimeline.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
@@ -55,6 +56,7 @@ export function PageView(): React.ReactElement {
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
   const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
+  const { addJob } = useJobs()
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -235,6 +237,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         goal: `Verify documentation for "${page.title}"`,
         docPageId: pageId,
       })
+      addJob({ runId: run.id, pageId: pageId!, pageTitle: page.title, type: 'try-doc', status: 'running' })
 
       // Phase 1: Explore with naive user prompt
       await api.runs.exploreStream(
@@ -493,29 +496,31 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                         if (!ok) return
                       }
                       setGeneratingVoiceover(true)
-                      try {
-                        const result = await api.runs.generateVoiceover(latestRunId, {
-                          voiceId: selectedVoiceId,
-                          tone: selectedTone,
-                          videoDuration: videoDuration || undefined,
-                        }) as {
-                          segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
-                          audioPath?: string
-                          audioUrl?: string
+                      addJob({ runId: latestRunId, pageId: pageId!, pageTitle: page.title, type: 'voiceover', status: 'running' })
+                      void (async () => {
+                        try {
+                          const result = await api.runs.generateVoiceover(latestRunId, {
+                            voiceId: selectedVoiceId,
+                            tone: selectedTone,
+                            videoDuration: videoDuration || undefined,
+                          }) as {
+                            segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+                            audioPath?: string
+                            audioUrl?: string
+                          }
+                          const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
+                          if (result.audioUrl) {
+                            setVoiceoverUrl(bust(result.audioUrl))
+                          } else if (result.audioPath) {
+                            const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                            setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
+                          }
+                          setVoiceoverSegments(result.segments ?? [])
+                          await fetchData()
+                        } finally {
+                          setGeneratingVoiceover(false)
                         }
-                        const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
-                        if (result.audioUrl) {
-                          setVoiceoverUrl(bust(result.audioUrl))
-                        } else if (result.audioPath) {
-                          const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
-                          setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
-                        }
-                        setVoiceoverSegments(result.segments ?? [])
-                        // Re-fetch to ensure video URL is fresh (summary may have changed)
-                        await fetchData()
-                      } finally {
-                        setGeneratingVoiceover(false)
-                      }
+                      })()
                     })()
                   }}>
                     {voiceoverUrl ? 'Regenerate' : 'Generate voice-over'}
