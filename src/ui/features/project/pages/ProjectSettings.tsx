@@ -233,14 +233,20 @@ export function ProjectSettings(): React.ReactElement {
               {uploadError && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', margin: '0 0 var(--space-sm)' }}>{uploadError}</p>}
               {resources.map((r, i) => (
                 <div key={i} className={styles.credRow}>
-                  <select value={r.type} onChange={(e) => setResources(resources.map((res, j) => j === i ? { ...res, type: e.target.value as Resource['type'] } : res))}
+                  <select value={r.type} onChange={(e) => {
+                      const val = e.target.value as Resource['type']
+                      setResources((prev) => prev.map((res, j) => j === i ? { ...res, type: val } : res))
+                    }}
                     className={styles.credInput} style={{ padding: '6px 8px' }}>
                     <option value="url">URL</option>
                     <option value="file">File</option>
                     <option value="note">Note</option>
                   </select>
                   <input className={styles.credInput} value={r.label}
-                    onChange={(e) => setResources(resources.map((res, j) => j === i ? { ...res, label: e.target.value } : res))}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setResources((prev) => prev.map((res, j) => j === i ? { ...res, label: val } : res))
+                    }}
                     placeholder="Label" />
                   {r.type === 'file' ? (
                     r.value ? (
@@ -259,17 +265,20 @@ export function ProjectSettings(): React.ReactElement {
                           const path = `projects/${projectId}/resources/${file.name}`
                           void supabase.storage.from('briefing-files').upload(path, file, { upsert: true }).then(({ error: uploadErr }) => {
                             if (uploadErr) { setUploadError(`Upload failed: ${uploadErr.message}`); return }
-                            setResources(resources.map((res, j) => j === i ? { ...res, value: path, label: res.label || file.name } : res))
+                            setResources((prev) => prev.map((res, j) => j === i ? { ...res, value: path, label: res.label || file.name } : res))
                           })
                         }}
                         style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }} />
                     )
                   ) : (
                     <input className={styles.credInput} value={r.value}
-                      onChange={(e) => setResources(resources.map((res, j) => j === i ? { ...res, value: e.target.value } : res))}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        setResources((prev) => prev.map((res, j) => j === i ? { ...res, value: val } : res))
+                      }}
                       placeholder={r.type === 'url' ? 'https://...' : 'info...'} style={{ fontFamily: r.type === 'url' ? 'var(--font-mono)' : 'var(--font-sans)' }} />
                   )}
-                  <button className={styles.removeBtn} onClick={() => setResources(resources.filter((_, j) => j !== i))}>
+                  <button className={styles.removeBtn} onClick={() => setResources((prev) => prev.filter((_, j) => j !== i))}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
                   </button>
                 </div>
