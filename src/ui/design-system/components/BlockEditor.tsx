@@ -89,7 +89,20 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
       void (async () => {
         try {
           setSaving(true)
-          const markdown = await editor.blocksToMarkdownLossy(editor.document)
+          // Convert block-by-block to preserve empty paragraphs as blank lines.
+          // blocksToMarkdownLossy drops empty blocks, losing user line breaks.
+          const blocks = editor.document
+          const parts: string[] = []
+          for (const block of blocks) {
+            const content = block.content as { type: string; text?: string }[] | undefined
+            const isEmpty = block.type === 'paragraph' && (!content || content.length === 0 || (content.length === 1 && content[0]?.text === ''))
+            if (isEmpty) {
+              parts.push('')
+            } else {
+              parts.push(editor.blocksToMarkdownLossy([block]).trimEnd())
+            }
+          }
+          const markdown = parts.join('\n\n')
           lastContentRef.current = markdown
           await onSave(markdown)
         } catch {
