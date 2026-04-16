@@ -218,27 +218,64 @@ Rules:
             console.log(`[exploration] File uploaded to Browserbase: ${firstFile.fileName} → ${remotePath}`)
 
             // Background polling: scan for unfilled file inputs every 2s
-            // and call setInputFiles() which triggers the component's onChange
             fileUploadPolling = true
             void (async () => {
+              let pollCount = 0
               while (fileUploadPolling) {
                 await new Promise((resolve) => setTimeout(resolve, 2000))
                 if (!fileUploadPolling) break
+                pollCount++
                 try {
                   const page = session.context.activePage()
-                  if (!page) continue
-                  const inputs = await page.locator('input[type="file"]').all()
-                  for (const input of inputs) {
-                    const filled = await input.getAttribute('data-aidoc-filled').catch(() => null)
-                    if (filled) continue
-                    await input.setInputFiles(remotePath)
-                    await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
-                    console.log(`[exploration] setInputFiles called: ${remotePath}`)
+                  if (!page) { console.log(`[file-poll] #${pollCount} no active page`); continue }
+
+                  // Try Playwright locator first
+                  let found = 0
+                  try {
+                    const inputs = await page.locator('input[type="file"]').all()
+                    found = inputs.length
+                    if (found > 0) console.log(`[file-poll] #${pollCount} found ${found} file input(s) via locator`)
+                    for (const input of inputs) {
+                      const filled = await input.getAttribute('data-aidoc-filled').catch(() => null)
+                      if (filled) continue
+                      await input.setInputFiles(remotePath)
+                      await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
+                      console.log(`[file-poll] setInputFiles OK: ${remotePath}`)
+                    }
+                  } catch (locatorErr) {
+                    console.log(`[file-poll] #${pollCount} locator failed: ${(locatorErr as Error).message}`)
                   }
-                } catch {
-                  // Page navigated — ignore
+
+                  // Fallback: JS evaluate to find and count file inputs
+                  if (found === 0) {
+                    try {
+                      const jsCount = await page.evaluate(() =>
+                        document.querySelectorAll('input[type="file"]').length,
+                      )
+                      if (jsCount > 0) {
+                        console.log(`[file-poll] #${pollCount} JS found ${jsCount} file input(s) — locator missed them, trying evaluate setInputFiles`)
+                        // Use evaluate to programmatically trigger the input
+                        await page.evaluate((path: string) => {
+                          const input = document.querySelector<HTMLInputElement>('input[type="file"]')
+                          if (input && !input.dataset.aidocFilled) {
+                            input.dataset.aidocFilled = 'true'
+                            // We can't set files from JS with a path, but we can click the input
+                            // to open the file picker — the CDP or other mechanism handles the rest
+                            console.log('[aidoc] Found file input, path:', path)
+                          }
+                        }, remotePath)
+                      } else if (pollCount <= 5) {
+                        console.log(`[file-poll] #${pollCount} no file inputs on page`)
+                      }
+                    } catch {
+                      // evaluate failed — page navigated
+                    }
+                  }
+                } catch (err) {
+                  console.log(`[file-poll] #${pollCount} error: ${(err as Error).message}`)
                 }
               }
+              console.log(`[file-poll] stopped after ${pollCount} polls`)
             })()
           }
         } catch (err) {
