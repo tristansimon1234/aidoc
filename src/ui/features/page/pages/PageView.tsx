@@ -307,6 +307,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
       // Phase 2: Analyze with Gemini → structured report
       setTryRunning(false)
       setLiveUrl(null)
+      updateJob(run.id, { liveUrl: undefined })
       setAnalyzing(true)
       setStatusMessage('Generating test report...')
 
