@@ -293,7 +293,7 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
           )
           const response = await generateText({
             userPrompt: prompt,
-            maxTokens: 2048,
+            maxTokens: 4096,
           })
           {
             let jsonStr = response.text.trim()
@@ -301,13 +301,17 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
             // Extract JSON object if surrounded by extra text
             const braceStart = jsonStr.indexOf('{')
             const braceEnd = jsonStr.lastIndexOf('}')
-            if (braceStart !== -1 && braceEnd > braceStart) jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
-            const { DiscoveredContextSchema } = await import('../project/project.schema.js')
-            const parsed = DiscoveredContextSchema.safeParse(JSON.parse(jsonStr))
-            if (parsed.success) {
-              await updateDiscoveredContext(project.id, parsed.data)
+            if (braceStart === -1 || braceEnd <= braceStart) {
+              console.warn('[context-enrichment] No valid JSON object found in response, skipping')
             } else {
-              console.error('Context enrichment validation failed:', parsed.error.flatten())
+              jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
+              const { DiscoveredContextSchema } = await import('../project/project.schema.js')
+              const parsed = DiscoveredContextSchema.safeParse(JSON.parse(jsonStr))
+              if (parsed.success) {
+                await updateDiscoveredContext(project.id, parsed.data)
+              } else {
+                console.error('Context enrichment validation failed:', parsed.error.flatten())
+              }
             }
           }
         }
