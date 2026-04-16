@@ -188,7 +188,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const body = req.body as { voiceId?: string; language?: string; tone?: string }
+      const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
 
       // Check ElevenLabs is configured before attempting
       const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
@@ -251,7 +251,11 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       }
 
       // Drop last timestamp if too close to video end (< 5s remaining = not enough for a segment)
-      const estimatedVideoEnd = (timestamps[timestamps.length - 1] ?? 0) + 5
+      // Use actual video duration if provided by frontend, otherwise estimate
+      const estimatedVideoEnd = (body.videoDuration && body.videoDuration > 0)
+        ? body.videoDuration
+        : (timestamps[timestamps.length - 1] ?? 0) + 5
+      console.log(`[voiceover] Video end: ${estimatedVideoEnd.toFixed(1)}s${body.videoDuration ? ' (from player)' : ' (estimated)'}`)
       while (mergedTimestamps.length > 1) {
         const last = mergedTimestamps[mergedTimestamps.length - 1]!
         if (estimatedVideoEnd - last < 5) {

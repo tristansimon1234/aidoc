@@ -453,6 +453,7 @@ DO NOT generate new documentation. Only verify the existing one.`
                         const result = await api.runs.generateVoiceover(latestRunId, {
                           voiceId: selectedVoiceId,
                           tone: selectedTone,
+                          videoDuration: videoDuration || undefined,
                         }) as {
                           segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
                           audioPath?: string
