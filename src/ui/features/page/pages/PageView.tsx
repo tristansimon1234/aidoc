@@ -481,6 +481,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
                 {latestRunId && page.content && (
                   <Button size="sm" disabled={generatingVoiceover} onClick={() => {
+                    if (voiceoverUrl && !window.confirm('This will replace the existing voice-over. Continue?')) return
                     void (async () => {
                       setGeneratingVoiceover(true)
                       try {
