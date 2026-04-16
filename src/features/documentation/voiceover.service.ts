@@ -55,26 +55,18 @@ export async function generateVoiceover(
     let text = stepTexts[i] ?? steps[i]!.text
     if (!text || text.length < 3) continue
 
-    const rawStart = timestamps[i] ?? 0
+    const startTime = timestamps[i] ?? 0
     const nextStart = timestamps[i + 1]
-    const slotDuration = (nextStart ?? (rawStart + 15)) - rawStart
-
-    // Start narration before the action
-    const prevEnd = segmentPaths.length > 0 ? segmentPaths[segmentPaths.length - 1]!.targetStartTime + 5 : 0
-    const gapBefore = rawStart - prevEnd
-    const anticipation = gapBefore > 5 ? 3 : 1.5
-    const startTime = Math.max(0, rawStart - anticipation)
+    const slotDuration = (nextStart ?? (startTime + 15)) - startTime
 
     // Synthesize — retry with shorter text if audio overflows the slot
     let buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
     let estimatedDuration = Math.max(1, buffer.length / 16000)
 
     if (estimatedDuration > slotDuration * 1.1 && text.split(/\s+/).length > 6) {
-      // Audio overflows by >10% — shorten text and retry once
       const words = text.split(/\s+/)
-      const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration) * 0.9)
+      const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration))
       const shortened = words.slice(0, Math.max(4, targetWords)).join(' ')
-      // End at sentence boundary if possible
       const lastDot = shortened.lastIndexOf('.')
       text = lastDot > shortened.length * 0.4 ? shortened.slice(0, lastDot + 1) : shortened + '.'
 
@@ -87,11 +79,11 @@ export async function generateVoiceover(
     const segPath = `runs/${runId}/voiceover-seg-${i}.mp3`
     await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
 
-    const actualEnd = Math.min(startTime + estimatedDuration, nextStart ?? (rawStart + 20))
-    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB, ~${estimatedDuration.toFixed(1)}s/${slotDuration.toFixed(0)}s slot "${text.slice(0, 50)}..."`)
+    const endTime = startTime + estimatedDuration
+    console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB, ~${estimatedDuration.toFixed(1)}s/${slotDuration.toFixed(0)}s slot, ${startTime.toFixed(1)}→${endTime.toFixed(1)}s`)
 
     segmentPaths.push({ audioPath: segPath, targetStartTime: startTime })
-    segments.push({ stepIndex: steps[i]!.stepIndex, startTime, endTime: actualEnd, text })
+    segments.push({ stepIndex: steps[i]!.stepIndex, startTime, endTime, text })
   }
 
   // Concatenate with silence padding via video service
