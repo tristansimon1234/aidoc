@@ -102,6 +102,9 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
     }
     setError(null)
     try {
+      // Show loader immediately — don't wait for API calls
+      setStatus('uploading')
+
       // 1. Create a run
       const run = await api.runs.create({
         featureName: page.title,
@@ -111,7 +114,6 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
       })
 
       // 2. Upload video
-      setStatus('uploading')
       const ext = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '.webm'
       const videoPath = `runs/${run.id}/video${ext}`
       const mimeType = file instanceof File ? file.type : 'video/webm'
