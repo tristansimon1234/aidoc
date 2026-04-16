@@ -129,6 +129,7 @@ export interface ProjectDTO {
   discoveredContext: DiscoveredContextDTO | null
   design: ProjectDesignDTO | null
   credentials: { label: string; username: string; password: string }[] | null
+  resources: { type: 'url' | 'file' | 'note'; label: string; value: string }[] | null
   widgetApiKey: string | null
   widgetEnabled: boolean
   walkthroughEnabled: boolean

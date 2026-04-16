@@ -7,6 +7,12 @@ const CredentialSchema = z.object({
   password: z.string().min(1),
 })
 
+const ResourceSchema = z.object({
+  type: z.enum(['url', 'file', 'note']),
+  label: z.string().min(1),
+  value: z.string().min(1),
+})
+
 const ProjectContextSchema = z.object({
   audience: z.string(),
   workflow: z.string(),
@@ -45,6 +51,7 @@ export const UpdateProjectSchema = z.object({
   description: z.string().optional(),
   context: ProjectContextSchema.optional(),
   credentials: z.array(CredentialSchema).optional(),
+  resources: z.array(ResourceSchema).optional(),
   discoveredContext: DiscoveredContextSchema.optional(),
   design: DesignSchema.optional(),
   walkthroughEnabled: z.boolean().optional(),

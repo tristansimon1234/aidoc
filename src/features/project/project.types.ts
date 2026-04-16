@@ -10,6 +10,12 @@ export interface ProjectCredential {
   password: string
 }
 
+export interface ProjectResource {
+  type: 'url' | 'file' | 'note'
+  label: string
+  value: string
+}
+
 export interface ProjectDesign {
   accentColor: string
   bgColor: string
@@ -28,6 +34,7 @@ export interface Project {
   description: string | null
   context: ProjectContext | null
   credentials: ProjectCredential[] | null
+  resources: ProjectResource[] | null
   discoveredContext: DiscoveredContext | null
   design: ProjectDesign | null
   widgetApiKey: string | null
@@ -60,6 +67,7 @@ export interface UpdateProjectInput {
   description?: string
   context?: ProjectContext
   credentials?: ProjectCredential[]
+  resources?: ProjectResource[]
   discoveredContext?: DiscoveredContext
   design?: ProjectDesign
   walkthroughEnabled?: boolean

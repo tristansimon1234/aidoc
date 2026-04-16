@@ -107,20 +107,20 @@ async function getProjectAwareness(docPageId: string): Promise<{
     tableOfContents: toc || undefined,
     credentials: project.credentials ?? undefined,
     customPrompt: page.customPrompt ?? undefined,
-    briefing: await enrichBriefingWithFileContents(page.briefing),
+    briefing: await enrichBriefingWithFileContents(page.briefing, project.resources ?? undefined),
     existingPageSummaries: summaries.length > 0 ? summaries : undefined,
   }
 }
 
 async function enrichBriefingWithFileContents(
   briefing: import('../page/page.types.js').PageBriefing | null,
+  projectResources?: import('../project/project.types.js').ProjectResource[],
 ): Promise<PageBriefingWithContent | undefined> {
   if (!briefing) return undefined
 
-  // Merge testResources (from Test tab) into resources so test files are available during exploration
-  const rawBriefing = briefing as Record<string, unknown>
-  const testResources = (rawBriefing.testResources as import('../page/page.types.js').PageResource[] | undefined) ?? []
-  const allResources = [...(briefing.resources ?? []), ...testResources]
+  // Merge project-level resources into page briefing resources
+  const projRes = (projectResources ?? []).map((r) => ({ type: r.type, label: r.label, value: r.value }))
+  const allResources = [...(briefing.resources ?? []), ...projRes]
 
   const { supabase } = await import('../../shared/db/supabase.client.js')
   const enrichedResources = await Promise.all(

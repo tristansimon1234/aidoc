@@ -1,6 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
-import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential, ProjectContext, DiscoveredContext, ProjectDesign } from './project.types.js'
+import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential, ProjectResource, ProjectContext, DiscoveredContext, ProjectDesign } from './project.types.js'
 
 interface ProjectRow {
   id: string
@@ -10,6 +10,7 @@ interface ProjectRow {
   description: string | null
   context: ProjectContext | null
   credentials: ProjectCredential[] | null
+  resources: ProjectResource[] | null
   discovered_context: DiscoveredContext | null
   design: ProjectDesign | null
   widget_api_key: string | null
@@ -28,6 +29,7 @@ function mapToProject(row: ProjectRow): Project {
     description: row.description,
     context: row.context,
     credentials: row.credentials,
+    resources: row.resources,
     discoveredContext: row.discovered_context,
     design: row.design,
     widgetApiKey: row.widget_api_key,
@@ -79,6 +81,7 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   if (input.description !== undefined) updates.description = input.description
   if (input.context !== undefined) updates.context = input.context
   if (input.credentials !== undefined) updates.credentials = input.credentials
+  if (input.resources !== undefined) updates.resources = input.resources
   if (input.discoveredContext !== undefined) updates.discovered_context = input.discoveredContext
   if (input.design !== undefined) updates.design = input.design
   if (input.walkthroughEnabled !== undefined) updates.walkthrough_enabled = input.walkthroughEnabled

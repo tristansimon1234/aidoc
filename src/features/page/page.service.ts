@@ -99,7 +99,7 @@ export async function runPreflight(pageId: string, projectId: string): Promise<P
   // Gather available resources
   const briefing = page.briefing as Record<string, unknown> | null
   const testUrl = (briefing?.testUrl as string) || page.startUrl || project.baseUrl
-  const testResources = (briefing?.testResources as { type: string; label: string; value: string }[]) ?? []
+  const projectResources = project.resources ?? []
   const credentials = project.credentials ?? []
 
   // --- Hardcoded checks (always present) ---
@@ -128,7 +128,7 @@ export async function runPreflight(pageId: string, projectId: string): Promise<P
   // --- AI-driven checks (file uploads, prerequisites) ---
   for (const req of analysis.requirements) {
     if (req.category === 'file') {
-      const fileResources = testResources.filter((r) => r.type === 'file' && r.value)
+      const fileResources = projectResources.filter((r) => r.type === 'file' && r.value)
       const hasFiles = fileResources.length > 0
       checks.push({
         category: 'file',
