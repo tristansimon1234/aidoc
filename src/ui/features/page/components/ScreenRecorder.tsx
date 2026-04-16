@@ -159,6 +159,10 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
   }
 
   const startRecording = async (): Promise<void> => {
+    if (hasExistingVoiceover) {
+      const ok = await confirm({ title: 'Replace video?', message: 'Recording a new video will replace the current video and voice-over.', confirmLabel: 'Record', variant: 'danger' })
+      if (!ok) return
+    }
     setError(null)
     try {
       // 1. Screen capture (video only — mic is separate)
