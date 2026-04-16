@@ -497,6 +497,19 @@ DO NOT generate new documentation. Only verify the existing one.`
               {/* Segment timeline + text editor */}
               {voiceoverSegments.length > 0 && latestRunId && videoDuration > 0 && (
                 <>
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)',
+                    padding: 'var(--space-sm) var(--space-md)',
+                    background: 'var(--color-status-running-bg)',
+                    border: '1px solid var(--color-status-running-border)',
+                    borderRadius: 'var(--radius-lg)',
+                    fontSize: 'var(--text-xs)', color: 'var(--color-status-running-text)', lineHeight: 1.5,
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
+                    <span>
+                      <strong>Tip:</strong> Click any segment text to edit it, then press Enter to regenerate just that section. Use the trim handles on the timeline to cut the video start/end.
+                    </span>
+                  </div>
                   <div className={styles.section} style={{ padding: 0, overflow: 'hidden' }}>
                     <VideoTimeline
                       runId={latestRunId}
@@ -507,11 +520,6 @@ DO NOT generate new documentation. Only verify the existing one.`
                       onVideoTrimmed={(url) => setVideoUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
                       onAudioUrlChange={(url) => setVoiceoverUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
                     />
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
-                    <div title="Click any segment text to edit it, then press Enter or the refresh icon to regenerate just that segment. Drag the blue trim handles on the timeline to cut the video start/end." style={{ display: 'flex', alignItems: 'center', cursor: 'help', color: 'var(--color-muted-fg)' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
-                    </div>
                   </div>
                 </>
               )}
