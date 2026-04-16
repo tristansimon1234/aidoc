@@ -56,7 +56,9 @@ export function PageView(): React.ReactElement {
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
   const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
-  const { addJob } = useJobs()
+  const { addJob, getJobForPage } = useJobs()
+  const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
+  const activeTryDocJob = getJobForPage(pageId ?? '', 'try-doc')
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -336,8 +338,8 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
           </button>
           <button className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`} onClick={() => setActiveTab('test')}>
             Test
-            {(tryRunning || analyzing) && <Spinner size="sm" />}
-            {!tryRunning && !analyzing && tryReport && (
+            {(tryRunning || analyzing || activeTryDocJob?.status === 'running') && <Spinner size="sm" />}
+            {!tryRunning && !analyzing && activeTryDocJob?.status !== 'running' && tryReport && (
               <span className={`${styles.tabDot} ${
                 tryReport.summary.overallVerdict === 'pass' ? styles.tabDotPass :
                 tryReport.summary.overallVerdict === 'fail' ? styles.tabDotFail :
@@ -489,7 +491,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                 </label>
 
                 {latestRunId && page.content && (
-                  <Button size="sm" disabled={generatingVoiceover} onClick={() => {
+                  <Button size="sm" disabled={generatingVoiceover || activeVoiceoverJob?.status === 'running'} onClick={() => {
                     void (async () => {
                       if (voiceoverUrl) {
                         const ok = await confirm({ title: 'Replace voice-over?', message: 'The existing voice-over will be permanently replaced by the new generation.', confirmLabel: 'Replace', variant: 'danger' })
@@ -529,7 +531,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               </div>
 
               {/* Generation progress */}
-              {generatingVoiceover && (
+              {(generatingVoiceover || activeVoiceoverJob?.status === 'running') && (
                 <ProgressLoader
                   steps={[
                     { label: 'Generating voice-over — analyzing video, writing script, synthesizing audio...', estimatedSeconds: 90 },

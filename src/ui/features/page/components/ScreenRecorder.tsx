@@ -63,7 +63,8 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
-  const { addJob } = useJobs()
+  const { addJob, getJobForPage } = useJobs()
+  const activeDocJob = getJobForPage(pageId, 'doc-gen')
   const [elapsed, setElapsed] = useState(0)
   const [hasExtension, setHasExtension] = useState(false)
   const [micEnabled, setMicEnabled] = useState(true)
@@ -336,6 +337,23 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
     return (
       <div className={styles.methodContent}>
         <ProgressLoader steps={pipelineSteps} activeStep={stepMap[status] ?? 0} />
+      </div>
+    )
+  }
+
+  // Show progress if a background doc-gen job is running for this page
+  if (activeDocJob?.status === 'running' && status === 'idle') {
+    return (
+      <div className={styles.methodContent}>
+        <ProgressLoader
+          steps={[
+            { label: 'Uploading video', estimatedSeconds: 5 },
+            { label: 'Analyzing with AI', estimatedSeconds: 45 },
+            { label: 'Extracting screenshots', estimatedSeconds: 10 },
+            { label: 'Generating documentation', estimatedSeconds: 20 },
+          ]}
+          activeStep={3}
+        />
       </div>
     )
   }
