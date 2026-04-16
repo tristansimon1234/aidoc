@@ -201,6 +201,8 @@ export const api = {
       request<RunDTO>(`/projects/${projectId}/pages/${pageId}/run`).catch(() => null),
     reorder: (projectId: string, items: { id: string; parentId: string | null; sortOrder: number }[]): Promise<void> =>
       request(`/projects/${projectId}/pages/reorder`, { method: 'PUT', body: JSON.stringify(items) }),
+    preflight: (projectId: string, pageId: string): Promise<PreflightResultDTO> =>
+      request(`/projects/${projectId}/pages/${pageId}/preflight`, { method: 'POST' }),
   },
   runs: {
     list: (): Promise<RunDTO[]> => request('/runs'),
@@ -303,6 +305,21 @@ export interface ChatResponseDTO {
   answer: string
   sources: { pageId: string; pageTitle: string; pageSlug: string }[]
   followUps: string[]
+}
+
+export interface PreflightCheckDTO {
+  category: 'url' | 'credentials' | 'file' | 'navigation' | 'prerequisite'
+  label: string
+  status: 'ready' | 'missing' | 'warning'
+  detail: string
+  resolution: string | null
+}
+
+export interface PreflightResultDTO {
+  ready: boolean
+  testPlan: string
+  estimatedSteps: number
+  checks: PreflightCheckDTO[]
 }
 
 export interface TryDocReportDTO {

@@ -8,13 +8,14 @@ import {
   TableOfContents,
   ProgressLoader,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO } from '../../../shared/api/client.js'
+import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { VideoTimeline } from '../components/VideoTimeline.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
+import { PreflightPanel } from '../components/PreflightPanel.js'
 import styles from './PageView.module.css'
 
 interface PageContext {
@@ -41,6 +42,8 @@ export function PageView(): React.ReactElement {
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
   const [analyzing, setAnalyzing] = useState(false)
+  const [preflightResult, setPreflightResult] = useState<PreflightResultDTO | null>(null)
+  const [preflightLoading, setPreflightLoading] = useState(false)
   const [voiceoverUrl, setVoiceoverUrl] = useState<string | null>(null)
   const [voiceoverSegments, setVoiceoverSegments] = useState<{ stepIndex: number; startTime: number; endTime: number; text?: string }[]>([])
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
@@ -76,6 +79,8 @@ export function PageView(): React.ReactElement {
     setTryRunning(false)
     setAnalyzing(false)
     setTryStreamSteps([])
+    setPreflightResult(null)
+    setPreflightLoading(false)
     setGeneratingVoiceover(false)
   }
 
@@ -160,6 +165,21 @@ export function PageView(): React.ReactElement {
       console.warn('[voices] Failed to load:', err)
     })
   }, [])
+
+  const handlePreflight = async (): Promise<void> => {
+    if (!projectId || !pageId || !page?.content) return
+    setPreflightLoading(true)
+    setPreflightResult(null)
+    setError(null)
+    try {
+      const result = await api.pages.preflight(projectId, pageId)
+      setPreflightResult(result)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setPreflightLoading(false)
+    }
+  }
 
   const handleTryDoc = async (): Promise<void> => {
     if (!projectId || !pageId || !page?.content) return
@@ -661,7 +681,7 @@ DO NOT generate new documentation. Only verify the existing one.`
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-                    {tryReport && (
+                    {tryReport && !preflightResult && (
                       <div style={{
                         padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-secondary)',
                         borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
@@ -669,12 +689,31 @@ DO NOT generate new documentation. Only verify the existing one.`
                         Last tested {new Date(tryReport.executedAt).toLocaleDateString()} — {tryReport.summary.overallVerdict}
                       </div>
                     )}
-                    <Button onClick={() => void handleTryDoc()} disabled={!page.content}>
-                      {tryReport ? 'Re-test documentation' : 'Run test'}
-                    </Button>
+                    {preflightLoading && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0' }}>
+                        <Spinner size="sm" />
+                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Checking test readiness...</span>
+                      </div>
+                    )}
+                    {!preflightResult && !preflightLoading && (
+                      <Button onClick={() => void handlePreflight()} disabled={!page.content}>
+                        {tryReport ? 'Re-test documentation' : 'Run test'}
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>
+
+              {/* Pre-flight check results */}
+              {preflightResult && (
+                <div style={{ marginTop: 'var(--space-md)' }}>
+                  <PreflightPanel
+                    result={preflightResult}
+                    onConfirm={() => { setPreflightResult(null); void handleTryDoc() }}
+                    onDismiss={() => setPreflightResult(null)}
+                  />
+                </div>
+              )}
 
               {/* Report below */}
               {tryReport && (

@@ -47,3 +47,17 @@ export const ProjectPageParamsSchema = z.object({
   projectId: z.string().uuid(),
   pageId: z.string().uuid(),
 })
+
+// --- Pre-flight verification schemas ---
+
+// What Gemini returns: requirements analysis of the documentation
+export const DocRequirementsAnalysisSchema = z.object({
+  testPlan: z.string(),
+  estimatedSteps: z.number(),
+  requirements: z.array(z.object({
+    category: z.enum(['url', 'credentials', 'file', 'navigation', 'prerequisite']),
+    label: z.string(),
+    reason: z.string(),
+    critical: z.boolean(),
+  })),
+})

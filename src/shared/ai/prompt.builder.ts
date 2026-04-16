@@ -264,6 +264,56 @@ ${stepsText}
 }`
 }
 
+// --- Pre-flight Verification ---
+
+export const PREFLIGHT_SYSTEM_PROMPT = `You are a test readiness analyst. Given a documentation page, analyze what resources and actions an AI agent needs to test it against a live product.
+
+The test agent is a browser automation tool that follows each step as a naive user. It can: navigate URLs, click buttons, fill forms, upload files (if provided), and take screenshots.
+
+Return ONLY valid JSON (no markdown fences, no extra text).`
+
+export function buildPreflightAnalysisPrompt(
+  pageContent: string,
+  pageTitle: string,
+): string {
+  return `## Documentation: "${pageTitle}"
+
+${pageContent.slice(0, 8000)}
+
+---
+
+Analyze this documentation and identify ALL resources needed to test it on a live product.
+
+Return JSON:
+{
+  "testPlan": "1-2 sentence summary of what the test will do — write in the SAME LANGUAGE as the documentation",
+  "estimatedSteps": <number of distinct user actions>,
+  "requirements": [
+    {
+      "category": "url" | "credentials" | "file" | "navigation" | "prerequisite",
+      "label": "what is needed (same language as the doc)",
+      "reason": "why the test needs this",
+      "critical": true/false
+    }
+  ]
+}
+
+Categories:
+- "url": A test environment URL must be accessible
+- "credentials": Login/authentication is required (username + password, API key, etc.)
+- "file": A file must be uploaded during the test (PDF, CSV, image, video, etc.)
+- "navigation": A specific UI path that must exist in the product
+- "prerequisite": A precondition (e.g. "an existing project must exist", "billing enabled")
+
+Rules:
+- A test URL is ALWAYS required — always include one "url" requirement with critical: true
+- Mark "credentials" as critical ONLY if the doc explicitly mentions login, sign-in, authentication, or accessing a protected area
+- Mark "file" as critical ONLY if the doc explicitly mentions uploading or attaching a file
+- "navigation" and "prerequisite" are typically NOT critical (warnings only)
+- Keep the list focused — only include requirements that are clearly needed based on the documentation content
+- Do NOT invent requirements that are not mentioned or implied in the doc`
+}
+
 // --- Walkthrough (progressive AI-guided DOM highlighting) ---
 
 import type { CompletedStep } from '../../features/chat/walkthrough.types.js'
