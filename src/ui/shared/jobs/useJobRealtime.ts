@@ -3,56 +3,63 @@ import { supabase } from '../api/supabase.js'
 import { useJobs } from './JobContext.js'
 
 /**
- * Poll the jobs table for status updates.
- * Checks every 5s if any running job has completed or failed.
- * Jobs live in DB so they survive browser refresh and tab changes.
+ * Subscribe to Supabase Realtime on the jobs table.
+ * When a tracked job's status changes to completed/failed, updates the context.
+ * Falls back to polling every 10s in case Realtime misses an event.
  */
 export function useJobRealtime(): void {
   const { jobs, updateJob } = useJobs()
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const updateJobRef = useRef(updateJob)
   updateJobRef.current = updateJob
 
-  // Stable string key — only re-subscribe when the set of running IDs changes
   const runningIds = useMemo(
     () => jobs.filter((j) => j.status === 'running').map((j) => j.runId).sort().join(','),
     [jobs],
   )
 
   useEffect(() => {
-    if (!runningIds) {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
-      return
-    }
+    if (!runningIds) return
 
-    const ids = runningIds.split(',')
+    const ids = new Set(runningIds.split(','))
 
-    const poll = async (): Promise<void> => {
-      try {
-        const { data } = await supabase
-          .from('jobs')
-          .select('id, run_id, status')
-          .in('run_id', ids)
-
-        if (!data) return
-        for (const row of data) {
-          const status = row.status as string
-          if (status === 'completed' || status === 'failed') {
-            updateJobRef.current(row.run_id as string, { status: status as 'completed' | 'failed' })
-          }
-        }
-      } catch {
-        // Retry next cycle
+    const handleUpdate = (row: { run_id: string; status: string }) => {
+      if (!ids.has(row.run_id)) return
+      if (row.status === 'completed' || row.status === 'failed') {
+        updateJobRef.current(row.run_id, { status: row.status as 'completed' | 'failed' })
       }
     }
 
-    void poll()
-    intervalRef.current = setInterval(() => void poll(), 5000)
+    // Primary: Supabase Realtime subscription
+    const channel = supabase
+      .channel(`jobs-${runningIds}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'jobs' },
+        (payload) => handleUpdate(payload.new as { run_id: string; status: string }),
+      )
+      .subscribe()
+
+    // Fallback: poll every 10s in case Realtime misses
+    const fallback = setInterval(() => {
+      void (async () => {
+        try {
+          const { data } = await supabase
+            .from('jobs')
+            .select('run_id, status')
+            .in('run_id', [...ids])
+
+          for (const row of data ?? []) {
+            handleUpdate(row as { run_id: string; status: string })
+          }
+        } catch { /* retry next cycle */ }
+      })()
+    }, 10000)
 
     return () => {
-      if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
+      void supabase.removeChannel(channel)
+      clearInterval(fallback)
     }
-  }, [runningIds]) // Stable dep — only changes when running job set changes
+  }, [runningIds])
 
   return
 }

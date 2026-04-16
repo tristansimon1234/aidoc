@@ -40,3 +40,6 @@ CREATE TRIGGER trg_cleanup_old_jobs
   AFTER INSERT ON jobs
   FOR EACH STATEMENT
   EXECUTE FUNCTION cleanup_old_jobs();
+
+-- Enable Realtime on jobs table so frontend gets instant notifications
+ALTER PUBLICATION supabase_realtime ADD TABLE jobs;
