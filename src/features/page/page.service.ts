@@ -96,10 +96,14 @@ export async function runPreflight(pageId: string, projectId: string): Promise<P
     analysis = { testPlan: `Verify documentation for "${page.title}"`, estimatedSteps: 0, requirements: [] }
   }
 
-  // Gather available resources
+  // Gather available resources — filter by page-level selection
   const briefing = page.briefing as Record<string, unknown> | null
   const testUrl = (briefing?.testUrl as string) || page.startUrl || project.baseUrl
-  const projectResources = project.resources ?? []
+  const allProjectResources = project.resources ?? []
+  const selectedIndices = (briefing?.selectedResources as number[] | undefined) ?? []
+  const projectResources = selectedIndices.length > 0
+    ? allProjectResources.filter((_, i) => selectedIndices.includes(i))
+    : []
   const credentials = project.credentials ?? []
 
   // --- Hardcoded checks (always present) ---

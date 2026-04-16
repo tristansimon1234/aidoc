@@ -786,9 +786,17 @@ function TestConfig({ page, project, onBriefingChange }: {
   const testUrl = (briefing?.testUrl as string) ?? ''
   const testNotes = (briefing?.testNotes as string) ?? ''
   const projectResources = project.resources ?? []
+  const selectedResources = (briefing?.selectedResources as number[]) ?? []
 
   const update = (field: string, value: unknown): void => {
     onBriefingChange({ ...(page.briefing ?? {}), [field]: value } as typeof page.briefing)
+  }
+
+  const toggleResource = (index: number): void => {
+    const next = selectedResources.includes(index)
+      ? selectedResources.filter((i) => i !== index)
+      : [...selectedResources, index]
+    update('selectedResources', next)
   }
 
   return (
@@ -817,20 +825,24 @@ function TestConfig({ page, project, onBriefingChange }: {
           />
         </div>
 
-        {/* Project resources — read-only reference */}
+        {/* Project resources — checkboxes to select which ones to use */}
         <div>
-          <label className={styles.briefingFieldLabel} style={{ margin: 0 }}>Project Resources</label>
+          <label className={styles.briefingFieldLabel} style={{ margin: 0 }}>Resources</label>
           {projectResources.length > 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', marginTop: 'var(--space-xs)' }}>
               {projectResources.map((r, i) => (
-                <div key={i} style={{
+                <label key={i} style={{
                   display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-                  padding: '4px 8px', background: 'var(--color-secondary)', borderRadius: 'var(--radius-md)',
-                  fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
+                  padding: '6px 8px', background: 'var(--color-secondary)', borderRadius: 'var(--radius-md)',
+                  fontSize: 'var(--text-xs)', cursor: 'pointer',
+                  border: selectedResources.includes(i) ? '1px solid var(--color-primary)' : '1px solid transparent',
                 }}>
-                  <span style={{ fontFamily: 'var(--font-mono)', textTransform: 'uppercase', fontSize: '10px', opacity: 0.7 }}>{r.type}</span>
+                  <input type="checkbox" checked={selectedResources.includes(i)}
+                    onChange={() => toggleResource(i)}
+                    style={{ accentColor: 'var(--color-primary)' }} />
+                  <span style={{ fontFamily: 'var(--font-mono)', textTransform: 'uppercase', fontSize: '10px', color: 'var(--color-muted-fg)' }}>{r.type}</span>
                   <span style={{ color: 'var(--color-fg)' }}>{r.label || r.value.split('/').pop()}</span>
-                </div>
+                </label>
               ))}
             </div>
           ) : (

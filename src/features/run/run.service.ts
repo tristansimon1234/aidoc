@@ -102,12 +102,20 @@ async function getProjectAwareness(docPageId: string): Promise<{
     }
   }
 
+  // Filter project resources by page-level selection
+  const allProjectResources = project.resources ?? []
+  const rawBriefing = page.briefing as Record<string, unknown> | null
+  const selectedIndices = (rawBriefing?.selectedResources as number[] | undefined) ?? []
+  const selectedProjectResources = selectedIndices.length > 0
+    ? allProjectResources.filter((_, i) => selectedIndices.includes(i))
+    : []
+
   return {
     projectContext: fullProjectContext.trim() || undefined,
     tableOfContents: toc || undefined,
     credentials: project.credentials ?? undefined,
     customPrompt: page.customPrompt ?? undefined,
-    briefing: await enrichBriefingWithFileContents(page.briefing, project.resources ?? undefined),
+    briefing: await enrichBriefingWithFileContents(page.briefing, selectedProjectResources.length > 0 ? selectedProjectResources : undefined),
     existingPageSummaries: summaries.length > 0 ? summaries : undefined,
   }
 }
