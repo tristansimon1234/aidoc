@@ -775,8 +775,16 @@ DO NOT generate new documentation. Only verify the existing one.`
 
 // --- Test Configuration ---
 
-const TEST_FILE_EXTENSIONS = ['.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml', '.pdf']
-const TEST_MAX_FILE_SIZE = 2 * 1024 * 1024 // 2MB
+const TEST_FILE_EXTENSIONS = [
+  '.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.xml',  // text
+  '.pdf',                                                     // pdf
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',          // image
+  '.mp4', '.webm', '.mov',                                   // video
+  '.xlsx', '.xls',                                            // excel
+  '.pptx', '.ppt',                                            // powerpoint
+  '.docx', '.doc',                                            // word
+]
+const TEST_MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB (videos can be large)
 
 interface TestResource {
   type: 'url' | 'file' | 'note'
@@ -818,7 +826,7 @@ function TestConfig({ page, project, pageId, onBriefingChange }: {
     setUploadError(null)
     const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase()
     if (!TEST_FILE_EXTENSIONS.includes(ext)) { setUploadError(`Unsupported type. Accepted: ${TEST_FILE_EXTENSIONS.join(', ')}`); return }
-    if (file.size > TEST_MAX_FILE_SIZE) { setUploadError('File too large (max 2MB)'); return }
+    if (file.size > TEST_MAX_FILE_SIZE) { setUploadError('File too large (max 50MB)'); return }
     const path = `pages/${pageId}/test/${file.name}`
     const { error } = await supabase.storage.from('briefing-files').upload(path, file, { upsert: true })
     if (error) { setUploadError(`Upload failed: ${error.message}`); return }
