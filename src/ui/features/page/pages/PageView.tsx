@@ -370,6 +370,36 @@ DO NOT generate new documentation. Only verify the existing one.`
         <div className={styles.tabContent} style={{ maxWidth: '960px', margin: '0 auto' }}>
           {(videoUrl || latestRunId) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              {/* Publish toggle — show video on public documentation page */}
+              <div
+                onClick={() => {
+                  const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
+                  const newVal = !current
+                  const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
+                  setPage({ ...page, briefing: newBriefing })
+                  void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
+                }}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: 'var(--space-sm) var(--space-md)',
+                  background: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-status-completed-bg)' : 'var(--color-secondary)',
+                  border: `1px solid ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-status-completed-border)' : 'var(--color-border)'}`,
+                  borderRadius: 'var(--radius-lg)', cursor: 'pointer', transition: 'all 0.15s',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
+                    Show video on published page
+                  </div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+                    Display this video at the top of your public documentation
+                  </div>
+                </div>
+                <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
+                  <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
+                </div>
+              </div>
+
               {/* Explanation */}
               <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: 0, lineHeight: 1.6 }}>
                 Configure the AI voice-over for your video. Choose a tone and voice, then generate — the narration syncs automatically with the recording.
@@ -424,27 +454,6 @@ DO NOT generate new documentation. Only verify the existing one.`
                   }} />
                 </label>
 
-                {/* Publish toggle */}
-                <div
-                  className={styles.videoPublish}
-                  onClick={() => {
-                    const current = (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic as boolean | undefined
-                    const newVal = !current
-                    const newBriefing = { ...(page.briefing ?? {}), showVideoOnPublic: newVal } as typeof page.briefing
-                    setPage({ ...page, briefing: newBriefing })
-                    void dbUpdatePage(projectId!, pageId!, { briefing: newBriefing })
-                  }}
-                >
-                  <div className={`${styles.toggleTrack} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleTrackOn : ''}`}>
-                    <div className={`${styles.toggleKnob} ${(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? styles.toggleKnobOn : ''}`} />
-                  </div>
-                  <span style={{
-                    fontSize: 'var(--text-xs)', fontWeight: 500,
-                    color: (page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'var(--color-success)' : 'var(--color-muted-fg)',
-                  }}>
-                    {(page.briefing as Record<string, unknown> | null)?.showVideoOnPublic ? 'Published' : 'Hidden'}
-                  </span>
-                </div>
                 {latestRunId && page.content && (
                   <Button size="sm" disabled={generatingVoiceover} onClick={() => {
                     void (async () => {
