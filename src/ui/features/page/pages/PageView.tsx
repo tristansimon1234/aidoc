@@ -213,7 +213,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 - If the doc says "click Settings" and you see "Preferences" — that is a FAIL. Stop.
 - If the doc assumes you know something it never explained — that is a FAIL. Stop.
 - If the product shows an error — note the exact error message and STOP.
-- Take a screenshot after each major step.
+- Do NOT take screenshots — they are handled automatically.
 - Do NOT generate new documentation. Only verify the existing one.`
 
     setTryRunning(true)
