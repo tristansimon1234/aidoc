@@ -57,6 +57,7 @@ export function PageView(): React.ReactElement {
   const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
   const { addJob, getJobForPage } = useJobs()
+  const activeDocGenJob = getJobForPage(pageId ?? '', 'doc-gen')
   const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
   const activeTryDocJob = getJobForPage(pageId ?? '', 'try-doc')
   const prevPageIdRef = useRef(pageId)
@@ -169,6 +170,16 @@ export function PageView(): React.ReactElement {
     }
     prevVoiceoverStatus.current = activeVoiceoverJob?.status
   }, [activeVoiceoverJob?.status, fetchData])
+
+  // Auto-refresh when background doc-gen job completes
+  const prevDocGenStatus = useRef(activeDocGenJob?.status)
+  useEffect(() => {
+    if (prevDocGenStatus.current === 'running' && activeDocGenJob?.status === 'completed') {
+      void fetchData()
+      void context.refetchPages()
+    }
+    prevDocGenStatus.current = activeDocGenJob?.status
+  }, [activeDocGenJob?.status, fetchData, context])
 
   // Fetch available ElevenLabs voices (once on mount)
   useEffect(() => {

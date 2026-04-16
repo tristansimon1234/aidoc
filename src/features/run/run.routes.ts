@@ -130,10 +130,31 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const body = req.body as { videoPath?: string }
+      const body = req.body as { videoPath?: string; generateDoc?: boolean }
       if (!body.videoPath || typeof body.videoPath !== 'string') {
         throw new ValidationError('videoPath is required')
       }
+
+      // If generateDoc flag is set, respond immediately and run the full pipeline in background
+      if (body.generateDoc) {
+        res.status(202).json({ runId: params.data.id, status: 'running' })
+        void (async () => {
+          try {
+            await runService.analyzeVideo(params.data.id, body.videoPath!)
+            await runService.generateDoc(params.data.id)
+            // Update linked page status to published
+            const run = await runService.getRun(params.data.id)
+            if (run.docPageId) {
+              const { updatePage } = await import('../page/page.repository.js')
+              await updatePage(run.docPageId, { status: 'published' })
+            }
+          } catch (err) {
+            console.error(`[process-video] Background pipeline failed for ${params.data.id}:`, err)
+          }
+        })()
+        return
+      }
+
       const result = await runService.analyzeVideo(params.data.id, body.videoPath)
       res.status(200).json(result)
     } catch (err) {
@@ -459,13 +480,10 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         language: body.language,
       })
 
-      // Store voiceover info in run summary
+      // Store voiceover info in run summary + trigger Realtime
       const existingSummary = run.summaryJson ?? {}
-      const { updateRunSummary } = await import('./run.repository.js')
+      const { updateRunSummary, updateRunStatus } = await import('./run.repository.js')
       await updateRunSummary(params.data.id, { ...existingSummary, voiceover: result })
-
-      // Mark run completed so Realtime triggers frontend notification
-      const { updateRunStatus } = await import('./run.repository.js')
       await updateRunStatus(params.data.id, 'completed')
 
       res.status(200).json(result)

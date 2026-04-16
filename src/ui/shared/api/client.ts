@@ -212,8 +212,8 @@ export const api = {
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
     cancel: (id: string): Promise<{ cancelled: boolean }> =>
       request(`/runs/${id}/cancel`, { method: 'POST' }),
-    analyzeVideo: (id: string, videoPath: string): Promise<{ timestamps: number[] }> =>
-      request(`/runs/${id}/analyze-video`, { method: 'POST', body: JSON.stringify({ videoPath }) }),
+    analyzeVideo: (id: string, videoPath: string, options?: { generateDoc?: boolean }): Promise<{ timestamps: number[]; runId?: string; status?: string }> =>
+      request(`/runs/${id}/analyze-video`, { method: 'POST', body: JSON.stringify({ videoPath, generateDoc: options?.generateDoc }) }),
     getSignedUploadUrl: (id: string, path: string): Promise<{ signedUrl: string; path: string }> =>
       request(`/runs/${id}/signed-upload-url`, { method: 'POST', body: JSON.stringify({ path }) }),
     updateStepScreenshot: (id: string, stepIndex: number, screenshotPath: string): Promise<{ ok: boolean }> =>
