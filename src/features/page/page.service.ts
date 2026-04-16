@@ -94,59 +94,51 @@ export async function runPreflight(pageId: string, projectId: string): Promise<P
   const testResources = (briefing?.testResources as { type: string; label: string; value: string }[]) ?? []
   const credentials = project.credentials ?? []
 
-  // Match requirements against available resources
+  // --- Hardcoded checks (always present) ---
   const checks: PreflightCheck[] = []
 
+  // 1. Test URL — always required
+  checks.push({
+    category: 'url',
+    label: 'Test URL',
+    status: testUrl ? 'ready' : 'missing',
+    detail: testUrl ?? 'No test URL configured',
+    resolution: testUrl ? null : 'Set a test URL in the Test Configuration panel, or set a base URL on the project.',
+  })
+
+  // 2. Credentials — always required (all tests are behind login)
+  checks.push({
+    category: 'credentials',
+    label: 'Login credentials',
+    status: credentials.length > 0 ? 'ready' : 'missing',
+    detail: credentials.length > 0
+      ? `${credentials.length} credential set(s): ${credentials.map((c) => c.label).join(', ')}`
+      : 'No credentials configured',
+    resolution: credentials.length > 0 ? null : 'Add test credentials in Project Settings.',
+  })
+
+  // --- AI-driven checks (file uploads, prerequisites) ---
   for (const req of analysis.requirements) {
-    switch (req.category) {
-      case 'url': {
-        checks.push({
-          category: 'url',
-          label: req.label,
-          status: testUrl ? 'ready' : 'missing',
-          detail: testUrl ? testUrl : 'No test URL configured',
-          resolution: testUrl ? null : 'Set a test URL in the Test Configuration panel, or set a base URL on the project.',
-        })
-        break
-      }
-      case 'credentials': {
-        const hasCredentials = credentials.length > 0
-        checks.push({
-          category: 'credentials',
-          label: req.label,
-          status: hasCredentials ? 'ready' : (req.critical ? 'missing' : 'warning'),
-          detail: hasCredentials
-            ? `${credentials.length} credential set(s): ${credentials.map((c) => c.label).join(', ')}`
-            : 'No credentials configured',
-          resolution: hasCredentials ? null : 'Add test credentials in Project Settings.',
-        })
-        break
-      }
-      case 'file': {
-        const fileResources = testResources.filter((r) => r.type === 'file' && r.value)
-        const hasFiles = fileResources.length > 0
-        checks.push({
-          category: 'file',
-          label: req.label,
-          status: hasFiles ? 'ready' : (req.critical ? 'missing' : 'warning'),
-          detail: hasFiles
-            ? `File(s): ${fileResources.map((r) => r.label || r.value.split('/').pop()).join(', ')}`
-            : 'No test files uploaded',
-          resolution: hasFiles ? null : 'Add a file resource in the Test Configuration panel.',
-        })
-        break
-      }
-      case 'navigation':
-      case 'prerequisite': {
-        checks.push({
-          category: req.category,
-          label: req.label,
-          status: 'warning',
-          detail: req.reason,
-          resolution: 'Consider adding this context in "Additional context" so the test agent is aware.',
-        })
-        break
-      }
+    if (req.category === 'file') {
+      const fileResources = testResources.filter((r) => r.type === 'file' && r.value)
+      const hasFiles = fileResources.length > 0
+      checks.push({
+        category: 'file',
+        label: req.label,
+        status: hasFiles ? 'ready' : 'missing',
+        detail: hasFiles
+          ? `File(s): ${fileResources.map((r) => r.label || r.value.split('/').pop()).join(', ')}`
+          : 'No test files uploaded',
+        resolution: hasFiles ? null : 'Add a file resource in the Test Configuration panel.',
+      })
+    } else if (req.category === 'prerequisite') {
+      checks.push({
+        category: 'prerequisite',
+        label: req.label,
+        status: 'warning',
+        detail: req.reason,
+        resolution: 'Consider adding this context in "Additional context" so the test agent is aware.',
+      })
     }
   }
 

@@ -55,9 +55,8 @@ export const DocRequirementsAnalysisSchema = z.object({
   testPlan: z.string(),
   estimatedSteps: z.number(),
   requirements: z.array(z.object({
-    category: z.enum(['url', 'credentials', 'file', 'navigation', 'prerequisite']),
+    category: z.enum(['file', 'prerequisite']),
     label: z.string(),
     reason: z.string(),
-    critical: z.boolean(),
   })),
 })
