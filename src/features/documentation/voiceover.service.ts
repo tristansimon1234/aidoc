@@ -64,11 +64,16 @@ export async function generateVoiceover(
     let estimatedDuration = Math.max(1, buffer.length / 16000)
 
     if (estimatedDuration > slotDuration * 1.1 && text.split(/\s+/).length > 6) {
+      const isLastSegment = i === steps.length - 1
       const words = text.split(/\s+/)
       const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration))
       const shortened = words.slice(0, Math.max(4, targetWords)).join(' ')
       const lastDot = shortened.lastIndexOf('.')
       text = lastDot > shortened.length * 0.4 ? shortened.slice(0, lastDot + 1) : shortened + '.'
+      // Preserve closing phrase for last segment
+      if (isLastSegment && !text.match(/thanks|bye|wrap|watching/i)) {
+        text += ' Thanks for watching!'
+      }
 
       console.log(`[voiceover] Segment ${i}: overflow (${estimatedDuration.toFixed(1)}s > ${slotDuration.toFixed(1)}s slot) — retrying with ${text.split(/\s+/).length} words`)
 
