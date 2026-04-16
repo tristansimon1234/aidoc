@@ -160,6 +160,16 @@ export function PageView(): React.ReactElement {
     void fetchData()
   }, [fetchData])
 
+  // Auto-refresh page data when a background voiceover job completes
+  const prevVoiceoverStatus = useRef(activeVoiceoverJob?.status)
+  useEffect(() => {
+    if (prevVoiceoverStatus.current === 'running' && activeVoiceoverJob?.status === 'completed') {
+      void fetchData()
+      setGeneratingVoiceover(false)
+    }
+    prevVoiceoverStatus.current = activeVoiceoverJob?.status
+  }, [activeVoiceoverJob?.status, fetchData])
+
   // Fetch available ElevenLabs voices (once on mount)
   useEffect(() => {
     api.runs.getVoices().then((r) => {
