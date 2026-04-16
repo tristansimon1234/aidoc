@@ -175,9 +175,7 @@ Start: ${run.startUrl}${isResuming ? ' (RESUMING — skip already-covered sectio
 ${briefingBlock}${previousStepsBlock}${projectBlock}${tocBlock}${credentialsBlock}${contextBlock}
 
 Rules:
-- IMPORTANT: For EVERY action you take, explicitly describe what you see on screen, what you are about to do, and why. Example: "I see a login form with email and password fields. I will fill in the test credentials and click Sign In."
 - Explore systematically: navigate sections, click buttons, fill forms with test data
-- After each action, report the result: what changed on screen, did it succeed or fail
 - Budget: 50 actions max. Prioritize the most important sections. Wrap up at ~40.
 - Login wall without credentials → call done immediately
 - Action fails twice → move on
@@ -292,14 +290,8 @@ Rules:
             if (callId) resultMap.set(callId, trObj.result)
           }
 
-          // Extract agent reasoning — try multiple fields (Gemini vs Claude structure)
-          const eventObj = event as Record<string, unknown>
-          const agentText = (event.text ?? eventObj.reasoning ?? eventObj.thought ?? eventObj.message ?? '') as string
-
-          // Debug: log event keys for first few steps to understand Gemini's output shape
-          if (!agentText && stepCounter < 3) {
-            console.log(`[exploration] Step ${stepCounter} event keys (no reasoning text):`, Object.keys(eventObj).join(', '))
-          }
+          // Extract agent reasoning
+          const agentText = event.text ?? ''
 
           // Capture the ACTUAL browser URL (not tool arg URL)
           const activePage = session.context.activePage()
@@ -316,23 +308,14 @@ Rules:
 
             const description = buildToolDescription(toolName, args, toolResult)
 
-            // Build rich observation from ALL available data — Gemini often has
-            // empty reasoning but args contain the instruction/intent
-            const observationParts: string[] = []
-            if (agentText) observationParts.push(agentText.slice(0, 4000))
-            // Include tool args as intent (critical for Gemini which may not provide reasoning)
-            if (args) {
-              const argsStr = Object.entries(args)
-                .filter(([, v]) => typeof v === 'string' && (v as string).length > 0)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(', ')
-              if (argsStr) observationParts.push(`[Intent: ${argsStr}]`)
-            }
+            // Capture tool result (success/failure) alongside reasoning
             const toolResultStr = toolResult
               ? JSON.stringify(toolResult).slice(0, 2000)
               : ''
-            if (toolResultStr) observationParts.push(`[Result: ${toolResultStr}]`)
-            const fullObservation = observationParts.join('\n') || description
+            const fullObservation = [
+              agentText.slice(0, 4000),
+              toolResultStr ? `\n[Tool result: ${toolResultStr}]` : '',
+            ].join('') || description
 
             const record: AgentActionRecord = {
               type: toolName,
@@ -368,18 +351,16 @@ Rules:
             const isInternalTool = toolName === 'ariaTree' || toolName === 'screenshot' || toolName === 'wait' || toolName === 'scroll' || toolName === 'keys'
 
             if (!isInternalTool) {
-              // Build a richer message: action + reasoning if available
-              const stepMsg = agentText && agentText.length > 10
-                ? `${record.action ?? toolName} — ${agentText.slice(0, 200)}`
-                : record.action ?? toolName
               emit({
                 type: 'step',
                 step: record,
                 stepIndex: stepCounter,
-                message: stepMsg,
+                message: record.action ?? toolName,
               })
-            } else if (agentText && agentText.length > 10) {
-              // Even for internal tools, stream the reasoning so user sees progress
+            }
+
+            // Stream agent reasoning as a status update
+            if (agentText && agentText.length > 10) {
               emit({ type: 'status', message: agentText.slice(0, 500) })
             }
 
