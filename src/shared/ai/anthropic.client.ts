@@ -1,9 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { env } from '../config/env.js'
 
-export const STAGEHAND_MODEL = 'google/gemini-2.5-flash'
+export const STAGEHAND_MODEL = 'google/gemini-3-flash-preview'
 
-// Anthropic is only used as a fallback — optional
+// Anthropic — optional fallback
 export const anthropic = env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })
   : null
