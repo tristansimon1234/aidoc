@@ -185,11 +185,8 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // File upload: upload to Browserbase → setInputFiles on file inputs
-    // Simple approach per Browserbase docs: upload file to session, then
-    // call setInputFiles() which triggers the change event → component
-    // receives the file and runs its action (upload, processing, etc.)
-    // No CDP, no interception, no file picker involved.
+    // File upload: poll for file inputs and inject file via setInputFiles with buffer
+    // No Browserbase upload API needed — pass the buffer directly to Playwright
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
@@ -197,92 +194,49 @@ Rules:
 
     let fileUploadPolling = false
     if (briefingFiles.length > 0) {
-      const sessionId = session.browserbaseSessionID
-      if (sessionId) {
-        const firstFile = briefingFiles[0]!
-        try {
-          // Upload file to Browserbase cloud session
-          const formData = new FormData()
-          formData.append('file', new Blob([firstFile.fileBuffer]), firstFile.fileName)
-          const uploadRes = await fetch(
-            `https://api.browserbase.com/v1/sessions/${sessionId}/uploads`,
-            {
-              method: 'POST',
-              headers: { 'x-bb-api-key': env.BROWSERBASE_API_KEY },
-              body: formData,
-            },
-          )
-          if (!uploadRes.ok) {
-            console.error(`[exploration] Browserbase upload failed: ${uploadRes.status} ${await uploadRes.text()}`)
-          } else {
-            const remotePath = `/tmp/.uploads/${firstFile.fileName}`
-            console.log(`[exploration] File uploaded to Browserbase: ${firstFile.fileName} → ${remotePath}`)
-
-            // Background polling: scan for unfilled file inputs every 2s
-            fileUploadPolling = true
-            void (async () => {
-              let pollCount = 0
-              while (fileUploadPolling) {
-                await new Promise((resolve) => setTimeout(resolve, 2000))
-                if (!fileUploadPolling) break
-                pollCount++
-                try {
-                  const page = session.context.activePage()
-                  if (!page) { console.log(`[file-poll] #${pollCount} no active page`); continue }
-
-                  // Try Playwright locator first
-                  let found = 0
-                  try {
-                    const inputs = await page.locator('input[type="file"]').all()
-                    found = inputs.length
-                    if (found > 0) console.log(`[file-poll] #${pollCount} found ${found} file input(s) via locator`)
-                    for (const input of inputs) {
-                      const filled = await input.getAttribute('data-aidoc-filled').catch(() => null)
-                      if (filled) continue
-                      await input.setInputFiles(remotePath)
-                      await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
-                      console.log(`[file-poll] setInputFiles OK: ${remotePath}`)
-                    }
-                  } catch (locatorErr) {
-                    console.log(`[file-poll] #${pollCount} locator failed: ${(locatorErr as Error).message}`)
-                  }
-
-                  // Fallback: JS evaluate to find and count file inputs
-                  if (found === 0) {
-                    try {
-                      const jsCount = await page.evaluate(() =>
-                        document.querySelectorAll('input[type="file"]').length,
-                      )
-                      if (jsCount > 0) {
-                        console.log(`[file-poll] #${pollCount} JS found ${jsCount} file input(s) — locator missed them, trying evaluate setInputFiles`)
-                        // Use evaluate to programmatically trigger the input
-                        await page.evaluate((path: string) => {
-                          const input = document.querySelector<HTMLInputElement>('input[type="file"]')
-                          if (input && !input.dataset.aidocFilled) {
-                            input.dataset.aidocFilled = 'true'
-                            // We can't set files from JS with a path, but we can click the input
-                            // to open the file picker — the CDP or other mechanism handles the rest
-                            console.log('[aidoc] Found file input, path:', path)
-                          }
-                        }, remotePath)
-                      } else if (pollCount <= 5) {
-                        console.log(`[file-poll] #${pollCount} no file inputs on page`)
-                      }
-                    } catch {
-                      // evaluate failed — page navigated
-                    }
-                  }
-                } catch (err) {
-                  console.log(`[file-poll] #${pollCount} error: ${(err as Error).message}`)
-                }
-              }
-              console.log(`[file-poll] stopped after ${pollCount} polls`)
-            })()
-          }
-        } catch (err) {
-          console.warn(`[exploration] File upload setup failed:`, err)
-        }
+      const firstFile = briefingFiles[0]!
+      const filePayload = {
+        name: firstFile.fileName,
+        mimeType: firstFile.fileName.endsWith('.webm') ? 'video/webm'
+          : firstFile.fileName.endsWith('.mp4') ? 'video/mp4'
+            : firstFile.fileName.endsWith('.mov') ? 'video/quicktime'
+              : 'application/octet-stream',
+        buffer: firstFile.fileBuffer,
       }
+      console.log(`[exploration] File ready for injection: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
+
+      // Background polling: every 2s, find file inputs and call setInputFiles with buffer
+      fileUploadPolling = true
+      void (async () => {
+        let pollCount = 0
+        while (fileUploadPolling) {
+          await new Promise((resolve) => setTimeout(resolve, 2000))
+          if (!fileUploadPolling) break
+          pollCount++
+          try {
+            const page = session.context.activePage()
+            if (!page) continue
+
+            const inputs = await page.locator('input[type="file"]').all()
+            if (pollCount <= 5 || inputs.length > 0) {
+              console.log(`[file-poll] #${pollCount} found ${inputs.length} file input(s)`)
+            }
+            for (const input of inputs) {
+              const filled = await input.getAttribute('data-aidoc-filled').catch(() => null)
+              if (filled) continue
+              try {
+                await input.setInputFiles(filePayload)
+                await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
+                console.log(`[file-poll] setInputFiles with buffer OK: ${firstFile.fileName}`)
+              } catch (setErr) {
+                console.log(`[file-poll] setInputFiles failed: ${(setErr as Error).message}`)
+              }
+            }
+          } catch {
+            // Page navigated — ignore
+          }
+        }
+      })()
     }
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
