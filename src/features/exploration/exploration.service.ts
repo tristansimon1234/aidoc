@@ -181,7 +181,7 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // Make briefing files available for upload via CDP Page.fileChooserOpened
+    // Make briefing files available for upload
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
@@ -190,62 +190,33 @@ Rules:
     if (briefingFiles.length > 0) {
       const activePage = session.context.activePage()
       if (activePage) {
-        try {
-          // Use CDP directly — Stagehand's Page wrapper doesn't support 'filechooser'
-          const cdp = await activePage.context().newCDPSession(activePage)
-          await cdp.send('Page.setInterceptFileChooserDialog', { enabled: true })
-          cdp.on('Page.fileChooserOpened', async () => {
-            const file = briefingFiles[0]!
-            try {
-              // Find the file input and set files via Playwright's underlying page
-              const inputs = await activePage.locator('input[type="file"]').all()
-              if (inputs.length > 0) {
-                await inputs[0]!.setInputFiles({
-                  name: file.fileName,
-                  mimeType: 'application/octet-stream',
-                  buffer: file.fileBuffer,
-                })
-                console.log(`[exploration] File auto-provided via CDP: ${file.fileName}`)
-              }
-            } catch (err) {
-              console.error(`[exploration] Failed to set file via CDP:`, err)
+        const firstFile = briefingFiles[0]!
+        // Pre-fill all visible file inputs and watch for new ones via MutationObserver.
+        // Unlike the old approach, this does NOT block clicks — it sets .files directly
+        // before or after the user/agent clicks, so the file picker still opens but the
+        // input already has a file attached.
+        const base64 = firstFile.fileBuffer.toString('base64')
+        await activePage.evaluate(
+          ({ b64, name }: { b64: string; name: string }) => {
+            const setFileOnInput = (input: HTMLInputElement): void => {
+              if (input.dataset.aidocFilled) return
+              input.dataset.aidocFilled = 'true'
+              const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+              const f = new File([bytes], name, { type: 'application/octet-stream' })
+              const dt = new DataTransfer()
+              dt.items.add(f)
+              input.files = dt.files
+              input.dispatchEvent(new Event('change', { bubbles: true }))
             }
-          })
-          console.log(`[exploration] CDP file chooser interceptor ready: ${briefingFiles[0]!.fileName} (${briefingFiles[0]!.fileBuffer.length} bytes)`)
-        } catch (cdpErr) {
-          // CDP not available — fall back to JS injection
-          console.warn(`[exploration] CDP file chooser not available, falling back to JS injection`)
-          const firstFile = briefingFiles[0]!
-          const base64 = firstFile.fileBuffer.toString('base64')
-          await activePage.evaluate(
-            ({ b64, name }: { b64: string; name: string }) => {
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const w = window as any
-              w.__aidocFile = { b64, name }
-              const fill = (): void => {
-                document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => {
-                  if (input.dataset.aidocFilled) return
-                  input.dataset.aidocFilled = 'true'
-                  input.addEventListener('click', (e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    const stored = w.__aidocFile as { b64: string; name: string }
-                    const bytes = Uint8Array.from(atob(stored.b64), (c) => c.charCodeAt(0))
-                    const f = new File([bytes], stored.name, { type: 'application/octet-stream' })
-                    const dt = new DataTransfer()
-                    dt.items.add(f)
-                    input.files = dt.files
-                    input.dispatchEvent(new Event('change', { bubbles: true }))
-                  }, { once: true })
-                })
-              }
-              fill()
-              new MutationObserver(fill).observe(document.body, { childList: true, subtree: true })
-            },
-            { b64: base64, name: firstFile.fileName },
-          )
-          console.log(`[exploration] JS file injection fallback ready: ${firstFile.fileName}`)
-        }
+            const fillAll = (): void => {
+              document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach(setFileOnInput)
+            }
+            fillAll()
+            new MutationObserver(fillAll).observe(document.body, { childList: true, subtree: true })
+          },
+          { b64: base64, name: firstFile.fileName },
+        )
+        console.log(`[exploration] File injection ready (non-blocking): ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
       }
     }
 
@@ -259,7 +230,7 @@ Rules:
         modelName: STAGEHAND_MODEL,
         apiKey: process.env.GEMINI_API_KEY,
       },
-      mode: 'act',
+      mode: 'hybrid',
     })
 
     const result = await agent.execute({
@@ -284,7 +255,9 @@ Rules:
             if (callId) resultMap.set(callId, trObj.result)
           }
 
-          const agentText = event.text ?? ''
+          // Extract agent reasoning — Gemini may put it in different fields than Claude
+          const eventObj = event as Record<string, unknown>
+          const agentText = (event.text ?? eventObj.reasoning ?? eventObj.thought ?? eventObj.message ?? '') as string
 
           // FIX 1: Capture the ACTUAL browser URL (not tool arg URL)
           const activePage = session.context.activePage()
@@ -342,16 +315,18 @@ Rules:
             const isInternalTool = toolName === 'ariaTree' || toolName === 'screenshot' || toolName === 'wait' || toolName === 'scroll' || toolName === 'keys'
 
             if (!isInternalTool) {
+              // Build a richer message: action + reasoning if available
+              const stepMsg = agentText && agentText.length > 10
+                ? `${record.action ?? toolName} — ${agentText.slice(0, 200)}`
+                : record.action ?? toolName
               emit({
                 type: 'step',
                 step: record,
                 stepIndex: stepCounter,
-                message: record.action ?? toolName,
+                message: stepMsg,
               })
-            }
-
-            // Stream agent reasoning as a status update (what it's thinking)
-            if (agentText && agentText.length > 10) {
+            } else if (agentText && agentText.length > 10) {
+              // Even for internal tools, stream the reasoning so user sees progress
               emit({ type: 'status', message: agentText.slice(0, 500) })
             }
 
