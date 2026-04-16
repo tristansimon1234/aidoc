@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useJobs, type Job } from './JobContext.js'
 import { useJobRealtime } from './useJobRealtime.js'
@@ -8,14 +8,12 @@ const TYPE_LABELS: Record<Job['type'], string> = {
   'doc-gen': 'Generating documentation',
   'voiceover': 'Generating voice-over',
   'try-doc': 'Running test',
-  'video-analysis': 'Analyzing video',
 }
 
 const COMPLETED_LABELS: Record<Job['type'], string> = {
   'doc-gen': 'Documentation ready',
   'voiceover': 'Voice-over ready',
   'try-doc': 'Test complete',
-  'video-analysis': 'Analysis complete',
 }
 
 function elapsed(startedAt: number): string {
@@ -35,7 +33,7 @@ function JobCard({ job, onDismiss, onNavigate }: { job: Job; onDismiss: () => vo
   }, [job.status, onDismiss])
 
   // Tick elapsed time for running jobs
-  const [, setTick] = __useState(0)
+  const [, setTick] = useState(0)
   useEffect(() => {
     if (job.status !== 'running') return
     const id = setInterval(() => setTick((t) => t + 1), 1000)
@@ -103,6 +101,3 @@ export function JobBadge(): React.ReactElement | null {
   if (active === 0) return null
   return <span className={styles.badge}>{active}</span>
 }
-
-// Internal — avoids name clash with React.useState in scope
-import { useState as __useState } from 'react'

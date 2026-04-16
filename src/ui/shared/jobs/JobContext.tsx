@@ -1,6 +1,6 @@
 import { createContext, useContext, useCallback, useState, type ReactNode } from 'react'
 
-export type JobType = 'doc-gen' | 'voiceover' | 'try-doc' | 'video-analysis'
+export type JobType = 'doc-gen' | 'voiceover' | 'try-doc'
 export type JobStatus = 'running' | 'completed' | 'failed'
 
 export interface Job {

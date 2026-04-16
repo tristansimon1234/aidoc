@@ -13,8 +13,13 @@ CREATE TABLE jobs (
   updated_at timestamptz DEFAULT now()
 );
 
+-- Indexes for common query patterns
 CREATE INDEX idx_jobs_project_id ON jobs(project_id);
-CREATE INDEX idx_jobs_page_id ON jobs(page_id);
+CREATE INDEX idx_jobs_run_id ON jobs(run_id);
+CREATE INDEX idx_jobs_status ON jobs(status) WHERE status = 'running';
+
+-- Prevent duplicate running jobs for the same page + type
+CREATE UNIQUE INDEX idx_jobs_page_type_running ON jobs(page_id, type) WHERE status = 'running';
 
 -- RLS: users see jobs for their own projects
 ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
@@ -22,3 +27,16 @@ ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own jobs"
   ON jobs FOR ALL
   USING (project_id IN (SELECT id FROM projects WHERE user_id = auth.uid()));
+
+-- Auto-cleanup: delete completed/failed jobs older than 24h
+CREATE OR REPLACE FUNCTION cleanup_old_jobs() RETURNS trigger AS $$
+BEGIN
+  DELETE FROM jobs WHERE status IN ('completed', 'failed') AND updated_at < now() - interval '24 hours';
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_cleanup_old_jobs
+  AFTER INSERT ON jobs
+  FOR EACH STATEMENT
+  EXECUTE FUNCTION cleanup_old_jobs();

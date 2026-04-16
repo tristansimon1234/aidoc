@@ -145,12 +145,22 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
         const page = await findPageById(run.docPageId)
         if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
         const { createJob, updateJobStatus } = await import('./job.repository.js')
-        const job = await createJob({
-          runId: params.data.id,
-          pageId: run.docPageId,
-          projectId: page.projectId,
-          type: 'doc-gen',
-        })
+
+        let job: { id: string }
+        try {
+          job = await createJob({
+            runId: params.data.id,
+            pageId: run.docPageId,
+            projectId: page.projectId,
+            type: 'doc-gen',
+          })
+        } catch (dupErr) {
+          // Unique constraint violation = job already running for this page
+          if ((dupErr as Error).message?.includes('duplicate') || (dupErr as Error).message?.includes('unique')) {
+            throw new AppError('A doc generation is already running for this page', 'JOB_ALREADY_RUNNING', 409)
+          }
+          throw dupErr
+        }
 
         try {
           await runService.analyzeVideo(params.data.id, body.videoPath)

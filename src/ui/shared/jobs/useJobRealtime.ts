@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../api/supabase.js'
 import { useJobs } from './JobContext.js'
 
@@ -10,33 +10,39 @@ import { useJobs } from './JobContext.js'
 export function useJobRealtime(): void {
   const { jobs, updateJob } = useJobs()
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const updateJobRef = useRef(updateJob)
+  updateJobRef.current = updateJob
+
+  // Stable string key — only re-subscribe when the set of running IDs changes
+  const runningIds = useMemo(
+    () => jobs.filter((j) => j.status === 'running').map((j) => j.runId).sort().join(','),
+    [jobs],
+  )
 
   useEffect(() => {
-    const runningJobs = jobs.filter((j) => j.status === 'running')
-    if (runningJobs.length === 0) {
+    if (!runningIds) {
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
       return
     }
 
-    const runningIds = runningJobs.map((j) => j.runId)
+    const ids = runningIds.split(',')
 
     const poll = async (): Promise<void> => {
       try {
         const { data } = await supabase
           .from('jobs')
-          .select('id, run_id, status, error')
-          .in('run_id', runningIds)
-          .order('created_at', { ascending: false })
+          .select('id, run_id, status')
+          .in('run_id', ids)
 
         if (!data) return
         for (const row of data) {
           const status = row.status as string
           if (status === 'completed' || status === 'failed') {
-            updateJob(row.run_id as string, { status: status as 'completed' | 'failed' })
+            updateJobRef.current(row.run_id as string, { status: status as 'completed' | 'failed' })
           }
         }
       } catch {
-        // Query failed — retry next cycle
+        // Retry next cycle
       }
     }
 
@@ -46,7 +52,9 @@ export function useJobRealtime(): void {
     return () => {
       if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null }
     }
-  }, [jobs, updateJob])
+  }, [runningIds]) // Stable dep — only changes when running job set changes
+
+  return
 }
 
 /**
@@ -63,35 +71,29 @@ export function useLoadJobsFromDB(projectId: string | undefined): void {
 
     void (async () => {
       try {
+        // Single query with page title join
         const { data } = await supabase
           .from('jobs')
-          .select('run_id, page_id, type, status, created_at')
+          .select('run_id, page_id, type, status, doc_pages!inner(title)')
           .eq('project_id', projectId)
-          .in('status', ['running'])
+          .eq('status', 'running')
           .order('created_at', { ascending: false })
 
         if (!data) return
 
-        // Also fetch page titles for display
-        const pageIds = [...new Set(data.map((j) => j.page_id as string))]
-        const { data: pages } = await supabase
-          .from('doc_pages')
-          .select('id, title')
-          .in('id', pageIds)
-
-        const titleMap = new Map((pages ?? []).map((p) => [p.id as string, p.title as string]))
-
         for (const row of data) {
+          const pages = row.doc_pages as unknown as { title: string } | { title: string }[]
+          const title = Array.isArray(pages) ? pages[0]?.title : pages?.title
           addJob({
             runId: row.run_id as string,
             pageId: row.page_id as string,
-            pageTitle: titleMap.get(row.page_id as string) ?? 'Page',
+            pageTitle: title ?? 'Page',
             type: row.type as 'doc-gen' | 'voiceover' | 'try-doc',
             status: 'running',
           })
         }
-      } catch {
-        // Failed to load — jobs will appear when created
+      } catch (err) {
+        console.warn('[jobs] Failed to load from DB:', err)
       }
     })()
   }, [projectId, addJob])
