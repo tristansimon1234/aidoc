@@ -58,7 +58,7 @@ interface ScreenRecorderProps {
   hasExistingVoiceover?: boolean
 }
 
-export function ScreenRecorder({ pageId, page, onComplete, hasExistingVoiceover }: ScreenRecorderProps): React.ReactElement {
+export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRecorderProps): React.ReactElement {
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
@@ -138,8 +138,8 @@ export function ScreenRecorder({ pageId, page, onComplete, hasExistingVoiceover 
       setStatus('analyzing')
       await api.runs.analyzeVideo(run.id, videoPath, { generateDoc: true })
       addJob({ runId: run.id, pageId, pageTitle: page.title, type: 'doc-gen', status: 'running' })
-
-      await onComplete()
+      // Don't call onComplete() here — the pipeline is still running server-side.
+      // The polling in useJobRealtime will detect completion and trigger auto-refresh.
     } catch (err) {
       setError((err as Error).message)
     } finally {

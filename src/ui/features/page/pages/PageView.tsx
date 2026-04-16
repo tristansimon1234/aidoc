@@ -177,6 +177,7 @@ export function PageView(): React.ReactElement {
     if (prevDocGenStatus.current === 'running' && activeDocGenJob?.status === 'completed') {
       void fetchData()
       void context.refetchPages()
+      setActiveTab('doc')
     }
     prevDocGenStatus.current = activeDocGenJob?.status
   }, [activeDocGenJob?.status, fetchData, context])
