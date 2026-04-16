@@ -7,6 +7,7 @@ import {
   EmptyState,
   TableOfContents,
   ProgressLoader,
+  useConfirmDialog,
 } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
@@ -53,6 +54,7 @@ export function PageView(): React.ReactElement {
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
   const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
+  const { dialog: confirmDialog, confirm } = useConfirmDialog()
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -316,6 +318,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
   return (
     <div>
+      {confirmDialog}
       {/* Header — publish toggle */}
       <div className={styles.pageHeader}>
         <div className={styles.tabBar}>
@@ -481,8 +484,11 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
                 {latestRunId && page.content && (
                   <Button size="sm" disabled={generatingVoiceover} onClick={() => {
-                    if (voiceoverUrl && !window.confirm('This will replace the existing voice-over. Continue?')) return
                     void (async () => {
+                      if (voiceoverUrl) {
+                        const ok = await confirm({ title: 'Replace voice-over?', message: 'The existing voice-over will be permanently replaced by the new generation.', confirmLabel: 'Replace', variant: 'danger' })
+                        if (!ok) return
+                      }
                       setGeneratingVoiceover(true)
                       try {
                         const result = await api.runs.generateVoiceover(latestRunId, {

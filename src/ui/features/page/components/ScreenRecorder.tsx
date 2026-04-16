@@ -1,5 +1,5 @@
 import { type ChangeEvent, useState, useRef, useEffect } from 'react'
-import { Button, ProgressLoader } from '../../../design-system/components/index.js'
+import { Button, ProgressLoader, useConfirmDialog } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO } from '../../../shared/api/client.js'
 import { updatePage as dbUpdatePage } from '../../../shared/api/db.js'
 import styles from '../pages/PageView.module.css'
@@ -61,6 +61,7 @@ interface ScreenRecorderProps {
 export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistingVoiceover }: ScreenRecorderProps): React.ReactElement {
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
+  const { dialog: confirmDialog, confirm } = useConfirmDialog()
   const [elapsed, setElapsed] = useState(0)
   const [hasExtension, setHasExtension] = useState(false)
   const [micEnabled, setMicEnabled] = useState(true)
@@ -93,7 +94,10 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
   }, [])
 
   const processVideo = async (file: File | Blob, fileName: string, domEvents?: DomEvent[]): Promise<void> => {
-    if (hasExistingVoiceover && !window.confirm('Uploading a new video will replace the current video and voice-over. Continue?')) return
+    if (hasExistingVoiceover) {
+      const ok = await confirm({ title: 'Replace video?', message: 'The current video and voice-over will be permanently replaced.', confirmLabel: 'Replace', variant: 'danger' })
+      if (!ok) return
+    }
     setError(null)
     try {
       // 1. Create a run
@@ -333,6 +337,7 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
   // Idle — record + upload stacked vertically (dashed border style)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', height: '100%' }}>
+      {confirmDialog}
       {/* Record button */}
       <button
         type="button"
