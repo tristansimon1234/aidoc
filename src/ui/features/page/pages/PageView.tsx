@@ -508,10 +508,11 @@ DO NOT generate new documentation. Only verify the existing one.`
                       onAudioUrlChange={(url) => setVoiceoverUrl(`${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`)}
                     />
                   </div>
-                  <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: 0, lineHeight: 1.5 }}>
-                    Click any segment text to edit it, then press Enter or the refresh icon to regenerate just that segment.
-                    Drag the blue trim handles on the timeline to cut the video start/end.
-                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                    <div title="Click any segment text to edit it, then press Enter or the refresh icon to regenerate just that segment. Drag the blue trim handles on the timeline to cut the video start/end." style={{ display: 'flex', alignItems: 'center', cursor: 'help', color: 'var(--color-muted-fg)' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" /></svg>
+                    </div>
+                  </div>
                 </>
               )}
             </div>
