@@ -309,6 +309,9 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
   const handleSaveContent = async (markdown: string): Promise<void> => {
     if (!projectId || !pageId) return
     await dbUpdatePage(projectId, pageId, { content: markdown })
+    // Update local + sidebar cache so navigation doesn't show stale content
+    setPage((prev) => prev ? { ...prev, content: markdown } : prev)
+    void context.refetchPages()
   }
 
   if (loading) return <Spinner size="lg" />
