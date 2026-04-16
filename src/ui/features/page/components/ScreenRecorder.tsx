@@ -133,13 +133,20 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
         await fetch(eventsSignedUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: eventsBlob })
       }
 
-      // 3. Analyze + generate doc — entire pipeline runs server-side.
-      // Responds 202 immediately so user can navigate freely.
+      // 3. Analyze + generate doc — server keeps the HTTP connection open.
+      // The fetch() continues even if the user navigates (client-side routing).
+      // Register job in tracker so user sees progress globally.
       setStatus('analyzing')
-      await api.runs.analyzeVideo(run.id, videoPath, { generateDoc: true })
       addJob({ runId: run.id, pageId, pageTitle: page.title, type: 'doc-gen', status: 'running' })
-      // Don't call onComplete() here — the pipeline is still running server-side.
-      // The polling in useJobRealtime will detect completion and trigger auto-refresh.
+
+      // Fire-and-forget: the fetch runs in background even if component unmounts
+      api.runs.analyzeVideo(run.id, videoPath, { generateDoc: true })
+        .then(() => {
+          // Polling will detect the generated_docs row and mark job complete
+        })
+        .catch((err) => {
+          console.error('[process-video] Pipeline failed:', err)
+        })
     } catch (err) {
       setError((err as Error).message)
     } finally {

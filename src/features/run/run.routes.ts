@@ -135,32 +135,19 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
         throw new ValidationError('videoPath is required')
       }
 
-      // If generateDoc flag is set, respond immediately and run the full pipeline in background
+      // Analyze video (blocking — keeps HTTP connection open)
+      const result = await runService.analyzeVideo(params.data.id, body.videoPath)
+
+      // If generateDoc flag is set, also generate doc before responding
       if (body.generateDoc) {
-        res.status(202).json({ runId: params.data.id, status: 'running' })
-        void (async () => {
-          try {
-            await runService.analyzeVideo(params.data.id, body.videoPath!)
-            await runService.generateDoc(params.data.id)
-            // Update linked page status to published
-            const run = await runService.getRun(params.data.id)
-            if (run.docPageId) {
-              const { updatePage } = await import('../page/page.repository.js')
-              await updatePage(run.docPageId, { status: 'published' })
-            }
-          } catch (err) {
-            console.error(`[process-video] Background pipeline failed for ${params.data.id}:`, err)
-            // Mark run as failed so polling picks it up
-            try {
-              const { updateRunStatus } = await import('./run.repository.js')
-              await updateRunStatus(params.data.id, 'failed')
-            } catch { /* ignore */ }
-          }
-        })()
-        return
+        await runService.generateDoc(params.data.id)
+        const run = await runService.getRun(params.data.id)
+        if (run.docPageId) {
+          const { updatePage } = await import('../page/page.repository.js')
+          await updatePage(run.docPageId, { status: 'published' })
+        }
       }
 
-      const result = await runService.analyzeVideo(params.data.id, body.videoPath)
       res.status(200).json(result)
     } catch (err) {
       next(err)
