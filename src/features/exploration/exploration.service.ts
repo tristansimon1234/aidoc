@@ -256,9 +256,14 @@ Rules:
             if (callId) resultMap.set(callId, trObj.result)
           }
 
-          // Extract agent reasoning — Gemini may put it in different fields than Claude
+          // Extract agent reasoning — try multiple fields (Gemini vs Claude structure)
           const eventObj = event as Record<string, unknown>
           const agentText = (event.text ?? eventObj.reasoning ?? eventObj.thought ?? eventObj.message ?? '') as string
+
+          // Debug: log event keys for first few steps to understand Gemini's output shape
+          if (!agentText && stepCounter < 3) {
+            console.log(`[exploration] Step ${stepCounter} event keys (no reasoning text):`, Object.keys(eventObj).join(', '))
+          }
 
           // Auto-fill file inputs after each step (if file was uploaded to Browserbase)
           if (uploadedFilePath) {
@@ -280,7 +285,7 @@ Rules:
             }
           }
 
-          // FIX 1: Capture the ACTUAL browser URL (not tool arg URL)
+          // Capture the ACTUAL browser URL (not tool arg URL)
           const activePage = session.context.activePage()
           const currentUrl = activePage ? activePage.url() : run.startUrl
 
@@ -295,14 +300,23 @@ Rules:
 
             const description = buildToolDescription(toolName, args, toolResult)
 
-            // FIX 2: Capture tool result (success/failure) alongside reasoning
+            // Build rich observation from ALL available data — Gemini often has
+            // empty reasoning but args contain the instruction/intent
+            const observationParts: string[] = []
+            if (agentText) observationParts.push(agentText.slice(0, 4000))
+            // Include tool args as intent (critical for Gemini which may not provide reasoning)
+            if (args) {
+              const argsStr = Object.entries(args)
+                .filter(([, v]) => typeof v === 'string' && (v as string).length > 0)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(', ')
+              if (argsStr) observationParts.push(`[Intent: ${argsStr}]`)
+            }
             const toolResultStr = toolResult
               ? JSON.stringify(toolResult).slice(0, 2000)
               : ''
-            const fullObservation = [
-              agentText.slice(0, 4000),
-              toolResultStr ? `\n[Tool result: ${toolResultStr}]` : '',
-            ].join('')
+            if (toolResultStr) observationParts.push(`[Result: ${toolResultStr}]`)
+            const fullObservation = observationParts.join('\n') || description
 
             const record: AgentActionRecord = {
               type: toolName,
