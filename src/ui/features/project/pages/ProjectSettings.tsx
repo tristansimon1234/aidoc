@@ -233,15 +233,14 @@ export function ProjectSettings(): React.ReactElement {
               {uploadError && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', margin: '0 0 var(--space-sm)' }}>{uploadError}</p>}
               {resources.map((r, i) => (
                 <div key={i} className={styles.credRow}>
-                  <select value={r.type} onChange={(e) => {
-                      const val = e.target.value as Resource['type']
-                      setResources((prev) => prev.map((res, j) => j === i ? { ...res, type: val } : res))
-                    }}
-                    className={styles.credInput} style={{ padding: '6px 8px' }}>
-                    <option value="url">URL</option>
-                    <option value="file">File</option>
-                    <option value="note">Note</option>
-                  </select>
+                  <div className={styles.typeToggle}>
+                    {(['url', 'file', 'note'] as const).map((t) => (
+                      <button key={t} type="button"
+                        className={`${styles.typeBtn} ${r.type === t ? styles.typeBtnActive : ''}`}
+                        onClick={() => setResources((prev) => prev.map((res, j) => j === i ? { ...res, type: t } : res))}
+                      >{t === 'url' ? 'URL' : t === 'file' ? 'File' : 'Note'}</button>
+                    ))}
+                  </div>
                   <input className={styles.credInput} value={r.label}
                     onChange={(e) => {
                       const val = e.target.value
