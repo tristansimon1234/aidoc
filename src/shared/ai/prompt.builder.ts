@@ -254,6 +254,7 @@ CRITICAL RULES:
 - If a step is vague or could be interpreted multiple ways → that is AMBIGUOUS
 - Be honest, specific, and actionable. Vague observations are useless.
 - Scores should be realistic (not inflated). A doc with multiple failures should NOT score 8/10.
+- AUTHENTICATION IS IMPLICIT: SaaS documentation universally assumes the user is already logged in. Do NOT flag the absence of login instructions as a doc gap, implicit assumption, or failure. If the agent had to log in before starting, that is expected and should not affect scores.
 
 Return ONLY valid JSON (no markdown fences, no extra text).`
 

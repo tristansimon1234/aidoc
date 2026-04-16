@@ -254,7 +254,6 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 - Do NOT explore other parts of the application. Stay on the documented path only.
 - Do NOT fill in gaps in the documentation with your own knowledge.
 - If the doc says "click Settings" and you see "Preferences" — that is a FAIL. Stop.
-- AUTHENTICATION IS IMPLICIT: If you encounter a login page, log in using the provided test credentials. Do NOT flag the absence of login instructions as a documentation gap — it is standard practice for SaaS documentation to assume the user is already authenticated.
 - If the doc assumes you know something it never explained — that is a FAIL. Stop.
 - If the product shows an error — note the exact error message and STOP.
 - Do NOT take screenshots — they are handled automatically.
