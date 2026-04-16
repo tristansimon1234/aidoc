@@ -269,61 +269,66 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
     const controller = new AbortController()
     abortRef.current = controller
-    try {
-      const run = await api.runs.create({
-        featureName: `[Test] ${page.title}`,
-        startUrl: testUrl,
-        goal: `Verify documentation for "${page.title}"`,
-        docPageId: pageId,
-      })
-      addJob({ runId: run.id, pageId: pageId!, pageTitle: page.title, type: 'try-doc', status: 'running' })
 
-      // Phase 1: Explore with naive user prompt
-      await api.runs.exploreStream(
-        run.id,
-        (event: StepEventDTO) => {
-          switch (event.type) {
-            case 'live':
-              setLiveUrl(event.liveUrl ?? null)
-              if (event.liveUrl) updateJob(run.id, { liveUrl: event.liveUrl })
-              break
-            case 'status':
-            case 'step':
-              if (event.message && event.message.length > 10) {
-                setTryStreamSteps((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
-              }
-              setStatusMessage(event.message ?? null)
-              break
-            case 'done': setStatusMessage('Exploration complete — analyzing results...'); break
-            case 'error': setStatusMessage(event.message ?? 'Error'); break
-          }
-        },
-        tryDocPrompt,
-        controller.signal,
-      )
+    // Run the entire pipeline without await — component can unmount freely.
+    // State updates go through refs so they work on remount.
+    void (async () => {
+      try {
+        const run = await api.runs.create({
+          featureName: `[Test] ${page.title}`,
+          startUrl: testUrl,
+          goal: `Verify documentation for "${page.title}"`,
+          docPageId: pageId,
+        })
+        addJob({ runId: run.id, pageId: pageId!, pageTitle: page.title, type: 'try-doc', status: 'running' })
 
-      if (controller.signal.aborted) return
+        // Phase 1: Explore with naive user prompt
+        await api.runs.exploreStream(
+          run.id,
+          (event: StepEventDTO) => {
+            switch (event.type) {
+              case 'live':
+                setLiveUrl(event.liveUrl ?? null)
+                if (event.liveUrl) updateJob(run.id, { liveUrl: event.liveUrl })
+                break
+              case 'status':
+              case 'step':
+                if (event.message && event.message.length > 10) {
+                  setTryStreamSteps((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
+                }
+                setStatusMessage(event.message ?? null)
+                break
+              case 'done': setStatusMessage('Exploration complete — analyzing results...'); break
+              case 'error': setStatusMessage(event.message ?? 'Error'); break
+            }
+          },
+          tryDocPrompt,
+          controller.signal,
+        )
 
-      // Phase 2: Analyze with Gemini → structured report
-      setTryRunning(false)
-      setLiveUrl(null)
-      updateJob(run.id, { liveUrl: undefined })
-      setAnalyzing(true)
-      setStatusMessage('Generating test report...')
+        if (controller.signal.aborted) return
 
-      const report = await api.runs.analyzeTry(run.id, page.content, page.title, pageId)
-      setTryReport(report)
-      setStatusMessage(null)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        setError((err as Error).message)
+        // Phase 2: Analyze with Gemini → structured report
+        setTryRunning(false)
+        setLiveUrl(null)
+        updateJob(run.id, { liveUrl: undefined })
+        setAnalyzing(true)
+        setStatusMessage('Generating test report...')
+
+        const report = await api.runs.analyzeTry(run.id, page.content ?? '', page.title, pageId)
+        setTryReport(report)
+        setStatusMessage(null)
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          setError((err as Error).message)
+        }
+      } finally {
+        abortRef.current = null
+        setTryRunning(false)
+        setAnalyzing(false)
+        setLiveUrl(null)
       }
-    } finally {
-      abortRef.current = null
-      setTryRunning(false)
-      setAnalyzing(false)
-      setLiveUrl(null)
-    }
+    })()
   }
 
   // Debounced page metadata update — flushes on unmount to prevent data loss
