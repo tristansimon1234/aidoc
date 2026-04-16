@@ -81,9 +81,7 @@ export function PageView(): React.ReactElement {
       setLoading(true)
     }
     setError(null)
-    setLiveUrl(null)
     setStatusMessage(null)
-    setActiveTab('doc')
     // Reset run-dependent state
     setVideoUrl(null)
     setVoiceoverUrl(null)
@@ -97,6 +95,15 @@ export function PageView(): React.ReactElement {
     setPreflightResult(null)
     setPreflightLoading(false)
     setGeneratingVoiceover(false)
+    // Restore liveUrl + tab for pages with active test, reset for others
+    const incomingTestJob = getJobForPage(pageId!, 'try-doc')
+    if (incomingTestJob?.status === 'running' && incomingTestJob.liveUrl) {
+      setLiveUrl(incomingTestJob.liveUrl)
+      setActiveTab('test')
+    } else {
+      setLiveUrl(null)
+      setActiveTab('doc')
+    }
   }
 
   const fetchData = useCallback(async () => {
