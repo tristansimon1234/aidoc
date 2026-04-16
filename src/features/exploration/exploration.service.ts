@@ -158,7 +158,7 @@ Use these credentials to log in when you encounter a login page. The values are 
           parts.push(`**Reference materials**:\n${contextBlocks.join('\n')}`)
         }
         if (uploadable.length > 0) {
-          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. Files are automatically injected into file inputs on the page. When you reach an upload step, wait a moment — the file will appear in the upload area automatically. Do NOT click the upload button/zone (it opens a file picker that blocks everything). Instead, observe the file input being filled and proceed to the next action (like clicking Submit or Continue).`)
+          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. When you encounter a file upload input, click it normally — the file will be provided automatically (no manual selection needed).`)
         }
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
@@ -183,9 +183,9 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // File upload via JS evaluate — bypasses Stagehand's locator wrapper entirely.
-    // Converts buffer to base64, sends to browser, creates a File object in JS,
-    // sets it on the input and dispatches change+input events.
+    // File upload: intercept clicks on file inputs and inject the file via JS.
+    // Agent clicks upload normally → our click handler catches it → injects file
+    // → dispatches change/input events → component reacts. No file picker opens.
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
@@ -200,13 +200,14 @@ Rules:
             : firstFile.fileName.endsWith('.pdf') ? 'application/pdf'
               : 'application/octet-stream'
       const base64 = firstFile.fileBuffer.toString('base64')
-      console.log(`[exploration] File ready for JS injection: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes, ${base64.length} chars b64)`)
+      console.log(`[exploration] File ready for click interception: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
 
+      // Install click interceptors on file inputs via polling
+      // Once installed, clicking the input injects the file instead of opening the picker
       fileUploadPolling = true
       void (async () => {
         let pollCount = 0
-        let injected = false
-        while (fileUploadPolling && !injected) {
+        while (fileUploadPolling) {
           await new Promise((resolve) => setTimeout(resolve, 2000))
           if (!fileUploadPolling) break
           pollCount++
@@ -214,45 +215,61 @@ Rules:
             const page = session.context.activePage()
             if (!page) continue
 
-            // Use page.evaluate to find file inputs and inject file via JS
-            const result = await page.evaluate(
+            const installed = await page.evaluate(
               ({ b64, fileName, mime }: { b64: string; fileName: string; mime: string }) => {
-                const inputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]')
-                if (inputs.length === 0) return { found: 0, filled: false }
-                for (const input of inputs) {
-                  if (input.dataset.aidocFilled) continue
-                  try {
+                let count = 0
+                document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((input) => {
+                  if (input.dataset.aidocIntercepted) return
+                  input.dataset.aidocIntercepted = 'true'
+                  count++
+                  // Intercept click: prevent file picker, inject file instead
+                  input.addEventListener('click', (e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
                     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
                     const file = new File([bytes], fileName, { type: mime })
                     const dt = new DataTransfer()
                     dt.items.add(file)
                     input.files = dt.files
-                    input.dataset.aidocFilled = 'true'
-                    // Dispatch both events — React listens on 'input', native on 'change'
                     input.dispatchEvent(new Event('input', { bubbles: true }))
                     input.dispatchEvent(new Event('change', { bubbles: true }))
-                    return { found: inputs.length, filled: true }
-                  } catch (err) {
-                    return { found: inputs.length, filled: false, error: String(err) }
-                  }
+                  })
+                })
+                // Also watch for dynamically added file inputs
+                if (!(window as Record<string, unknown>).__aidocFileObserver) {
+                  (window as Record<string, unknown>).__aidocFileObserver = true
+                  new MutationObserver(() => {
+                    document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach((inp) => {
+                      if (inp.dataset.aidocIntercepted) return
+                      inp.dataset.aidocIntercepted = 'true'
+                      inp.addEventListener('click', (e) => {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+                        const file = new File([bytes], fileName, { type: mime })
+                        const dt = new DataTransfer()
+                        dt.items.add(file)
+                        inp.files = dt.files
+                        inp.dispatchEvent(new Event('input', { bubbles: true }))
+                        inp.dispatchEvent(new Event('change', { bubbles: true }))
+                      })
+                    })
+                  }).observe(document.body, { childList: true, subtree: true })
                 }
-                return { found: inputs.length, filled: false }
+                return count
               },
               { b64: base64, fileName: firstFile.fileName, mime: mimeType },
-            ) as { found: number; filled: boolean; error?: string }
+            ) as number
 
-            if (result.found > 0) {
-              console.log(`[file-poll] #${pollCount} found ${result.found} input(s), filled=${result.filled}${result.error ? ` error=${result.error}` : ''}`)
-              if (result.filled) injected = true
+            if (installed > 0) {
+              console.log(`[file-poll] #${pollCount} interceptors installed on ${installed} file input(s)`)
             } else if (pollCount <= 5) {
               console.log(`[file-poll] #${pollCount} no file inputs on page yet`)
             }
           } catch {
-            // Page navigated — ignore
+            // Page navigated — re-install on next poll
           }
         }
-        if (injected) console.log(`[file-poll] file injection complete`)
-      })()
     }
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
