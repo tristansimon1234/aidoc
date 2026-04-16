@@ -156,7 +156,7 @@ Use these credentials to log in when you encounter a login page. The values are 
           parts.push(`**Reference materials**:\n${contextBlocks.join('\n')}`)
         }
         if (uploadable.length > 0) {
-          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. These files are ALREADY ATTACHED to file inputs automatically. Do NOT click on file upload areas or drop zones — the file is injected for you. Just proceed to the next step as if the file was already selected.`)
+          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. When you encounter a file upload input, click it normally — the file will be provided automatically (no manual selection needed). The file dialog will close on its own.`)
         }
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
@@ -181,38 +181,44 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // Collect briefing files for auto-injection via Playwright setInputFiles
+    // Set up file upload interception via CDP
+    // Best practice: agent clicks file input normally → OS file picker opens →
+    // CDP intercepts it → we provide the file → dialog closes automatically
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
       )
 
-    // Helper: find all file inputs on current page and fill them via Playwright
-    const autoFillFileInputs = async (): Promise<void> => {
-      if (briefingFiles.length === 0) return
-      const page = session.context.activePage()
-      if (!page) return
-      const firstFile = briefingFiles[0]!
-      try {
-        const inputs = await page.locator('input[type="file"]').all()
-        for (const input of inputs) {
-          const alreadyFilled = await input.getAttribute('data-aidoc-filled')
-          if (alreadyFilled) continue
-          await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
-          await input.setInputFiles({
-            name: firstFile.fileName,
-            mimeType: 'application/octet-stream',
-            buffer: firstFile.fileBuffer,
+    if (briefingFiles.length > 0) {
+      const activePage = session.context.activePage()
+      if (activePage) {
+        const firstFile = briefingFiles[0]!
+        try {
+          // Write file to /tmp so CDP can reference it by path
+          const fs = await import('node:fs')
+          const path = await import('node:path')
+          const tmpPath = path.join('/tmp', `aidoc-upload-${Date.now()}-${firstFile.fileName}`)
+          fs.writeFileSync(tmpPath, firstFile.fileBuffer)
+
+          // Set up CDP file chooser interception
+          const cdp = await activePage.context().newCDPSession(activePage)
+          await cdp.send('Page.setInterceptFileChooserDialog', { enabled: true })
+          cdp.on('Page.fileChooserOpened', () => {
+            cdp.send('Page.handleFileChooser', {
+              action: 'accept',
+              files: [tmpPath],
+            }).then(() => {
+              console.log(`[exploration] File provided via CDP file chooser: ${firstFile.fileName}`)
+            }).catch((err: unknown) => {
+              console.error(`[exploration] CDP handleFileChooser failed:`, err)
+            })
           })
-          console.log(`[exploration] File auto-injected via setInputFiles: ${firstFile.fileName}`)
+          console.log(`[exploration] CDP file chooser interceptor ready: ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes) → ${tmpPath}`)
+        } catch (err) {
+          console.warn(`[exploration] CDP file chooser setup failed, file upload may not work:`, err)
         }
-      } catch {
-        // Page may have navigated — ignore
       }
     }
-
-    // Initial fill
-    await autoFillFileInputs()
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
 
@@ -252,9 +258,6 @@ Rules:
           // Extract agent reasoning — Gemini may put it in different fields than Claude
           const eventObj = event as Record<string, unknown>
           const agentText = (event.text ?? eventObj.reasoning ?? eventObj.thought ?? eventObj.message ?? '') as string
-
-          // Auto-fill any new file inputs that appeared since last step
-          await autoFillFileInputs()
 
           // FIX 1: Capture the ACTUAL browser URL (not tool arg URL)
           const activePage = session.context.activePage()
