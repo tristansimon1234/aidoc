@@ -156,7 +156,7 @@ Use these credentials to log in when you encounter a login page. The values are 
           parts.push(`**Reference materials**:\n${contextBlocks.join('\n')}`)
         }
         if (uploadable.length > 0) {
-          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. When you encounter a file upload input in the application, click it — the file will be provided automatically.`)
+          parts.push(`**Files available for upload**: ${uploadable.join(', ')}. These files are ALREADY ATTACHED to file inputs automatically. Do NOT click on file upload areas or drop zones — the file is injected for you. Just proceed to the next step as if the file was already selected.`)
         }
       }
       briefingBlock = `\n\n## User Briefing (PRIORITY — follow these instructions closely)\n${parts.join('\n\n')}`
@@ -181,44 +181,38 @@ Rules:
 - Cannot proceed (error, blocker, confusion) → call done. You are a naive user — if you're lost, just stop.
 - All sections explored → call done`
 
-    // Make briefing files available for upload
+    // Collect briefing files for auto-injection via Playwright setInputFiles
     const briefingFiles = (options?.briefing?.resources ?? [])
       .filter((r): r is PageResourceWithContent & { fileBuffer: Buffer; fileName: string } =>
         r.type === 'file' && !!(r as PageResourceWithContent).fileBuffer && !!(r as PageResourceWithContent).fileName,
       )
 
-    if (briefingFiles.length > 0) {
-      const activePage = session.context.activePage()
-      if (activePage) {
-        const firstFile = briefingFiles[0]!
-        // Pre-fill all visible file inputs and watch for new ones via MutationObserver.
-        // Unlike the old approach, this does NOT block clicks — it sets .files directly
-        // before or after the user/agent clicks, so the file picker still opens but the
-        // input already has a file attached.
-        const base64 = firstFile.fileBuffer.toString('base64')
-        await activePage.evaluate(
-          ({ b64, name }: { b64: string; name: string }) => {
-            const setFileOnInput = (input: HTMLInputElement): void => {
-              if (input.dataset.aidocFilled) return
-              input.dataset.aidocFilled = 'true'
-              const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
-              const f = new File([bytes], name, { type: 'application/octet-stream' })
-              const dt = new DataTransfer()
-              dt.items.add(f)
-              input.files = dt.files
-              input.dispatchEvent(new Event('change', { bubbles: true }))
-            }
-            const fillAll = (): void => {
-              document.querySelectorAll<HTMLInputElement>('input[type="file"]').forEach(setFileOnInput)
-            }
-            fillAll()
-            new MutationObserver(fillAll).observe(document.body, { childList: true, subtree: true })
-          },
-          { b64: base64, name: firstFile.fileName },
-        )
-        console.log(`[exploration] File injection ready (non-blocking): ${firstFile.fileName} (${firstFile.fileBuffer.length} bytes)`)
+    // Helper: find all file inputs on current page and fill them via Playwright
+    const autoFillFileInputs = async (): Promise<void> => {
+      if (briefingFiles.length === 0) return
+      const page = session.context.activePage()
+      if (!page) return
+      const firstFile = briefingFiles[0]!
+      try {
+        const inputs = await page.locator('input[type="file"]').all()
+        for (const input of inputs) {
+          const alreadyFilled = await input.getAttribute('data-aidoc-filled')
+          if (alreadyFilled) continue
+          await input.evaluate((el: HTMLInputElement) => { el.dataset.aidocFilled = 'true' })
+          await input.setInputFiles({
+            name: firstFile.fileName,
+            mimeType: 'application/octet-stream',
+            buffer: firstFile.fileBuffer,
+          })
+          console.log(`[exploration] File auto-injected via setInputFiles: ${firstFile.fileName}`)
+        }
+      } catch {
+        // Page may have navigated — ignore
       }
     }
+
+    // Initial fill
+    await autoFillFileInputs()
 
     emit({ type: 'status', message: isResuming ? 'Resuming exploration...' : 'Agent is exploring...' })
 
@@ -258,6 +252,9 @@ Rules:
           // Extract agent reasoning — Gemini may put it in different fields than Claude
           const eventObj = event as Record<string, unknown>
           const agentText = (event.text ?? eventObj.reasoning ?? eventObj.thought ?? eventObj.message ?? '') as string
+
+          // Auto-fill any new file inputs that appeared since last step
+          await autoFillFileInputs()
 
           // FIX 1: Capture the ACTUAL browser URL (not tool arg URL)
           const activePage = session.context.activePage()
