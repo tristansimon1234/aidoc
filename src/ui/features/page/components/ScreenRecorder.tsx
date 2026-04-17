@@ -324,9 +324,9 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
   if (status === 'uploading' || status === 'analyzing') {
     const pipelineSteps = [
       { label: 'Uploading video', estimatedSeconds: 5 },
-      { label: 'Analyzing video with AI', estimatedSeconds: 60 },
-      { label: 'Extracting screenshots', estimatedSeconds: 15 },
-      { label: 'Generating documentation', estimatedSeconds: 30 },
+      { label: 'Analyzing video with AI', estimatedSeconds: 40 },
+      { label: 'Extracting screenshots', estimatedSeconds: 10 },
+      { label: 'Generating documentation', estimatedSeconds: 15 },
     ]
     const activeStep = status === 'uploading' ? 0 : 1
     return (
