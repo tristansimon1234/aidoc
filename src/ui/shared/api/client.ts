@@ -135,7 +135,6 @@ export interface ProjectDTO {
   mcpApiKey: string | null
   mcpEnabled: boolean
   walkthroughEnabled: boolean
-  language: string
   createdAt: string
   updatedAt: string
 }
@@ -144,7 +143,6 @@ export interface ProfileDTO {
   id: string
   email: string | null
   fullName: string | null
-  preferredLanguage: string
   stripeCustomerId: string | null
   createdAt: string
   updatedAt: string
@@ -184,13 +182,13 @@ export interface DocPageDTO {
 export const api = {
   profile: {
     get: (): Promise<ProfileDTO> => request('/profile'),
-    update: (body: { fullName?: string | null; preferredLanguage?: string }): Promise<ProfileDTO> =>
+    update: (body: { fullName?: string | null }): Promise<ProfileDTO> =>
       request('/profile', { method: 'PATCH', body: JSON.stringify(body) }),
   },
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),
     get: (id: string): Promise<ProjectDTO> => request(`/projects/${id}`),
-    create: (body: { name: string; baseUrl: string; description?: string; context?: ProjectContextDTO; credentials?: { label: string; username: string; password: string }[]; language?: string }): Promise<ProjectDTO> =>
+    create: (body: { name: string; baseUrl: string; description?: string; context?: ProjectContextDTO; credentials?: { label: string; username: string; password: string }[] }): Promise<ProjectDTO> =>
       request('/projects', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>
       request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(body) }),

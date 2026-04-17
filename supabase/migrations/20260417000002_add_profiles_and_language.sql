@@ -1,13 +1,11 @@
--- PR 1: Profiles (1:1 with auth.users) + per-project language
--- Prepares the app for multi-tenant SaaS: user-level preferences (language)
--- and per-project language for generated docs / chat / widget.
+-- PR 1: Profiles (1:1 with auth.users)
+-- Prepares the app for multi-tenant SaaS: one row per authenticated user,
+-- where billing / account data will live.
 
--- Profiles: one row per authenticated user
 CREATE TABLE profiles (
   id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email text,
   full_name text,
-  preferred_language text NOT NULL DEFAULT 'en',
   stripe_customer_id text,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
@@ -36,7 +34,7 @@ BEGIN
   VALUES (
     NEW.id,
     NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NULL)
+    NEW.raw_user_meta_data->>'full_name'
   )
   ON CONFLICT (id) DO NOTHING;
   RETURN NEW;
@@ -52,9 +50,3 @@ CREATE TRIGGER on_auth_user_created
 INSERT INTO public.profiles (id, email)
 SELECT id, email FROM auth.users
 ON CONFLICT (id) DO NOTHING;
-
--- Per-project language (used by doc generation, chat, voice-over, widget)
-ALTER TABLE projects ADD COLUMN language text NOT NULL DEFAULT 'en';
-
-COMMENT ON COLUMN projects.language IS 'ISO code for generated docs, chat, voice-over, and widget UI (e.g. en, fr)';
-COMMENT ON COLUMN profiles.preferred_language IS 'User UI language preference. Projects inherit this on creation but can override.';

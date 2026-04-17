@@ -78,7 +78,6 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
         body.data.message,
         body.data.history,
         body.data.userContext,
-        project.language,
       )
 
       // Only expose walkthroughAvailable if the project has walkthrough enabled
@@ -124,7 +123,6 @@ widgetRouter.get('/:widgetKey/config', (req: Request, res: Response, next: NextF
         design: project.design ?? null,
         widgetPosition: project.design?.widgetPosition ?? 'right',
         widgetGreeting: project.design?.widgetGreeting ?? '',
-        language: project.language ?? 'en',
       })
     } catch (err) {
       next(err)
@@ -160,7 +158,6 @@ widgetRouter.post('/:widgetKey/walkthrough', largeJsonParser, (req: Request, res
           completedSteps: body.data.completedSteps ?? [],
           userContext: body.data.userContext ?? undefined,
         },
-        project.language,
       )
 
       res.status(200).json(result)

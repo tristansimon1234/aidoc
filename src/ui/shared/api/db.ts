@@ -238,7 +238,6 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     mcpApiKey: (row.mcp_api_key as string) ?? null,
     mcpEnabled: (row.mcp_enabled as boolean) ?? false,
     walkthroughEnabled: (row.walkthrough_enabled as boolean) ?? false,
-    language: (row.language as string) ?? 'en',
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }

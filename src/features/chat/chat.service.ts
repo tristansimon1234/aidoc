@@ -123,17 +123,11 @@ function needsDocSearch(message: string, _history: ChatMessage[]): boolean {
 
 // --- RAG Chat ---
 
-const LANGUAGE_NAMES: Record<string, string> = {
-  en: 'English',
-  fr: 'French (français)',
-}
-
 export async function chat(
   projectId: string,
   message: string,
   history: ChatMessage[],
   userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
-  language?: string,
 ): Promise<ChatResponse> {
   // 1. Embed the user query and search — skip for greetings/small talk
   let chunks: DocChunk[] = []
@@ -202,12 +196,7 @@ export async function chat(
     ? `\n\n## Product Knowledge\n${productContext.join('\n')}`
     : ''
 
-  const effectiveLanguage = language ?? project?.language
-  const languageBlock = effectiveLanguage
-    ? `\n\n## Language\nRespond ONLY in ${LANGUAGE_NAMES[effectiveLanguage] ?? effectiveLanguage}, regardless of what language the user wrote in.`
-    : ''
-
-  const systemPrompt = `You are a friendly, knowledgeable support assistant for a software product.${productBlock}${userContextBlock}${languageBlock}
+  const systemPrompt = `You are a friendly, knowledgeable support assistant for a software product.${productBlock}${userContextBlock}
 
 ## Your personality
 - Warm, natural, conversational — like a smart colleague helping out
@@ -366,7 +355,6 @@ async function getWalkthroughDocContext(projectId: string, message: string): Pro
 export async function generateWalkthrough(
   projectId: string,
   request: WalkthroughRequest,
-  language?: string,
 ): Promise<WalkthroughResponse> {
   // 1. RAG search (cached — same message always returns same chunks)
   const docContext = await getWalkthroughDocContext(projectId, request.message)
@@ -379,12 +367,8 @@ export async function generateWalkthrough(
     request.completedSteps ?? [],
   )
 
-  const walkthroughSystemPrompt = language
-    ? `${WALKTHROUGH_SYSTEM_PROMPT}\n\nLANGUAGE: Write the "instruction" and "hint" fields in ${LANGUAGE_NAMES[language] ?? language}.`
-    : WALKTHROUGH_SYSTEM_PROMPT
-
   const response = await generateText({
-    systemPrompt: walkthroughSystemPrompt,
+    systemPrompt: WALKTHROUGH_SYSTEM_PROMPT,
     userPrompt,
     maxTokens: 1024,
   })

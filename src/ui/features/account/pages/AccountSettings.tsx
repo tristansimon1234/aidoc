@@ -14,7 +14,6 @@ export function AccountSettings(): React.ReactElement {
   const [activeTab, setActiveTab] = useState<AccountTab>('profile')
   const [profile, setProfile] = useState<ProfileDTO | null>(null)
   const [fullName, setFullName] = useState('')
-  const [preferredLanguage, setPreferredLanguage] = useState('en')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -26,7 +25,6 @@ export function AccountSettings(): React.ReactElement {
         const p = await api.profile.get()
         setProfile(p)
         setFullName(p.fullName ?? '')
-        setPreferredLanguage(p.preferredLanguage ?? 'en')
       } catch (err) {
         setError((err as Error).message)
       } finally {
@@ -42,7 +40,6 @@ export function AccountSettings(): React.ReactElement {
     try {
       const updated = await api.profile.update({
         fullName: fullName.trim() || null,
-        preferredLanguage,
       })
       setProfile(updated)
       setSaved(true)
@@ -88,7 +85,7 @@ export function AccountSettings(): React.ReactElement {
             <div className={styles.section}>
               <div className={styles.sectionHeader}>
                 <h2 className={styles.sectionTitle}>Profile</h2>
-                <p className={styles.sectionDesc}>Your account details. The language preference is used for the UI and inherited by new projects.</p>
+                <p className={styles.sectionDesc}>Your account details.</p>
               </div>
               <div className={styles.fieldGrid}>
                 <div className={styles.field}>
@@ -103,17 +100,6 @@ export function AccountSettings(): React.ReactElement {
                     onChange={(e) => setFullName(e.target.value)}
                     placeholder="Your name"
                   />
-                </div>
-                <div className={styles.field}>
-                  <label className={styles.label}>Preferred language</label>
-                  <select
-                    className={styles.input}
-                    value={preferredLanguage}
-                    onChange={(e) => setPreferredLanguage(e.target.value)}
-                  >
-                    <option value="en">English</option>
-                    <option value="fr">Français</option>
-                  </select>
                 </div>
               </div>
               <div className={styles.saveBar}>

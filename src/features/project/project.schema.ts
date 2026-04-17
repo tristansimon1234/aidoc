@@ -19,15 +19,12 @@ const ProjectContextSchema = z.object({
   quirks: z.string(),
 })
 
-const LanguageSchema = z.enum(['en', 'fr'])
-
 export const CreateProjectSchema = z.object({
   name: z.string().min(1, 'Project name is required'),
   baseUrl: z.string().url('Must be a valid URL'),
   description: z.string().optional(),
   context: ProjectContextSchema.optional(),
   credentials: z.array(CredentialSchema).optional(),
-  language: LanguageSchema.optional(),
 })
 
 export const DiscoveredContextSchema = z.object({
@@ -58,7 +55,6 @@ export const UpdateProjectSchema = z.object({
   discoveredContext: DiscoveredContextSchema.optional(),
   design: DesignSchema.optional(),
   walkthroughEnabled: z.boolean().optional(),
-  language: LanguageSchema.optional(),
 })
 
 export const ProjectIdParamSchema = UuidParamSchema

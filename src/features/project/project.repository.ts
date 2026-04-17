@@ -18,7 +18,6 @@ interface ProjectRow {
   mcp_api_key: string | null
   mcp_enabled: boolean
   walkthrough_enabled: boolean
-  language: string
   created_at: string
   updated_at: string
 }
@@ -40,7 +39,6 @@ function mapToProject(row: ProjectRow): Project {
     mcpApiKey: row.mcp_api_key,
     mcpEnabled: row.mcp_enabled,
     walkthroughEnabled: row.walkthrough_enabled,
-    language: row.language,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -56,7 +54,6 @@ export async function createProject(userId: string, input: CreateProjectInput): 
       description: input.description ?? null,
       context: input.context ?? null,
       credentials: input.credentials ?? null,
-      ...(input.language ? { language: input.language } : {}),
     })
     .select('*')
     .single()
@@ -92,7 +89,6 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   if (input.discoveredContext !== undefined) updates.discovered_context = input.discoveredContext
   if (input.design !== undefined) updates.design = input.design
   if (input.walkthroughEnabled !== undefined) updates.walkthrough_enabled = input.walkthroughEnabled
-  if (input.language !== undefined) updates.language = input.language
 
   const { data, error } = await supabase
     .from('projects')

@@ -203,23 +203,8 @@ IMPORTANT: If the exploration shows that the agent could NOT access certain feat
 - Do NOT pad the document with speculation about blocked features
 - Keep the document focused and honest — short and accurate is better than long and fabricated`
 
-const LANGUAGE_NAMES: Record<string, string> = {
-  en: 'English',
-  fr: 'French (français)',
-}
-
-function languageDirective(language?: string): string {
-  if (!language) return ''
-  const name = LANGUAGE_NAMES[language] ?? language
-  return `\n\n### Language\nWrite the entire document (headings, captions, body text) in ${name}. Ignore the "same language as the website" rule above — the language is fixed to ${name}.`
-}
-
-export function getDocSystemPrompt(language?: string): string {
-  return DOC_SYSTEM_PROMPT + languageDirective(language)
-}
-
-export function getVideoDocSystemPrompt(language?: string): string {
-  return VIDEO_DOC_SYSTEM_PROMPT + languageDirective(language)
+export function getDocSystemPrompt(): string {
+  return DOC_SYSTEM_PROMPT
 }
 
 export function buildDocumentationPrompt(context: {
@@ -232,7 +217,6 @@ export function buildDocumentationPrompt(context: {
   tableOfContents?: string
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
   runStatus?: string
-  language?: string
 }): string {
   const counts = countByImportance(context.steps)
 
@@ -269,15 +253,11 @@ ${counts.withScreenshots < counts.key / 2 ? `- WARNING: Only ${counts.withScreen
     ? `\n## Available Screenshots — YOU MUST USE ALL OF THESE\nPlaceholders: ${availablePlaceholders.join(', ')}\nEmbed each one inline at the relevant walkthrough step using: ![caption]({{SCREENSHOT_N}})\n`
     : ''
 
-  const languageBlock = context.language
-    ? `\n## Language\nWrite the entire document in ${LANGUAGE_NAMES[context.language] ?? context.language}.\n`
-    : ''
-
   return `## Product
 Name: "${context.featureName}"
 URL: ${context.startUrl}
 Goal: "${context.goal}"
-${projectBlock}${tocBlock}${pageSummariesBlock}${statusBlock}${screenshotListBlock}${languageBlock}
+${projectBlock}${tocBlock}${pageSummariesBlock}${statusBlock}${screenshotListBlock}
 ## Exploration Data
 
 Steps marked [KEY] are important user actions. Steps marked [supporting] are navigation/setup.
