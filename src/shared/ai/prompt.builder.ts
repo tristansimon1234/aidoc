@@ -237,11 +237,19 @@ ${context.runStatus === 'failed' ? '- Exploration FAILED — generate best-effor
 ${counts.withScreenshots < counts.key / 2 ? `- WARNING: Only ${counts.withScreenshots} out of ${counts.key} key steps have screenshots. Compensate with detailed visual descriptions.` : ''}
 `
 
+  // Build explicit list of available screenshot placeholders
+  const availablePlaceholders = context.steps
+    .map((s, i) => s.screenshotUrl && s.screenshotUrl.startsWith('http') ? `{{SCREENSHOT_${i}}}` : null)
+    .filter(Boolean)
+  const screenshotListBlock = availablePlaceholders.length > 0
+    ? `\n## Available Screenshots — YOU MUST USE ALL OF THESE\nPlaceholders: ${availablePlaceholders.join(', ')}\nEmbed each one inline at the relevant walkthrough step using: ![caption]({{SCREENSHOT_N}})\n`
+    : ''
+
   return `## Product
 Name: "${context.featureName}"
 URL: ${context.startUrl}
 Goal: "${context.goal}"
-${projectBlock}${tocBlock}${pageSummariesBlock}${statusBlock}
+${projectBlock}${tocBlock}${pageSummariesBlock}${statusBlock}${screenshotListBlock}
 ## Exploration Data
 
 Steps marked [KEY] are important user actions. Steps marked [supporting] are navigation/setup.
