@@ -8,6 +8,7 @@ import { questionsRouter } from './features/questions/questions.routes.js'
 import { documentationRouter } from './features/documentation/documentation.routes.js'
 import { chatRouter } from './features/chat/chat.routes.js'
 import { widgetRouter } from './features/chat/widget.routes.js'
+import { mcpRouter } from './features/chat/mcp.routes.js'
 import { publicDocsRouter } from './features/page/public-docs.routes.js'
 import { errorHandler } from './shared/middleware/error.middleware.js'
 
@@ -18,6 +19,7 @@ app.use(express.json())
 
 // Public routes — no auth
 app.use('/widget', widgetRouter)
+app.use('/mcp', mcpRouter)
 app.use('/docs', publicDocsRouter)
 
 app.use(authMiddleware)
