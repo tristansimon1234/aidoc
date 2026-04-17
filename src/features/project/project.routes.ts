@@ -257,21 +257,11 @@ projectRouter.get('/:id/usage', (req: Request, res: Response, next: NextFunction
 
       const { supabase } = await import('../../shared/db/supabase.client.js')
 
-      const { data: pages } = await supabase
-        .from('doc_pages')
-        .select('id')
-        .eq('project_id', params.data.id)
-
-      const pageIds = (pages ?? []).map((p) => p.id as string)
-      if (pageIds.length === 0) {
-        res.json({ totalTokens: 0, runs: 0, estimatedCost: 0, breakdown: [] })
-        return
-      }
-
+      // Query runs directly by project_id (survives page deletion)
       const { data: runs } = await supabase
         .from('runs')
         .select('id, feature_name, token_usage, created_at, status')
-        .in('doc_page_id', pageIds)
+        .eq('project_id', params.data.id)
         .order('created_at', { ascending: false })
 
       const allRuns = runs ?? []
