@@ -3,6 +3,22 @@ import type { Request, Response, NextFunction } from 'express'
 import { ValidationError, NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import { ChatRequestSchema, WalkthroughRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
+import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
+import type { Project } from '../project/project.types.js'
+
+// Fire-and-forget session tracking: we don't want AI latency coupled to
+// billing, and we don't want to block the user if the counter write fails.
+function trackWidgetSession(project: Project, sessionToken: string | undefined): void {
+  if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
+  void (async () => {
+    try {
+      const isNew = await registerChatSession(project.id, project.userId, sessionToken, 'widget')
+      if (isNew) await incrementUsage(project.userId, 'chat_sessions')
+    } catch (err) {
+      console.warn('[usage] widget session track failed:', (err as Error).message)
+    }
+  })()
+}
 
 export const widgetRouter = Router()
 
@@ -72,6 +88,10 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
 
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
+
+      // Billing: register the chat session (dedup per cookie+month)
+      const sessionToken = (req.body as { sessionToken?: string }).sessionToken
+      trackWidgetSession(project, sessionToken)
 
       const result = await chatService.chat(
         project.id,
@@ -148,6 +168,9 @@ widgetRouter.post('/:widgetKey/walkthrough', largeJsonParser, (req: Request, res
 
       const body = WalkthroughRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const wtSessionToken = (req.body as { sessionToken?: string }).sessionToken
+      trackWidgetSession(project, wtSessionToken)
 
       const result = await chatService.generateWalkthrough(
         project.id,

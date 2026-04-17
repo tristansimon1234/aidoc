@@ -139,6 +139,74 @@ export interface ProjectDTO {
   updatedAt: string
 }
 
+export interface ProfileDTO {
+  id: string
+  email: string | null
+  fullName: string | null
+  stripeCustomerId: string | null
+  isAdmin: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type PlanId = 'free' | 'startup' | 'growth' | 'business'
+
+export interface PlanDTO {
+  id: PlanId
+  name: string
+  priceCents: number
+  currency: string
+  stripePriceId: string | null
+  monthlyTokens: number
+  sortOrder: number
+  features: string[]
+}
+
+export interface SubscriptionDTO {
+  id: string
+  userId: string
+  planId: PlanId
+  status: 'active' | 'canceled' | 'past_due' | 'trialing'
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  stripeSubscriptionId: string | null
+  cancelAtPeriodEnd: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface UsageSnapshotDTO {
+  percent: number
+  periodMonth: string
+}
+
+export interface BillingSummaryDTO {
+  plan: PlanDTO
+  subscription: SubscriptionDTO
+  usage: UsageSnapshotDTO
+}
+
+export type UsageFeatureKey = 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions'
+
+export interface AdminUsageRowDTO {
+  userId: string
+  email: string | null
+  fullName: string | null
+  planId: PlanId | null
+  monthlyTokens: number | null
+  counts: Record<UsageFeatureKey, number>
+  tokensByFeature: Record<UsageFeatureKey, number>
+  tokensUsed: number
+  euroByFeature: Record<UsageFeatureKey, number>
+  euroCost: number
+  percent: number
+}
+
+export interface AdminUsageReportDTO {
+  periodMonth: string
+  users: AdminUsageRowDTO[]
+}
+
 export interface PageResourceDTO {
   type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'
   label: string
@@ -171,6 +239,21 @@ export interface DocPageDTO {
 }
 
 export const api = {
+  profile: {
+    get: (): Promise<ProfileDTO> => request('/profile'),
+    update: (body: { fullName?: string | null }): Promise<ProfileDTO> =>
+      request('/profile', { method: 'PATCH', body: JSON.stringify(body) }),
+  },
+  billing: {
+    plans: (): Promise<PlanDTO[]> => request('/billing/plans'),
+    summary: (): Promise<BillingSummaryDTO> => request('/billing/summary'),
+    selectPlan: (planId: PlanId): Promise<BillingSummaryDTO> =>
+      request('/billing/subscription/select', { method: 'POST', body: JSON.stringify({ planId }) }),
+  },
+  admin: {
+    usage: (month?: string): Promise<AdminUsageReportDTO> =>
+      request(`/admin/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`),
+  },
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),
     get: (id: string): Promise<ProjectDTO> => request(`/projects/${id}`),
@@ -189,8 +272,6 @@ export const api = {
       request(`/projects/${id}/mcp-key`, { method: 'POST' }),
     disableMcp: (id: string): Promise<{ mcpEnabled: boolean }> =>
       request(`/projects/${id}/mcp-key`, { method: 'DELETE' }),
-    usage: (id: string): Promise<{ totalTokens: number; runs: number; estimatedCost: number; breakdown: { label: string; tokens: number; runs: number; cost: number }[] }> =>
-      request(`/projects/${id}/usage`),
   },
   pages: {
     list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
@@ -301,8 +382,8 @@ export const api = {
       }),
   },
   chat: {
-    send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[]): Promise<ChatResponseDTO> =>
-      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history }) }),
+    send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string): Promise<ChatResponseDTO> =>
+      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history, sessionToken }) }),
     index: (projectId: string, force?: boolean): Promise<{ indexed: number }> =>
       request(`/projects/${projectId}/chat/index`, { method: 'POST', body: JSON.stringify({ force }) }),
     suggestions: (projectId: string): Promise<{ suggestions: string[] }> =>

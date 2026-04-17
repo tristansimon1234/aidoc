@@ -2,6 +2,10 @@ import express from 'express'
 import cors from 'cors'
 import { authMiddleware } from './shared/middleware/auth.middleware.js'
 import { projectRouter } from './features/project/project.routes.js'
+import { profileRouter } from './features/profile/profile.routes.js'
+import { billingRouter } from './features/billing/billing.routes.js'
+import { adminRouter } from './features/admin/admin.routes.js'
+import { requireAdmin } from './shared/middleware/admin.middleware.js'
 import { pageRouter } from './features/page/page.routes.js'
 import { runRouter } from './features/run/run.routes.js'
 import { questionsRouter } from './features/questions/questions.routes.js'
@@ -23,6 +27,11 @@ app.use('/mcp', mcpRouter)
 app.use('/docs', publicDocsRouter)
 
 app.use(authMiddleware)
+
+// Account / user profile
+app.use('/profile', profileRouter)
+app.use('/billing', billingRouter)
+app.use('/admin', requireAdmin, adminRouter)
 
 // Project routes
 app.use('/projects', projectRouter)

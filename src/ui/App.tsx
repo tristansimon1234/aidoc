@@ -13,6 +13,8 @@ import { ProjectDesign } from './features/project/pages/ProjectDesign.js'
 import { ChatPage } from './features/chat/pages/ChatPage.js'
 import { SharePage } from './features/page/pages/SharePage.js'
 import { PublicDocs } from './features/docs/pages/PublicDocs.js'
+import { AccountSettings } from './features/account/pages/AccountSettings.js'
+import { AdminUsage } from './features/admin/pages/AdminUsage.js'
 
 export function App(): React.ReactElement {
   const { user, loading, signIn, signUp, signOut } = useAuth()
@@ -41,6 +43,8 @@ export function App(): React.ReactElement {
         ) : (
           <>
             <Route path="/" element={<ProjectList onSignOut={signOut} />} />
+            <Route path="/account" element={<AccountSettings />} />
+            <Route path="/admin/usage" element={<AdminUsage />} />
             <Route path="/projects/new" element={<NewProject />} />
             <Route path="/projects/:projectId" element={<ProjectDetail />}>
               <Route path="pages/new" element={<NewPage />} />

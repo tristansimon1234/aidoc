@@ -82,7 +82,8 @@ export function ChatPanel({
 
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }))
-      const response: ChatResponseDTO = await api.chat.send(projectId, msg, history)
+      const { getChatSessionToken } = await import('../../../shared/hooks/useChatSessionToken.js')
+      const response: ChatResponseDTO = await api.chat.send(projectId, msg, history, getChatSessionToken(projectId))
 
       setMessages((prev) => [
         ...prev,

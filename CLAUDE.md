@@ -161,7 +161,7 @@ docs/
 ## Hard Rules (never break these)
 
 1. **No `any`** — ever. Use `unknown` + type guards.
-2. **No Supabase calls outside `*.repository.ts` files.**
+2. **No Supabase calls outside a repository** — see the Data Access section below for the full pattern (backend + frontend).
 3. **Doc generation prompts in `prompt.builder.ts`** — the exploration instruction in `exploration.service.ts` is the only exception (it's dynamic).
 4. **No `waitForTimeout`** — use `waitForLoadState('networkidle')`.
 5. **No feature imports another feature's service directly** — use dependency injection interfaces (e.g. `RunDeps`, `DocDeps`).
@@ -171,6 +171,29 @@ docs/
 9. **One migration file per schema change** — never edit existing migrations.
 10. **No business logic in routes** — routes validate input, call services, return responses.
 11. **Update docs/** — when changing architecture, workflows, schema, or prompts.
+
+---
+
+## Data Access
+
+AiDoc has **two** data-access layers because Supabase is designed to be safely callable from both the server (with the service-role key) and the browser (with the user's JWT + RLS). Each has its own file convention.
+
+### Backend (`src/features/**` + `src/shared/**`)
+
+- **All** `supabase.*` calls live in `*.repository.ts` files. Routes and services must go through a repository.
+  - Data: `from('...').select|insert|update|delete`, `rpc('...')` → feature repositories (`project.repository.ts`, `run.repository.ts`, …) or shared ones (`src/shared/usage/usage.repository.ts`, `src/shared/db/storage.repository.ts`).
+  - Storage: `storage.from('bucket').upload|download|createSignedUrl` → `src/shared/db/storage.repository.ts` (`uploadToStorage`, `downloadFromStorage`, `getSignedUrl`, `getPublicUrl`).
+  - Auth admin: `auth.admin.getUserById` → lives in the feature repository that needs it (see `profile.repository.findAuthUserEmail`).
+- Only exception: `src/shared/middleware/auth.middleware.ts` calls `supabase.auth.getUser(token)` to validate the JWT. This isn't a data query, and there's no cleaner home for it.
+- Repositories always wrap Postgrest errors in `DatabaseError` and return domain objects (`camelCase`), never raw rows.
+
+### Frontend (`src/ui/**`)
+
+The browser can hit Supabase directly for any table protected by RLS — that's the whole point of RLS. We **don't** route every read through `/api/*`.
+
+- **Reads + simple writes** (projects list, page tree, rename a page, update project) → `src/ui/shared/api/db.ts`. This file is the frontend's equivalent of a repository: all browser-side `supabase.*` calls live here.
+- **Everything that needs server-side logic or a secret** (chat, doc generation, voice-over, billing, widget key generation, Stripe later) → `src/ui/shared/api/client.ts`, which calls `/api/*` routes.
+- Rule of thumb when adding a UI data call: if it's a plain RLS-filtered SELECT/UPDATE, put it in `db.ts`. If you need to call Gemini, ElevenLabs, Browserbase, Stripe, or to run multiple queries as a transaction, you need a backend route.
 
 ---
 
@@ -354,11 +377,11 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [ ] Legacy RunDashboard/NewRun pages still in codebase (auto-explore removed but pages remain)
 - [ ] Widget: no domain restriction (Origin header check) — API key is public
 - [x] ~~Chat suggestions cache is in-memory~~ — widget endpoint has in-memory cache + edge caching
-- [ ] No usage analytics/logging for widget chat messages
+- [x] ~~No usage analytics/logging for widget chat messages~~ — `chat_sessions` counter tracks widget + in-app sessions per month
 - [ ] Try Doc report could include screenshots from Stagehand steps
 - [x] ~~Widget config slow~~ — edge caching + inline data-cfg attribute
 
 ---
 
-*Last updated: 2026-04-16*
+*Last updated: 2026-04-17*
 *Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19*

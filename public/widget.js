@@ -39,6 +39,24 @@
   function getCurrentPage() { return window.location.href; }
 
   var API_BASE = script.src.replace(/\/widget\.js.*$/, '/api/widget');
+
+  // Stable session token for billing dedup (per tab, per origin).
+  // Lives in sessionStorage so one visitor = one session per month when they
+  // return within the same tab; new tabs count as fresh sessions (acceptable
+  // granularity for the Business-plan quota).
+  var SESSION_KEY = 'aidoc_sid_' + API_KEY;
+  var SESSION_TOKEN = (function () {
+    try {
+      var existing = sessionStorage.getItem(SESSION_KEY);
+      if (existing) return existing;
+      var fresh = (crypto && crypto.randomUUID) ? crypto.randomUUID() : 'sid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+      sessionStorage.setItem(SESSION_KEY, fresh);
+      return fresh;
+    } catch (e) {
+      return 'sid_' + Date.now();
+    }
+  })();
+
   var projectName = '';
   var messages = [];
   var isOpen = false;
@@ -296,7 +314,7 @@
     fetch(API_BASE + '/' + API_KEY + '/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history: history.slice(0, -1), userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() } }),
+      body: JSON.stringify({ message: text, history: history.slice(0, -1), sessionToken: SESSION_TOKEN, userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() } }),
     })
       .then(function (r) { return r.json(); })
       .then(function (data) { messages.push({ role: 'assistant', content: data.answer, sources: data.sources, followUps: data.followUps || [], walkthroughAvailable: data.walkthroughAvailable || false, _originalQuestion: text }); })
@@ -464,6 +482,7 @@
         history: history,
         domSnapshot: snapshot,
         completedSteps: wtCompletedSteps,
+        sessionToken: SESSION_TOKEN,
         userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() },
       }),
     })

@@ -11,8 +11,22 @@ const EnvSchema = z.object({
   GEMINI_API_KEY: z.string().min(1),
   ELEVENLABS_API_KEY: z.string().optional(),
   VIDEO_SERVICE_URL: z.string().url().optional(),
+  // Comma-separated list of emails allowed on admin-only routes.
+  ADMIN_EMAILS: z.string().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>
 
 export const env: Env = EnvSchema.parse(process.env)
+
+const ADMIN_EMAIL_SET = new Set(
+  (env.ADMIN_EMAILS ?? '')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+)
+
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false
+  return ADMIN_EMAIL_SET.has(email.toLowerCase())
+}

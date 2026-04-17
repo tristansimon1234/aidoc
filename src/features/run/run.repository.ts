@@ -154,6 +154,7 @@ export async function listRuns(): Promise<Run[]> {
   return (data as RunRow[]).map(mapToRun)
 }
 
+
 export async function updateRunStatus(id: string, status: RunStatus): Promise<Run> {
   const { data, error } = await supabase
     .from('runs')

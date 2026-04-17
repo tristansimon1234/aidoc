@@ -104,6 +104,81 @@ created_at        timestamptz DEFAULT now()
 ```
 **Index**: `idx_artifacts_run_id`
 
+### plans
+```sql
+id                   text PRIMARY KEY           -- 'free' | 'startup' | 'growth' | 'business'
+name                 text NOT NULL
+price_cents          integer NOT NULL DEFAULT 0
+currency             text NOT NULL DEFAULT 'EUR'
+stripe_price_id      text                       -- populated when Stripe is enabled
+max_projects         integer NOT NULL
+monthly_tokens       integer NOT NULL           -- single monthly budget; ops consume weighted tokens
+sort_order           integer NOT NULL DEFAULT 0
+features             jsonb NOT NULL DEFAULT '[]'  -- human-readable bullets for the UI
+created_at           timestamptz DEFAULT now()
+```
+**RLS**: SELECT allowed to anyone (public pricing data).
+**Seeded**: 4 rows — free / startup (49€) / growth (149€) / business (449€).
+**Token costs** (app-side constant in `billing.service.ts`, tunable without migration):
+`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`.
+
+### subscriptions
+```sql
+id                      uuid PK DEFAULT gen_random_uuid()
+user_id                 uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+plan_id                 text NOT NULL DEFAULT 'free' REFERENCES plans(id)
+status                  text NOT NULL DEFAULT 'active'   -- active | canceled | past_due | trialing
+current_period_start    timestamptz
+current_period_end      timestamptz
+stripe_subscription_id  text                             -- populated when Stripe is enabled
+cancel_at_period_end    boolean NOT NULL DEFAULT false
+created_at              timestamptz DEFAULT now()
+updated_at              timestamptz DEFAULT now()
+```
+**Partial unique index**: `subscriptions_active_user_idx` on `(user_id) WHERE status <> 'canceled'` — one active subscription per user.
+**RLS**: `auth.uid() = user_id` for SELECT.
+**Trigger**: `handle_new_user()` (shared with `profiles`) inserts a free subscription on signup; migration backfills existing users.
+
+### usage_counters
+```sql
+user_id       uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+period_month  date NOT NULL
+feature       text NOT NULL CHECK (feature IN ('doc_run','voiceover','try_doc','widget_sessions'))
+count         integer NOT NULL DEFAULT 0
+updated_at    timestamptz DEFAULT now()
+PRIMARY KEY (user_id, period_month, feature)
+```
+**RLS**: SELECT `auth.uid() = user_id`.
+**RPC**: `increment_usage(p_user_id, p_feature, p_delta)` — atomic `INSERT ... ON CONFLICT DO UPDATE`, SECURITY DEFINER. Called from backend services after each successful metered operation.
+
+### chat_sessions
+```sql
+project_id     uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE
+session_token  text NOT NULL             -- generated client-side, persisted in sessionStorage
+period_month   date NOT NULL DEFAULT date_trunc('month', now())::date
+user_id        uuid NOT NULL REFERENCES auth.users(id)   -- denormalized project owner
+source         text NOT NULL DEFAULT 'widget' CHECK (source IN ('widget','app'))
+started_at     timestamptz DEFAULT now()
+last_seen_at   timestamptz DEFAULT now()
+PRIMARY KEY (project_id, session_token, period_month)
+```
+**Index**: `idx_chat_sessions_last_seen`.
+**RLS**: SELECT `auth.uid() = user_id`. Inserts via service_role only.
+**Purpose**: deduplicates chat sessions (widget + in-app ChatPanel) per calendar month — only the first insert for a (project, token) in a month triggers a `chat_sessions` counter increment. `source` lets us split widget vs app traffic without affecting billing.
+
+### profiles
+```sql
+id                 uuid PK REFERENCES auth.users(id) ON DELETE CASCADE
+email              text
+full_name          text
+stripe_customer_id text                           -- populated once Stripe billing is enabled
+created_at         timestamptz DEFAULT now()
+updated_at         timestamptz DEFAULT now()
+```
+**RLS**: `auth.uid() = id` for SELECT and UPDATE
+**Index**: `idx_profiles_stripe_customer_id`
+**Trigger**: `on_auth_user_created` (AFTER INSERT on `auth.users`) → auto-creates a profile row via `handle_new_user()`.
+
 ### doc_embeddings
 ```sql
 id                uuid PK DEFAULT gen_random_uuid()
@@ -127,6 +202,8 @@ widget_enabled    boolean NOT NULL DEFAULT false
 design            jsonb                       -- widget design config {logoUrl?: string, ...}
 walkthrough_enabled boolean NOT NULL DEFAULT false  -- AI-guided walkthrough in widget
 resources         jsonb                       -- [{type, label, value}] test resources for AI agent
+mcp_api_key       text UNIQUE                 -- API key for the MCP server
+mcp_enabled       boolean NOT NULL DEFAULT false
 ```
 **Index**: `idx_projects_widget_api_key`
 
@@ -160,6 +237,13 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 19 | `20260413000000_add_walkthrough_enabled.sql` | Add `walkthrough_enabled` to projects |
 | 20 | `20260413000001_make_artifacts_bucket_public.sql` | Make artifacts storage bucket public |
 | 21 | `20260416000000_add_project_resources.sql` | Add `resources` JSONB to projects (test resources) |
+| 22 | `20260416000001_create_jobs_table.sql` | Background jobs table (voice-over, doc gen tracking) |
+| 23 | `20260417000000_add_runs_project_id.sql` | Denormalize `project_id` on runs |
+| 24 | `20260417000001_add_mcp_api_key.sql` | Add MCP API key + enabled flag to projects |
+| 25 | `20260417000002_add_profiles_and_language.sql` | `profiles` table (1:1 with auth.users) + trigger to auto-create on signup |
+| 26 | `20260417000003_add_plans_and_subscriptions.sql` | `plans` (seeded) + `subscriptions` (free by default) + trigger extension + backfill |
+| 27 | `20260417000004_add_usage_tracking.sql` | `usage_counters` + `increment_usage` RPC + `widget_sessions` dedup table |
+| 28 | `20260417000005_switch_to_token_usage.sql` | Replace per-feature quotas with a single `monthly_tokens` budget + opaque features |
 
 ## Relationships
 
