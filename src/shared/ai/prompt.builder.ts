@@ -71,11 +71,21 @@ export function buildScreenshotMap(steps: StepSummary[]): Map<string, string> {
 
 /**
  * Replace screenshot placeholders in generated markdown with actual URLs.
+ * Also appends any missing screenshots that Gemini failed to place.
  */
 export function replaceScreenshotPlaceholders(markdown: string, screenshotMap: Map<string, string>): string {
   let result = markdown
+  const missing: string[] = []
   for (const [placeholder, url] of screenshotMap) {
-    result = result.replaceAll(placeholder, url)
+    if (result.includes(placeholder)) {
+      result = result.replaceAll(placeholder, url)
+    } else {
+      missing.push(`![Screenshot](${url})`)
+    }
+  }
+  // Append missed screenshots so no image is lost
+  if (missing.length > 0) {
+    result += '\n\n' + missing.join('\n\n')
   }
   return result
 }
