@@ -10,7 +10,7 @@ export interface Plan {
   maxDocRuns: number
   maxVoiceovers: number
   maxTryDoc: number
-  maxWidgetSessions: number
+  maxChatSessions: number
   sortOrder: number
   features: string[]
 }
@@ -34,7 +34,7 @@ export interface UsageSnapshot {
   docRun: number
   voiceover: number
   tryDoc: number
-  widgetSessions: number
+  chatSessions: number
   periodMonth: string  // e.g. '2026-04-01'
 }
 

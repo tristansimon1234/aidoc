@@ -1,13 +1,13 @@
--- Monthly usage counters + widget session tracking.
+-- Monthly usage counters + chat session tracking.
 -- Counters are incremented via the `increment_usage` RPC (SECURITY DEFINER,
 -- atomic per (user, month, feature)) from the backend, post-success.
--- Widget sessions get their own table so we only count unique session tokens
--- per calendar month, not every chat message.
+-- Chat sessions (widget embed + in-app ChatPanel) share a single table so we
+-- only count unique session tokens per calendar month, not every message.
 
 CREATE TABLE usage_counters (
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   period_month date NOT NULL,
-  feature text NOT NULL CHECK (feature IN ('doc_run', 'voiceover', 'try_doc', 'widget_sessions')),
+  feature text NOT NULL CHECK (feature IN ('doc_run', 'voiceover', 'try_doc', 'chat_sessions')),
   count integer NOT NULL DEFAULT 0,
   updated_at timestamptz DEFAULT now(),
   PRIMARY KEY (user_id, period_month, feature)
@@ -36,21 +36,24 @@ BEGIN
 END;
 $$;
 
--- Widget sessions are deduplicated per (project, token, month).
--- Only the first insert for that tuple counts towards the monthly widget quota.
-CREATE TABLE widget_sessions (
+-- Chat sessions are deduplicated per (project, token, month). Only the first
+-- insert for that tuple counts towards the monthly chat_sessions quota.
+-- `source` distinguishes widget traffic from the in-app ChatPanel so we can
+-- introspect the mix without affecting billing (both still count equally).
+CREATE TABLE chat_sessions (
   project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   session_token text NOT NULL,
   period_month date NOT NULL DEFAULT date_trunc('month', now())::date,
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  source text NOT NULL DEFAULT 'widget' CHECK (source IN ('widget', 'app')),
   started_at timestamptz DEFAULT now(),
   last_seen_at timestamptz DEFAULT now(),
   PRIMARY KEY (project_id, session_token, period_month)
 );
 
-CREATE INDEX idx_widget_sessions_last_seen ON widget_sessions(last_seen_at);
+CREATE INDEX idx_chat_sessions_last_seen ON chat_sessions(last_seen_at);
 
-ALTER TABLE widget_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_sessions ENABLE ROW LEVEL SECURITY;
 -- Only service_role writes; owners can inspect their own sessions.
-CREATE POLICY "Users read own widget sessions" ON widget_sessions
+CREATE POLICY "Users read own chat sessions" ON chat_sessions
   FOR SELECT USING (auth.uid() = user_id);

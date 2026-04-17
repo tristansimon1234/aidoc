@@ -152,19 +152,20 @@ PRIMARY KEY (user_id, period_month, feature)
 **RLS**: SELECT `auth.uid() = user_id`.
 **RPC**: `increment_usage(p_user_id, p_feature, p_delta)` — atomic `INSERT ... ON CONFLICT DO UPDATE`, SECURITY DEFINER. Called from backend services after each successful metered operation.
 
-### widget_sessions
+### chat_sessions
 ```sql
 project_id     uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE
 session_token  text NOT NULL             -- generated client-side, persisted in sessionStorage
 period_month   date NOT NULL DEFAULT date_trunc('month', now())::date
 user_id        uuid NOT NULL REFERENCES auth.users(id)   -- denormalized project owner
+source         text NOT NULL DEFAULT 'widget' CHECK (source IN ('widget','app'))
 started_at     timestamptz DEFAULT now()
 last_seen_at   timestamptz DEFAULT now()
 PRIMARY KEY (project_id, session_token, period_month)
 ```
-**Index**: `idx_widget_sessions_last_seen`.
+**Index**: `idx_chat_sessions_last_seen`.
 **RLS**: SELECT `auth.uid() = user_id`. Inserts via service_role only.
-**Purpose**: deduplicates widget sessions per calendar month — only the first insert for a (project, token) in a month triggers a `widget_sessions` counter increment.
+**Purpose**: deduplicates chat sessions (widget + in-app ChatPanel) per calendar month — only the first insert for a (project, token) in a month triggers a `chat_sessions` counter increment. `source` lets us split widget vs app traffic without affecting billing.
 
 ### profiles
 ```sql

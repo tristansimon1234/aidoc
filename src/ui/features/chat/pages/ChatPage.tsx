@@ -94,7 +94,8 @@ export function ChatPage(): React.ReactElement {
 
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }))
-      const response: ChatResponseDTO = await api.chat.send(project.id, msg, history)
+      const { getChatSessionToken } = await import('../../../shared/hooks/useChatSessionToken.js')
+      const response: ChatResponseDTO = await api.chat.send(project.id, msg, history, getChatSessionToken(project.id))
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: response.answer, sources: response.sources, followUps: response.followUps },

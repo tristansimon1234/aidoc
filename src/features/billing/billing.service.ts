@@ -24,7 +24,7 @@ export async function getSummary(userId: string): Promise<BillingSummary> {
     docRun: usage.doc_run,
     voiceover: usage.voiceover,
     tryDoc: usage.try_doc,
-    widgetSessions: usage.widget_sessions,
+    chatSessions: usage.chat_sessions,
     periodMonth: currentPeriodMonth(),
   }
   return { plan, subscription, usage: snapshot }

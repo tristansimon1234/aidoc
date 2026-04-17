@@ -4,8 +4,25 @@ import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { ChatRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { UuidParamSchema } from '../../shared/validation/schemas.js'
+import { registerChatSession, incrementUsage, findOwnerUserIdByProjectId } from '../../shared/usage/usage.repository.js'
 
 export const chatRouter = Router({ mergeParams: true })
+
+// Fire-and-forget: count the in-app ChatPanel the same way as widget sessions
+// (dedup per (project, token, month)). Never blocks the chat response.
+function trackAppChatSession(projectId: string, sessionToken: string | undefined): void {
+  if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
+  void (async () => {
+    try {
+      const ownerId = await findOwnerUserIdByProjectId(projectId)
+      if (!ownerId) return
+      const isNew = await registerChatSession(projectId, ownerId, sessionToken, 'app')
+      if (isNew) await incrementUsage(ownerId, 'chat_sessions')
+    } catch (err) {
+      console.warn('[usage] app chat session track failed:', (err as Error).message)
+    }
+  })()
+}
 
 // Chat with project documentation
 chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
@@ -16,6 +33,9 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
 
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const sessionToken = (req.body as { sessionToken?: string }).sessionToken
+      trackAppChatSession(params.data.id, sessionToken)
 
       const result = await chatService.chat(
         params.data.id,

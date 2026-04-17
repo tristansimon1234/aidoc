@@ -220,7 +220,7 @@ function BillingTab(): React.ReactElement {
             <UsageBar label="Doc generations" used={summary.usage.docRun} limit={summary.plan.maxDocRuns} />
             <UsageBar label="Voice-overs" used={summary.usage.voiceover} limit={summary.plan.maxVoiceovers} />
             <UsageBar label="Try Doc tests" used={summary.usage.tryDoc} limit={summary.plan.maxTryDoc} />
-            <UsageBar label="Widget sessions" used={summary.usage.widgetSessions} limit={summary.plan.maxWidgetSessions} />
+            <UsageBar label="Chat sessions" used={summary.usage.chatSessions} limit={summary.plan.maxChatSessions} />
           </div>
         )}
       </div>

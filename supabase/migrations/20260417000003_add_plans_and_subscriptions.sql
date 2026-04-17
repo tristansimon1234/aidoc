@@ -13,7 +13,7 @@ CREATE TABLE plans (
   max_doc_runs integer NOT NULL,
   max_voiceovers integer NOT NULL,
   max_try_doc integer NOT NULL,
-  max_widget_sessions integer NOT NULL,
+  max_chat_sessions integer NOT NULL,
   sort_order integer NOT NULL DEFAULT 0,
   features jsonb NOT NULL DEFAULT '[]'::jsonb, -- human-readable bullets for the UI
   created_at timestamptz DEFAULT now()
@@ -22,15 +22,15 @@ CREATE TABLE plans (
 ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Plans are readable by anyone" ON plans FOR SELECT USING (true);
 
-INSERT INTO plans (id, name, price_cents, max_projects, max_doc_runs, max_voiceovers, max_try_doc, max_widget_sessions, sort_order, features) VALUES
+INSERT INTO plans (id, name, price_cents, max_projects, max_doc_runs, max_voiceovers, max_try_doc, max_chat_sessions, sort_order, features) VALUES
   ('free',     'Free',     0,     1,  3,   3,   1,   50,    0,
-   '["1 project","3 doc generations / month","3 voice-overs / month","1 Try Doc test / month","50 widget chat sessions / month","Community support"]'::jsonb),
+   '["1 project","3 doc generations / month","3 voice-overs / month","1 Try Doc test / month","50 chat sessions / month (widget + in-app)","Community support"]'::jsonb),
   ('startup',  'Startup',  4900,  3,  50,  50,  20,  500,   1,
-   '["3 projects","50 doc generations / month","50 voice-overs / month","20 Try Doc tests / month","500 widget chat sessions / month","Email support"]'::jsonb),
+   '["3 projects","50 doc generations / month","50 voice-overs / month","20 Try Doc tests / month","500 chat sessions / month (widget + in-app)","Email support"]'::jsonb),
   ('growth',   'Growth',   14900, 10, 200, 200, 80,  3000,  2,
-   '["10 projects","200 doc generations / month","200 voice-overs / month","80 Try Doc tests / month","3,000 widget chat sessions / month","Priority email support"]'::jsonb),
+   '["10 projects","200 doc generations / month","200 voice-overs / month","80 Try Doc tests / month","3,000 chat sessions / month (widget + in-app)","Priority email support"]'::jsonb),
   ('business', 'Business', 44900, 40, 800, 800, 300, 15000, 3,
-   '["40 projects","800 doc generations / month","800 voice-overs / month","300 Try Doc tests / month","15,000 widget chat sessions / month","Pay-as-you-go overages","Dedicated support"]'::jsonb);
+   '["40 projects","800 doc generations / month","800 voice-overs / month","300 Try Doc tests / month","15,000 chat sessions / month (widget + in-app)","Pay-as-you-go overages","Dedicated support"]'::jsonb);
 
 CREATE TABLE subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

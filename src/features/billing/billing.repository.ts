@@ -12,7 +12,7 @@ interface PlanRow {
   max_doc_runs: number
   max_voiceovers: number
   max_try_doc: number
-  max_widget_sessions: number
+  max_chat_sessions: number
   sort_order: number
   features: string[] | null
 }
@@ -28,7 +28,7 @@ function mapToPlan(row: PlanRow): Plan {
     maxDocRuns: row.max_doc_runs,
     maxVoiceovers: row.max_voiceovers,
     maxTryDoc: row.max_try_doc,
-    maxWidgetSessions: row.max_widget_sessions,
+    maxChatSessions: row.max_chat_sessions,
     sortOrder: row.sort_order,
     features: row.features ?? [],
   }

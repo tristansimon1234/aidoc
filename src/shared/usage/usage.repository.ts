@@ -1,13 +1,8 @@
 import { supabase } from '../db/supabase.client.js'
 import { DatabaseError } from '../middleware/error.middleware.js'
 
-export type UsageFeature = 'doc_run' | 'voiceover' | 'try_doc' | 'widget_sessions'
-
-export interface UsageCounter {
-  feature: UsageFeature
-  count: number
-  periodMonth: string
-}
+export type UsageFeature = 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions'
+export type ChatSessionSource = 'widget' | 'app'
 
 function currentPeriodMonth(): string {
   const now = new Date()
@@ -35,7 +30,7 @@ export async function listUsageForCurrentMonth(userId: string): Promise<Record<U
     doc_run: 0,
     voiceover: 0,
     try_doc: 0,
-    widget_sessions: 0,
+    chat_sessions: 0,
   }
   for (const row of (data as { feature: UsageFeature; count: number }[])) {
     result[row.feature] = row.count
@@ -43,18 +38,19 @@ export async function listUsageForCurrentMonth(userId: string): Promise<Record<U
   return result
 }
 
-// Register a widget session hit. Returns true if this is a new session for
-// the current month (so the caller knows to bump the usage counter).
-export async function registerWidgetSession(
+// Register a chat session hit (widget embed or in-app ChatPanel). Returns
+// true if this is a new session for the current month so the caller can
+// bump the usage counter.
+export async function registerChatSession(
   projectId: string,
   ownerUserId: string,
   sessionToken: string,
+  source: ChatSessionSource,
 ): Promise<boolean> {
   const period = currentPeriodMonth()
 
-  // Check first — cheaper than relying on an upsert's 'new row' detection
   const { data: existing, error: selectError } = await supabase
-    .from('widget_sessions')
+    .from('chat_sessions')
     .select('session_token')
     .eq('project_id', projectId)
     .eq('session_token', sessionToken)
@@ -64,7 +60,7 @@ export async function registerWidgetSession(
 
   if (existing) {
     const { error: updateError } = await supabase
-      .from('widget_sessions')
+      .from('chat_sessions')
       .update({ last_seen_at: new Date().toISOString() })
       .eq('project_id', projectId)
       .eq('session_token', sessionToken)
@@ -73,11 +69,12 @@ export async function registerWidgetSession(
     return false
   }
 
-  const { error: insertError } = await supabase.from('widget_sessions').insert({
+  const { error: insertError } = await supabase.from('chat_sessions').insert({
     project_id: projectId,
     session_token: sessionToken,
     period_month: period,
     user_id: ownerUserId,
+    source,
   })
   if (insertError) throw new DatabaseError(insertError.message)
   return true
@@ -94,7 +91,6 @@ export async function findOwnerUserIdByRunId(runId: string): Promise<string | nu
   if (error) throw new DatabaseError(error.message)
   if (!data) return null
 
-  // Prefer the denormalized runs.project_id when present
   const projectId = (data as { project_id: string | null }).project_id
   if (projectId) {
     const { data: proj, error: projErr } = await supabase
@@ -106,9 +102,18 @@ export async function findOwnerUserIdByRunId(runId: string): Promise<string | nu
     return (proj as { user_id: string } | null)?.user_id ?? null
   }
 
-  // Fallback: via doc_pages join
   const joined = data as unknown as {
     doc_pages: { project_id: string; projects: { user_id: string } | null } | null
   }
   return joined.doc_pages?.projects?.user_id ?? null
+}
+
+export async function findOwnerUserIdByProjectId(projectId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('user_id')
+    .eq('id', projectId)
+    .maybeSingle()
+  if (error) throw new DatabaseError(error.message)
+  return (data as { user_id: string } | null)?.user_id ?? null
 }

@@ -160,7 +160,7 @@ export interface PlanDTO {
   maxDocRuns: number
   maxVoiceovers: number
   maxTryDoc: number
-  maxWidgetSessions: number
+  maxChatSessions: number
   sortOrder: number
   features: string[]
 }
@@ -182,7 +182,7 @@ export interface UsageSnapshotDTO {
   docRun: number
   voiceover: number
   tryDoc: number
-  widgetSessions: number
+  chatSessions: number
   periodMonth: string
 }
 
@@ -365,8 +365,8 @@ export const api = {
       }),
   },
   chat: {
-    send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[]): Promise<ChatResponseDTO> =>
-      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history }) }),
+    send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string): Promise<ChatResponseDTO> =>
+      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history, sessionToken }) }),
     index: (projectId: string, force?: boolean): Promise<{ indexed: number }> =>
       request(`/projects/${projectId}/chat/index`, { method: 'POST', body: JSON.stringify({ force }) }),
     suggestions: (projectId: string): Promise<{ suggestions: string[] }> =>
