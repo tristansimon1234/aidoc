@@ -289,24 +289,18 @@ projectRouter.get('/:id/usage', (req: Request, res: Response, next: NextFunction
     try {
       const projectId = await verifyProjectOwnership(req)
 
-      const { supabase } = await import('../../shared/db/supabase.client.js')
+      const { listRunTokenUsageByProjectId } = await import('../run/run.repository.js')
+      const allRuns = await listRunTokenUsageByProjectId(projectId)
 
-      const { data: runs } = await supabase
-        .from('runs')
-        .select('id, feature_name, token_usage, created_at, status')
-        .eq('project_id', projectId)
-        .order('created_at', { ascending: false })
-
-      const allRuns = runs ?? []
-      const totalTokens = allRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
-      const testRuns = allRuns.filter((r) => (r.feature_name as string).startsWith('[Test]'))
-      const docRuns = allRuns.filter((r) => !(r.feature_name as string).startsWith('[Test]'))
+      const totalTokens = allRuns.reduce((sum, r) => sum + r.tokenUsage, 0)
+      const testRuns = allRuns.filter((r) => r.featureName.startsWith('[Test]'))
+      const docRuns = allRuns.filter((r) => !r.featureName.startsWith('[Test]'))
 
       // Cost estimation
       // Gemini 2.5 Flash: ~$0.15/1M input + $0.60/1M output ≈ $0.35/1M avg
       // Claude Sonnet (Stagehand): ~$3/1M input + $15/1M output ≈ $9/1M avg
-      const geminiTokens = docRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
-      const stagehandTokens = testRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
+      const geminiTokens = docRuns.reduce((sum, r) => sum + r.tokenUsage, 0)
+      const stagehandTokens = testRuns.reduce((sum, r) => sum + r.tokenUsage, 0)
       const geminiCost = (geminiTokens / 1_000_000) * 0.35
       const stagehandCost = (stagehandTokens / 1_000_000) * 9
       const estimatedCost = geminiCost + stagehandCost

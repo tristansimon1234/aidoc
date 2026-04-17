@@ -2,6 +2,16 @@ import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
 import type { Profile, UpdateProfileInput } from './profile.types.js'
 
+/**
+ * Look up a user's email from the auth.users table (accessed via the admin API).
+ * Used to seed the profile row on the first API call if the trigger didn't fire.
+ */
+export async function findAuthUserEmail(userId: string): Promise<string | null> {
+  const { data, error } = await supabase.auth.admin.getUserById(userId)
+  if (error || !data.user) return null
+  return data.user.email ?? null
+}
+
 interface ProfileRow {
   id: string
   email: string | null

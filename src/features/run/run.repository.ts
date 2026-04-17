@@ -154,6 +154,37 @@ export async function listRuns(): Promise<Run[]> {
   return (data as RunRow[]).map(mapToRun)
 }
 
+// Lightweight projection for the /usage aggregation endpoint.
+export interface RunTokenUsageRow {
+  id: string
+  featureName: string
+  tokenUsage: number
+  status: string
+  createdAt: string
+}
+
+export async function listRunTokenUsageByProjectId(projectId: string): Promise<RunTokenUsageRow[]> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('id, feature_name, token_usage, status, created_at')
+    .eq('project_id', projectId)
+    .order('created_at', { ascending: false })
+  if (error) throw new DatabaseError(error.message)
+  return (data as {
+    id: string
+    feature_name: string
+    token_usage: number | null
+    status: string
+    created_at: string
+  }[]).map((r) => ({
+    id: r.id,
+    featureName: r.feature_name,
+    tokenUsage: r.token_usage ?? 0,
+    status: r.status,
+    createdAt: r.created_at,
+  }))
+}
+
 export async function updateRunStatus(id: string, status: RunStatus): Promise<Run> {
   const { data, error } = await supabase
     .from('runs')

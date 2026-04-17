@@ -52,3 +52,14 @@ export async function getSignedUrl(
     return null
   }
 }
+
+/**
+ * Download a storage object as a Buffer. Returns null if not found / unreadable
+ * (non-throwing because callers typically fall back on missing files).
+ */
+export async function downloadFromStorage(bucket: string, path: string): Promise<Buffer | null> {
+  if (!path) return null
+  const { data, error } = await supabase.storage.from(bucket).download(path)
+  if (error || !data) return null
+  return Buffer.from(await data.arrayBuffer())
+}

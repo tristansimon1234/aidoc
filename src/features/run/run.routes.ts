@@ -394,14 +394,13 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       // Download video for Gemini to watch while generating narration
       const videoPath = summary?.videoPath as string | undefined
-      const { supabase } = await import('../../shared/db/supabase.client.js')
+      const { downloadFromStorage } = await import('../../shared/db/storage.repository.js')
       let videoBuffer: Buffer | null = null
       let videoMimeType = 'video/mp4'
       if (videoPath) {
         try {
-          const { data: videoData, error: videoError } = await supabase.storage.from('artifacts').download(videoPath)
-          if (videoData && !videoError) {
-            videoBuffer = Buffer.from(await videoData.arrayBuffer())
+          videoBuffer = await downloadFromStorage('artifacts', videoPath)
+          if (videoBuffer) {
             videoMimeType = videoPath.endsWith('.webm') ? 'video/webm' : videoPath.endsWith('.mov') ? 'video/quicktime' : 'video/mp4'
             console.log(`[voiceover] Video downloaded for narration: ${videoPath} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
           }

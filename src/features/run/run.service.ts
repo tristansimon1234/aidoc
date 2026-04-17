@@ -131,22 +131,17 @@ async function enrichBriefingWithFileContents(
   const projRes = (projectResources ?? []).map((r) => ({ type: r.type, label: r.label, value: r.value }))
   const allResources = [...(briefing.resources ?? []), ...projRes]
 
-  const { supabase } = await import('../../shared/db/supabase.client.js')
+  const { downloadFromStorage } = await import('../../shared/db/storage.repository.js')
   const enrichedResources = await Promise.all(
     allResources.map(async (r) => {
       if (r.type !== 'file' || !r.value) return r
       try {
         console.log(`[briefing] Downloading file resource: ${r.value}`)
-        const { data, error } = await supabase.storage.from('briefing-files').download(r.value)
-        if (error) {
-          console.error(`[briefing] Failed to download ${r.value}:`, error.message)
+        const buffer = await downloadFromStorage('briefing-files', r.value)
+        if (!buffer) {
+          console.error(`[briefing] Failed to download ${r.value}`)
           return r
         }
-        if (!data) {
-          console.error(`[briefing] No data returned for ${r.value}`)
-          return r
-        }
-        const buffer = Buffer.from(await data.arrayBuffer())
         const fileName = r.value.split('/').pop() ?? r.label
         console.log(`[briefing] Loaded ${r.label}: ${buffer.length} bytes`)
         return { ...r, fileBuffer: buffer, fileName }
@@ -379,8 +374,6 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
   await runRepo.updateRunStatus(runId, 'running')
 
   try {
-    const { supabase } = await import('../../shared/db/supabase.client.js')
-
     // --- Step 1: Convert to MP4 via video microservice ---
     const { isVideoServiceConfigured, convertToMp4, extractFrames: extractFramesRemote } = await import('../../shared/video/video.client.js')
 
@@ -400,13 +393,12 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     // --- Step 2: Download for Gemini analysis ---
     console.log(`[video] Step 2: Download ${analyzeVideoPath} from storage`)
-    const { data, error } = await supabase.storage.from('artifacts').download(analyzeVideoPath)
-    if (error || !data) {
-      console.error(`[video] Download FAILED: ${error?.message ?? 'no data'}`)
-      throw new Error(`Failed to download video: ${error?.message ?? 'no data'}`)
+    const { downloadFromStorage } = await import('../../shared/db/storage.repository.js')
+    const buffer = await downloadFromStorage('artifacts', analyzeVideoPath)
+    if (!buffer) {
+      console.error(`[video] Download FAILED`)
+      throw new Error(`Failed to download video: ${analyzeVideoPath}`)
     }
-
-    const buffer = Buffer.from(await data.arrayBuffer())
     const mimeType = analyzeVideoPath.endsWith('.mp4') ? 'video/mp4'
       : analyzeVideoPath.endsWith('.webm') ? 'video/webm'
       : 'video/quicktime'
