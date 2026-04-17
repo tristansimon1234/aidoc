@@ -522,6 +522,19 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                   <input type="file" accept="video/mp4,video/webm,video/quicktime" style={{ display: 'none' }} onChange={(e) => {
                     const file = e.target.files?.[0]
                     if (!file || !latestRunId) return
+                    // Hard cap: native macOS QuickTime recordings can easily hit
+                    // 1 GB for a short session and then hang the upload for minutes.
+                    const MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+                    if (file.size > MAX_UPLOAD_BYTES) {
+                      void confirm({
+                        title: 'Video too large',
+                        message: `This file is ${(file.size / 1024 / 1024).toFixed(0)} MB. Replace only accepts videos under 200 MB. Compress it first, or use the built-in Record button which produces compact recordings.`,
+                        confirmLabel: 'OK',
+                        variant: 'primary',
+                      })
+                      e.target.value = ''
+                      return
+                    }
                     void (async () => {
                       try {
                         const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'

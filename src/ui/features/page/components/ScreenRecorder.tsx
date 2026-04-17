@@ -201,8 +201,10 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
             ? 'video/webm'
             : 'video/mp4'
 
-      // Higher bitrate = more frequent keyframes = better seeking precision
-      const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 3_000_000 })
+      // Screen recording compresses exceptionally well (mostly-static frames),
+      // so 1.2 Mbps keeps readable text and UI detail while keeping uploads
+      // small enough to survive throttled 5G / café wifi.
+      const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 1_200_000 })
       mediaRecorderRef.current = recorder
 
       recorder.ondataavailable = (e) => {
