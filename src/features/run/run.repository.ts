@@ -66,7 +66,29 @@ export async function createRun(input: {
   goal: string
   docPageId?: string
 }): Promise<Run> {
-  // Delete previous non-test runs for this page to avoid stale screenshot references
+  // Clean up old non-test runs: remove storage files + steps + docs
+  // but KEEP the run row (for token usage tracking)
+  if (input.docPageId && !input.featureName.startsWith('[Test]')) {
+    const { data: oldRuns } = await supabase
+      .from('runs')
+      .select('id')
+      .eq('doc_page_id', input.docPageId)
+      .not('feature_name', 'like', '[Test]%')
+    if (oldRuns && oldRuns.length > 0) {
+      const oldIds = oldRuns.map((r) => (r as Record<string, unknown>).id as string)
+      for (const oldId of oldIds) {
+        const { data: files } = await supabase.storage.from('artifacts').list(`runs/${oldId}`)
+        if (files && files.length > 0) {
+          await supabase.storage.from('artifacts').remove(files.map((f) => `runs/${oldId}/${f.name}`))
+        }
+      }
+      await supabase.from('run_steps').delete().in('run_id', oldIds)
+      await supabase.from('generated_docs').delete().in('run_id', oldIds)
+      // Unlink old runs from page (keep row for usage tracking)
+      await supabase.from('runs').update({ doc_page_id: null }).in('id', oldIds)
+    }
+  }
+
   // Resolve project_id from the linked page
   let projectId: string | null = null
   if (input.docPageId) {
