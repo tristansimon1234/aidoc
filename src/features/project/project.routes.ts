@@ -150,7 +150,7 @@ projectRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
     try {
       const params = ProjectIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const project = await projectService.getProject(params.data.id)
+      const project = await projectService.getProject(params.data.id, getUserId(req))
       res.status(200).json(project)
     } catch (err) {
       next(err)
@@ -165,7 +165,7 @@ projectRouter.put('/:id', (req: Request, res: Response, next: NextFunction) => {
       if (!params.success) throw new ValidationError(params.error.flatten())
       const body = UpdateProjectSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
-      const project = await projectService.updateProject(params.data.id, body.data)
+      const project = await projectService.updateProject(params.data.id, getUserId(req), body.data)
       res.status(200).json(project)
     } catch (err) {
       next(err)
@@ -173,16 +173,23 @@ projectRouter.put('/:id', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
+// Helper: validate params + assert project ownership
+async function verifyProjectOwnership(req: Request): Promise<string> {
+  const params = ProjectIdParamSchema.safeParse(req.params)
+  if (!params.success) throw new ValidationError(params.error.flatten())
+  await projectService.getProject(params.data.id, getUserId(req))
+  return params.data.id
+}
+
 // Generate or regenerate widget API key
 projectRouter.post('/:id/widget-key', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = ProjectIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const projectId = await verifyProjectOwnership(req)
       const { randomBytes } = await import('node:crypto')
       const apiKey = `aidoc_${randomBytes(24).toString('hex')}`
       const { setWidgetApiKey } = await import('./project.repository.js')
-      const project = await setWidgetApiKey(params.data.id, apiKey)
+      const project = await setWidgetApiKey(projectId, apiKey)
       res.status(200).json({ widgetApiKey: project.widgetApiKey, widgetEnabled: project.widgetEnabled })
     } catch (err) {
       next(err)
@@ -194,10 +201,9 @@ projectRouter.post('/:id/widget-key', (req: Request, res: Response, next: NextFu
 projectRouter.delete('/:id/widget-key', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = ProjectIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const projectId = await verifyProjectOwnership(req)
       const { disableWidget } = await import('./project.repository.js')
-      await disableWidget(params.data.id)
+      await disableWidget(projectId)
       res.status(200).json({ widgetEnabled: false })
     } catch (err) {
       next(err)
@@ -209,12 +215,11 @@ projectRouter.delete('/:id/widget-key', (req: Request, res: Response, next: Next
 projectRouter.post('/:id/mcp-key', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = ProjectIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const projectId = await verifyProjectOwnership(req)
       const { randomBytes } = await import('node:crypto')
       const key = `aidoc_mcp_${randomBytes(24).toString('hex')}`
       const { setMcpApiKey } = await import('./project.repository.js')
-      const project = await setMcpApiKey(params.data.id, key)
+      const project = await setMcpApiKey(projectId, key)
       res.status(200).json({ mcpApiKey: project.mcpApiKey, mcpEnabled: true })
     } catch (err) {
       next(err)
@@ -226,10 +231,9 @@ projectRouter.post('/:id/mcp-key', (req: Request, res: Response, next: NextFunct
 projectRouter.delete('/:id/mcp-key', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = ProjectIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const projectId = await verifyProjectOwnership(req)
       const { disableMcp } = await import('./project.repository.js')
-      await disableMcp(params.data.id)
+      await disableMcp(projectId)
       res.status(200).json({ mcpEnabled: false })
     } catch (err) {
       next(err)
@@ -241,8 +245,7 @@ projectRouter.delete('/:id/mcp-key', (req: Request, res: Response, next: NextFun
 projectRouter.post('/:id/logo', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = ProjectIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const projectId = await verifyProjectOwnership(req)
 
       const chunks: Buffer[] = []
       req.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -254,7 +257,7 @@ projectRouter.post('/:id/logo', (req: Request, res: Response, next: NextFunction
 
       const contentType = req.headers['content-type'] ?? 'image/png'
       const ext = contentType.includes('svg') ? 'svg' : contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
-      const path = `projects/${params.data.id}/logo.${ext}`
+      const path = `projects/${projectId}/logo.${ext}`
 
       const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
       await uploadToStorage('artifacts', path, body, contentType)
@@ -272,7 +275,7 @@ projectRouter.delete('/:id', (req: Request, res: Response, next: NextFunction) =
     try {
       const params = ProjectIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      await projectService.deleteProject(params.data.id)
+      await projectService.deleteProject(params.data.id, getUserId(req))
       res.status(204).end()
     } catch (err) {
       next(err)
@@ -284,16 +287,14 @@ projectRouter.delete('/:id', (req: Request, res: Response, next: NextFunction) =
 projectRouter.get('/:id/usage', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = ProjectIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const projectId = await verifyProjectOwnership(req)
 
       const { supabase } = await import('../../shared/db/supabase.client.js')
 
-      // Query runs directly by project_id (survives page deletion)
       const { data: runs } = await supabase
         .from('runs')
         .select('id, feature_name, token_usage, created_at, status')
-        .eq('project_id', params.data.id)
+        .eq('project_id', projectId)
         .order('created_at', { ascending: false })
 
       const allRuns = runs ?? []
