@@ -834,9 +834,10 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
             </div>
           )}
 
-          {/* Analyzing */}
-          {analyzing && (
+          {/* Analyzing — also show when returning to page with active try-doc job that has no liveUrl (exploration done, analysis in progress) */}
+          {(analyzing || (activeTryDocJob?.status === 'running' && !liveUrl && !tryRunning)) && (
             <ProgressLoader
+              startedAt={activeTryDocJob?.startedAt}
               steps={[{ label: 'Generating structured test report', estimatedSeconds: 20 }]}
               activeStep={0}
             />

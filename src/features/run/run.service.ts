@@ -309,14 +309,21 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
               try {
                 parsed = JSON.parse(jsonStr) as unknown
               } catch {
-                // JSON truncated — attempt repair by closing open strings/arrays/objects
-                const repaired = jsonStr
-                  .replace(/,\s*$/, '')          // trailing comma
-                  .replace(/,\s*}/, '}')         // comma before closing brace
-                  .replace(/,\s*]/, ']')         // comma before closing bracket
-                  + (jsonStr.split('"').length % 2 === 0 ? '"' : '')  // close open string
-                  + ']}'.repeat(Math.max(0, (jsonStr.split('[').length - jsonStr.split(']').length)))  // close arrays
-                  + '}'.repeat(Math.max(0, (jsonStr.split('{').length - jsonStr.split('}').length)))  // close objects
+                // JSON truncated — attempt repair
+                let repaired = jsonStr
+                // Remove last incomplete key-value pair
+                repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
+                repaired = repaired.replace(/,\s*\{[^}]*$/, '')
+                repaired = repaired.replace(/,\s*$/, '')
+                repaired = repaired.replace(/,\s*}/, '}')
+                repaired = repaired.replace(/,\s*]/, ']')
+                // Close open strings
+                if (repaired.split('"').length % 2 === 0) repaired += '"'
+                // Close open brackets/braces
+                const openBrackets = (repaired.match(/\[/g) ?? []).length - (repaired.match(/\]/g) ?? []).length
+                const openBraces = (repaired.match(/\{/g) ?? []).length - (repaired.match(/\}/g) ?? []).length
+                repaired += ']'.repeat(Math.max(0, openBrackets))
+                repaired += '}'.repeat(Math.max(0, openBraces))
                 try {
                   parsed = JSON.parse(repaired) as unknown
                   console.warn('[context-enrichment] Repaired truncated JSON')
@@ -560,10 +567,17 @@ export async function analyzeTryDoc(
     // Attempt repair: close open brackets/braces
     console.warn(`[trydoc] JSON parse failed, attempting repair: ${(parseErr as Error).message}`)
     let repaired = jsonStr
+    // Remove trailing incomplete entries
     repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
     repaired = repaired.replace(/,\s*\{[^}]*$/, '')
-    const openBraces = (repaired.match(/\{/g) ?? []).length - (repaired.match(/\}/g) ?? []).length
+    repaired = repaired.replace(/,\s*$/, '')
+    repaired = repaired.replace(/,\s*}/, '}')
+    repaired = repaired.replace(/,\s*]/, ']')
+    // Close open strings
+    if (repaired.split('"').length % 2 === 0) repaired += '"'
+    // Close open brackets/braces
     const openBrackets = (repaired.match(/\[/g) ?? []).length - (repaired.match(/\]/g) ?? []).length
+    const openBraces = (repaired.match(/\{/g) ?? []).length - (repaired.match(/\}/g) ?? []).length
     repaired += ']'.repeat(Math.max(0, openBrackets))
     repaired += '}'.repeat(Math.max(0, openBraces))
     try {
