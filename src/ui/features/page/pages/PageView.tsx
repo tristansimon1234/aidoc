@@ -315,7 +315,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         // Phase 2: Analyze with Gemini → structured report
         setTryRunning(false)
         setLiveUrl(null)
-        updateJob(run.id, { liveUrl: undefined })
+        updateJob(run.id, { liveUrl: undefined, phaseStartedAt: Date.now() })
         setAnalyzing(true)
         setStatusMessage('Generating test report...')
 
@@ -733,7 +733,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
       {activeTab === 'test' && (
         <div className={styles.tabContent}>
           {/* Not running — show config + run button or results */}
-          {!tryRunning && !analyzing && !(activeTryDocJob?.status === 'running' && liveUrl) && (
+          {!tryRunning && !analyzing && !(activeTryDocJob?.status === 'running') && (
             <>
               {/* Two-column: config + action */}
               <div className={styles.generateGrid}>
@@ -841,7 +841,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
           {/* Analyzing — also show when returning to page with active try-doc job that has no liveUrl (exploration done, analysis in progress) */}
           {(analyzing || (activeTryDocJob?.status === 'running' && !liveUrl && !tryRunning)) && (
             <ProgressLoader
-              startedAt={activeTryDocJob?.startedAt}
+              startedAt={activeTryDocJob?.phaseStartedAt}
               steps={[{ label: 'Generating structured test report', estimatedSeconds: 20 }]}
               activeStep={0}
             />
