@@ -546,7 +546,7 @@ export async function analyzeTryDoc(
   const result = await generateText({
     systemPrompt: TRY_DOC_ANALYSIS_SYSTEM_PROMPT,
     userPrompt,
-    maxTokens: 8192,
+    maxTokens: 16384,
   })
 
   // Parse and validate the Gemini response
