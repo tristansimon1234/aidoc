@@ -6,7 +6,6 @@ export async function authMiddleware(
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const t0 = Date.now()
   const token = req.headers.authorization?.replace('Bearer ', '')
 
   if (!token) {
@@ -15,10 +14,6 @@ export async function authMiddleware(
   }
 
   const { data, error } = await supabase.auth.getUser(token)
-  const elapsed = Date.now() - t0
-  if (elapsed > 500) {
-    console.warn(`[auth] JWT validation took ${elapsed}ms for ${req.method} ${req.originalUrl}`)
-  }
 
   if (error || !data.user) {
     res.status(401).json({ error: 'Invalid or expired token', code: 'UNAUTHORIZED' })
