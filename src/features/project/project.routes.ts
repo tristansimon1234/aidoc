@@ -247,3 +247,58 @@ projectRouter.delete('/:id', (req: Request, res: Response, next: NextFunction) =
     }
   })()
 })
+
+// Token usage & cost estimation per project
+projectRouter.get('/:id/usage', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const { supabase } = await import('../../shared/db/supabase.client.js')
+
+      const { data: pages } = await supabase
+        .from('doc_pages')
+        .select('id')
+        .eq('project_id', params.data.id)
+
+      const pageIds = (pages ?? []).map((p) => p.id as string)
+      if (pageIds.length === 0) {
+        res.json({ totalTokens: 0, runs: 0, estimatedCost: 0, breakdown: [] })
+        return
+      }
+
+      const { data: runs } = await supabase
+        .from('runs')
+        .select('id, feature_name, token_usage, created_at, status')
+        .in('doc_page_id', pageIds)
+        .order('created_at', { ascending: false })
+
+      const allRuns = runs ?? []
+      const totalTokens = allRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
+      const testRuns = allRuns.filter((r) => (r.feature_name as string).startsWith('[Test]'))
+      const docRuns = allRuns.filter((r) => !(r.feature_name as string).startsWith('[Test]'))
+
+      // Cost estimation
+      // Gemini 2.5 Flash: ~$0.15/1M input + $0.60/1M output ≈ $0.35/1M avg
+      // Claude Sonnet (Stagehand): ~$3/1M input + $15/1M output ≈ $9/1M avg
+      const geminiTokens = docRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
+      const stagehandTokens = testRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
+      const geminiCost = (geminiTokens / 1_000_000) * 0.35
+      const stagehandCost = (stagehandTokens / 1_000_000) * 9
+      const estimatedCost = geminiCost + stagehandCost
+
+      res.json({
+        totalTokens,
+        runs: allRuns.length,
+        estimatedCost: Math.round(estimatedCost * 100) / 100,
+        breakdown: [
+          { label: 'Documentation generation', tokens: geminiTokens, runs: docRuns.length, cost: Math.round(geminiCost * 100) / 100 },
+          { label: 'Try Doc testing', tokens: stagehandTokens, runs: testRuns.length, cost: Math.round(stagehandCost * 100) / 100 },
+        ],
+      })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})

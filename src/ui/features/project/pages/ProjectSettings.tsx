@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
-import { type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
+import { api, type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
 import styles from './ProjectSettings.module.css'
 
@@ -22,7 +22,7 @@ const RESOURCE_FILE_EXTENSIONS = [
 ]
 const RESOURCE_MAX_FILE_SIZE = 50 * 1024 * 1024
 
-type SettingsTab = 'general' | 'knowledge' | 'credentials'
+type SettingsTab = 'general' | 'knowledge' | 'credentials' | 'usage'
 
 export function ProjectSettings(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
@@ -81,6 +81,7 @@ export function ProjectSettings(): React.ReactElement {
     { id: 'general', label: 'General' },
     { id: 'knowledge', label: 'Knowledge' },
     { id: 'credentials', label: 'Test Environment' },
+    { id: 'usage', label: 'Usage' },
   ]
 
   return (
@@ -295,7 +296,72 @@ export function ProjectSettings(): React.ReactElement {
             </div>
           )}
 
+          {activeTab === 'usage' && (
+            <UsageTab projectId={projectId!} />
+          )}
+
         </div>
+    </div>
+  )
+}
+
+// --- Usage Tab ---
+
+function UsageTab({ projectId }: { projectId: string }): React.ReactElement {
+  const [usage, setUsage] = useState<{ totalTokens: number; runs: number; estimatedCost: number; breakdown: { label: string; tokens: number; runs: number; cost: number }[] } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const data = await api.projects.usage(projectId)
+        setUsage(data)
+      } catch { /* ignore */ }
+      finally { setLoading(false) }
+    })()
+  }, [projectId])
+
+  if (loading) return <div style={{ padding: 'var(--space-lg)', textAlign: 'center', color: 'var(--color-muted-fg)', fontSize: 'var(--text-sm)' }}>Loading usage data...</div>
+  if (!usage) return <div style={{ padding: 'var(--space-lg)', textAlign: 'center', color: 'var(--color-muted-fg)', fontSize: 'var(--text-sm)' }}>Failed to load usage data</div>
+
+  const fmtTokens = (n: number): string => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
+    return String(n)
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>AI Usage</h2>
+        <p className={styles.sectionDesc}>Token consumption and estimated costs for this project.</p>
+      </div>
+
+      <div className={styles.statRow}>
+        <span className={styles.stat}>{fmtTokens(usage.totalTokens)} tokens</span>
+        <span className={styles.stat}>{usage.runs} runs</span>
+        <span className={styles.stat}>~${usage.estimatedCost.toFixed(2)} estimated</span>
+      </div>
+
+      {usage.breakdown.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginTop: 'var(--space-md)' }}>
+          {usage.breakdown.map((b) => (
+            <div key={b.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--color-bg)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' }}>
+              <div>
+                <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>{b.label}</div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>{b.runs} runs · {fmtTokens(b.tokens)} tokens</div>
+              </div>
+              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, fontFamily: 'var(--font-mono)', color: 'var(--color-fg)' }}>
+                ${b.cost.toFixed(2)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', marginTop: 'var(--space-md)', lineHeight: 1.6 }}>
+        Costs are estimates based on Gemini 2.5 Flash (~$0.35/1M tokens) and Claude Sonnet (~$9/1M tokens). Actual costs may vary. Voice-over (ElevenLabs) costs are not included.
+      </p>
     </div>
   )
 }

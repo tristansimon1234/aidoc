@@ -183,6 +183,8 @@ export const api = {
       request(`/projects/${id}/widget-key`, { method: 'POST' }),
     disableWidget: (id: string): Promise<{ widgetEnabled: boolean }> =>
       request(`/projects/${id}/widget-key`, { method: 'DELETE' }),
+    usage: (id: string): Promise<{ totalTokens: number; runs: number; estimatedCost: number; breakdown: { label: string; tokens: number; runs: number; cost: number }[] }> =>
+      request(`/projects/${id}/usage`),
   },
   pages: {
     list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
