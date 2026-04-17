@@ -2,60 +2,55 @@
 
 ## Models Used
 
-| Purpose | Model | Cost | Where |
-|---|---|---|---|
-| Documentation generation | Gemini 2.5 Flash | ~$0.003/doc | `documentation.generator.ts` via `generateText()` |
-| Video analysis | Gemini 2.5 Flash | ~$0.01/video | `gemini.client.ts` → `analyzeVideoWithGemini()` |
-| Auto-generate structure | Gemini 2.5 Flash | ~$0.002/call | `page.service.ts` via `generateText()` |
-| Context enrichment | Gemini 2.5 Flash | ~$0.001/call | `run.service.ts` via `generateText()` |
-| Chat (RAG) | Gemini 2.5 Flash | ~$0.001/msg | `chat.service.ts` via `generateText()` |
-| Chat suggestions | Gemini 2.5 Flash | ~$0.001/call | `chat.service.ts` → `getSuggestions()` |
-| Embeddings | Gemini embedding (auto-discovered) | ~$0.0001/chunk | `gemini.client.ts` → `embedTexts()` via REST API |
-| Browser exploration (beta) | Claude Sonnet 4 via Stagehand | ~$0.01/step | `exploration.service.ts` via `STAGEHAND_MODEL` |
-| Try Doc analysis | Gemini 2.5 Flash | ~$0.005/report | `prompt.builder.ts` → `buildTryDocAnalysisPrompt()` |
-| Smart RAG filter | Heuristic (no AI) | $0 | `chat.service.ts` → `needsDocSearch()` |
+| Purpose | Model | Where |
+|---|---|---|
+| Documentation generation | Gemini 2.5 Flash | `documentation.generator.ts` → `generateText()` |
+| Video analysis (steps + narration) | Gemini 2.5 Flash | `gemini.client.ts` → `analyzeVideoWithGemini()` |
+| Narration script (watches the video) | Gemini 2.5 Flash | `gemini.client.ts` → `generateNarrationFromVideo()` |
+| Voice-over TTS | ElevenLabs `eleven_multilingual_v2` | `elevenlabs.client.ts` → `synthesizeSpeech()` |
+| URL analysis (auto-fill project) | Gemini 2.5 Flash | `project.routes.ts` → `/projects/analyze-url` |
+| Context enrichment (learns from docs) | Gemini 2.5 Flash | `run.service.ts` after doc gen, uses `buildContextEnrichmentPrompt()` |
+| Chat (RAG) | Gemini 2.5 Flash | `chat.service.ts` → `generateText()` |
+| Chat suggestions | Gemini 2.5 Flash | `chat.service.ts` → `getSuggestions()` |
+| Walkthrough (AI-guided DOM steps) | Gemini 2.5 Flash | `prompt.builder.ts` → `WALKTHROUGH_SYSTEM_PROMPT` + `buildWalkthroughPrompt()` |
+| Preflight (Try Doc readiness) | Gemini 2.5 Flash | `prompt.builder.ts` → `PREFLIGHT_SYSTEM_PROMPT` + `buildPreflightAnalysisPrompt()` |
+| Try Doc analysis | Gemini 2.5 Flash | `prompt.builder.ts` → `TRY_DOC_ANALYSIS_SYSTEM_PROMPT` + `buildTryDocAnalysisPrompt()` |
+| Embeddings (768-dim) | Gemini embedding (auto-discovered via ListModels) | `gemini.client.ts` → `embedTexts()` / `embedText()` |
+| Try Doc exploration agent | Claude Sonnet 4 via Stagehand (`STAGEHAND_MODEL`) | `exploration.service.ts` (inline instruction) |
+| Smart RAG filter | Heuristic (no AI) | `chat.service.ts` → `needsDocSearch()` |
 
-## Exploration Agent Instruction
+Stagehand model is set via the `STAGEHAND_MODEL` constant (`anthropic/claude-sonnet-4-20250514`) and requires `ANTHROPIC_API_KEY`.
 
-**Location**: `src/features/exploration/exploration.service.ts` (inline, not in prompt.builder)
+## Exploration Agent Instruction (Try Doc)
+
+**Location**: `src/features/exploration/exploration.service.ts` (inline, not in `prompt.builder.ts` — known tech debt).
 
 **Context injected**:
 - Feature name, goal, start URL
 - Previous steps (grouped by URL with action counts) — for resume
-- Project context — structured: audience, workflow, quirks (formatted as markdown)
+- Project context — `{audience, workflow, quirks}` formatted as markdown
+- Discovered context summary (features, navigation, terminology, site structure)
 - Table of contents (sibling pages with status)
 - Credentials (as Stagehand `%variable%` syntax)
-- Page briefing — objective, domain knowledge, typed resources (replaces custom prompt)
-- Custom prompt — legacy fallback if no briefing exists
+- Page briefing — objective, domain knowledge, typed resources (merged with project resources, file resources downloaded inline)
+- Custom prompt — legacy fallback if no briefing
 
-**Key instructions to the agent**:
-- "Be systematic: go through navigation items one by one"
-- "If login page without credentials → call done IMMEDIATELY"
-- "If action fails twice → move on, don't retry"
-- "Don't navigate in circles"
+**Try Doc mode**: When `feature_name` starts with `[Test]`, screenshots are skipped and the agent is instructed to follow the doc verbatim as a naive user.
 
 **maxSteps**: 50
 
 ## Documentation Generation Prompt
 
-**Location**: `src/shared/ai/prompt.builder.ts` → `buildDocumentationPrompt()`
+**Location**: `src/shared/ai/prompt.builder.ts` → `buildDocumentationPrompt()` + `VIDEO_DOC_SYSTEM_PROMPT`.
 
 **Input data**:
 - Steps with importance tagging ([KEY] vs [supporting])
-- Screenshots inline at each step (not listed separately)
-- Run status (completed/blocked/failed) + step counts
-- Project context, table of contents, page content summaries
+- Screenshots inline at each step (signed Supabase URLs)
+- Run status (completed / blocked / failed) + step counts
+- Project context, table of contents, existing page content summaries (200 chars each)
 - Blockers encountered during exploration
 
-**Key instructions**:
-- "Group steps into logical user flows (2-5 flows)"
-- "Skip exploratory dead-ends, focus on happy path"
-- "Place screenshots at the step they belong to"
-- "Write in the SAME LANGUAGE as the website"
-- "Be brutally honest in self-assessment"
-
-**Output format**: Markdown + `---JSON---` separator + self-assessment JSON
-
+**Output format**: Markdown + `---JSON---` separator + self-assessment JSON.
 **max_tokens**: 16384
 
 ## Self-Assessment JSON Schema
@@ -68,7 +63,7 @@
   userActions: string[]
   screenshots: number
   selfAssessment: {
-    overallCompleteness: number  // 0-100
+    overallCompleteness: number                                   // 0-100
     stepAssessments: { stepIndex, confidence, note }[]
     gaps: { area, reason, severity: 'major'|'minor' }[]
     nextSteps: { suggestion, reason, priority: 'high'|'medium'|'low' }[]
@@ -77,38 +72,18 @@
 }
 ```
 
-## Auto-Generate Structure Prompt
-
-**Location**: `src/features/page/page.service.ts` → `autoGenerateStructure()`
-
-**Input**: Site text content (first 5000 chars from `session.extract()`)
-
-**Output**: JSON array of 5-15 pages with hierarchy:
-```json
-{
-  "pages": [
-    { "title": "Getting Started", "slug": "getting-started", "startUrl": "...", "goal": "...", "parentSlug": null, "sortOrder": 0 }
-  ]
-}
-```
-
 ## Context Enrichment Prompt
 
-**Location**: `src/shared/ai/prompt.builder.ts` → `buildContextEnrichmentPrompt()`
+**Location**: `src/shared/ai/prompt.builder.ts` → `buildContextEnrichmentPrompt()`.
+**When**: Fire-and-forget after each documentation generation (`run.service.ts` → `generateDoc()`).
 
-**When**: Called after each documentation generation
-**Model**: Gemini 2.5 Flash — cheap, ~$0.001 per call
-
-**Input**:
-- `existingContext`: current `projects.discovered_context` (or null for first time)
-- `newMarkdown`: the generated documentation
-- `featureName`: the page being documented
+**Input**: `existingContext` (current `projects.discovered_context`), `newMarkdown`, `featureName`.
 
 **Output**: Structured JSON merged with existing knowledge:
 ```json
 {
   "lastUpdated": "ISO timestamp",
-  "siteStructure": ["/ (homepage)", "/pricing", "/admin"],
+  "siteStructure": ["/", "/pricing", "/admin"],
   "navigation": ["Home", "Pricing", "Settings"],
   "terminology": {"term": "definition"},
   "features": ["User auth", "Dashboard"],
@@ -116,35 +91,60 @@
 }
 ```
 
-**Key instruction**: "Merge with existing knowledge — don't replace it."
+Key instruction: "Merge with existing knowledge — don't replace it." Includes fallback JSON repair logic when output is truncated.
 
-**Effect**: Each exploration enriches the project context. Future explorations are more informed about the product.
+## URL Analysis Prompt
+
+**Location**: inline in `src/features/project/project.routes.ts` → `POST /api/projects/analyze-url`.
+
+Fetches the HTML, extracts `<title>`, `meta[name=description]`, `og:description`, `meta[name=theme-color]`, the first Google Font, and the first ~2000 chars of text, then asks Gemini for a JSON with `{name, description, audience, workflow, design{accentColor, bgColor, textColor, font}}`. Always falls back to safe defaults (`#2563EB`, `#FFFFFF`, `#1A1A1A`, `Inter`).
 
 ## Try Doc Analysis Prompt
 
-After Stagehand exploration, Gemini analyzes the raw step data against the original documentation.
+**Location**: `src/shared/ai/prompt.builder.ts` → `TRY_DOC_ANALYSIS_SYSTEM_PROMPT` + `buildTryDocAnalysisPrompt()`.
 
-**Location**: `src/shared/ai/prompt.builder.ts` → `TRY_DOC_ANALYSIS_SYSTEM_PROMPT` + `buildTryDocAnalysisPrompt()`
+After Stagehand exploration, Gemini compares raw step data to the original documentation as a naive user would.
 
-**System prompt** instructs Gemini to judge as a naive user:
-- "Click Create" but button says "New" → DOC issue
-- Product errors out → PRODUCT issue
-- Doc assumes knowledge never explained → implicit assumption
+**System prompt** teaches the distinction:
+- "Click Create" but button says "New" → DOC issue.
+- Product errors out → PRODUCT issue.
+- Doc assumes knowledge that is never explained → implicit assumption.
 
-**Output**: Structured JSON with 7 sections:
-1. Summary (pass/fail/ambiguous counts, overall verdict)
-2. Step-by-step results (instruction vs actual, issue type)
-3. Failures & root causes (doc vs product, severity, suggestion)
-4. Documentation issues (clarity score 1-10, missing/ambiguous/implicit)
-5. UX insights (friction, missing feedback, unnecessary steps)
-6. Recommendations (fix-doc, fix-product, improve-ux with priority)
-7. Global scores (doc quality, test pass rate, UX clarity — each 1-10)
+**Output**: Structured JSON with 7 sections (validated by `TryDocReportSchema`):
+1. Summary (pass/fail/ambiguous counts, overall verdict).
+2. Step-by-step results (instruction vs actual, issue type, screenshot path).
+3. Failures & root causes (doc vs product, severity, suggestion).
+4. Documentation issues (clarity score 1-10, missing sections, ambiguous instructions, implicit assumptions).
+5. UX insights (friction, missing feedback, unnecessary steps).
+6. Recommendations (fix-doc / fix-product / improve-ux with priority).
+7. Global scores (doc quality, test pass rate, UX clarity — each 1-10).
+
+Includes JSON repair logic for truncated responses. Screenshot paths are resolved to public URLs after parsing.
+
+## Preflight Prompt
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `PREFLIGHT_SYSTEM_PROMPT` + `buildPreflightAnalysisPrompt()`.
+**Endpoint**: `POST /api/projects/:pid/pages/:id/preflight`.
+
+Analyzes a documentation page and identifies only the external resources (URLs, credentials, files, prerequisites) that must exist before a Try Doc run can succeed. Returns `{ready, testPlan, estimatedSteps, checks[]}` where each check is `{category, label, status: ready|missing|warning, detail, resolution}`.
+
+## Walkthrough Prompt (AI-guided widget)
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `WALKTHROUGH_SYSTEM_PROMPT` + `buildWalkthroughPrompt()`.
+**Endpoint**: `POST /api/widget/:key/walkthrough`.
+
+Maps the user's current DOM snapshot to a documentation step and returns the next action as JSON. Rate-limited to 10 requests/min per widget key. Requires `project.walkthrough_enabled`.
+
+## Narration Prompt (voice-over)
+
+**Location**: inline in `src/features/run/run.routes.ts` → `POST /runs/:id/generate-voiceover`.
+
+Gemini watches the (downloaded) video and writes an ElevenLabs-v3-formatted script broken into `[SECTION N]` markers with per-section word budgets (~2 words/sec). Tone presets: `friendly | professional | energetic | calm | playful`. Falls back to text-only generation when the video cannot be downloaded.
 
 ## Prompt Improvement Guidelines
 
-When modifying prompts:
-1. All doc generation prompts stay in `prompt.builder.ts`
-2. Test with a real site before deploying — quality is subjective
-3. Keep the `---JSON---` separator format
-4. Zod validates all JSON output — update schemas when changing JSON structure
-5. Self-assessment honesty > inflated completeness scores
+1. All doc-gen/analysis prompts stay in `prompt.builder.ts` (narration + URL analysis are the two inline exceptions because they mix heavy runtime data).
+2. Test with a real site before deploying — quality is subjective.
+3. Keep the `---JSON---` separator format in doc-gen output.
+4. Zod validates every JSON output — update schemas whenever JSON structure changes.
+5. Self-assessment honesty > inflated completeness scores.
