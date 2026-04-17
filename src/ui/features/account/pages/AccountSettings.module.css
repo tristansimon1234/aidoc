@@ -194,11 +194,19 @@
   font-weight: 700;
 }
 
-.usageGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+.usageBlock {
+  display: flex;
+  flex-direction: column;
   gap: var(--space-md);
   margin-top: var(--space-md);
+}
+
+.usageBreakdown {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-sm) var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px dashed var(--color-border);
 }
 
 .usage {
@@ -225,10 +233,14 @@
 }
 
 .usageTrack {
-  height: 6px;
+  height: 8px;
   background: var(--color-secondary);
   border-radius: var(--radius-full);
   overflow: hidden;
+}
+
+.usageTrack_sm {
+  height: 4px;
 }
 
 .usageFill {

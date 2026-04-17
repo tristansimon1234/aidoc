@@ -17,18 +17,14 @@ const TOKEN_COSTS = {
   chat_sessions: 20,
 } as const
 
-function computeTokensUsed(counters: Record<keyof typeof TOKEN_COSTS, number>): number {
-  return (
-    counters.doc_run * TOKEN_COSTS.doc_run +
-    counters.voiceover * TOKEN_COSTS.voiceover +
-    counters.try_doc * TOKEN_COSTS.try_doc +
-    counters.chat_sessions * TOKEN_COSTS.chat_sessions
-  )
-}
-
 function currentPeriodMonth(): string {
   const now = new Date()
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
+}
+
+function pctOf(tokens: number, budget: number): number {
+  if (budget <= 0) return 0
+  return Math.round((tokens / budget) * 1000) / 10  // one decimal
 }
 
 export async function getSummary(userId: string): Promise<BillingSummary> {
@@ -40,13 +36,26 @@ export async function getSummary(userId: string): Promise<BillingSummary> {
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
 
-  const tokensUsed = computeTokensUsed(counters)
-  const percent = plan.monthlyTokens > 0
-    ? Math.round((tokensUsed / plan.monthlyTokens) * 1000) / 10  // one decimal
-    : 0
+  const tokensByFeature = {
+    docRun: counters.doc_run * TOKEN_COSTS.doc_run,
+    voiceover: counters.voiceover * TOKEN_COSTS.voiceover,
+    tryDoc: counters.try_doc * TOKEN_COSTS.try_doc,
+    chatSessions: counters.chat_sessions * TOKEN_COSTS.chat_sessions,
+  }
+  const tokensUsed =
+    tokensByFeature.docRun +
+    tokensByFeature.voiceover +
+    tokensByFeature.tryDoc +
+    tokensByFeature.chatSessions
 
   const snapshot: UsageSnapshot = {
-    percent,
+    percent: pctOf(tokensUsed, plan.monthlyTokens),
+    breakdown: {
+      docRun: pctOf(tokensByFeature.docRun, plan.monthlyTokens),
+      voiceover: pctOf(tokensByFeature.voiceover, plan.monthlyTokens),
+      tryDoc: pctOf(tokensByFeature.tryDoc, plan.monthlyTokens),
+      chatSessions: pctOf(tokensByFeature.chatSessions, plan.monthlyTokens),
+    },
     periodMonth: currentPeriodMonth(),
   }
   return { plan, subscription, usage: snapshot }

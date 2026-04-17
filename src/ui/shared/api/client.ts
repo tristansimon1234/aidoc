@@ -176,6 +176,12 @@ export interface SubscriptionDTO {
 
 export interface UsageSnapshotDTO {
   percent: number
+  breakdown: {
+    docRun: number
+    voiceover: number
+    tryDoc: number
+    chatSessions: number
+  }
   periodMonth: string
 }
 
