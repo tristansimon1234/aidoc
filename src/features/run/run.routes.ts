@@ -87,6 +87,7 @@ runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) 
 // Get a signed upload URL for uploading artifacts directly to Supabase Storage
 runRouter.post('/:id/signed-upload-url', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
+    const t0 = Date.now()
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
@@ -94,10 +95,14 @@ runRouter.post('/:id/signed-upload-url', (req: Request, res: Response, next: Nex
       if (!body.path || typeof body.path !== 'string') {
         throw new ValidationError('path is required')
       }
+      const tBeforeSupabase = Date.now()
       const { createSignedUploadUrl } = await import('../../shared/db/storage.repository.js')
       const signedUrl = await createSignedUploadUrl('artifacts', body.path)
+      const tAfterSupabase = Date.now()
+      console.log(`[signed-upload-url] total=${tAfterSupabase - t0}ms supabase=${tAfterSupabase - tBeforeSupabase}ms path=${body.path}`)
       res.status(200).json({ signedUrl, path: body.path })
     } catch (err) {
+      console.error(`[signed-upload-url] FAILED after ${Date.now() - t0}ms:`, (err as Error).message)
       next(err)
     }
   })()
