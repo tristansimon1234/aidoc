@@ -123,6 +123,27 @@ export function AccountSettings(): React.ReactElement {
   )
 }
 
+function UsageBar({ label, used, limit }: { label: string; used: number; limit: number }): React.ReactElement {
+  const pct = limit === 0 ? 0 : Math.min(100, Math.round((used / limit) * 100))
+  const tone = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : 'ok'
+  return (
+    <div className={styles.usage}>
+      <div className={styles.usageHead}>
+        <span className={styles.usageLabel}>{label}</span>
+        <span className={styles.usageValue}>
+          {used.toLocaleString()} / {limit.toLocaleString()}
+        </span>
+      </div>
+      <div className={styles.usageTrack}>
+        <div
+          className={`${styles.usageFill} ${styles[`usageFill_${tone}`]}`}
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
 function formatPrice(plan: PlanDTO): string {
   if (plan.priceCents === 0) return 'Free'
   const amount = (plan.priceCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })
@@ -193,6 +214,15 @@ function BillingTab(): React.ReactElement {
               : ' Usage is metered per calendar month.'}
           </p>
         </div>
+
+        {summary && (
+          <div className={styles.usageGrid}>
+            <UsageBar label="Doc generations" used={summary.usage.docRun} limit={summary.plan.maxDocRuns} />
+            <UsageBar label="Voice-overs" used={summary.usage.voiceover} limit={summary.plan.maxVoiceovers} />
+            <UsageBar label="Try Doc tests" used={summary.usage.tryDoc} limit={summary.plan.maxTryDoc} />
+            <UsageBar label="Widget sessions" used={summary.usage.widgetSessions} limit={summary.plan.maxWidgetSessions} />
+          </div>
+        )}
       </div>
 
       <div className={styles.plansGrid}>

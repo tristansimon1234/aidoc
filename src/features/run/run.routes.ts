@@ -517,6 +517,15 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         language: body.language,
       })
 
+      // Metered: bump monthly voiceover counter for the project owner
+      try {
+        const { findOwnerUserIdByRunId, incrementUsage } = await import('../../shared/usage/usage.repository.js')
+        const ownerId = await findOwnerUserIdByRunId(params.data.id)
+        if (ownerId) await incrementUsage(ownerId, 'voiceover')
+      } catch (err) {
+        console.warn('[usage] increment voiceover failed:', (err as Error).message)
+      }
+
       // Store voiceover info in run summary
       const existingSummary = run.summaryJson ?? {}
       const { updateRunSummary } = await import('./run.repository.js')

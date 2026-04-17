@@ -178,9 +178,18 @@ export interface SubscriptionDTO {
   updatedAt: string
 }
 
+export interface UsageSnapshotDTO {
+  docRun: number
+  voiceover: number
+  tryDoc: number
+  widgetSessions: number
+  periodMonth: string
+}
+
 export interface BillingSummaryDTO {
   plan: PlanDTO
   subscription: SubscriptionDTO
+  usage: UsageSnapshotDTO
 }
 
 export interface PageResourceDTO {

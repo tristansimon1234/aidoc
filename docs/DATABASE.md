@@ -140,6 +140,32 @@ updated_at              timestamptz DEFAULT now()
 **RLS**: `auth.uid() = user_id` for SELECT.
 **Trigger**: `handle_new_user()` (shared with `profiles`) inserts a free subscription on signup; migration backfills existing users.
 
+### usage_counters
+```sql
+user_id       uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+period_month  date NOT NULL
+feature       text NOT NULL CHECK (feature IN ('doc_run','voiceover','try_doc','widget_sessions'))
+count         integer NOT NULL DEFAULT 0
+updated_at    timestamptz DEFAULT now()
+PRIMARY KEY (user_id, period_month, feature)
+```
+**RLS**: SELECT `auth.uid() = user_id`.
+**RPC**: `increment_usage(p_user_id, p_feature, p_delta)` — atomic `INSERT ... ON CONFLICT DO UPDATE`, SECURITY DEFINER. Called from backend services after each successful metered operation.
+
+### widget_sessions
+```sql
+project_id     uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE
+session_token  text NOT NULL             -- generated client-side, persisted in sessionStorage
+period_month   date NOT NULL DEFAULT date_trunc('month', now())::date
+user_id        uuid NOT NULL REFERENCES auth.users(id)   -- denormalized project owner
+started_at     timestamptz DEFAULT now()
+last_seen_at   timestamptz DEFAULT now()
+PRIMARY KEY (project_id, session_token, period_month)
+```
+**Index**: `idx_widget_sessions_last_seen`.
+**RLS**: SELECT `auth.uid() = user_id`. Inserts via service_role only.
+**Purpose**: deduplicates widget sessions per calendar month — only the first insert for a (project, token) in a month triggers a `widget_sessions` counter increment.
+
 ### profiles
 ```sql
 id                 uuid PK REFERENCES auth.users(id) ON DELETE CASCADE
@@ -216,6 +242,7 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 24 | `20260417000001_add_mcp_api_key.sql` | Add MCP API key + enabled flag to projects |
 | 25 | `20260417000002_add_profiles_and_language.sql` | `profiles` table (1:1 with auth.users) + trigger to auto-create on signup |
 | 26 | `20260417000003_add_plans_and_subscriptions.sql` | `plans` (seeded) + `subscriptions` (free by default) + trigger extension + backfill |
+| 27 | `20260417000004_add_usage_tracking.sql` | `usage_counters` + `increment_usage` RPC + `widget_sessions` dedup table |
 
 ## Relationships
 

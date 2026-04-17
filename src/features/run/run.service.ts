@@ -6,6 +6,7 @@ import { exploreRun, type RunDeps } from '../exploration/exploration.service.js'
 import type { StepEvent } from '../exploration/exploration.types.js'
 import * as questionRepo from '../../features/questions/questions.repository.js'
 import { generateAndSaveDoc } from '../documentation/documentation.service.js'
+import { incrementUsage, findOwnerUserIdByRunId } from '../../shared/usage/usage.repository.js'
 import type { DocDeps } from '../documentation/documentation.service.js'
 import type { GeneratedDoc } from '../documentation/documentation.types.js'
 import type { PageBriefingWithContent } from '../page/page.types.js'
@@ -262,6 +263,14 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
   }
 
   const doc = await generateAndSaveDoc(id, buildDocDeps(), docOptions)
+
+  // Metered: bump monthly doc_run counter for the project owner
+  try {
+    const ownerId = await findOwnerUserIdByRunId(id)
+    if (ownerId) await incrementUsage(ownerId, 'doc_run')
+  } catch (err) {
+    console.warn('[usage] increment doc_run failed:', (err as Error).message)
+  }
 
   // FIX 4: page.content is THE source of truth — write synchronously, no silent catch
   if (run.docPageId && doc.markdownContent) {
@@ -616,6 +625,14 @@ export async function analyzeTryDoc(
     ...(run.summaryJson ?? {}),
     tryDocReport: report,
   })
+
+  // Metered: bump monthly try_doc counter for the project owner
+  try {
+    const ownerId = await findOwnerUserIdByRunId(runId)
+    if (ownerId) await incrementUsage(ownerId, 'try_doc')
+  } catch (err) {
+    console.warn('[usage] increment try_doc failed:', (err as Error).message)
+  }
 
   return report
 }

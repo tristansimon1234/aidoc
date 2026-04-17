@@ -30,7 +30,16 @@ export interface Subscription {
   updatedAt: Date
 }
 
+export interface UsageSnapshot {
+  docRun: number
+  voiceover: number
+  tryDoc: number
+  widgetSessions: number
+  periodMonth: string  // e.g. '2026-04-01'
+}
+
 export interface BillingSummary {
   plan: Plan
   subscription: Subscription
+  usage: UsageSnapshot
 }

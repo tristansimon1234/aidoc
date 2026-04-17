@@ -194,6 +194,53 @@
   font-weight: 700;
 }
 
+.usageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.usage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.usageHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: var(--text-xs);
+}
+
+.usageLabel {
+  color: var(--color-muted-fg);
+}
+
+.usageValue {
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.usageTrack {
+  height: 6px;
+  background: var(--color-secondary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.usageFill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.25s ease;
+}
+
+.usageFill_ok { background: var(--color-primary); }
+.usageFill_warn { background: var(--color-warning); }
+.usageFill_over { background: var(--color-destructive); }
+
 .billingFootnote {
   font-size: var(--text-xs);
   color: var(--color-muted-fg);
