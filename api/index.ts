@@ -9,6 +9,7 @@ import { questionsRouter } from '../src/features/questions/questions.routes.js'
 import { documentationRouter } from '../src/features/documentation/documentation.routes.js'
 import { chatRouter } from '../src/features/chat/chat.routes.js'
 import { widgetRouter } from '../src/features/chat/widget.routes.js'
+import { mcpRouter } from '../src/features/chat/mcp.routes.js'
 import { publicDocsRouter } from '../src/features/page/public-docs.routes.js'
 import { errorHandler } from '../src/shared/middleware/error.middleware.js'
 
@@ -24,6 +25,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // Public routes (no auth)
 app.use('/api/widget', widgetRouter)
+app.use('/api/mcp', mcpRouter)
 app.use('/api/docs', publicDocsRouter)
 
 // Protected routes
