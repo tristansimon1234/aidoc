@@ -320,23 +320,23 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
     )
   }
 
-  // Processing pipeline
-  if (status === 'uploading' || status === 'analyzing' || status === 'extracting' || status === 'generating') {
+  // Processing pipeline — upload is client-side, rest is server-side in one call
+  if (status === 'uploading' || status === 'analyzing') {
     const pipelineSteps = [
       { label: 'Uploading video', estimatedSeconds: 5 },
-      { label: 'Analyzing with AI', estimatedSeconds: 45 },
-      { label: 'Extracting screenshots', estimatedSeconds: 10 },
-      { label: 'Generating documentation', estimatedSeconds: 20 },
+      { label: 'Analyzing video with AI', estimatedSeconds: 60 },
+      { label: 'Extracting screenshots', estimatedSeconds: 15 },
+      { label: 'Generating documentation', estimatedSeconds: 30 },
     ]
-    const stepMap: Record<string, number> = { uploading: 0, analyzing: 1, extracting: 2, generating: 3 }
+    const activeStep = status === 'uploading' ? 0 : 1
     return (
       <div className={styles.methodContent}>
-        <ProgressLoader steps={pipelineSteps} activeStep={stepMap[status] ?? 0} />
+        <ProgressLoader steps={pipelineSteps} activeStep={activeStep} />
       </div>
     )
   }
 
-  // Background doc-gen job running — show progress instead of record/upload
+  // Background doc-gen job running — show same progress (returned to page)
   if (activeDocJob?.status === 'running' && status === 'idle') {
     return (
       <div className={styles.methodContent}>

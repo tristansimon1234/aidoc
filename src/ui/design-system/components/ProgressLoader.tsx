@@ -15,23 +15,37 @@ interface ProgressLoaderProps {
   onExited?: () => void
 }
 
-export function ProgressLoader({ steps, activeStep, statusMessage, done, onExited }: ProgressLoaderProps): React.ReactElement | null {
+export function ProgressLoader({ steps, activeStep: externalActiveStep, statusMessage, done, onExited }: ProgressLoaderProps): React.ReactElement | null {
   const [elapsed, setElapsed] = useState(0)
   const [exiting, setExiting] = useState(false)
   const [hidden, setHidden] = useState(false)
+  const [autoAdvance, setAutoAdvance] = useState(0)
   const startRef = useRef(Date.now())
+
+  // The effective active step: external signal OR auto-advanced based on elapsed time
+  const activeStep = Math.min(externalActiveStep + autoAdvance, steps.length - 1)
 
   useEffect(() => {
     startRef.current = Date.now()
     setElapsed(0)
-  }, [activeStep])
+    setAutoAdvance(0)
+  }, [externalActiveStep])
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setElapsed((Date.now() - startRef.current) / 1000)
+      const now = (Date.now() - startRef.current) / 1000
+      setElapsed(now)
+
+      // Auto-advance to next step when estimated time is exceeded
+      const currentEstimated = steps[externalActiveStep + autoAdvance]?.estimatedSeconds ?? 999
+      if (now > currentEstimated * 1.1 && externalActiveStep + autoAdvance < steps.length - 1) {
+        setAutoAdvance((prev) => prev + 1)
+        startRef.current = Date.now()
+        setElapsed(0)
+      }
     }, 250)
     return () => clearInterval(interval)
-  }, [activeStep])
+  }, [externalActiveStep, autoAdvance, steps])
 
   // Handle done → exit animation → hide
   useEffect(() => {
