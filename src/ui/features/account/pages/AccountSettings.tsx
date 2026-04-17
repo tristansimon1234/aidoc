@@ -123,17 +123,16 @@ export function AccountSettings(): React.ReactElement {
   )
 }
 
-function UsageBar({ label, percent, size = 'lg' }: { label: string; percent: number; size?: 'lg' | 'sm' }): React.ReactElement {
+function UsageBar({ label, percent }: { label: string; percent: number }): React.ReactElement {
   const clamped = Math.max(0, percent)
   const tone = clamped >= 100 ? 'over' : clamped >= 80 ? 'warn' : 'ok'
-  const trackClass = size === 'sm' ? `${styles.usageTrack} ${styles.usageTrack_sm}` : styles.usageTrack
   return (
     <div className={styles.usage}>
       <div className={styles.usageHead}>
         <span className={styles.usageLabel}>{label}</span>
         <span className={styles.usageValue}>{clamped.toFixed(1)} %</span>
       </div>
-      <div className={trackClass}>
+      <div className={styles.usageTrack}>
         <div
           className={`${styles.usageFill} ${styles[`usageFill_${tone}`]}`}
           style={{ width: `${Math.min(clamped, 100)}%` }}
@@ -216,13 +215,7 @@ function BillingTab(): React.ReactElement {
 
         {summary && (
           <div className={styles.usageBlock}>
-            <UsageBar label="Monthly usage" percent={summary.usage.percent} size="lg" />
-            <div className={styles.usageBreakdown}>
-              <UsageBar label="Doc generation" percent={summary.usage.breakdown.docRun} size="sm" />
-              <UsageBar label="Voice-over" percent={summary.usage.breakdown.voiceover} size="sm" />
-              <UsageBar label="Try Doc" percent={summary.usage.breakdown.tryDoc} size="sm" />
-              <UsageBar label="Chat sessions" percent={summary.usage.breakdown.chatSessions} size="sm" />
-            </div>
+            <UsageBar label="Monthly usage" percent={summary.usage.percent} />
           </div>
         )}
       </div>

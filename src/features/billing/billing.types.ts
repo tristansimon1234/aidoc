@@ -27,17 +27,10 @@ export interface Subscription {
 }
 
 export interface UsageSnapshot {
-  // Each value is a percent of the plan's monthly token budget consumed by
-  // that feature. Sum of breakdown ≈ percent (rounding aside). Exposing only
-  // percents — never raw counts or token weights — so we can tune internals
-  // without renegotiating with users.
+  // Single opaque percent of the plan's monthly token budget consumed this
+  // month. Raw counts and token weights stay server-side — admins get the
+  // breakdown via `/admin/usage`, regular users never see it.
   percent: number
-  breakdown: {
-    docRun: number
-    voiceover: number
-    tryDoc: number
-    chatSessions: number
-  }
   periodMonth: string  // e.g. '2026-04-01'
 }
 

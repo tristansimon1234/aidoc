@@ -37,26 +37,14 @@ export async function getSummary(userId: string): Promise<BillingSummary> {
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
 
-  const tokensByFeature = {
-    docRun: counters.doc_run * TOKEN_COSTS.doc_run,
-    voiceover: counters.voiceover * TOKEN_COSTS.voiceover,
-    tryDoc: counters.try_doc * TOKEN_COSTS.try_doc,
-    chatSessions: counters.chat_sessions * TOKEN_COSTS.chat_sessions,
-  }
   const tokensUsed =
-    tokensByFeature.docRun +
-    tokensByFeature.voiceover +
-    tokensByFeature.tryDoc +
-    tokensByFeature.chatSessions
+    counters.doc_run * TOKEN_COSTS.doc_run +
+    counters.voiceover * TOKEN_COSTS.voiceover +
+    counters.try_doc * TOKEN_COSTS.try_doc +
+    counters.chat_sessions * TOKEN_COSTS.chat_sessions
 
   const snapshot: UsageSnapshot = {
     percent: pctOf(tokensUsed, plan.monthlyTokens),
-    breakdown: {
-      docRun: pctOf(tokensByFeature.docRun, plan.monthlyTokens),
-      voiceover: pctOf(tokensByFeature.voiceover, plan.monthlyTokens),
-      tryDoc: pctOf(tokensByFeature.tryDoc, plan.monthlyTokens),
-      chatSessions: pctOf(tokensByFeature.chatSessions, plan.monthlyTokens),
-    },
     periodMonth: currentPeriodMonth(),
   }
   return { plan, subscription, usage: snapshot }
