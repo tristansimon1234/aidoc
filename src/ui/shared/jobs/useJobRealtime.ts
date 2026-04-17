@@ -47,8 +47,14 @@ export function useJobRealtime(): void {
             .from('jobs')
             .select('run_id, status')
             .in('run_id', [...ids])
+            .order('created_at', { ascending: false })
 
+          // Only use the LATEST job per run_id (ignore old completed ones)
+          const seen = new Set<string>()
           for (const row of data ?? []) {
+            const rid = row.run_id as string
+            if (seen.has(rid)) continue
+            seen.add(rid)
             handleUpdate(row as { run_id: string; status: string })
           }
         } catch { /* retry next cycle */ }
