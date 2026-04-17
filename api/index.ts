@@ -3,6 +3,8 @@ import cors from 'cors'
 import type { Request, Response } from 'express'
 import { authMiddleware } from '../src/shared/middleware/auth.middleware.js'
 import { projectRouter } from '../src/features/project/project.routes.js'
+import { profileRouter } from '../src/features/profile/profile.routes.js'
+import { billingRouter } from '../src/features/billing/billing.routes.js'
 import { pageRouter } from '../src/features/page/page.routes.js'
 import { runRouter } from '../src/features/run/run.routes.js'
 import { questionsRouter } from '../src/features/questions/questions.routes.js'
@@ -29,6 +31,8 @@ app.use('/api/mcp', mcpRouter)
 app.use('/api/docs', publicDocsRouter)
 
 // Protected routes
+app.use('/api/profile', authMiddleware, profileRouter)
+app.use('/api/billing', authMiddleware, billingRouter)
 app.use('/api/projects', authMiddleware, projectRouter)
 app.use('/api/projects/:projectId/pages', authMiddleware, pageRouter)
 app.use('/api/projects/:projectId/chat', authMiddleware, chatRouter)
