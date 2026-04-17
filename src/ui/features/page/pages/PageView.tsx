@@ -94,7 +94,9 @@ export function PageView(): React.ReactElement {
     setTryStreamSteps([])
     setPreflightResult(null)
     setPreflightLoading(false)
-    setGeneratingVoiceover(false)
+    // Restore voiceover generating state from job context
+    const incomingVoiceoverJob = getJobForPage(pageId!, 'voiceover')
+    setGeneratingVoiceover(incomingVoiceoverJob?.status === 'running')
     // Restore liveUrl + tab for pages with active test, reset for others
     const incomingTestJob = getJobForPage(pageId!, 'try-doc')
     if (incomingTestJob?.status === 'running' && incomingTestJob.liveUrl) {
