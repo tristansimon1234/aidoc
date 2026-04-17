@@ -44,10 +44,13 @@ export function AdminUsage(): React.ReactElement {
       voiceover: acc.voiceover + u.counts.voiceover,
       tryDoc: acc.tryDoc + u.counts.try_doc,
       chatSessions: acc.chatSessions + u.counts.chat_sessions,
-      tokensUsed: acc.tokensUsed + u.tokensUsed,
+      euroCost: acc.euroCost + u.euroCost,
     }),
-    { docRun: 0, voiceover: 0, tryDoc: 0, chatSessions: 0, tokensUsed: 0 },
+    { docRun: 0, voiceover: 0, tryDoc: 0, chatSessions: 0, euroCost: 0 },
   )
+
+  const formatEuro = (n: number): string =>
+    n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
 
   return (
     <Shell>
@@ -79,7 +82,7 @@ export function AdminUsage(): React.ReactElement {
                 <div><span className={styles.totalsLabel}>Voice-overs</span><span className={styles.totalsValue}>{formatNumber(totals.voiceover)}</span></div>
                 <div><span className={styles.totalsLabel}>Try Doc</span><span className={styles.totalsValue}>{formatNumber(totals.tryDoc)}</span></div>
                 <div><span className={styles.totalsLabel}>Chat sessions</span><span className={styles.totalsValue}>{formatNumber(totals.chatSessions)}</span></div>
-                <div><span className={styles.totalsLabel}>Tokens</span><span className={styles.totalsValue}>{formatNumber(totals.tokensUsed)}</span></div>
+                <div><span className={styles.totalsLabel}>AI cost</span><span className={styles.totalsValue}>{formatEuro(totals.euroCost)}</span></div>
               </div>
             )}
 
@@ -93,8 +96,8 @@ export function AdminUsage(): React.ReactElement {
                     <th className={styles.num}>Voice-overs</th>
                     <th className={styles.num}>Try Doc</th>
                     <th className={styles.num}>Chat</th>
-                    <th className={styles.num}>Tokens</th>
-                    <th className={styles.num}>%</th>
+                    <th className={styles.num}>AI cost</th>
+                    <th className={styles.num}>Quota %</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -113,7 +116,9 @@ export function AdminUsage(): React.ReactElement {
                         <td className={styles.num}>{formatNumber(u.counts.voiceover)}</td>
                         <td className={styles.num}>{formatNumber(u.counts.try_doc)}</td>
                         <td className={styles.num}>{formatNumber(u.counts.chat_sessions)}</td>
-                        <td className={styles.num}>{formatNumber(u.tokensUsed)}{u.monthlyTokens ? ` / ${formatNumber(u.monthlyTokens)}` : ''}</td>
+                        <td className={styles.num} title={`Doc ${formatEuro(u.euroByFeature.doc_run)} · VO ${formatEuro(u.euroByFeature.voiceover)} · Try ${formatEuro(u.euroByFeature.try_doc)} · Chat ${formatEuro(u.euroByFeature.chat_sessions)}`}>
+                          {formatEuro(u.euroCost)}
+                        </td>
                         <td className={styles.num}>{u.percent.toFixed(1)}</td>
                       </tr>
                     )

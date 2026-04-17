@@ -9,13 +9,23 @@ export async function listPlans(): Promise<Plan[]> {
 
 // Token cost of each metered operation. Kept in code (not DB) so we can
 // adjust pricing internally without a migration or user-facing change.
-// Units are abstract "tokens" tied loosely to COGS (~1 token ≈ 0.001 €).
+// Units are abstract "tokens" — how the user-facing quota is expressed.
 // Exported for the admin feature which needs to compute weighted spend per user.
 export const TOKEN_COSTS = {
   doc_run: 100,
   voiceover: 300,
   try_doc: 400,
   chat_sessions: 20,
+} as const
+
+// Real AI / infra cost per operation in EUR — the actual COGS we pay to
+// Gemini / ElevenLabs / Browserbase / Claude on each call. Used by the admin
+// dashboard and later by the overage billing logic. Keep in sync with reality.
+export const EURO_COSTS = {
+  doc_run: 0.10,       // Gemini 2.5 Flash video + doc + storage
+  voiceover: 0.30,     // ElevenLabs eleven_multilingual_v2 ~0.20€/1K chars × ~1.5K chars
+  try_doc: 0.40,       // Claude Sonnet 4 (via Stagehand) + Browserbase + Gemini analysis
+  chat_sessions: 0.02, // Gemini 2.5 Flash ~6 turns per session
 } as const
 
 function currentPeriodMonth(): string {

@@ -12,6 +12,9 @@ export interface AdminUsageRow {
   // Derived: weighted tokens spent on each feature + total
   tokensByFeature: Record<UsageFeature, number>
   tokensUsed: number
+  // Real AI / infra cost in EUR, per feature + total — the actual COGS
+  euroByFeature: Record<UsageFeature, number>
+  euroCost: number
   // 0-∞; can exceed 100 if the user went over quota
   percent: number
 }

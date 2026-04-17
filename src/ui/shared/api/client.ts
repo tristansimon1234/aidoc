@@ -197,6 +197,8 @@ export interface AdminUsageRowDTO {
   counts: Record<UsageFeatureKey, number>
   tokensByFeature: Record<UsageFeatureKey, number>
   tokensUsed: number
+  euroByFeature: Record<UsageFeatureKey, number>
+  euroCost: number
   percent: number
 }
 

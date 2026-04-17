@@ -1,6 +1,6 @@
 import * as billingRepo from '../billing/billing.repository.js'
 import * as adminRepo from './admin.repository.js'
-import { TOKEN_COSTS } from '../billing/billing.service.js'
+import { TOKEN_COSTS, EURO_COSTS } from '../billing/billing.service.js'
 import type { UsageFeature } from '../../shared/usage/usage.repository.js'
 import type { AdminUsageReport, AdminUsageRow } from './admin.types.js'
 import type { PlanId } from '../billing/billing.types.js'
@@ -49,6 +49,17 @@ export async function getUsageReport(periodMonth: string): Promise<AdminUsageRep
       tokensByFeature.voiceover +
       tokensByFeature.try_doc +
       tokensByFeature.chat_sessions
+    const euroByFeature: Record<UsageFeature, number> = {
+      doc_run: counts.doc_run * EURO_COSTS.doc_run,
+      voiceover: counts.voiceover * EURO_COSTS.voiceover,
+      try_doc: counts.try_doc * EURO_COSTS.try_doc,
+      chat_sessions: counts.chat_sessions * EURO_COSTS.chat_sessions,
+    }
+    const euroCost =
+      euroByFeature.doc_run +
+      euroByFeature.voiceover +
+      euroByFeature.try_doc +
+      euroByFeature.chat_sessions
     const percent = plan && plan.monthlyTokens > 0
       ? Math.round((tokensUsed / plan.monthlyTokens) * 1000) / 10
       : 0
@@ -62,12 +73,14 @@ export async function getUsageReport(periodMonth: string): Promise<AdminUsageRep
       counts,
       tokensByFeature,
       tokensUsed,
+      euroByFeature,
+      euroCost,
       percent,
     })
   }
 
-  // Sort heaviest first so overages pop
-  rows.sort((a, b) => b.tokensUsed - a.tokensUsed)
+  // Sort heaviest first (by real € cost — what actually matters for ops)
+  rows.sort((a, b) => b.euroCost - a.euroCost)
 
   return { periodMonth, users: rows }
 }
