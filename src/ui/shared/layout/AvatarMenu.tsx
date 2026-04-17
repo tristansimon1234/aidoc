@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth.js'
+import { api, type ProfileDTO } from '../api/client.js'
 import styles from './AvatarMenu.module.css'
 
 function initialsFromEmail(email: string | undefined | null): string {
@@ -15,8 +16,18 @@ export function AvatarMenu(): React.ReactElement {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const [profile, setProfile] = useState<ProfileDTO | null>(null)
   const anchorRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // Fetch profile once per mount — admin flag lives server-side so we don't
+  // leak the admin email list into the frontend bundle.
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    void api.profile.get().then((p) => { if (!cancelled) setProfile(p) }).catch(() => { /* ignore */ })
+    return () => { cancelled = true }
+  }, [user])
 
   useEffect(() => {
     if (!open) return
@@ -81,6 +92,21 @@ export function AvatarMenu(): React.ReactElement {
             </svg>
             <span>View all plans</span>
           </button>
+
+          {profile?.isAdmin && (
+            <>
+              <div className={styles.divider} />
+              <button className={styles.item} role="menuitem" onClick={() => go('/admin/usage')}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 3v18h18" />
+                  <rect x="7" y="13" width="3" height="5" />
+                  <rect x="12" y="9" width="3" height="9" />
+                  <rect x="17" y="5" width="3" height="13" />
+                </svg>
+                <span>Admin · Usage</span>
+              </button>
+            </>
+          )}
 
           <div className={styles.divider} />
 

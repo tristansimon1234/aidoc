@@ -10,7 +10,8 @@ export async function listPlans(): Promise<Plan[]> {
 // Token cost of each metered operation. Kept in code (not DB) so we can
 // adjust pricing internally without a migration or user-facing change.
 // Units are abstract "tokens" tied loosely to COGS (~1 token ≈ 0.001 €).
-const TOKEN_COSTS = {
+// Exported for the admin feature which needs to compute weighted spend per user.
+export const TOKEN_COSTS = {
   doc_run: 100,
   voiceover: 300,
   try_doc: 400,

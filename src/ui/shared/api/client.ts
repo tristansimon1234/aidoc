@@ -144,6 +144,7 @@ export interface ProfileDTO {
   email: string | null
   fullName: string | null
   stripeCustomerId: string | null
+  isAdmin: boolean
   createdAt: string
   updatedAt: string
 }
@@ -191,6 +192,25 @@ export interface BillingSummaryDTO {
   usage: UsageSnapshotDTO
 }
 
+export type UsageFeatureKey = 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions'
+
+export interface AdminUsageRowDTO {
+  userId: string
+  email: string | null
+  fullName: string | null
+  planId: PlanId | null
+  monthlyTokens: number | null
+  counts: Record<UsageFeatureKey, number>
+  tokensByFeature: Record<UsageFeatureKey, number>
+  tokensUsed: number
+  percent: number
+}
+
+export interface AdminUsageReportDTO {
+  periodMonth: string
+  users: AdminUsageRowDTO[]
+}
+
 export interface PageResourceDTO {
   type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'
   label: string
@@ -233,6 +253,10 @@ export const api = {
     summary: (): Promise<BillingSummaryDTO> => request('/billing/summary'),
     selectPlan: (planId: PlanId): Promise<BillingSummaryDTO> =>
       request('/billing/subscription/select', { method: 'POST', body: JSON.stringify({ planId }) }),
+  },
+  admin: {
+    usage: (month?: string): Promise<AdminUsageReportDTO> =>
+      request(`/admin/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`),
   },
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),

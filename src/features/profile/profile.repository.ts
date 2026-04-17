@@ -1,5 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
+import { isAdminEmail } from '../../shared/config/env.js'
 import type { Profile, UpdateProfileInput } from './profile.types.js'
 
 /**
@@ -27,6 +28,7 @@ function mapToProfile(row: ProfileRow): Profile {
     email: row.email,
     fullName: row.full_name,
     stripeCustomerId: row.stripe_customer_id,
+    isAdmin: isAdminEmail(row.email),
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }

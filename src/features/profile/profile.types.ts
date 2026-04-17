@@ -3,6 +3,7 @@ export interface Profile {
   email: string | null
   fullName: string | null
   stripeCustomerId: string | null
+  isAdmin: boolean
   createdAt: Date
   updatedAt: Date
 }

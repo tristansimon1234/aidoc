@@ -115,6 +115,7 @@ AppError → { error: string, code: string, details?: unknown }
 /api/billing/plans                             GET         (authenticated — list all plans)
 /api/billing/summary                           GET         (authenticated — current plan + subscription)
 /api/billing/subscription/select               POST        (authenticated — temp; Stripe Checkout later)
+/api/admin/usage                               GET         (admin-only — monthly usage for all users)
 /api/projects                                  GET POST
 /api/projects/:id                              GET PUT DELETE
 /api/projects/:pid/pages                       GET POST
