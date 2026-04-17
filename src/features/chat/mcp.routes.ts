@@ -31,8 +31,8 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
         return
       }
 
-      const { findProjectByWidgetKey } = await import('../project/project.repository.js')
-      const project = await findProjectByWidgetKey(widgetKey)
+      const { findProjectByMcpKey } = await import('../project/project.repository.js')
+      const project = await findProjectByMcpKey(widgetKey)
       if (!project) throw new NotFoundError('MCP endpoint not found or disabled')
 
       const body = req.body as JsonRpcRequest

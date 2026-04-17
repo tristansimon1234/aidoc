@@ -205,6 +205,38 @@ projectRouter.delete('/:id/widget-key', (req: Request, res: Response, next: Next
   })()
 })
 
+// Generate MCP API key
+projectRouter.post('/:id/mcp-key', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { randomBytes } = await import('node:crypto')
+      const key = `aidoc_mcp_${randomBytes(24).toString('hex')}`
+      const { setMcpApiKey } = await import('./project.repository.js')
+      const project = await setMcpApiKey(params.data.id, key)
+      res.status(200).json({ mcpApiKey: project.mcpApiKey, mcpEnabled: true })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Disable MCP
+projectRouter.delete('/:id/mcp-key', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { disableMcp } = await import('./project.repository.js')
+      await disableMcp(params.data.id)
+      res.status(200).json({ mcpEnabled: false })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Upload project logo
 projectRouter.post('/:id/logo', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {

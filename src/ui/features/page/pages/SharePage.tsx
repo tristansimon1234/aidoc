@@ -6,11 +6,12 @@ import { api } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
 import styles from './SharePage.module.css'
 
-type ShareTab = 'publish' | 'widget' | 'team'
+type ShareTab = 'publish' | 'widget' | 'mcp' | 'team'
 
 const TABS: { id: ShareTab; label: string; desc: string }[] = [
   { id: 'publish', label: 'Publish', desc: 'Public documentation URL' },
   { id: 'widget', label: 'Widget', desc: 'Embeddable AI chat' },
+  { id: 'mcp', label: 'MCP', desc: 'Connect to Claude' },
   { id: 'team', label: 'Team', desc: 'Invite collaborators' },
 ]
 
@@ -40,6 +41,7 @@ export function SharePage(): React.ReactElement {
       <div className={styles.tabContent}>
         {activeTab === 'publish' && <PublishSection project={project} />}
         {activeTab === 'widget' && <WidgetSection project={project} setProject={setProject} />}
+        {activeTab === 'mcp' && <McpSection project={project} setProject={setProject} />}
         {activeTab === 'team' && <TeamSection />}
       </div>
     </div>
@@ -244,6 +246,82 @@ function WidgetSection({ project, setProject }: { project: ProjectDTO; setProjec
           </Button>
         )}
       </div>
+    </div>
+  )
+}
+
+// --- MCP ---
+
+function McpSection({ project, setProject }: { project: ProjectDTO; setProject: (p: ProjectDTO) => void }): React.ReactElement {
+  const [enabling, setEnabling] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const hasKey = !!project.mcpApiKey && project.mcpEnabled
+
+  const enableMcp = async (): Promise<void> => {
+    setEnabling(true)
+    try {
+      const result = await api.projects.generateMcpKey(project.id)
+      setProject({ ...project, mcpApiKey: result.mcpApiKey, mcpEnabled: true })
+    } finally {
+      setEnabling(false)
+    }
+  }
+
+  const mcpUrl = hasKey ? `${window.location.origin}/api/mcp/${project.mcpApiKey}` : null
+
+  const configJson = mcpUrl ? JSON.stringify({
+    mcpServers: {
+      [project.name.toLowerCase().replace(/\s+/g, '-')]: {
+        url: mcpUrl,
+      },
+    },
+  }, null, 2) : ''
+
+  const copyConfig = (): void => {
+    void navigator.clipboard.writeText(configJson)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>MCP Server</h2>
+        <p className={styles.sectionDesc}>Connect your documentation to Claude Desktop, Claude Code, or any MCP-compatible AI assistant.</p>
+      </div>
+
+      {!hasKey ? (
+        <div>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', marginBottom: 'var(--space-md)' }}>
+            Enable the API to generate an MCP endpoint for your documentation. This uses the same API key as the chat widget.
+          </p>
+          <Button onClick={() => void enableMcp()} disabled={enabling}>
+            {enabling ? 'Enabling...' : 'Enable MCP'}
+          </Button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          <div>
+            <label style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-muted-fg)', display: 'block', marginBottom: 4 }}>MCP Server URL</label>
+            <div className={styles.codeBlock}>
+              <code>{mcpUrl}</code>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--color-muted-fg)', display: 'block', marginBottom: 4 }}>Claude Desktop config</label>
+            <div className={styles.codeBlock} style={{ position: 'relative' }}>
+              <button className={styles.copyBtn} onClick={copyConfig}>{copied ? 'Copied!' : 'Copy'}</button>
+              <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: 'var(--text-xs)' }}>{configJson}</pre>
+            </div>
+          </div>
+
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', lineHeight: 1.6 }}>
+            Add this to your Claude Desktop <code>claude_desktop_config.json</code> or Claude Code <code>.mcp.json</code>. Two tools are available: <strong>search_documentation</strong> (RAG search) and <strong>list_pages</strong>.
+          </p>
+        </div>
+      )}
     </div>
   )
 }

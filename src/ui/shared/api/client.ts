@@ -132,6 +132,8 @@ export interface ProjectDTO {
   resources: { type: 'url' | 'file' | 'note'; label: string; value: string }[] | null
   widgetApiKey: string | null
   widgetEnabled: boolean
+  mcpApiKey: string | null
+  mcpEnabled: boolean
   walkthroughEnabled: boolean
   createdAt: string
   updatedAt: string
@@ -183,6 +185,10 @@ export const api = {
       request(`/projects/${id}/widget-key`, { method: 'POST' }),
     disableWidget: (id: string): Promise<{ widgetEnabled: boolean }> =>
       request(`/projects/${id}/widget-key`, { method: 'DELETE' }),
+    generateMcpKey: (id: string): Promise<{ mcpApiKey: string; mcpEnabled: boolean }> =>
+      request(`/projects/${id}/mcp-key`, { method: 'POST' }),
+    disableMcp: (id: string): Promise<{ mcpEnabled: boolean }> =>
+      request(`/projects/${id}/mcp-key`, { method: 'DELETE' }),
     usage: (id: string): Promise<{ totalTokens: number; runs: number; estimatedCost: number; breakdown: { label: string; tokens: number; runs: number; cost: number }[] }> =>
       request(`/projects/${id}/usage`),
   },
