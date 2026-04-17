@@ -165,6 +165,18 @@ export function correctTimestamps(steps: VideoStep[], videoDurationSeconds: numb
 
   const maxTimestamp = Math.max(...steps.map((s) => s.timestamp))
 
+  // Detect M.SS decimal format: all timestamps clustered in a tiny range
+  // relative to video duration (e.g. 0.0-1.2 for a 106s video)
+  if (steps.length >= 3 && maxTimestamp < videoDurationSeconds * 0.05) {
+    console.log(`[gemini] Detected M.SS decimal timestamps (max ${maxTimestamp}s << video ${videoDurationSeconds.toFixed(1)}s). Converting...`)
+    return steps.map((s) => {
+      const minutes = Math.floor(s.timestamp)
+      const seconds = Math.round((s.timestamp - minutes) * 100)
+      const corrected = minutes * 60 + seconds
+      return { ...s, timestamp: Math.min(corrected, videoDurationSeconds - 1) }
+    })
+  }
+
   // If max timestamp is within video duration (+10% tolerance), timestamps are fine
   if (maxTimestamp <= videoDurationSeconds * 1.1) return steps
 
