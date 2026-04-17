@@ -64,7 +64,7 @@ export function AccountSettings(): React.ReactElement {
   ]
 
   return (
-    <Shell>
+    <Shell fullWidth>
       <div className={styles.page}>
         <div className={styles.header}>
           <h1 className={styles.title}>Account</h1>

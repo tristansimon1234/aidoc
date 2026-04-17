@@ -1,5 +1,5 @@
 .page {
-  max-width: 800px;
+  max-width: 1280px;
   margin: 0 auto;
   padding: var(--space-xl);
 }
@@ -127,8 +127,17 @@
 
 .plansGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  /* 4 cards side-by-side on desktop; auto-wraps on narrower viewports. */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-md);
+}
+
+@media (max-width: 1100px) {
+  .plansGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .plansGrid { grid-template-columns: 1fr; }
 }
 
 .planCard {
