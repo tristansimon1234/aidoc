@@ -112,16 +112,15 @@ price_cents          integer NOT NULL DEFAULT 0
 currency             text NOT NULL DEFAULT 'EUR'
 stripe_price_id      text                       -- populated when Stripe is enabled
 max_projects         integer NOT NULL
-max_doc_runs         integer NOT NULL
-max_voiceovers       integer NOT NULL
-max_try_doc          integer NOT NULL
-max_widget_sessions  integer NOT NULL
+monthly_tokens       integer NOT NULL           -- single monthly budget; ops consume weighted tokens
 sort_order           integer NOT NULL DEFAULT 0
 features             jsonb NOT NULL DEFAULT '[]'  -- human-readable bullets for the UI
 created_at           timestamptz DEFAULT now()
 ```
 **RLS**: SELECT allowed to anyone (public pricing data).
 **Seeded**: 4 rows — free / startup (49€) / growth (149€) / business (449€).
+**Token costs** (app-side constant in `billing.service.ts`, tunable without migration):
+`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`.
 
 ### subscriptions
 ```sql
