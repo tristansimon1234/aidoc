@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Outlet, useLocation, Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
+import { useLoadJobsFromDB } from '../../../shared/jobs/useJobRealtime.js'
 import { Button, Spinner, EmptyState } from '../../../design-system/components/index.js'
 import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
@@ -95,6 +96,9 @@ export function ProjectDetail(): React.ReactElement {
   const [search, setSearch] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
+
+  // Restore running jobs from DB (survives browser refresh)
+  useLoadJobsFromDB(projectId)
 
   const fetchData = useCallback(async () => {
     if (!projectId) return

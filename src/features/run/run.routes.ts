@@ -130,10 +130,54 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const body = req.body as { videoPath?: string }
+      const body = req.body as { videoPath?: string; generateDoc?: boolean }
       if (!body.videoPath || typeof body.videoPath !== 'string') {
         throw new ValidationError('videoPath is required')
       }
+
+      // If generateDoc flag is set, create a DB job and run the full pipeline.
+      // The HTTP connection stays open — fetch survives client-side navigation.
+      // The job row in DB survives browser refresh.
+      if (body.generateDoc) {
+        const run = await runService.getRun(params.data.id)
+        if (!run.docPageId) throw new AppError('Run has no linked page', 'NO_PAGE', 400)
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
+        const { createJob, updateJobStatus } = await import('./job.repository.js')
+
+        let job: { id: string }
+        try {
+          job = await createJob({
+            runId: params.data.id,
+            pageId: run.docPageId,
+            projectId: page.projectId,
+            type: 'doc-gen',
+          })
+        } catch (dupErr) {
+          // Unique constraint violation = job already running for this page
+          if ((dupErr as Error).message?.includes('duplicate') || (dupErr as Error).message?.includes('unique')) {
+            throw new AppError('A doc generation is already running for this page', 'JOB_ALREADY_RUNNING', 409)
+          }
+          throw dupErr
+        }
+
+        try {
+          await runService.analyzeVideo(params.data.id, body.videoPath)
+          await runService.generateDoc(params.data.id)
+          if (run.docPageId) {
+            const { updatePage } = await import('../page/page.repository.js')
+            await updatePage(run.docPageId, { status: 'published' })
+          }
+          await updateJobStatus(job.id, 'completed')
+        } catch (pipelineErr) {
+          await updateJobStatus(job.id, 'failed', (pipelineErr as Error).message).catch(() => {})
+          throw pipelineErr
+        }
+        res.status(200).json({ jobId: job.id })
+        return
+      }
+
       const result = await runService.analyzeVideo(params.data.id, body.videoPath)
       res.status(200).json(result)
     } catch (err) {
@@ -142,7 +186,8 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
   })()
 })
 
-// Generate SOP doc
+// Generate SOP doc — responds immediately, generates in background.
+// Client tracks progress via Supabase Realtime on runs.status.
 runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
@@ -155,8 +200,18 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
         throw new AppError('No steps found — the video analysis didn\'t detect any actions. Try re-uploading.', 'NO_STEPS', 400)
       }
 
-      const doc = await runService.generateDoc(params.data.id)
-      res.status(200).json(doc)
+      const async = req.query.async === '1'
+      if (async) {
+        // Non-blocking: respond immediately, generate in background
+        res.status(202).json({ runId: params.data.id, status: 'running' })
+        void runService.generateDoc(params.data.id).catch((err) =>
+          console.error(`[generate-doc] Background generation failed for ${params.data.id}:`, err),
+        )
+      } else {
+        // Legacy blocking mode (for backwards compat)
+        const doc = await runService.generateDoc(params.data.id)
+        res.status(200).json(doc)
+      }
     } catch (err) {
       next(err)
     }
@@ -184,6 +239,7 @@ runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
 
 // Generate voice-over narration from documentation
 runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: NextFunction) => {
+  let voiceoverJobId: string | null = null
   void (async () => {
     try {
       const params = RunIdParamSchema.safeParse(req.params)
@@ -201,6 +257,19 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       // Get the generated doc content — this is the quality source
       const run = await runService.getRun(params.data.id)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
+
+      // Create a DB job so tracker survives navigation + refresh
+      if (run.docPageId) {
+        try {
+          const { findPageById } = await import('../page/page.repository.js')
+          const page = await findPageById(run.docPageId)
+          if (page) {
+            const { createJob } = await import('./job.repository.js')
+            const job = await createJob({ runId: params.data.id, pageId: run.docPageId, projectId: page.projectId, type: 'voiceover' })
+            voiceoverJobId = job.id
+          }
+        } catch { /* duplicate job or missing page — continue without tracking */ }
+      }
 
       const { findDocByRunId } = await import('../documentation/documentation.repository.js')
       const doc = await findDocByRunId(params.data.id)
@@ -453,8 +522,18 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       const { updateRunSummary } = await import('./run.repository.js')
       await updateRunSummary(params.data.id, { ...existingSummary, voiceover: result })
 
+      // Mark job completed
+      if (voiceoverJobId) {
+        const { updateJobStatus } = await import('./job.repository.js')
+        await updateJobStatus(voiceoverJobId, 'completed').catch(() => {})
+      }
+
       res.status(200).json(result)
     } catch (err) {
+      if (voiceoverJobId) {
+        const { updateJobStatus } = await import('./job.repository.js')
+        await updateJobStatus(voiceoverJobId, 'failed', (err as Error).message).catch(() => {})
+      }
       next(err)
     }
   })()

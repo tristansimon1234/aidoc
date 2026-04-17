@@ -12,6 +12,7 @@ import {
 import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
+import { useJobs } from '../../../shared/jobs/JobContext.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { VideoTimeline } from '../components/VideoTimeline.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
@@ -53,8 +54,20 @@ export function PageView(): React.ReactElement {
   const [voices, setVoices] = useState<{ voiceId: string; name: string }[]>([])
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
-  const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
+  const { addJob, updateJob, getJobForPage } = useJobs()
+  const [generatingVoiceover, setGeneratingVoiceover] = useState(() => getJobForPage(pageId ?? '', 'voiceover')?.status === 'running')
+  const activeDocGenJob = getJobForPage(pageId ?? '', 'doc-gen')
+  const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
+  const activeTryDocJob = getJobForPage(pageId ?? '', 'try-doc')
+
+  // Restore live browser URL from job context when returning to a page with active test
+  useEffect(() => {
+    if (activeTryDocJob?.status === 'running' && activeTryDocJob.liveUrl && !liveUrl) {
+      setLiveUrl(activeTryDocJob.liveUrl)
+    }
+  }, [activeTryDocJob, liveUrl])
+
   const prevPageIdRef = useRef(pageId)
 
   // Sync page instantly when pageId changes (no async gap)
@@ -68,9 +81,7 @@ export function PageView(): React.ReactElement {
       setLoading(true)
     }
     setError(null)
-    setLiveUrl(null)
     setStatusMessage(null)
-    setActiveTab('doc')
     // Reset run-dependent state
     setVideoUrl(null)
     setVoiceoverUrl(null)
@@ -83,7 +94,18 @@ export function PageView(): React.ReactElement {
     setTryStreamSteps([])
     setPreflightResult(null)
     setPreflightLoading(false)
-    setGeneratingVoiceover(false)
+    // Restore voiceover generating state from job context
+    const incomingVoiceoverJob = getJobForPage(pageId!, 'voiceover')
+    setGeneratingVoiceover(incomingVoiceoverJob?.status === 'running')
+    // Restore liveUrl + tab for pages with active test, reset for others
+    const incomingTestJob = getJobForPage(pageId!, 'try-doc')
+    if (incomingTestJob?.status === 'running' && incomingTestJob.liveUrl) {
+      setLiveUrl(incomingTestJob.liveUrl)
+      setActiveTab('test')
+    } else {
+      setLiveUrl(null)
+      setActiveTab('doc')
+    }
   }
 
   const fetchData = useCallback(async () => {
@@ -155,6 +177,27 @@ export function PageView(): React.ReactElement {
   useEffect(() => {
     void fetchData()
   }, [fetchData])
+
+  // Auto-refresh page data when a background voiceover job completes
+  const prevVoiceoverStatus = useRef(activeVoiceoverJob?.status)
+  useEffect(() => {
+    if (prevVoiceoverStatus.current === 'running' && activeVoiceoverJob?.status === 'completed') {
+      void fetchData()
+      setGeneratingVoiceover(false)
+    }
+    prevVoiceoverStatus.current = activeVoiceoverJob?.status
+  }, [activeVoiceoverJob?.status, fetchData])
+
+  // Auto-refresh when background doc-gen job completes
+  const prevDocGenStatus = useRef(activeDocGenJob?.status)
+  useEffect(() => {
+    if (prevDocGenStatus.current === 'running' && activeDocGenJob?.status === 'completed') {
+      void fetchData()
+      void context.refetchPages()
+      setActiveTab('doc')
+    }
+    prevDocGenStatus.current = activeDocGenJob?.status
+  }, [activeDocGenJob?.status, fetchData, context])
 
   // Fetch available ElevenLabs voices (once on mount)
   useEffect(() => {
@@ -228,56 +271,70 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
     const controller = new AbortController()
     abortRef.current = controller
-    try {
-      const run = await api.runs.create({
-        featureName: `[Test] ${page.title}`,
-        startUrl: testUrl,
-        goal: `Verify documentation for "${page.title}"`,
-        docPageId: pageId,
-      })
 
-      // Phase 1: Explore with naive user prompt
-      await api.runs.exploreStream(
-        run.id,
-        (event: StepEventDTO) => {
-          switch (event.type) {
-            case 'live': setLiveUrl(event.liveUrl ?? null); break
-            case 'status':
-            case 'step':
-              if (event.message && event.message.length > 10) {
-                setTryStreamSteps((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
-              }
-              setStatusMessage(event.message ?? null)
-              break
-            case 'done': setStatusMessage('Exploration complete — analyzing results...'); break
-            case 'error': setStatusMessage(event.message ?? 'Error'); break
-          }
-        },
-        tryDocPrompt,
-        controller.signal,
-      )
+    // Run the entire pipeline without await — component can unmount freely.
+    // State updates go through refs so they work on remount.
+    void (async () => {
+      let runId: string | null = null
+      try {
+        const run = await api.runs.create({
+          featureName: `[Test] ${page.title}`,
+          startUrl: testUrl,
+          goal: `Verify documentation for "${page.title}"`,
+          docPageId: pageId,
+        })
+        runId = run.id
+        addJob({ runId: run.id, pageId: pageId!, pageTitle: page.title, type: 'try-doc', status: 'running' })
 
-      if (controller.signal.aborted) return
+        // Phase 1: Explore with naive user prompt
+        await api.runs.exploreStream(
+          run.id,
+          (event: StepEventDTO) => {
+            switch (event.type) {
+              case 'live':
+                setLiveUrl(event.liveUrl ?? null)
+                if (event.liveUrl) updateJob(run.id, { liveUrl: event.liveUrl })
+                break
+              case 'status':
+              case 'step':
+                if (event.message && event.message.length > 10) {
+                  setTryStreamSteps((prev) => [...prev, { text: event.message!, timestamp: Date.now() }])
+                }
+                setStatusMessage(event.message ?? null)
+                break
+              case 'done': setStatusMessage('Exploration complete — analyzing results...'); break
+              case 'error': setStatusMessage(event.message ?? 'Error'); break
+            }
+          },
+          tryDocPrompt,
+          controller.signal,
+        )
 
-      // Phase 2: Analyze with Gemini → structured report
-      setTryRunning(false)
-      setLiveUrl(null)
-      setAnalyzing(true)
-      setStatusMessage('Generating test report...')
+        if (controller.signal.aborted) return
 
-      const report = await api.runs.analyzeTry(run.id, page.content, page.title, pageId)
-      setTryReport(report)
-      setStatusMessage(null)
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') {
-        setError((err as Error).message)
+        // Phase 2: Analyze with Gemini → structured report
+        setTryRunning(false)
+        setLiveUrl(null)
+        updateJob(run.id, { liveUrl: undefined, phaseStartedAt: Date.now() })
+        setAnalyzing(true)
+        setStatusMessage('Generating test report...')
+
+        const report = await api.runs.analyzeTry(run.id, page.content ?? '', page.title, pageId)
+        setTryReport(report)
+        setStatusMessage(null)
+        if (runId) updateJob(runId, { status: 'completed' })
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          setError((err as Error).message)
+        }
+        if (runId) updateJob(runId, { status: 'failed' })
+      } finally {
+        abortRef.current = null
+        setTryRunning(false)
+        setAnalyzing(false)
+        setLiveUrl(null)
       }
-    } finally {
-      abortRef.current = null
-      setTryRunning(false)
-      setAnalyzing(false)
-      setLiveUrl(null)
-    }
+    })()
   }
 
   // Debounced page metadata update — flushes on unmount to prevent data loss
@@ -333,8 +390,8 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
           </button>
           <button className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`} onClick={() => setActiveTab('test')}>
             Test
-            {(tryRunning || analyzing) && <Spinner size="sm" />}
-            {!tryRunning && !analyzing && tryReport && (
+            {(tryRunning || analyzing || activeTryDocJob?.status === 'running') && <Spinner size="sm" />}
+            {!tryRunning && !analyzing && activeTryDocJob?.status !== 'running' && tryReport && (
               <span className={`${styles.tabDot} ${
                 tryReport.summary.overallVerdict === 'pass' ? styles.tabDotPass :
                 tryReport.summary.overallVerdict === 'fail' ? styles.tabDotFail :
@@ -486,36 +543,38 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                 </label>
 
                 {latestRunId && page.content && (
-                  <Button size="sm" disabled={generatingVoiceover} onClick={() => {
+                  <Button size="sm" disabled={generatingVoiceover || activeVoiceoverJob?.status === 'running'} onClick={() => {
                     void (async () => {
                       if (voiceoverUrl) {
                         const ok = await confirm({ title: 'Replace voice-over?', message: 'The existing voice-over will be permanently replaced by the new generation.', confirmLabel: 'Replace', variant: 'danger' })
                         if (!ok) return
                       }
                       setGeneratingVoiceover(true)
-                      try {
-                        const result = await api.runs.generateVoiceover(latestRunId, {
-                          voiceId: selectedVoiceId,
-                          tone: selectedTone,
-                          videoDuration: videoDuration || undefined,
-                        }) as {
-                          segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
-                          audioPath?: string
-                          audioUrl?: string
+                      addJob({ runId: latestRunId, pageId: pageId!, pageTitle: page.title, type: 'voiceover', status: 'running' })
+                      void (async () => {
+                        try {
+                          const result = await api.runs.generateVoiceover(latestRunId, {
+                            voiceId: selectedVoiceId,
+                            tone: selectedTone,
+                            videoDuration: videoDuration || undefined,
+                          }) as {
+                            segments?: { stepIndex: number; startTime: number; endTime: number; text?: string }[]
+                            audioPath?: string
+                            audioUrl?: string
+                          }
+                          const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
+                          if (result.audioUrl) {
+                            setVoiceoverUrl(bust(result.audioUrl))
+                          } else if (result.audioPath) {
+                            const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
+                            setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
+                          }
+                          setVoiceoverSegments(result.segments ?? [])
+                          await fetchData()
+                        } finally {
+                          setGeneratingVoiceover(false)
                         }
-                        const bust = (url: string): string => `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
-                        if (result.audioUrl) {
-                          setVoiceoverUrl(bust(result.audioUrl))
-                        } else if (result.audioPath) {
-                          const { data } = supabase.storage.from('artifacts').getPublicUrl(result.audioPath)
-                          setVoiceoverUrl(data?.publicUrl ? bust(data.publicUrl) : null)
-                        }
-                        setVoiceoverSegments(result.segments ?? [])
-                        // Re-fetch to ensure video URL is fresh (summary may have changed)
-                        await fetchData()
-                      } finally {
-                        setGeneratingVoiceover(false)
-                      }
+                      })()
                     })()
                   }}>
                     {voiceoverUrl ? 'Regenerate' : 'Generate voice-over'}
@@ -524,10 +583,14 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               </div>
 
               {/* Generation progress */}
+              {/* Generation progress — use local state only, not job status (job completes before HTTP response arrives) */}
               {generatingVoiceover && (
                 <ProgressLoader
+                  startedAt={activeVoiceoverJob?.startedAt}
                   steps={[
-                    { label: 'Generating voice-over — analyzing video, writing script, synthesizing audio...', estimatedSeconds: 90 },
+                    { label: 'Uploading video to AI', estimatedSeconds: 30 },
+                    { label: 'Writing narration script', estimatedSeconds: 30 },
+                    { label: 'Synthesizing audio', estimatedSeconds: 60 },
                   ]}
                   activeStep={0}
                 />
@@ -670,7 +733,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
       {activeTab === 'test' && (
         <div className={styles.tabContent}>
           {/* Not running — show config + run button or results */}
-          {!tryRunning && !analyzing && (
+          {!tryRunning && !analyzing && !(activeTryDocJob?.status === 'running') && (
             <>
               {/* Two-column: config + action */}
               <div className={styles.generateGrid}>
@@ -739,8 +802,8 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
             </>
           )}
 
-          {/* Running — live browser + steps */}
-          {tryRunning && (
+          {/* Running — live browser + steps (also shows when returning to page with active test) */}
+          {(tryRunning || (activeTryDocJob?.status === 'running' && liveUrl)) && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
@@ -775,9 +838,10 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
             </div>
           )}
 
-          {/* Analyzing */}
-          {analyzing && (
+          {/* Analyzing — also show when returning to page with active try-doc job that has no liveUrl (exploration done, analysis in progress) */}
+          {(analyzing || (activeTryDocJob?.status === 'running' && !liveUrl && !tryRunning)) && (
             <ProgressLoader
+              startedAt={activeTryDocJob?.phaseStartedAt}
               steps={[{ label: 'Generating structured test report', estimatedSeconds: 20 }]}
               activeStep={0}
             />

@@ -205,6 +205,38 @@ projectRouter.delete('/:id/widget-key', (req: Request, res: Response, next: Next
   })()
 })
 
+// Generate MCP API key
+projectRouter.post('/:id/mcp-key', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { randomBytes } = await import('node:crypto')
+      const key = `aidoc_mcp_${randomBytes(24).toString('hex')}`
+      const { setMcpApiKey } = await import('./project.repository.js')
+      const project = await setMcpApiKey(params.data.id, key)
+      res.status(200).json({ mcpApiKey: project.mcpApiKey, mcpEnabled: true })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Disable MCP
+projectRouter.delete('/:id/mcp-key', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { disableMcp } = await import('./project.repository.js')
+      await disableMcp(params.data.id)
+      res.status(200).json({ mcpEnabled: false })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Upload project logo
 projectRouter.post('/:id/logo', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
@@ -242,6 +274,51 @@ projectRouter.delete('/:id', (req: Request, res: Response, next: NextFunction) =
       if (!params.success) throw new ValidationError(params.error.flatten())
       await projectService.deleteProject(params.data.id)
       res.status(204).end()
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// Token usage & cost estimation per project
+projectRouter.get('/:id/usage', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const { supabase } = await import('../../shared/db/supabase.client.js')
+
+      // Query runs directly by project_id (survives page deletion)
+      const { data: runs } = await supabase
+        .from('runs')
+        .select('id, feature_name, token_usage, created_at, status')
+        .eq('project_id', params.data.id)
+        .order('created_at', { ascending: false })
+
+      const allRuns = runs ?? []
+      const totalTokens = allRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
+      const testRuns = allRuns.filter((r) => (r.feature_name as string).startsWith('[Test]'))
+      const docRuns = allRuns.filter((r) => !(r.feature_name as string).startsWith('[Test]'))
+
+      // Cost estimation
+      // Gemini 2.5 Flash: ~$0.15/1M input + $0.60/1M output ≈ $0.35/1M avg
+      // Claude Sonnet (Stagehand): ~$3/1M input + $15/1M output ≈ $9/1M avg
+      const geminiTokens = docRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
+      const stagehandTokens = testRuns.reduce((sum, r) => sum + ((r.token_usage as number) ?? 0), 0)
+      const geminiCost = (geminiTokens / 1_000_000) * 0.35
+      const stagehandCost = (stagehandTokens / 1_000_000) * 9
+      const estimatedCost = geminiCost + stagehandCost
+
+      res.json({
+        totalTokens,
+        runs: allRuns.length,
+        estimatedCost: Math.round(estimatedCost * 100) / 100,
+        breakdown: [
+          { label: 'Documentation generation', tokens: geminiTokens, runs: docRuns.length, cost: Math.round(geminiCost * 100) / 100 },
+          { label: 'Try Doc testing', tokens: stagehandTokens, runs: testRuns.length, cost: Math.round(stagehandCost * 100) / 100 },
+        ],
+      })
     } catch (err) {
       next(err)
     }

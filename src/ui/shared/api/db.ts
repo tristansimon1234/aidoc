@@ -235,6 +235,8 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     resources: parseJsonbField(row.resources) as ProjectDTO['resources'] ?? null,
     widgetApiKey: (row.widget_api_key as string) ?? null,
     widgetEnabled: (row.widget_enabled as boolean) ?? false,
+    mcpApiKey: (row.mcp_api_key as string) ?? null,
+    mcpEnabled: (row.mcp_enabled as boolean) ?? false,
     walkthroughEnabled: (row.walkthrough_enabled as boolean) ?? false,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

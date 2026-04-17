@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useTheme } from '../hooks/useTheme.js'
+import { JobTracker, JobBadge } from '../jobs/JobTracker.js'
 import styles from './Shell.module.css'
 
 interface ShellProps {
@@ -26,6 +27,7 @@ export function Shell({ children, actions, navBar, fullWidth = false }: ShellPro
             </svg>
             <span>aidoc</span>
           </Link>
+          <JobBadge />
           {actions}
         </div>
         <nav className={styles.nav}>
@@ -45,6 +47,7 @@ export function Shell({ children, actions, navBar, fullWidth = false }: ShellPro
         </nav>
       </header>
       <main className={fullWidth ? styles.mainFull : styles.main}>{children}</main>
+      <JobTracker />
     </div>
   )
 }

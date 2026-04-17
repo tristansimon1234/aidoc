@@ -293,7 +293,7 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
           )
           const response = await generateText({
             userPrompt: prompt,
-            maxTokens: 2048,
+            maxTokens: 4096,
           })
           {
             let jsonStr = response.text.trim()
@@ -301,13 +301,45 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
             // Extract JSON object if surrounded by extra text
             const braceStart = jsonStr.indexOf('{')
             const braceEnd = jsonStr.lastIndexOf('}')
-            if (braceStart !== -1 && braceEnd > braceStart) jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
-            const { DiscoveredContextSchema } = await import('../project/project.schema.js')
-            const parsed = DiscoveredContextSchema.safeParse(JSON.parse(jsonStr))
-            if (parsed.success) {
-              await updateDiscoveredContext(project.id, parsed.data)
+            if (braceStart === -1 || braceEnd <= braceStart) {
+              console.warn('[context-enrichment] No valid JSON object found in response, skipping')
             } else {
-              console.error('Context enrichment validation failed:', parsed.error.flatten())
+              jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
+              let parsed
+              try {
+                parsed = JSON.parse(jsonStr) as unknown
+              } catch {
+                // JSON truncated — attempt repair
+                let repaired = jsonStr
+                // Remove last incomplete key-value pair
+                repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
+                repaired = repaired.replace(/,\s*\{[^}]*$/, '')
+                repaired = repaired.replace(/,\s*$/, '')
+                repaired = repaired.replace(/,\s*}/, '}')
+                repaired = repaired.replace(/,\s*]/, ']')
+                // Close open strings
+                if (repaired.split('"').length % 2 === 0) repaired += '"'
+                // Close open brackets/braces
+                const openBrackets = (repaired.match(/\[/g) ?? []).length - (repaired.match(/\]/g) ?? []).length
+                const openBraces = (repaired.match(/\{/g) ?? []).length - (repaired.match(/\}/g) ?? []).length
+                repaired += ']'.repeat(Math.max(0, openBrackets))
+                repaired += '}'.repeat(Math.max(0, openBraces))
+                try {
+                  parsed = JSON.parse(repaired) as unknown
+                  console.warn('[context-enrichment] Repaired truncated JSON')
+                } catch {
+                  console.warn('[context-enrichment] JSON repair failed, skipping enrichment')
+                }
+              }
+              if (parsed) {
+                const { DiscoveredContextSchema } = await import('../project/project.schema.js')
+                const validated = DiscoveredContextSchema.safeParse(parsed)
+                if (validated.success) {
+                  await updateDiscoveredContext(project.id, validated.data)
+                } else {
+                  console.error('Context enrichment validation failed:', validated.error.flatten())
+                }
+              }
             }
           }
         }
@@ -316,6 +348,9 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
       console.error('Failed to enrich project context:', err)
     }
   }
+
+  // Mark run completed so Realtime triggers frontend notification
+  await runRepo.updateRunStatus(id, 'completed')
 
   return doc
 }
@@ -511,7 +546,7 @@ export async function analyzeTryDoc(
   const result = await generateText({
     systemPrompt: TRY_DOC_ANALYSIS_SYSTEM_PROMPT,
     userPrompt,
-    maxTokens: 8192,
+    maxTokens: 16384,
   })
 
   // Parse and validate the Gemini response
@@ -532,10 +567,17 @@ export async function analyzeTryDoc(
     // Attempt repair: close open brackets/braces
     console.warn(`[trydoc] JSON parse failed, attempting repair: ${(parseErr as Error).message}`)
     let repaired = jsonStr
+    // Remove trailing incomplete entries
     repaired = repaired.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
     repaired = repaired.replace(/,\s*\{[^}]*$/, '')
-    const openBraces = (repaired.match(/\{/g) ?? []).length - (repaired.match(/\}/g) ?? []).length
+    repaired = repaired.replace(/,\s*$/, '')
+    repaired = repaired.replace(/,\s*}/, '}')
+    repaired = repaired.replace(/,\s*]/, ']')
+    // Close open strings
+    if (repaired.split('"').length % 2 === 0) repaired += '"'
+    // Close open brackets/braces
     const openBrackets = (repaired.match(/\[/g) ?? []).length - (repaired.match(/\]/g) ?? []).length
+    const openBraces = (repaired.match(/\{/g) ?? []).length - (repaired.match(/\}/g) ?? []).length
     repaired += ']'.repeat(Math.max(0, openBrackets))
     repaired += '}'.repeat(Math.max(0, openBraces))
     try {

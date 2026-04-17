@@ -16,6 +16,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initializedRef = useRef(false)
   const lastContentRef = useRef('')
+  const suppressNextChangeRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { lightbox, openLightbox } = useImageLightbox()
 
@@ -51,7 +52,14 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
 
     void (async () => {
       try {
-        const blocks = await editor.tryParseMarkdownToBlocks(content)
+        // Ensure images are on their own lines (BlockNote needs block-level images, not inline)
+        const prepared = content
+          .replace(/^(\s*\d+\.\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
+          .replace(/^(\s*[-*]\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
+          .replace(/(!\[.*?\]\(.*?\))(?=\S)/g, '$1\n')
+
+        suppressNextChangeRef.current = true
+        const blocks = await editor.tryParseMarkdownToBlocks(prepared)
         editor.replaceBlocks(editor.document, blocks)
       } catch {
         // markdown parsing failed
@@ -81,6 +89,12 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const handleChange = useCallback(() => {
     if (readOnly) return
 
+    // Skip save when content was loaded programmatically (not user edit)
+    if (suppressNextChangeRef.current) {
+      suppressNextChangeRef.current = false
+      return
+    }
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
     }
@@ -89,20 +103,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
       void (async () => {
         try {
           setSaving(true)
-          // Convert block-by-block to preserve empty paragraphs as blank lines.
-          // blocksToMarkdownLossy drops empty blocks, losing user line breaks.
-          const blocks = editor.document
-          const parts: string[] = []
-          for (const block of blocks) {
-            const content = block.content as { type: string; text?: string }[] | undefined
-            const isEmpty = block.type === 'paragraph' && (!content || content.length === 0 || (content.length === 1 && content[0]?.text === ''))
-            if (isEmpty) {
-              parts.push('')
-            } else {
-              parts.push(editor.blocksToMarkdownLossy([block]).trimEnd())
-            }
-          }
-          const markdown = parts.join('\n\n')
+          const markdown = await editor.blocksToMarkdownLossy(editor.document)
           lastContentRef.current = markdown
           await onSave(markdown)
         } catch {

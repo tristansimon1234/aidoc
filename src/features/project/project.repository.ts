@@ -15,6 +15,8 @@ interface ProjectRow {
   design: ProjectDesign | null
   widget_api_key: string | null
   widget_enabled: boolean
+  mcp_api_key: string | null
+  mcp_enabled: boolean
   walkthrough_enabled: boolean
   created_at: string
   updated_at: string
@@ -34,6 +36,8 @@ function mapToProject(row: ProjectRow): Project {
     design: row.design,
     widgetApiKey: row.widget_api_key,
     widgetEnabled: row.widget_enabled,
+    mcpApiKey: row.mcp_api_key,
+    mcpEnabled: row.mcp_enabled,
     walkthroughEnabled: row.walkthrough_enabled,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -131,6 +135,40 @@ export async function disableWidget(id: string): Promise<Project> {
   const { data, error } = await supabase
     .from('projects')
     .update({ widget_enabled: false, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw new DatabaseError(error.message)
+  return mapToProject(data as ProjectRow)
+}
+
+export async function findProjectByMcpKey(mcpApiKey: string): Promise<Project | null> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*')
+    .eq('mcp_api_key', mcpApiKey)
+    .eq('mcp_enabled', true)
+    .single()
+  if (error && error.code === 'PGRST116') return null
+  if (error) throw new DatabaseError(error.message)
+  return data ? mapToProject(data as ProjectRow) : null
+}
+
+export async function setMcpApiKey(id: string, apiKey: string): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ mcp_api_key: apiKey, mcp_enabled: true, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw new DatabaseError(error.message)
+  return mapToProject(data as ProjectRow)
+}
+
+export async function disableMcp(id: string): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ mcp_enabled: false, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select('*')
     .single()

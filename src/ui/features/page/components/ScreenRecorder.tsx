@@ -1,7 +1,7 @@
 import { type ChangeEvent, useState, useRef, useEffect } from 'react'
 import { Button, ProgressLoader, useConfirmDialog } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO } from '../../../shared/api/client.js'
-import { updatePage as dbUpdatePage } from '../../../shared/api/db.js'
+import { useJobs } from '../../../shared/jobs/JobContext.js'
 import styles from '../pages/PageView.module.css'
 
 type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 'generating'
@@ -58,10 +58,12 @@ interface ScreenRecorderProps {
   hasExistingVoiceover?: boolean
 }
 
-export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistingVoiceover }: ScreenRecorderProps): React.ReactElement {
+export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRecorderProps): React.ReactElement {
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
+  const { addJob, getJobForPage } = useJobs()
+  const activeDocJob = getJobForPage(pageId, 'doc-gen')
   const [elapsed, setElapsed] = useState(0)
   const [hasExtension, setHasExtension] = useState(false)
   const [micEnabled, setMicEnabled] = useState(true)
@@ -100,6 +102,9 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
     }
     setError(null)
     try {
+      // Show loader immediately — don't wait for API calls
+      setStatus('uploading')
+
       // 1. Create a run
       const run = await api.runs.create({
         featureName: page.title,
@@ -109,7 +114,6 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
       })
 
       // 2. Upload video
-      setStatus('uploading')
       const ext = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '.webm'
       const videoPath = `runs/${run.id}/video${ext}`
       const mimeType = file instanceof File ? file.type : 'video/webm'
@@ -131,26 +135,20 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
         await fetch(eventsSignedUrl, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: eventsBlob })
       }
 
-      // 3. Analyze with Gemini + extract frames (server-side if ffmpeg available)
+      // 3. Analyze + generate doc — server keeps the HTTP connection open.
+      // The fetch() continues even if the user navigates (client-side routing).
+      // Register job in tracker so user sees progress globally.
       setStatus('analyzing')
-      const result = await api.runs.analyzeVideo(run.id, videoPath) as {
-        timestamps: number[]
-        framesExtracted?: boolean
-      }
+      addJob({ runId: run.id, pageId, pageTitle: page.title, type: 'doc-gen', status: 'running' })
 
-      // 4. Extract frames client-side only if server couldn't
-      if (!result.framesExtracted && result.timestamps.length > 0) {
-        setStatus('extracting')
-        const videoBlob = file instanceof File ? file : new File([file], fileName, { type: 'video/webm' })
-        await extractAndUploadFrames(videoBlob, run.id, result.timestamps)
-      }
-
-      // 5. Generate documentation
-      setStatus('generating')
-      await api.runs.generateDoc(run.id)
-      await dbUpdatePage(projectId, pageId, { status: 'published' })
-
-      await onComplete()
+      // Fire-and-forget: the fetch runs in background even if component unmounts
+      api.runs.analyzeVideo(run.id, videoPath, { generateDoc: true })
+        .then(() => {
+          // Polling will detect the generated_docs row and mark job complete
+        })
+        .catch((err) => {
+          console.error('[process-video] Pipeline failed:', err)
+        })
     } catch (err) {
       setError((err as Error).message)
     } finally {
@@ -322,18 +320,35 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
     )
   }
 
-  // Processing pipeline
-  if (status === 'uploading' || status === 'analyzing' || status === 'extracting' || status === 'generating') {
+  // Processing pipeline — upload is client-side, rest is server-side in one call
+  if (status === 'uploading' || status === 'analyzing') {
     const pipelineSteps = [
       { label: 'Uploading video', estimatedSeconds: 5 },
-      { label: 'Analyzing with AI', estimatedSeconds: 45 },
+      { label: 'Analyzing video with AI', estimatedSeconds: 40 },
       { label: 'Extracting screenshots', estimatedSeconds: 10 },
-      { label: 'Generating documentation', estimatedSeconds: 20 },
+      { label: 'Generating documentation', estimatedSeconds: 15 },
     ]
-    const stepMap: Record<string, number> = { uploading: 0, analyzing: 1, extracting: 2, generating: 3 }
+    const activeStep = status === 'uploading' ? 0 : 1
     return (
       <div className={styles.methodContent}>
-        <ProgressLoader steps={pipelineSteps} activeStep={stepMap[status] ?? 0} />
+        <ProgressLoader steps={pipelineSteps} activeStep={activeStep} />
+      </div>
+    )
+  }
+
+  // Background doc-gen job running — show same progress (returned to page)
+  if (activeDocJob?.status === 'running' && status === 'idle') {
+    return (
+      <div className={styles.methodContent}>
+        <ProgressLoader
+          startedAt={activeDocJob.startedAt}
+          steps={[
+            { label: 'Analyzing video with AI', estimatedSeconds: 40 },
+            { label: 'Extracting screenshots', estimatedSeconds: 10 },
+            { label: 'Generating documentation', estimatedSeconds: 15 },
+          ]}
+          activeStep={0}
+        />
       </div>
     )
   }
@@ -398,61 +413,4 @@ export function ScreenRecorder({ projectId, pageId, page, onComplete, hasExistin
       {error && <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-destructive)', marginTop: 'var(--space-xs)' }}>{error}</p>}
     </div>
   )
-}
-
-// Extract frames from video at timestamps using canvas seeking.
-// Uses a busy flag to prevent double onseeked from causing drift.
-async function extractAndUploadFrames(videoFile: File, runId: string, timestamps: number[]): Promise<void> {
-  if (timestamps.length === 0) return
-
-  const sorted = [...timestamps].sort((a, b) => a - b)
-
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (!ctx) { resolve(); return }
-
-    video.onloadedmetadata = () => {
-      canvas.width = Math.min(video.videoWidth, 1280)
-      canvas.height = Math.round(canvas.width * (video.videoHeight / video.videoWidth))
-
-      const duration = video.duration
-      const frames = sorted.map((t, idx) => ({
-        time: Math.max(0, Math.min(t, duration - 0.1)),
-        stepIndex: idx,
-      }))
-
-      let i = 0
-      let busy = false
-
-      const captureCurrentFrame = async (): Promise<void> => {
-        if (busy || i >= frames.length) return
-        busy = true
-        try {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          const entry = frames[i]!
-          const blob = await new Promise<Blob | null>((res) => canvas.toBlob((b) => res(b), 'image/jpeg', 0.85))
-          if (blob) {
-            const path = `runs/${runId}/frame-${entry.stepIndex}.jpg`
-            const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
-            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-            await api.runs.updateStepScreenshot(runId, entry.stepIndex, path)
-          }
-          i++
-          busy = false
-          if (i >= frames.length) resolve()
-          else video.currentTime = frames[i]!.time
-        } catch (err) { busy = false; reject(err as Error) }
-      }
-
-      video.onseeked = () => setTimeout(() => void captureCurrentFrame(), 150)
-      video.onerror = () => reject(new Error('Failed to load video'))
-      if (frames.length > 0) video.currentTime = frames[0]!.time
-      else resolve()
-    }
-
-    video.onerror = () => reject(new Error('Failed to load video'))
-    video.src = URL.createObjectURL(videoFile)
-  })
 }

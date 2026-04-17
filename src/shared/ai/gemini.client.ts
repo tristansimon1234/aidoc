@@ -165,6 +165,18 @@ export function correctTimestamps(steps: VideoStep[], videoDurationSeconds: numb
 
   const maxTimestamp = Math.max(...steps.map((s) => s.timestamp))
 
+  // Detect M.SS decimal format: all timestamps clustered in a tiny range
+  // relative to video duration (e.g. 0.0-1.2 for a 106s video)
+  if (steps.length >= 3 && maxTimestamp < videoDurationSeconds * 0.05) {
+    console.log(`[gemini] Detected M.SS decimal timestamps (max ${maxTimestamp}s << video ${videoDurationSeconds.toFixed(1)}s). Converting...`)
+    return steps.map((s) => {
+      const minutes = Math.floor(s.timestamp)
+      const seconds = Math.round((s.timestamp - minutes) * 100)
+      const corrected = minutes * 60 + seconds
+      return { ...s, timestamp: Math.min(corrected, videoDurationSeconds - 1) }
+    })
+  }
+
   // If max timestamp is within video duration (+10% tolerance), timestamps are fine
   if (maxTimestamp <= videoDurationSeconds * 1.1) return steps
 
@@ -309,6 +321,14 @@ Remember: fewer, more meaningful steps is better than many granular ones.`,
   if (firstBrace !== -1 && lastBrace > firstBrace) {
     jsonStr = jsonStr.slice(firstBrace, lastBrace + 1)
   }
+
+  // Fix Gemini returning timestamps as MM:SS or M:SS instead of seconds
+  jsonStr = jsonStr.replace(/"timestamp"\s*:\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\b/g, (_match, p1, p2, p3) => {
+    const mins = parseInt(p1 as string, 10)
+    const secs = parseInt(p2 as string, 10)
+    const hundredths = p3 ? parseInt(p3 as string, 10) : 0
+    return `"timestamp": ${mins * 60 + secs + hundredths / 100}`
+  })
 
   let parsed
   try {

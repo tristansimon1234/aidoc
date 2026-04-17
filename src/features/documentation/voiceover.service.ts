@@ -99,7 +99,6 @@ export async function generateVoiceover(
     console.log(`[voiceover] Concatenating ${segmentPaths.length} segments...`)
     audioPath = await concatAudio(runId, segmentPaths)
   } else {
-    // Fallback: use first segment only
     audioPath = segmentPaths[0]?.audioPath ?? `runs/${runId}/voiceover.mp3`
   }
 

@@ -132,6 +132,8 @@ export interface ProjectDTO {
   resources: { type: 'url' | 'file' | 'note'; label: string; value: string }[] | null
   widgetApiKey: string | null
   widgetEnabled: boolean
+  mcpApiKey: string | null
+  mcpEnabled: boolean
   walkthroughEnabled: boolean
   createdAt: string
   updatedAt: string
@@ -183,6 +185,12 @@ export const api = {
       request(`/projects/${id}/widget-key`, { method: 'POST' }),
     disableWidget: (id: string): Promise<{ widgetEnabled: boolean }> =>
       request(`/projects/${id}/widget-key`, { method: 'DELETE' }),
+    generateMcpKey: (id: string): Promise<{ mcpApiKey: string; mcpEnabled: boolean }> =>
+      request(`/projects/${id}/mcp-key`, { method: 'POST' }),
+    disableMcp: (id: string): Promise<{ mcpEnabled: boolean }> =>
+      request(`/projects/${id}/mcp-key`, { method: 'DELETE' }),
+    usage: (id: string): Promise<{ totalTokens: number; runs: number; estimatedCost: number; breakdown: { label: string; tokens: number; runs: number; cost: number }[] }> =>
+      request(`/projects/${id}/usage`),
   },
   pages: {
     list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
@@ -212,8 +220,8 @@ export const api = {
       request('/runs', { method: 'POST', body: JSON.stringify(body) }),
     cancel: (id: string): Promise<{ cancelled: boolean }> =>
       request(`/runs/${id}/cancel`, { method: 'POST' }),
-    analyzeVideo: (id: string, videoPath: string): Promise<{ timestamps: number[] }> =>
-      request(`/runs/${id}/analyze-video`, { method: 'POST', body: JSON.stringify({ videoPath }) }),
+    analyzeVideo: (id: string, videoPath: string, options?: { generateDoc?: boolean }): Promise<{ timestamps: number[]; runId?: string; status?: string }> =>
+      request(`/runs/${id}/analyze-video`, { method: 'POST', body: JSON.stringify({ videoPath, generateDoc: options?.generateDoc }) }),
     getSignedUploadUrl: (id: string, path: string): Promise<{ signedUrl: string; path: string }> =>
       request(`/runs/${id}/signed-upload-url`, { method: 'POST', body: JSON.stringify({ path }) }),
     updateStepScreenshot: (id: string, stepIndex: number, screenshotPath: string): Promise<{ ok: boolean }> =>
@@ -267,8 +275,8 @@ export const api = {
         }
       }
     },
-    generateDoc: (id: string): Promise<GeneratedDocDTO> =>
-      request(`/runs/${id}/generate-doc`, { method: 'POST' }),
+    generateDoc: (id: string, options?: { async?: boolean }): Promise<GeneratedDocDTO | { runId: string; status: string }> =>
+      request(`/runs/${id}/generate-doc${options?.async ? '?async=1' : ''}`, { method: 'POST' }),
     getVoices: (): Promise<{ voices: { voiceId: string; name: string; category: string; labels: Record<string, string> }[] }> =>
       request('/runs/voices'),
     generateVoiceover: (id: string, options?: { voiceId?: string; language?: string; tone?: string; videoDuration?: number }): Promise<{ audioPath: string; audioUrl: string; duration: number }> =>

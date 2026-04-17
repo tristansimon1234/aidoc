@@ -39,6 +39,8 @@ export interface Project {
   design: ProjectDesign | null
   widgetApiKey: string | null
   widgetEnabled: boolean
+  mcpApiKey: string | null
+  mcpEnabled: boolean
   walkthroughEnabled: boolean
   createdAt: Date
   updatedAt: Date
