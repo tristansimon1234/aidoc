@@ -275,6 +275,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
     // Run the entire pipeline without await — component can unmount freely.
     // State updates go through refs so they work on remount.
     void (async () => {
+      let runId: string | null = null
       try {
         const run = await api.runs.create({
           featureName: `[Test] ${page.title}`,
@@ -282,6 +283,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
           goal: `Verify documentation for "${page.title}"`,
           docPageId: pageId,
         })
+        runId = run.id
         addJob({ runId: run.id, pageId: pageId!, pageTitle: page.title, type: 'try-doc', status: 'running' })
 
         // Phase 1: Explore with naive user prompt
@@ -320,10 +322,12 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         const report = await api.runs.analyzeTry(run.id, page.content ?? '', page.title, pageId)
         setTryReport(report)
         setStatusMessage(null)
+        if (runId) updateJob(runId, { status: 'completed' })
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           setError((err as Error).message)
         }
+        if (runId) updateJob(runId, { status: 'failed' })
       } finally {
         abortRef.current = null
         setTryRunning(false)
