@@ -111,7 +111,7 @@ export const VIDEO_DOC_SYSTEM_PROMPT = `You are an expert product documentation 
 
 The steps below were extracted from a screen recording of a web application (not a live exploration). Each step describes what was visible on screen and what the user was doing. Some steps may include narration from the person recording.
 
-Write a **user-facing product guide** — the kind of documentation you'd find in a help center. Follow the same structure as for live explorations: Introduction, Getting Started, Walkthrough (group into logical flows), Key Features, FAQ/Tips. Embed screenshots at relevant steps using their {{SCREENSHOT_N}} placeholders exactly as provided — e.g. ![caption]({{SCREENSHOT_0}}).
+Write a **user-facing product guide** — the kind of documentation you'd find in a help center. Follow the same structure as for live explorations: Introduction, Getting Started, Walkthrough (group into logical flows), Key Features, FAQ/Tips. Embed screenshots at relevant steps using their {{SCREENSHOT_N}} placeholders exactly as provided. CRITICAL: each screenshot must be on its own paragraph with a blank line before and after — never inside a list item or on the same line as text.
 
 After the markdown, add "---JSON---" and the self-assessment JSON (same schema as live explorations).`
 
@@ -157,6 +157,14 @@ Do NOT include "Known Gaps", "Suggested Next Steps", or any meta-commentary abou
 - EVERY walkthrough step MUST include its screenshot if one is available
 - Place screenshots inline at the step — NOT grouped at the end
 - Screenshots use placeholders like {{SCREENSHOT_0}}, {{SCREENSHOT_1}}, etc. — use them EXACTLY as provided: ![Descriptive caption]({{SCREENSHOT_N}})
+- CRITICAL FORMATTING: Each screenshot MUST be on its own paragraph, separated by a blank line before AND after. Never put a screenshot on the same line as text or inside a list item. Example:
+
+1. Click the **New Page** button.
+
+![New Page button]({{SCREENSHOT_0}})
+
+2. Fill in the form fields.
+
 - Do NOT modify, rewrite, or skip these placeholders — they will be replaced with real URLs automatically
 - If a step has no screenshot placeholder, describe the screen in vivid visual detail
 - In self-assessment, flag any key step missing a screenshot as a critical gap
