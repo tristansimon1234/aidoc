@@ -3,6 +3,7 @@ import cors from 'cors'
 import { authMiddleware } from './shared/middleware/auth.middleware.js'
 import { projectRouter } from './features/project/project.routes.js'
 import { profileRouter } from './features/profile/profile.routes.js'
+import { billingRouter } from './features/billing/billing.routes.js'
 import { pageRouter } from './features/page/page.routes.js'
 import { runRouter } from './features/run/run.routes.js'
 import { questionsRouter } from './features/questions/questions.routes.js'
@@ -27,6 +28,7 @@ app.use(authMiddleware)
 
 // Account / user profile
 app.use('/profile', profileRouter)
+app.use('/billing', billingRouter)
 
 // Project routes
 app.use('/projects', projectRouter)

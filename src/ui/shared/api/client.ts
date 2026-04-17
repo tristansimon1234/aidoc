@@ -148,6 +148,41 @@ export interface ProfileDTO {
   updatedAt: string
 }
 
+export type PlanId = 'free' | 'startup' | 'growth' | 'business'
+
+export interface PlanDTO {
+  id: PlanId
+  name: string
+  priceCents: number
+  currency: string
+  stripePriceId: string | null
+  maxProjects: number
+  maxDocRuns: number
+  maxVoiceovers: number
+  maxTryDoc: number
+  maxWidgetSessions: number
+  sortOrder: number
+  features: string[]
+}
+
+export interface SubscriptionDTO {
+  id: string
+  userId: string
+  planId: PlanId
+  status: 'active' | 'canceled' | 'past_due' | 'trialing'
+  currentPeriodStart: string | null
+  currentPeriodEnd: string | null
+  stripeSubscriptionId: string | null
+  cancelAtPeriodEnd: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BillingSummaryDTO {
+  plan: PlanDTO
+  subscription: SubscriptionDTO
+}
+
 export interface PageResourceDTO {
   type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'
   label: string
@@ -184,6 +219,12 @@ export const api = {
     get: (): Promise<ProfileDTO> => request('/profile'),
     update: (body: { fullName?: string | null }): Promise<ProfileDTO> =>
       request('/profile', { method: 'PATCH', body: JSON.stringify(body) }),
+  },
+  billing: {
+    plans: (): Promise<PlanDTO[]> => request('/billing/plans'),
+    summary: (): Promise<BillingSummaryDTO> => request('/billing/summary'),
+    selectPlan: (planId: PlanId): Promise<BillingSummaryDTO> =>
+      request('/billing/subscription/select', { method: 'POST', body: JSON.stringify({ planId }) }),
   },
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),

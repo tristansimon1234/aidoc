@@ -24,6 +24,7 @@ AiDoc is an AI-powered documentation tool that automatically explores web applic
 ```
 User (Supabase Auth)
   ├─ Profile (fullName, stripeCustomerId)  ← 1:1, auto-created by trigger
+  ├─ Subscription (planId, status, stripeSubscriptionId)  ← 1:1 active, auto-created free
   └─ Project (name, baseUrl, context{audience,workflow,quirks}, credentials[], design{logoUrl})  ← RLS by user_id
        └─ DocPage (title, slug, parentId, sortOrder, content, briefing{objective,knowledge,resources[]}, status)
             └─ Run (featureName, startUrl, goal, status, tokenUsage, summary_json{tryDocReport})
@@ -111,6 +112,9 @@ AppError → { error: string, code: string, details?: unknown }
 ```
 /api/health                                    GET    (no auth)
 /api/profile                                   GET PATCH   (authenticated — own profile)
+/api/billing/plans                             GET         (authenticated — list all plans)
+/api/billing/summary                           GET         (authenticated — current plan + subscription)
+/api/billing/subscription/select               POST        (authenticated — temp; Stripe Checkout later)
 /api/projects                                  GET POST
 /api/projects/:id                              GET PUT DELETE
 /api/projects/:pid/pages                       GET POST

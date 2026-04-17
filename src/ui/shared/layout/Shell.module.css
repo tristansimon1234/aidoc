@@ -1,8 +1,14 @@
 .shell {
   min-height: 100vh;
   display: flex;
-  flex-direction: column;
   background-color: var(--color-bg);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
@@ -39,10 +45,6 @@
   letter-spacing: -0.02em;
 }
 
-.logo svg {
-  color: var(--color-primary);
-}
-
 .logo:hover {
   text-decoration: none;
   color: var(--color-primary);
@@ -53,32 +55,6 @@
   align-items: center;
   gap: var(--space-xs);
   flex-shrink: 0;
-}
-
-.navDivider {
-  width: 1px;
-  height: 20px;
-  background: var(--color-border);
-  margin: 0 var(--space-xs);
-}
-
-.iconBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 10px;
-  background: none;
-  color: var(--color-muted-fg);
-  cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
-}
-
-.iconBtn:hover {
-  background-color: var(--color-secondary);
-  color: var(--color-fg);
 }
 
 .main {

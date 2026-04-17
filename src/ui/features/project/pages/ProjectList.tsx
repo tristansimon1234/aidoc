@@ -5,25 +5,22 @@ import { useAsync } from '../../../shared/hooks/useAsync.js'
 import { fetchProjects } from '../../../shared/api/db.js'
 import styles from './ProjectList.module.css'
 
+// `onSignOut` is now handled via the avatar menu in the left rail, but we keep
+// the prop to avoid changing the App.tsx wiring in this PR.
 interface ProjectListProps {
-  onSignOut: () => Promise<void>
+  onSignOut?: () => Promise<void>
 }
 
-export function ProjectList({ onSignOut }: ProjectListProps): React.ReactElement {
+export function ProjectList(_props: ProjectListProps): React.ReactElement {
   const navigate = useNavigate()
   const { data: projects, loading, error } = useAsync(() => fetchProjects())
 
   return (
     <Shell
       actions={
-        <>
-          <Link to="/projects/new">
-            <Button size="sm">New Project</Button>
-          </Link>
-          <Button size="sm" variant="ghost" onClick={() => void onSignOut()}>
-            Sign Out
-          </Button>
-        </>
+        <Link to="/projects/new">
+          <Button size="sm">New Project</Button>
+        </Link>
       }
     >
       <div className={styles.header}>

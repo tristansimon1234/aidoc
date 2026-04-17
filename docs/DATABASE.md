@@ -104,6 +104,42 @@ created_at        timestamptz DEFAULT now()
 ```
 **Index**: `idx_artifacts_run_id`
 
+### plans
+```sql
+id                   text PRIMARY KEY           -- 'free' | 'startup' | 'growth' | 'business'
+name                 text NOT NULL
+price_cents          integer NOT NULL DEFAULT 0
+currency             text NOT NULL DEFAULT 'EUR'
+stripe_price_id      text                       -- populated when Stripe is enabled
+max_projects         integer NOT NULL
+max_doc_runs         integer NOT NULL
+max_voiceovers       integer NOT NULL
+max_try_doc          integer NOT NULL
+max_widget_sessions  integer NOT NULL
+sort_order           integer NOT NULL DEFAULT 0
+features             jsonb NOT NULL DEFAULT '[]'  -- human-readable bullets for the UI
+created_at           timestamptz DEFAULT now()
+```
+**RLS**: SELECT allowed to anyone (public pricing data).
+**Seeded**: 4 rows — free / startup (49€) / growth (149€) / business (449€).
+
+### subscriptions
+```sql
+id                      uuid PK DEFAULT gen_random_uuid()
+user_id                 uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+plan_id                 text NOT NULL DEFAULT 'free' REFERENCES plans(id)
+status                  text NOT NULL DEFAULT 'active'   -- active | canceled | past_due | trialing
+current_period_start    timestamptz
+current_period_end      timestamptz
+stripe_subscription_id  text                             -- populated when Stripe is enabled
+cancel_at_period_end    boolean NOT NULL DEFAULT false
+created_at              timestamptz DEFAULT now()
+updated_at              timestamptz DEFAULT now()
+```
+**Partial unique index**: `subscriptions_active_user_idx` on `(user_id) WHERE status <> 'canceled'` — one active subscription per user.
+**RLS**: `auth.uid() = user_id` for SELECT.
+**Trigger**: `handle_new_user()` (shared with `profiles`) inserts a free subscription on signup; migration backfills existing users.
+
 ### profiles
 ```sql
 id                 uuid PK REFERENCES auth.users(id) ON DELETE CASCADE
@@ -179,6 +215,7 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 23 | `20260417000000_add_runs_project_id.sql` | Denormalize `project_id` on runs |
 | 24 | `20260417000001_add_mcp_api_key.sql` | Add MCP API key + enabled flag to projects |
 | 25 | `20260417000002_add_profiles_and_language.sql` | `profiles` table (1:1 with auth.users) + trigger to auto-create on signup |
+| 26 | `20260417000003_add_plans_and_subscriptions.sql` | `plans` (seeded) + `subscriptions` (free by default) + trigger extension + backfill |
 
 ## Relationships
 

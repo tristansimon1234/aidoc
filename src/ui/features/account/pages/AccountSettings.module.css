@@ -124,3 +124,82 @@
   justify-content: center;
   padding: var(--space-xl);
 }
+
+.plansGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-md);
+}
+
+.planCard {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.planCardCurrent {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.planHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.planName {
+  font-size: var(--text-md);
+  font-weight: 600;
+  margin: 0;
+}
+
+.planPrice {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  color: var(--color-fg);
+  font-family: var(--font-mono);
+  margin: 4px 0 0;
+}
+
+.planFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+  line-height: 1.5;
+  flex: 1;
+}
+
+.planFeatures li {
+  padding-left: 16px;
+  position: relative;
+}
+
+.planFeatures li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+.billingFootnote {
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-secondary);
+  border-radius: var(--radius-lg);
+  line-height: 1.5;
+}

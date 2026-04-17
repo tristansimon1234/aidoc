@@ -1,0 +1,36 @@
+export type PlanId = 'free' | 'startup' | 'growth' | 'business'
+
+export interface Plan {
+  id: PlanId
+  name: string
+  priceCents: number
+  currency: string
+  stripePriceId: string | null
+  maxProjects: number
+  maxDocRuns: number
+  maxVoiceovers: number
+  maxTryDoc: number
+  maxWidgetSessions: number
+  sortOrder: number
+  features: string[]
+}
+
+export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing'
+
+export interface Subscription {
+  id: string
+  userId: string
+  planId: PlanId
+  status: SubscriptionStatus
+  currentPeriodStart: Date | null
+  currentPeriodEnd: Date | null
+  stripeSubscriptionId: string | null
+  cancelAtPeriodEnd: boolean
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface BillingSummary {
+  plan: Plan
+  subscription: Subscription
+}
