@@ -1,6 +1,10 @@
-import { NotFoundError } from '../../shared/middleware/error.middleware.js'
+import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import type { Project, CreateProjectInput, UpdateProjectInput } from './project.types.js'
 import * as projectRepo from './project.repository.js'
+
+function assertOwnership(project: Project, userId: string): void {
+  if (project.userId !== userId) throw new AppError('Forbidden', 'FORBIDDEN', 403)
+}
 
 export async function createProject(userId: string, input: CreateProjectInput): Promise<Project> {
   const project = await projectRepo.createProject(userId, input)
@@ -19,9 +23,10 @@ export async function createProject(userId: string, input: CreateProjectInput): 
   return project
 }
 
-export async function getProject(id: string): Promise<Project> {
+export async function getProject(id: string, userId?: string): Promise<Project> {
   const project = await projectRepo.findProjectById(id)
   if (!project) throw new NotFoundError('Project')
+  if (userId) assertOwnership(project, userId)
   return project
 }
 
@@ -29,14 +34,16 @@ export async function listProjects(userId: string): Promise<Project[]> {
   return projectRepo.listProjectsByUserId(userId)
 }
 
-export async function updateProject(id: string, input: UpdateProjectInput): Promise<Project> {
+export async function updateProject(id: string, userId: string, input: UpdateProjectInput): Promise<Project> {
   const project = await projectRepo.findProjectById(id)
   if (!project) throw new NotFoundError('Project')
+  assertOwnership(project, userId)
   return projectRepo.updateProject(id, input)
 }
 
-export async function deleteProject(id: string): Promise<void> {
+export async function deleteProject(id: string, userId: string): Promise<void> {
   const project = await projectRepo.findProjectById(id)
   if (!project) throw new NotFoundError('Project')
+  assertOwnership(project, userId)
   return projectRepo.deleteProject(id)
 }

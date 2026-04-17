@@ -5,6 +5,23 @@ import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 export const mcpRouter = Router()
 mcpRouter.use(json())
 
+// Rate limiter: 30 requests per minute per API key
+const mcpRateMap = new Map<string, { count: number; resetAt: number }>()
+function checkMcpRateLimit(key: string): void {
+  const now = Date.now()
+  let entry = mcpRateMap.get(key)
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + 60_000 }
+    mcpRateMap.set(key, entry)
+  }
+  entry.count++
+  if (entry.count > 30) throw new NotFoundError('Rate limit exceeded')
+}
+setInterval(() => {
+  const now = Date.now()
+  for (const [k, v] of mcpRateMap) { if (now > v.resetAt) mcpRateMap.delete(k) }
+}, 300_000)
+
 interface JsonRpcRequest {
   jsonrpc: '2.0'
   id?: string | number
@@ -30,6 +47,8 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
         res.json(jsonRpcError(undefined, -32600, 'Widget key is required'))
         return
       }
+
+      checkMcpRateLimit(widgetKey)
 
       const { findProjectByMcpKey } = await import('../project/project.repository.js')
       const project = await findProjectByMcpKey(widgetKey)
@@ -81,6 +100,10 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
 
           if (toolName === 'search_documentation') {
             const query = (args.query ?? '') as string
+            if (query.length > 2000) {
+              res.json(jsonRpcResponse(body.id, { content: [{ type: 'text', text: 'Query too long (max 2000 characters).' }] }))
+              return
+            }
             if (!query.trim()) {
               res.json(jsonRpcResponse(body.id, { content: [{ type: 'text', text: 'Please provide a search query.' }] }))
               return
