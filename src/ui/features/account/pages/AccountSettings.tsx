@@ -123,21 +123,19 @@ export function AccountSettings(): React.ReactElement {
   )
 }
 
-function UsageBar({ label, used, limit }: { label: string; used: number; limit: number }): React.ReactElement {
-  const pct = limit === 0 ? 0 : Math.min(100, Math.round((used / limit) * 100))
-  const tone = pct >= 100 ? 'over' : pct >= 80 ? 'warn' : 'ok'
+function UsageBar({ label, percent }: { label: string; percent: number }): React.ReactElement {
+  const clamped = Math.max(0, percent)
+  const tone = clamped >= 100 ? 'over' : clamped >= 80 ? 'warn' : 'ok'
   return (
     <div className={styles.usage}>
       <div className={styles.usageHead}>
         <span className={styles.usageLabel}>{label}</span>
-        <span className={styles.usageValue}>
-          {used.toLocaleString()} / {limit.toLocaleString()}
-        </span>
+        <span className={styles.usageValue}>{clamped.toFixed(1)} %</span>
       </div>
       <div className={styles.usageTrack}>
         <div
           className={`${styles.usageFill} ${styles[`usageFill_${tone}`]}`}
-          style={{ width: `${Math.min(pct, 100)}%` }}
+          style={{ width: `${Math.min(clamped, 100)}%` }}
         />
       </div>
     </div>
@@ -217,10 +215,7 @@ function BillingTab(): React.ReactElement {
 
         {summary && (
           <div className={styles.usageGrid}>
-            <UsageBar label="Doc generations" used={summary.usage.docRun} limit={summary.plan.maxDocRuns} />
-            <UsageBar label="Voice-overs" used={summary.usage.voiceover} limit={summary.plan.maxVoiceovers} />
-            <UsageBar label="Try Doc tests" used={summary.usage.tryDoc} limit={summary.plan.maxTryDoc} />
-            <UsageBar label="Chat sessions" used={summary.usage.chatSessions} limit={summary.plan.maxChatSessions} />
+            <UsageBar label="Monthly usage" percent={summary.usage.percent} />
           </div>
         )}
       </div>

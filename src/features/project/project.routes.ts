@@ -283,39 +283,3 @@ projectRouter.delete('/:id', (req: Request, res: Response, next: NextFunction) =
   })()
 })
 
-// Token usage & cost estimation per project
-projectRouter.get('/:id/usage', (req: Request, res: Response, next: NextFunction) => {
-  void (async () => {
-    try {
-      const projectId = await verifyProjectOwnership(req)
-
-      const { listRunTokenUsageByProjectId } = await import('../run/run.repository.js')
-      const allRuns = await listRunTokenUsageByProjectId(projectId)
-
-      const totalTokens = allRuns.reduce((sum, r) => sum + r.tokenUsage, 0)
-      const testRuns = allRuns.filter((r) => r.featureName.startsWith('[Test]'))
-      const docRuns = allRuns.filter((r) => !r.featureName.startsWith('[Test]'))
-
-      // Cost estimation
-      // Gemini 2.5 Flash: ~$0.15/1M input + $0.60/1M output ≈ $0.35/1M avg
-      // Claude Sonnet (Stagehand): ~$3/1M input + $15/1M output ≈ $9/1M avg
-      const geminiTokens = docRuns.reduce((sum, r) => sum + r.tokenUsage, 0)
-      const stagehandTokens = testRuns.reduce((sum, r) => sum + r.tokenUsage, 0)
-      const geminiCost = (geminiTokens / 1_000_000) * 0.35
-      const stagehandCost = (stagehandTokens / 1_000_000) * 9
-      const estimatedCost = geminiCost + stagehandCost
-
-      res.json({
-        totalTokens,
-        runs: allRuns.length,
-        estimatedCost: Math.round(estimatedCost * 100) / 100,
-        breakdown: [
-          { label: 'Documentation generation', tokens: geminiTokens, runs: docRuns.length, cost: Math.round(geminiCost * 100) / 100 },
-          { label: 'Try Doc testing', tokens: stagehandTokens, runs: testRuns.length, cost: Math.round(stagehandCost * 100) / 100 },
-        ],
-      })
-    } catch (err) {
-      next(err)
-    }
-  })()
-})

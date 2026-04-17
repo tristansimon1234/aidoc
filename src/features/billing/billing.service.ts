@@ -7,24 +7,46 @@ export async function listPlans(): Promise<Plan[]> {
   return billingRepo.listPlans()
 }
 
+// Token cost of each metered operation. Kept in code (not DB) so we can
+// adjust pricing internally without a migration or user-facing change.
+// Units are abstract "tokens" tied loosely to COGS (~1 token ≈ 0.001 €).
+const TOKEN_COSTS = {
+  doc_run: 100,
+  voiceover: 300,
+  try_doc: 400,
+  chat_sessions: 20,
+} as const
+
+function computeTokensUsed(counters: Record<keyof typeof TOKEN_COSTS, number>): number {
+  return (
+    counters.doc_run * TOKEN_COSTS.doc_run +
+    counters.voiceover * TOKEN_COSTS.voiceover +
+    counters.try_doc * TOKEN_COSTS.try_doc +
+    counters.chat_sessions * TOKEN_COSTS.chat_sessions
+  )
+}
+
 function currentPeriodMonth(): string {
   const now = new Date()
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
 }
 
 export async function getSummary(userId: string): Promise<BillingSummary> {
-  const [plans, subscription, usage] = await Promise.all([
+  const [plans, subscription, counters] = await Promise.all([
     billingRepo.listPlans(),
     billingRepo.ensureFreeSubscription(userId),
     listUsageForCurrentMonth(userId),
   ])
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
+
+  const tokensUsed = computeTokensUsed(counters)
+  const percent = plan.monthlyTokens > 0
+    ? Math.round((tokensUsed / plan.monthlyTokens) * 1000) / 10  // one decimal
+    : 0
+
   const snapshot: UsageSnapshot = {
-    docRun: usage.doc_run,
-    voiceover: usage.voiceover,
-    tryDoc: usage.try_doc,
-    chatSessions: usage.chat_sessions,
+    percent,
     periodMonth: currentPeriodMonth(),
   }
   return { plan, subscription, usage: snapshot }

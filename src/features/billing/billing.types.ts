@@ -6,11 +6,7 @@ export interface Plan {
   priceCents: number
   currency: string
   stripePriceId: string | null
-  maxProjects: number
-  maxDocRuns: number
-  maxVoiceovers: number
-  maxTryDoc: number
-  maxChatSessions: number
+  monthlyTokens: number
   sortOrder: number
   features: string[]
 }
@@ -31,10 +27,9 @@ export interface Subscription {
 }
 
 export interface UsageSnapshot {
-  docRun: number
-  voiceover: number
-  tryDoc: number
-  chatSessions: number
+  // Only a single percent exposed — internals (per-feature counts, weighting)
+  // stay server-side so we can tune without renegotiating with users.
+  percent: number
   periodMonth: string  // e.g. '2026-04-01'
 }
 

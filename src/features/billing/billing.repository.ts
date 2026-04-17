@@ -8,11 +8,7 @@ interface PlanRow {
   price_cents: number
   currency: string
   stripe_price_id: string | null
-  max_projects: number
-  max_doc_runs: number
-  max_voiceovers: number
-  max_try_doc: number
-  max_chat_sessions: number
+  monthly_tokens: number
   sort_order: number
   features: string[] | null
 }
@@ -24,11 +20,7 @@ function mapToPlan(row: PlanRow): Plan {
     priceCents: row.price_cents,
     currency: row.currency,
     stripePriceId: row.stripe_price_id,
-    maxProjects: row.max_projects,
-    maxDocRuns: row.max_doc_runs,
-    maxVoiceovers: row.max_voiceovers,
-    maxTryDoc: row.max_try_doc,
-    maxChatSessions: row.max_chat_sessions,
+    monthlyTokens: row.monthly_tokens,
     sortOrder: row.sort_order,
     features: row.features ?? [],
   }

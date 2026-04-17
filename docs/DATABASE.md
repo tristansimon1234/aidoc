@@ -244,6 +244,7 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 25 | `20260417000002_add_profiles_and_language.sql` | `profiles` table (1:1 with auth.users) + trigger to auto-create on signup |
 | 26 | `20260417000003_add_plans_and_subscriptions.sql` | `plans` (seeded) + `subscriptions` (free by default) + trigger extension + backfill |
 | 27 | `20260417000004_add_usage_tracking.sql` | `usage_counters` + `increment_usage` RPC + `widget_sessions` dedup table |
+| 28 | `20260417000005_switch_to_token_usage.sql` | Replace per-feature quotas with a single `monthly_tokens` budget + opaque features |
 
 ## Relationships
 

@@ -156,11 +156,7 @@ export interface PlanDTO {
   priceCents: number
   currency: string
   stripePriceId: string | null
-  maxProjects: number
-  maxDocRuns: number
-  maxVoiceovers: number
-  maxTryDoc: number
-  maxChatSessions: number
+  monthlyTokens: number
   sortOrder: number
   features: string[]
 }
@@ -179,10 +175,7 @@ export interface SubscriptionDTO {
 }
 
 export interface UsageSnapshotDTO {
-  docRun: number
-  voiceover: number
-  tryDoc: number
-  chatSessions: number
+  percent: number
   periodMonth: string
 }
 
@@ -253,8 +246,6 @@ export const api = {
       request(`/projects/${id}/mcp-key`, { method: 'POST' }),
     disableMcp: (id: string): Promise<{ mcpEnabled: boolean }> =>
       request(`/projects/${id}/mcp-key`, { method: 'DELETE' }),
-    usage: (id: string): Promise<{ totalTokens: number; runs: number; estimatedCost: number; breakdown: { label: string; tokens: number; runs: number; cost: number }[] }> =>
-      request(`/projects/${id}/usage`),
   },
   pages: {
     list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
