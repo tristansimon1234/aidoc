@@ -54,9 +54,9 @@ export function PageView(): React.ReactElement {
   const [voices, setVoices] = useState<{ voiceId: string; name: string }[]>([])
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
-  const [generatingVoiceover, setGeneratingVoiceover] = useState(false)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
   const { addJob, updateJob, getJobForPage } = useJobs()
+  const [generatingVoiceover, setGeneratingVoiceover] = useState(() => getJobForPage(pageId ?? '', 'voiceover')?.status === 'running')
   const activeDocGenJob = getJobForPage(pageId ?? '', 'doc-gen')
   const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
   const activeTryDocJob = getJobForPage(pageId ?? '', 'try-doc')
@@ -577,7 +577,8 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               </div>
 
               {/* Generation progress */}
-              {(generatingVoiceover || activeVoiceoverJob?.status === 'running') && (
+              {/* Generation progress — use local state only, not job status (job completes before HTTP response arrives) */}
+              {generatingVoiceover && (
                 <ProgressLoader
                   steps={[
                     { label: 'Uploading video to AI', estimatedSeconds: 30 },
