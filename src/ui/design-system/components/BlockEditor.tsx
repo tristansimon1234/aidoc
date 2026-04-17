@@ -52,8 +52,14 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
 
     void (async () => {
       try {
+        // Ensure images are on their own lines (BlockNote needs block-level images, not inline)
+        const prepared = content
+          .replace(/^(\s*\d+\.\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
+          .replace(/^(\s*[-*]\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
+          .replace(/(!\[.*?\]\(.*?\))(?=\S)/g, '$1\n')
+
         suppressNextChangeRef.current = true
-        const blocks = await editor.tryParseMarkdownToBlocks(content)
+        const blocks = await editor.tryParseMarkdownToBlocks(prepared)
         editor.replaceBlocks(editor.document, blocks)
       } catch {
         // markdown parsing failed
