@@ -580,7 +580,9 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               {(generatingVoiceover || activeVoiceoverJob?.status === 'running') && (
                 <ProgressLoader
                   steps={[
-                    { label: 'Generating voice-over — analyzing video, writing script, synthesizing audio...', estimatedSeconds: 90 },
+                    { label: 'Uploading video to AI', estimatedSeconds: 30 },
+                    { label: 'Writing narration script', estimatedSeconds: 30 },
+                    { label: 'Synthesizing audio', estimatedSeconds: 60 },
                   ]}
                   activeStep={0}
                 />
