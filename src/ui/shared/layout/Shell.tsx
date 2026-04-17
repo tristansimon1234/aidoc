@@ -4,6 +4,17 @@ import { useTheme } from '../hooks/useTheme.js'
 import { JobTracker, JobBadge } from '../jobs/JobTracker.js'
 import styles from './Shell.module.css'
 
+function AccountButton(): React.ReactElement {
+  return (
+    <Link to="/account" className={styles.iconBtn} aria-label="Account settings">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </svg>
+    </Link>
+  )
+}
+
 interface ShellProps {
   children: ReactNode
   actions?: ReactNode
@@ -44,6 +55,7 @@ export function Shell({ children, actions, navBar, fullWidth = false }: ShellPro
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
             )}
           </button>
+          <AccountButton />
         </nav>
       </header>
       <main className={fullWidth ? styles.mainFull : styles.main}>{children}</main>

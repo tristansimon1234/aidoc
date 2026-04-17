@@ -20,7 +20,57 @@
     font: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
     position: script.getAttribute('data-position') || 'right',
     greeting: script.getAttribute('data-greeting') || '',
+    lang: (script.getAttribute('data-lang') || 'en').slice(0, 2).toLowerCase(),
   };
+
+  // --- Localized UI strings ---
+  var STRINGS = {
+    en: {
+      header: 'Ask about the docs',
+      placeholder: 'Ask a question...',
+      send: 'Send',
+      greeting: 'Hi! Ask me anything.',
+      greetingNamed: function (n) { return 'Hi ' + n + '!'; },
+      helpAbout: function (p) { return 'I can help you find answers about ' + p + '.'; },
+      defaultSuggestions: function (p) { return ['How does ' + p + ' work?', 'What are the main features?']; },
+      searching: 'Searching docs...',
+      errorGeneric: 'Sorry, something went wrong. Please try again.',
+      guideMe: 'Guide me',
+      analyzing: 'Analyzing your page...',
+      analyzingShort: 'Analyzing...',
+      permissionIntro: function (n) { return 'To guide you step-by-step, I\'ll read <strong>' + n + ' elements</strong> on this page (buttons, links, form fields).<br>No passwords or typed text are captured.'; },
+      permissionAllow: 'Allow',
+      permissionDeny: 'No thanks',
+      skip: 'Skip',
+      done: 'Done',
+      exit: 'Exit',
+      step: 'Step',
+      poweredBy: 'Powered by',
+    },
+    fr: {
+      header: 'Questions sur la doc',
+      placeholder: 'Posez votre question...',
+      send: 'Envoyer',
+      greeting: 'Bonjour ! Je peux répondre à vos questions.',
+      greetingNamed: function (n) { return 'Bonjour ' + n + ' !'; },
+      helpAbout: function (p) { return 'Je peux vous aider à trouver des réponses sur ' + p + '.'; },
+      defaultSuggestions: function (p) { return ['Comment fonctionne ' + p + ' ?', 'Quelles sont les fonctionnalités principales ?']; },
+      searching: 'Recherche dans la doc...',
+      errorGeneric: "Désolé, une erreur s'est produite. Veuillez réessayer.",
+      guideMe: 'Guidez-moi',
+      analyzing: 'Analyse de votre page...',
+      analyzingShort: 'Analyse...',
+      permissionIntro: function (n) { return 'Pour vous guider pas à pas, je vais lire <strong>' + n + ' éléments</strong> sur cette page (boutons, liens, champs de formulaire).<br>Aucun mot de passe ni texte saisi n\'est capturé.'; },
+      permissionAllow: 'Autoriser',
+      permissionDeny: 'Non merci',
+      skip: 'Passer',
+      done: 'Terminé',
+      exit: 'Quitter',
+      step: 'Étape',
+      poweredBy: 'Propulsé par',
+    },
+  };
+  function t() { return STRINGS[C.lang] || STRINGS.en; }
 
   // Inline design from data-cfg — instant theme, zero fetch needed
   try {
@@ -146,6 +196,10 @@
     }
     if (cfg.widgetPosition && !script.getAttribute('data-position')) { C.position = cfg.widgetPosition; changed = true; }
     if (cfg.widgetGreeting && !script.getAttribute('data-greeting')) { C.greeting = cfg.widgetGreeting; }
+    if (cfg.language && !script.getAttribute('data-lang')) {
+      var lang = String(cfg.language).slice(0, 2).toLowerCase();
+      if (STRINGS[lang]) C.lang = lang;
+    }
     return changed;
   }
 
@@ -169,8 +223,14 @@
       // Cache for next load
       try { localStorage.setItem(CACHE_KEY, JSON.stringify(cfg)); } catch (e) {}
 
+      var prevLang = C.lang;
       if (applyConfig(cfg)) {
         styleEl.textContent = buildCSS();
+      }
+      // Language may have changed between cached + live config — refresh panel chrome
+      if (C.lang !== prevLang) {
+        renderPanelChrome();
+        wirePanel();
       }
       if (isOpen && messages.length === 0) renderMessages();
     })
@@ -187,21 +247,28 @@
   // --- Panel ---
   var panel = document.createElement('div');
   panel.id = 'aidoc-widget-panel';
-  panel.innerHTML = [
-    '<div id="aidoc-widget-header"><span>Ask about the docs</span><button id="aidoc-widget-close">&times;</button></div>',
-    '<div id="aidoc-widget-messages"></div>',
-    '<div id="aidoc-widget-input"><input placeholder="Ask a question..." /><button>Send</button></div>',
-    '<div id="aidoc-widget-powered">Powered by <a href="https://aidoc.dev" target="_blank">AiDoc</a></div>',
-  ].join('');
+  function renderPanelChrome() {
+    panel.innerHTML = [
+      '<div id="aidoc-widget-header"><span>' + escapeHtml(t().header) + '</span><button id="aidoc-widget-close">&times;</button></div>',
+      '<div id="aidoc-widget-messages"></div>',
+      '<div id="aidoc-widget-input"><input placeholder="' + escapeHtml(t().placeholder) + '" /><button>' + escapeHtml(t().send) + '</button></div>',
+      '<div id="aidoc-widget-powered">' + escapeHtml(t().poweredBy) + ' <a href="https://aidoc.dev" target="_blank">AiDoc</a></div>',
+    ].join('');
+  }
+  renderPanelChrome();
   document.body.appendChild(panel);
 
-  var msgContainer = panel.querySelector('#aidoc-widget-messages');
-  var inputEl = panel.querySelector('#aidoc-widget-input input');
-  var sendBtn = panel.querySelector('#aidoc-widget-input button');
+  var msgContainer, inputEl, sendBtn;
+  function wirePanel() {
+    msgContainer = panel.querySelector('#aidoc-widget-messages');
+    inputEl = panel.querySelector('#aidoc-widget-input input');
+    sendBtn = panel.querySelector('#aidoc-widget-input button');
 
-  panel.querySelector('#aidoc-widget-close').onclick = function () { togglePanel(); };
-  sendBtn.onclick = function () { sendMessage(inputEl.value); };
-  inputEl.onkeydown = function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(inputEl.value); } };
+    panel.querySelector('#aidoc-widget-close').onclick = function () { togglePanel(); };
+    sendBtn.onclick = function () { sendMessage(inputEl.value); };
+    inputEl.onkeydown = function (e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(inputEl.value); } };
+  }
+  wirePanel();
 
   function togglePanel() {
     isOpen = !isOpen;
@@ -211,16 +278,17 @@
 
   function renderMessages() {
     if (messages.length === 0) {
-      var greetingText = C.greeting || (USER_NAME ? 'Hi ' + USER_NAME + '!' : 'Hi! Ask me anything.');
+      var greetingText = C.greeting || (USER_NAME ? t().greetingNamed(USER_NAME) : t().greeting);
+      var productName = projectName || 'this product';
       msgContainer.innerHTML = [
         '<div class="aidoc-welcome">',
-        '<div><h3>' + greetingText + '</h3>',
-        '<p>I can help you find answers about ' + (projectName || 'this product') + '.</p></div>',
+        '<div><h3>' + escapeHtml(greetingText) + '</h3>',
+        '<p>' + escapeHtml(t().helpAbout(productName)) + '</p></div>',
         '<div class="aidoc-suggestions">',
         (dynamicSuggestions.length > 0
           ? dynamicSuggestions
-          : ['How does ' + projectName + ' work?', 'What are the main features?']
-        ).map(function (s) { return '<button class="aidoc-suggestion">' + s + '</button>'; }).join(''),
+          : t().defaultSuggestions(productName)
+        ).map(function (s) { return '<button class="aidoc-suggestion">' + escapeHtml(s) + '</button>'; }).join(''),
         '</div></div>',
       ].join('');
       msgContainer.querySelectorAll('.aidoc-suggestion').forEach(function (el) {
@@ -249,7 +317,7 @@
         if (m.walkthroughAvailable) {
           var guideBtn = document.createElement('button');
           guideBtn.className = 'aidoc-guide-btn';
-          guideBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg> Guide me';
+          guideBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg> ' + escapeHtml(t().guideMe);
           guideBtn.onclick = function () { requestWalkthrough(m._originalQuestion || messages[messages.indexOf(m) - 1]?.content || ''); };
           div.appendChild(guideBtn);
         }
@@ -277,7 +345,7 @@
     if (isSending) {
       var typing = document.createElement('div');
       typing.className = 'aidoc-typing';
-      typing.textContent = 'Searching docs...';
+      typing.textContent = t().searching;
       msgContainer.appendChild(typing);
     }
 
@@ -300,7 +368,7 @@
     })
       .then(function (r) { return r.json(); })
       .then(function (data) { messages.push({ role: 'assistant', content: data.answer, sources: data.sources, followUps: data.followUps || [], walkthroughAvailable: data.walkthroughAvailable || false, _originalQuestion: text }); })
-      .catch(function () { messages.push({ role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }); })
+      .catch(function () { messages.push({ role: 'assistant', content: t().errorGeneric }); })
       .finally(function () { isSending = false; sendBtn.disabled = false; renderMessages(); inputEl.focus(); });
   }
 
@@ -415,10 +483,10 @@
   function showPermissionDialog(elementCount, onAllow, onDeny) {
     msgContainer.innerHTML = [
       '<div class="aidoc-permission">',
-      '<p>To guide you step-by-step, I\'ll read <strong>' + elementCount + ' elements</strong> on this page (buttons, links, form fields).<br>No passwords or typed text are captured.</p>',
+      '<p>' + t().permissionIntro(elementCount) + '</p>',
       '<div class="aidoc-permission-actions">',
-      '<button class="aidoc-perm-allow">Allow</button>',
-      '<button class="aidoc-perm-deny">No thanks</button>',
+      '<button class="aidoc-perm-allow">' + escapeHtml(t().permissionAllow) + '</button>',
+      '<button class="aidoc-perm-deny">' + escapeHtml(t().permissionDeny) + '</button>',
       '</div></div>',
     ].join('');
     msgContainer.querySelector('.aidoc-perm-allow').onclick = function () { grantDomPermission(); onAllow(); };
@@ -450,7 +518,7 @@
     if (wtActive) {
       showLoadingBar();
     } else {
-      msgContainer.innerHTML = '<div class="aidoc-typing">Analyzing your page...</div>';
+      msgContainer.innerHTML = '<div class="aidoc-typing">' + escapeHtml(t().analyzing) + '</div>';
     }
 
     var snapshot = captureDomSnapshot();
@@ -528,7 +596,7 @@
     removeWalkthroughBar();
     var bar = document.createElement('div');
     bar.id = 'aidoc-wt-bar';
-    bar.innerHTML = '<span class="aidoc-wt-bar-step">' + (wtCompletedSteps.length + 1) + '</span><span class="aidoc-wt-bar-text">Analyzing...</span><button class="aidoc-wt-bar-exit" data-wt="exit">&times;</button>';
+    bar.innerHTML = '<span class="aidoc-wt-bar-step">' + (wtCompletedSteps.length + 1) + '</span><span class="aidoc-wt-bar-text">' + escapeHtml(t().analyzingShort) + '</span><button class="aidoc-wt-bar-exit" data-wt="exit">&times;</button>';
     document.body.appendChild(bar);
     bar.querySelector('[data-wt="exit"]').onclick = function () { exitWalkthrough(); };
   }
@@ -543,7 +611,7 @@
     bar.innerHTML = [
       '<span class="aidoc-wt-bar-step">' + wtStepNumber + '</span>',
       '<span class="aidoc-wt-bar-text">' + escapeHtml(wtCurrentStep.instruction) + '</span>',
-      '<button data-wt="skip">Skip</button>',
+      '<button data-wt="skip">' + escapeHtml(t().skip) + '</button>',
       '<button class="aidoc-wt-bar-exit" data-wt="exit">&times;</button>',
     ].join('');
     document.body.appendChild(bar);
@@ -567,8 +635,8 @@
     bar.innerHTML = [
       '<span class="aidoc-wt-bar-step">' + wtStepNumber + '</span>',
       '<span class="aidoc-wt-bar-text">' + escapeHtml(step.instruction) + '</span>',
-      '<button data-wt="done">Done</button>',
-      '<button data-wt="skip">Skip</button>',
+      '<button data-wt="done">' + escapeHtml(t().done) + '</button>',
+      '<button data-wt="skip">' + escapeHtml(t().skip) + '</button>',
       '<button class="aidoc-wt-bar-exit" data-wt="exit">&times;</button>',
     ].join('');
     document.body.appendChild(bar);
@@ -689,11 +757,11 @@
     if (!rect) tip.className = 'aidoc-wt-notfound';
 
     tip.innerHTML = [
-      '<div class="aidoc-wt-tip-step">Step ' + wtStepNumber + '</div>',
+      '<div class="aidoc-wt-tip-step">' + escapeHtml(t().step) + ' ' + wtStepNumber + '</div>',
       '<div class="aidoc-wt-tip-text">' + simpleMarkdown(step.instruction) + '</div>',
       '<div class="aidoc-wt-tip-actions">',
-      '<button data-wt="skip">Skip</button>',
-      '<button data-wt="exit">Exit</button>',
+      '<button data-wt="skip">' + escapeHtml(t().skip) + '</button>',
+      '<button data-wt="exit">' + escapeHtml(t().exit) + '</button>',
       '</div>',
     ].join('');
 

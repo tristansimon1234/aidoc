@@ -52,15 +52,16 @@ async function getProjectAwareness(docPageId: string): Promise<{
   customPrompt: string | undefined
   briefing: PageBriefingWithContent | undefined
   existingPageSummaries: { title: string; slug: string; contentPreview: string }[] | undefined
+  language: string | undefined
 }> {
   const { findPageById, findPagesByProjectId } = await import('../page/page.repository.js')
   const { findProjectById } = await import('../project/project.repository.js')
 
   const page = await findPageById(docPageId)
-  if (!page) return { projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: undefined, briefing: undefined, existingPageSummaries: undefined }
+  if (!page) return { projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: undefined, briefing: undefined, existingPageSummaries: undefined, language: undefined }
 
   const project = await findProjectById(page.projectId)
-  if (!project) return { projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: page.customPrompt ?? undefined, briefing: page.briefing ?? undefined, existingPageSummaries: undefined }
+  if (!project) return { projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: page.customPrompt ?? undefined, briefing: page.briefing ?? undefined, existingPageSummaries: undefined, language: undefined }
 
   // Build table of contents from sibling pages
   const allPages = await findPagesByProjectId(page.projectId)
@@ -117,6 +118,7 @@ async function getProjectAwareness(docPageId: string): Promise<{
     customPrompt: page.customPrompt ?? undefined,
     briefing: await enrichBriefingWithFileContents(page.briefing, selectedProjectResources.length > 0 ? selectedProjectResources : undefined),
     existingPageSummaries: summaries.length > 0 ? summaries : undefined,
+    language: project.language,
   }
 }
 
@@ -187,6 +189,7 @@ export async function exploreWithEvents(
     customPrompt: undefined,
     briefing: undefined,
     existingPageSummaries: undefined,
+    language: undefined,
   }
   if (run.docPageId) {
     awareness = await getProjectAwareness(run.docPageId)
@@ -245,7 +248,7 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
   }
 
   // Fetch project awareness for cross-page context in doc generation
-  let docOptions: { projectContext?: string; tableOfContents?: string; existingPageSummaries?: { title: string; slug: string; contentPreview: string }[] } | undefined
+  let docOptions: { projectContext?: string; tableOfContents?: string; existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]; language?: string } | undefined
   if (run.docPageId) {
     const awareness = await getProjectAwareness(run.docPageId)
     const briefingContext = awareness.briefing
@@ -258,6 +261,7 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
       projectContext: [awareness.projectContext, briefingContext].filter(Boolean).join('\n\n') || undefined,
       tableOfContents: awareness.tableOfContents,
       existingPageSummaries: awareness.existingPageSummaries,
+      language: awareness.language,
     }
   }
 

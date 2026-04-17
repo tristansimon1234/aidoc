@@ -1,13 +1,20 @@
 import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import type { Project, CreateProjectInput, UpdateProjectInput } from './project.types.js'
 import * as projectRepo from './project.repository.js'
+import * as profileRepo from '../profile/profile.repository.js'
 
 function assertOwnership(project: Project, userId: string): void {
   if (project.userId !== userId) throw new AppError('Forbidden', 'FORBIDDEN', 403)
 }
 
 export async function createProject(userId: string, input: CreateProjectInput): Promise<Project> {
-  const project = await projectRepo.createProject(userId, input)
+  // Inherit user's preferred language when the caller didn't pick one
+  let language = input.language
+  if (!language) {
+    const profile = await profileRepo.findProfileById(userId)
+    language = profile?.preferredLanguage
+  }
+  const project = await projectRepo.createProject(userId, { ...input, language })
 
   // Auto-create a "Getting Started" page so the project isn't empty
   const { createPage } = await import('../page/page.repository.js')

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { generateText, type GeminiUsage } from '../../shared/ai/gemini.client.js'
-import { buildDocumentationPrompt, getDocSystemPrompt, VIDEO_DOC_SYSTEM_PROMPT, buildScreenshotMap, replaceScreenshotPlaceholders } from '../../shared/ai/prompt.builder.js'
+import { buildDocumentationPrompt, getDocSystemPrompt, getVideoDocSystemPrompt, buildScreenshotMap, replaceScreenshotPlaceholders } from '../../shared/ai/prompt.builder.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
 const StepAssessmentSchema = z.object({
@@ -63,8 +63,9 @@ export async function generateDocumentation(context: {
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
   runStatus?: string
   isVideoRun?: boolean
+  language?: string
 }): Promise<GenerationResult> {
-  const systemPrompt = context.isVideoRun ? VIDEO_DOC_SYSTEM_PROMPT : getDocSystemPrompt()
+  const systemPrompt = context.isVideoRun ? getVideoDocSystemPrompt(context.language) : getDocSystemPrompt(context.language)
   const userPrompt = buildDocumentationPrompt(context)
 
   const response = await generateText({

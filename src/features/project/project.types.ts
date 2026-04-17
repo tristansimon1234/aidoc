@@ -42,6 +42,7 @@ export interface Project {
   mcpApiKey: string | null
   mcpEnabled: boolean
   walkthroughEnabled: boolean
+  language: string
   createdAt: Date
   updatedAt: Date
 }
@@ -61,6 +62,7 @@ export interface CreateProjectInput {
   description?: string
   context?: ProjectContext
   credentials?: ProjectCredential[]
+  language?: string
 }
 
 export interface UpdateProjectInput {
@@ -73,4 +75,5 @@ export interface UpdateProjectInput {
   discoveredContext?: DiscoveredContext
   design?: ProjectDesign
   walkthroughEnabled?: boolean
+  language?: string
 }

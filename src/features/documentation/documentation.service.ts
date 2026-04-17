@@ -28,6 +28,7 @@ export interface DocGenerationOptions {
   projectContext?: string
   tableOfContents?: string
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
+  language?: string
 }
 
 export async function getDocByRunId(runId: string): Promise<GeneratedDoc> {
@@ -81,6 +82,7 @@ export async function generateAndSaveDoc(
     existingPageSummaries: options?.existingPageSummaries,
     runStatus: run.status,
     isVideoRun: !run.browserbaseSessionId,
+    language: options?.language,
   })
 
   await deps.incrementTokenUsage(runId, result.usage.inputTokens + result.usage.outputTokens)

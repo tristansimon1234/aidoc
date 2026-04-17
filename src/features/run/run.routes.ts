@@ -512,9 +512,19 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       // Pass timestamps + video end sentinel so the service knows the last segment's limit
       const timestampsWithEnd = [...mergedTimestamps, estimatedVideoEnd]
 
+      // Fall back to project language so voice-over matches the generated doc
+      let voLanguage = body.language
+      if (!voLanguage && run.docPageId) {
+        const { findPageById } = await import('../page/page.repository.js')
+        const { findProjectById } = await import('../project/project.repository.js')
+        const page = await findPageById(run.docPageId)
+        const project = page ? await findProjectById(page.projectId) : null
+        voLanguage = project?.language
+      }
+
       const result = await generateVoiceover(params.data.id, stepsWithText, timestampsWithEnd, {
         voiceId: body.voiceId,
-        language: body.language,
+        language: voLanguage,
       })
 
       // Store voiceover info in run summary

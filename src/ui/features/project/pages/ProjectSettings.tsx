@@ -41,6 +41,7 @@ export function ProjectSettings(): React.ReactElement {
   )
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [walkthroughEnabled, setWalkthroughEnabled] = useState(outletProject.walkthroughEnabled ?? false)
+  const [language, setLanguage] = useState(outletProject.language ?? 'en')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -54,6 +55,7 @@ export function ProjectSettings(): React.ReactElement {
     setCredentials(outletProject.credentials ?? [])
     setResources(outletProject.resources ?? [])
     setWalkthroughEnabled(outletProject.walkthroughEnabled ?? false)
+    setLanguage(outletProject.language ?? 'en')
   }, [outletProject])
 
   const handleSave = async (): Promise<void> => {
@@ -68,6 +70,7 @@ export function ProjectSettings(): React.ReactElement {
         credentials: validCreds.length > 0 ? validCreds : undefined,
         resources: validResources,
         walkthroughEnabled,
+        language,
       })
       setProject(updated)
       setParentProject(updated)
@@ -125,6 +128,16 @@ export function ProjectSettings(): React.ReactElement {
                 <label className={styles.label}>Description</label>
                 <textarea className={styles.textarea} value={description} onChange={(e) => setDescription(e.target.value)}
                   placeholder="What does your product do?" rows={2} />
+              </div>
+              <div className={styles.field} style={{ marginTop: 'var(--space-md)' }}>
+                <label className={styles.label}>Language</label>
+                <select className={styles.input} value={language} onChange={(e) => setLanguage(e.target.value)}>
+                  <option value="en">English</option>
+                  <option value="fr">Français</option>
+                </select>
+                <p className={styles.sectionDesc} style={{ marginTop: 4 }}>
+                  Language for generated documentation, voice-over, and the embedded widget's chat answers.
+                </p>
               </div>
               <div className={styles.field} style={{ marginTop: 'var(--space-md)' }}>
                 <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>

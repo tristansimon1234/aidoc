@@ -23,13 +23,18 @@ AiDoc is an AI-powered documentation tool that automatically explores web applic
 
 ```
 User (Supabase Auth)
-  └─ Project (name, baseUrl, context{audience,workflow,quirks}, credentials[], design{logoUrl})  ← RLS by user_id
+  ├─ Profile (fullName, preferredLanguage, stripeCustomerId)  ← 1:1, auto-created by trigger
+  └─ Project (name, baseUrl, language, context{audience,workflow,quirks}, credentials[], design{logoUrl})  ← RLS by user_id
        └─ DocPage (title, slug, parentId, sortOrder, content, briefing{objective,knowledge,resources[]}, status)
             └─ Run (featureName, startUrl, goal, status, tokenUsage, summary_json{tryDocReport})
                  ├─ RunStep (action, observation, screenshotPath)
                  ├─ RunQuestion (question, answer)
                  └─ GeneratedDoc (markdownContent, jsonContent)
 ```
+
+### Language
+
+`profiles.preferred_language` is the user's UI preference (default `en`). New projects inherit it as `projects.language`; an explicit override per project is available in Project Settings. Doc generation, voice-over, widget `/config`, chat, and walkthroughs all honor `projects.language` server-side — clients never request a language for these flows. Supported values: `en`, `fr`.
 
 ## Feature Directory Structure
 
@@ -109,6 +114,7 @@ AppError → { error: string, code: string, details?: unknown }
 
 ```
 /api/health                                    GET    (no auth)
+/api/profile                                   GET PATCH   (authenticated — own profile)
 /api/projects                                  GET POST
 /api/projects/:id                              GET PUT DELETE
 /api/projects/:pid/pages                       GET POST

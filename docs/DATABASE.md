@@ -104,6 +104,20 @@ created_at        timestamptz DEFAULT now()
 ```
 **Index**: `idx_artifacts_run_id`
 
+### profiles
+```sql
+id                 uuid PK REFERENCES auth.users(id) ON DELETE CASCADE
+email              text
+full_name          text
+preferred_language text NOT NULL DEFAULT 'en'     -- UI language + default for new projects
+stripe_customer_id text                           -- populated once Stripe billing is enabled
+created_at         timestamptz DEFAULT now()
+updated_at         timestamptz DEFAULT now()
+```
+**RLS**: `auth.uid() = id` for SELECT and UPDATE
+**Index**: `idx_profiles_stripe_customer_id`
+**Trigger**: `on_auth_user_created` (AFTER INSERT on `auth.users`) → auto-creates a profile row via `handle_new_user()`.
+
 ### doc_embeddings
 ```sql
 id                uuid PK DEFAULT gen_random_uuid()
@@ -127,6 +141,9 @@ widget_enabled    boolean NOT NULL DEFAULT false
 design            jsonb                       -- widget design config {logoUrl?: string, ...}
 walkthrough_enabled boolean NOT NULL DEFAULT false  -- AI-guided walkthrough in widget
 resources         jsonb                       -- [{type, label, value}] test resources for AI agent
+mcp_api_key       text UNIQUE                 -- API key for the MCP server
+mcp_enabled       boolean NOT NULL DEFAULT false
+language          text NOT NULL DEFAULT 'en'  -- used by doc generation, voice-over, chat, widget
 ```
 **Index**: `idx_projects_widget_api_key`
 
@@ -160,6 +177,10 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 19 | `20260413000000_add_walkthrough_enabled.sql` | Add `walkthrough_enabled` to projects |
 | 20 | `20260413000001_make_artifacts_bucket_public.sql` | Make artifacts storage bucket public |
 | 21 | `20260416000000_add_project_resources.sql` | Add `resources` JSONB to projects (test resources) |
+| 22 | `20260416000001_create_jobs_table.sql` | Background jobs table (voice-over, doc gen tracking) |
+| 23 | `20260417000000_add_runs_project_id.sql` | Denormalize `project_id` on runs |
+| 24 | `20260417000001_add_mcp_api_key.sql` | Add MCP API key + enabled flag to projects |
+| 25 | `20260417000002_add_profiles_and_language.sql` | `profiles` table (1:1 with auth.users) + `projects.language` |
 
 ## Relationships
 
