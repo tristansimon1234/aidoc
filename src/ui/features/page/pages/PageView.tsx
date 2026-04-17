@@ -582,6 +582,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               {/* Generation progress — use local state only, not job status (job completes before HTTP response arrives) */}
               {generatingVoiceover && (
                 <ProgressLoader
+                  startedAt={activeVoiceoverJob?.startedAt}
                   steps={[
                     { label: 'Uploading video to AI', estimatedSeconds: 30 },
                     { label: 'Writing narration script', estimatedSeconds: 30 },

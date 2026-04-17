@@ -10,19 +10,36 @@ interface ProgressLoaderProps {
   steps: ProgressStep[]
   activeStep: number
   statusMessage?: string | null
+  /** Timestamp (ms) when the job started — used to resume progress after navigation */
+  startedAt?: number
   /** When true, plays the exit animation then calls onExited */
   done?: boolean
   onExited?: () => void
 }
 
-export function ProgressLoader({ steps, activeStep: externalActiveStep, statusMessage, done, onExited }: ProgressLoaderProps): React.ReactElement | null {
-  const [elapsed, setElapsed] = useState(0)
+export function ProgressLoader({ steps, activeStep: externalActiveStep, statusMessage, startedAt, done, onExited }: ProgressLoaderProps): React.ReactElement | null {
   const [exiting, setExiting] = useState(false)
   const [hidden, setHidden] = useState(false)
-  const [autoAdvance, setAutoAdvance] = useState(0)
-  const startRef = useRef(Date.now())
 
-  // The effective active step: external signal OR auto-advanced based on elapsed time
+  // Compute initial auto-advance and elapsed based on startedAt
+  const totalElapsedSinceStart = startedAt ? (Date.now() - startedAt) / 1000 : 0
+  const initialState = (() => {
+    let advance = 0
+    let consumed = 0
+    for (let i = externalActiveStep; i < steps.length - 1; i++) {
+      const stepTime = steps[i]?.estimatedSeconds ?? 0
+      if (totalElapsedSinceStart > consumed + stepTime * 1.1) {
+        advance++
+        consumed += stepTime
+      } else break
+    }
+    return { advance, elapsed: Math.max(0, totalElapsedSinceStart - consumed) }
+  })()
+
+  const [elapsed, setElapsed] = useState(initialState.elapsed)
+  const [autoAdvance, setAutoAdvance] = useState(initialState.advance)
+  const startRef = useRef(Date.now() - initialState.elapsed * 1000)
+
   const activeStep = Math.min(externalActiveStep + autoAdvance, steps.length - 1)
 
   useEffect(() => {

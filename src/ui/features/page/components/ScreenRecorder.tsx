@@ -341,10 +341,11 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
     return (
       <div className={styles.methodContent}>
         <ProgressLoader
+          startedAt={activeDocJob.startedAt}
           steps={[
-            { label: 'Analyzing video with AI', estimatedSeconds: 60 },
-            { label: 'Extracting screenshots', estimatedSeconds: 15 },
-            { label: 'Generating documentation', estimatedSeconds: 30 },
+            { label: 'Analyzing video with AI', estimatedSeconds: 40 },
+            { label: 'Extracting screenshots', estimatedSeconds: 10 },
+            { label: 'Generating documentation', estimatedSeconds: 15 },
           ]}
           activeStep={0}
         />
