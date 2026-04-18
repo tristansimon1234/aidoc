@@ -7,7 +7,7 @@ interface AuthState {
   session: Session | null
   loading: boolean
   signIn: (email: string, password: string) => Promise<string | null>
-  signUp: (email: string, password: string) => Promise<string | null>
+  signUp: (email: string, password: string, emailRedirectTo?: string) => Promise<string | null>
   signOut: () => Promise<void>
   /** Send the Supabase password-reset email. Supabase handles the email
    *  delivery via the SMTP configured in the dashboard (Resend in prod). */
@@ -44,8 +44,12 @@ export function useAuth(): AuthState {
     return error ? error.message : null
   }, [])
 
-  const signUp = useCallback(async (email: string, password: string): Promise<string | null> => {
-    const { error } = await supabase.auth.signUp({ email, password })
+  const signUp = useCallback(async (email: string, password: string, emailRedirectTo?: string): Promise<string | null> => {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: emailRedirectTo ? { emailRedirectTo } : undefined,
+    })
     return error ? error.message : null
   }, [])
 
