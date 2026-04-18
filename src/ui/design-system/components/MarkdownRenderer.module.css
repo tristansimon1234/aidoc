@@ -134,6 +134,52 @@
   color: var(--color-muted-fg);
 }
 
+/* Callouts — GitHub-style alerts detected in blockquote content */
+.article blockquote[data-callout-type] {
+  padding: var(--space-md);
+  border-left: 3px solid var(--callout-accent, var(--color-primary));
+  background: var(--callout-bg, color-mix(in srgb, var(--color-primary) 8%, transparent));
+  border-radius: var(--radius-lg);
+  color: var(--color-fg);
+}
+
+.article blockquote[data-callout-type]::before {
+  content: var(--callout-label, "Note");
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--callout-accent, var(--color-primary));
+  margin-bottom: var(--space-xs);
+}
+
+.article blockquote[data-callout-type="NOTE"],
+.article blockquote[data-callout-type="INFO"] {
+  --callout-accent: var(--color-primary);
+  --callout-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --callout-label: "Info";
+}
+
+.article blockquote[data-callout-type="TIP"] {
+  --callout-accent: var(--color-success);
+  --callout-bg: color-mix(in srgb, var(--color-success) 10%, transparent);
+  --callout-label: "Tip";
+}
+
+.article blockquote[data-callout-type="WARNING"] {
+  --callout-accent: var(--color-warning);
+  --callout-bg: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  --callout-label: "Warning";
+}
+
+.article blockquote[data-callout-type="DANGER"],
+.article blockquote[data-callout-type="CAUTION"] {
+  --callout-accent: var(--color-destructive);
+  --callout-bg: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  --callout-label: "Danger";
+}
+
 .article hr {
   border: none;
   border-top: 1px solid var(--color-border);

@@ -45,8 +45,9 @@ export function AdminUsage(): React.ReactElement {
       tryDoc: acc.tryDoc + u.counts.try_doc,
       chatSessions: acc.chatSessions + u.counts.chat_sessions,
       euroCost: acc.euroCost + u.euroCost,
+      overageEur: acc.overageEur + u.overageEur,
     }),
-    { docRun: 0, voiceover: 0, tryDoc: 0, chatSessions: 0, euroCost: 0 },
+    { docRun: 0, voiceover: 0, tryDoc: 0, chatSessions: 0, euroCost: 0, overageEur: 0 },
   )
 
   const formatEuro = (n: number): string =>
@@ -83,6 +84,7 @@ export function AdminUsage(): React.ReactElement {
                 <div><span className={styles.totalsLabel}>Try Doc</span><span className={styles.totalsValue}>{formatNumber(totals.tryDoc)}</span></div>
                 <div><span className={styles.totalsLabel}>Chat sessions</span><span className={styles.totalsValue}>{formatNumber(totals.chatSessions)}</span></div>
                 <div><span className={styles.totalsLabel}>AI cost</span><span className={styles.totalsValue}>{formatEuro(totals.euroCost)}</span></div>
+                <div><span className={styles.totalsLabel}>Overage (billable)</span><span className={styles.totalsValue}>{formatEuro(totals.overageEur)}</span></div>
               </div>
             )}
 
@@ -97,6 +99,7 @@ export function AdminUsage(): React.ReactElement {
                     <th className={styles.num}>Try Doc</th>
                     <th className={styles.num}>Chat</th>
                     <th className={styles.num}>AI cost</th>
+                    <th className={styles.num}>Overage</th>
                     <th className={styles.num}>Quota %</th>
                   </tr>
                 </thead>
@@ -119,12 +122,13 @@ export function AdminUsage(): React.ReactElement {
                         <td className={styles.num} title={`Doc ${formatEuro(u.euroByFeature.doc_run)} · VO ${formatEuro(u.euroByFeature.voiceover)} · Try ${formatEuro(u.euroByFeature.try_doc)} · Chat ${formatEuro(u.euroByFeature.chat_sessions)}`}>
                           {formatEuro(u.euroCost)}
                         </td>
+                        <td className={styles.num}>{u.overageEur > 0 ? formatEuro(u.overageEur) : '—'}</td>
                         <td className={styles.num}>{u.percent.toFixed(1)}</td>
                       </tr>
                     )
                   })}
                   {report.users.length === 0 && (
-                    <tr><td colSpan={8} className={styles.empty}>No data for this month.</td></tr>
+                    <tr><td colSpan={9} className={styles.empty}>No data for this month.</td></tr>
                   )}
                 </tbody>
               </table>

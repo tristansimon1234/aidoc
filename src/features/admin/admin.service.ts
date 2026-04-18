@@ -1,6 +1,6 @@
 import * as billingRepo from '../billing/billing.repository.js'
 import * as adminRepo from './admin.repository.js'
-import { TOKEN_COSTS, EURO_COSTS } from '../billing/billing.service.js'
+import { TOKEN_COSTS, EURO_COSTS, OVERAGE_EUR, OVERAGE_ENABLED_PLANS } from '../billing/billing.service.js'
 import type { UsageFeature } from '../../shared/usage/usage.repository.js'
 import type { AdminUsageReport, AdminUsageRow } from './admin.types.js'
 import type { PlanId } from '../billing/billing.types.js'
@@ -64,6 +64,20 @@ export async function getUsageReport(periodMonth: string): Promise<AdminUsageRep
       ? Math.round((tokensUsed / plan.monthlyTokens) * 1000) / 10
       : 0
 
+    // Overage: only applies to plans that allow it, and only once the user
+    // exceeded the monthly token budget. We don't track per-op timestamps,
+    // so we proportionally attribute the excess across the month's feature
+    // mix and price each slice with OVERAGE_EUR.
+    let overageEur = 0
+    if (planId && OVERAGE_ENABLED_PLANS.has(planId) && plan && tokensUsed > plan.monthlyTokens && tokensUsed > 0) {
+      const excessRatio = (tokensUsed - plan.monthlyTokens) / tokensUsed
+      overageEur =
+        counts.doc_run * excessRatio * OVERAGE_EUR.doc_run +
+        counts.voiceover * excessRatio * OVERAGE_EUR.voiceover +
+        counts.try_doc * excessRatio * OVERAGE_EUR.try_doc +
+        counts.chat_sessions * excessRatio * OVERAGE_EUR.chat_sessions
+    }
+
     rows.push({
       userId,
       email: profile?.email ?? null,
@@ -75,6 +89,7 @@ export async function getUsageReport(periodMonth: string): Promise<AdminUsageRep
       tokensUsed,
       euroByFeature,
       euroCost,
+      overageEur: Math.round(overageEur * 100) / 100,
       percent,
     })
   }

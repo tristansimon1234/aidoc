@@ -28,6 +28,19 @@ export const EURO_COSTS = {
   chat_sessions: 0.02, // Gemini 2.5 Flash ~6 turns per session
 } as const
 
+// Overage price per extra op, billed once the user exceeds their plan's
+// monthly budget. Set at ~1.5× COGS so the marginal op still turns a healthy
+// profit. Only applied on plans in `OVERAGE_ENABLED_PLANS` — Free / Startup
+// hit a hard wall instead, which is intentional (drives upgrades).
+export const OVERAGE_EUR = {
+  doc_run: 0.15,
+  voiceover: 0.45,
+  try_doc: 0.60,
+  chat_sessions: 0.03,
+} as const
+
+export const OVERAGE_ENABLED_PLANS: ReadonlySet<PlanId> = new Set(['growth', 'business'])
+
 function currentPeriodMonth(): string {
   const now = new Date()
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`

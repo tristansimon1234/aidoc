@@ -15,6 +15,10 @@ export interface AdminUsageRow {
   // Real AI / infra cost in EUR, per feature + total — the actual COGS
   euroByFeature: Record<UsageFeature, number>
   euroCost: number
+  // Overage billable in EUR (only > 0 for Growth / Business once they exceed
+  // their monthly token budget). Approximated by a proportional split of the
+  // month's feature mix.
+  overageEur: number
   // 0-∞; can exceed 100 if the user went over quota
   percent: number
 }

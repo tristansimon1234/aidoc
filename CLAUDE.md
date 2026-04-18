@@ -14,7 +14,9 @@ AiDoc is a **project-based documentation platform** that generates user-facing p
 
 **Try Doc**: An AI agent (Stagehand) follows the doc steps as a naive user on the live product and generates a structured quality report.
 
-**Chat & Widget**: Users chat with their documentation (RAG-powered). The same chat can be embedded as a widget on client apps via a single `<script>` tag.
+**Chat & Widget**: Users chat with their documentation (RAG-powered). The same chat can be embedded as a widget on client apps via a single `<script>` tag. Chat sessions (widget + in-app) are deduplicated per cookie/month and metered against the user's monthly token budget.
+
+**SaaS billing**: Token-based monthly budget per plan (Free / Startup 49€ / Growth 149€ / Business 449€). Each metered operation consumes a configurable number of tokens. Users see a single usage percent; admins see real € COGS per user and overage billable. Stripe wiring is scaffolded but not yet live.
 
 **Core flow**: Record screen or upload video → AI generates doc with screenshots + voice-over → User reviews/edits → Enable chat widget → Embed on client app
 
@@ -89,6 +91,23 @@ src/
       questions.repository.ts
       questions.service.ts
       questions.routes.ts
+    profile/              # Per-user profile (1:1 with auth.users)
+      profile.types.ts
+      profile.schema.ts
+      profile.repository.ts   # findProfileById, ensureProfile, findAuthUserEmail
+      profile.service.ts
+      profile.routes.ts       # GET / PATCH /profile (own row)
+    billing/              # Plans + subscriptions + usage % (no Stripe yet)
+      billing.types.ts        # Plan, Subscription, UsageSnapshot, PlanId
+      billing.schema.ts
+      billing.repository.ts   # listPlans, ensureFreeSubscription, updateActiveSubscriptionPlan
+      billing.service.ts      # TOKEN_COSTS / EURO_COSTS / OVERAGE_EUR / OVERAGE_ENABLED_PLANS constants
+      billing.routes.ts       # GET /plans, GET /summary, POST /subscription/select
+    admin/                # Operator dashboard (gated by ADMIN_EMAILS)
+      admin.types.ts          # AdminUsageRow, AdminUsageReport
+      admin.repository.ts     # listUsageCountersForMonth, listProfiles, listActiveSubscriptions
+      admin.service.ts        # getUsageReport(periodMonth) — joins counters + profiles + subs + plans
+      admin.routes.ts         # GET /admin/usage?month=YYYY-MM
   shared/
     ai/
       gemini.client.ts      # Gemini SDK: generateText(), embedTexts(), analyzeVideoWithGemini()
@@ -101,12 +120,16 @@ src/
       browser.types.ts
     db/
       supabase.client.ts
-      storage.repository.ts # uploadToStorage(), getSignedUrl(), createSignedUploadUrl()
+      storage.repository.ts # uploadToStorage(), downloadFromStorage(), getSignedUrl(), createSignedUploadUrl()
     middleware/
-      auth.middleware.ts     # Supabase JWT validation
+      auth.middleware.ts     # Supabase JWT validation (attaches req.userId)
+      admin.middleware.ts    # requireAdmin — checks email against ADMIN_EMAILS
       error.middleware.ts    # AppError, NotFoundError, ValidationError, DatabaseError
+    usage/
+      usage.repository.ts    # incrementUsage RPC + listUsageForCurrentMonth + registerChatSession
+                             # + findOwnerUserIdByRunId / findOwnerUserIdByProjectId
     config/
-      env.ts                # Zod-validated env vars (crash on startup if missing)
+      env.ts                # Zod-validated env vars (crash on startup if missing); isAdminEmail() helper
     validation/
       schemas.ts            # UuidParamSchema (shared)
   ui/
@@ -114,8 +137,10 @@ src/
       tokens.ts             # Color, spacing, font, shadow tokens
       globals.css            # CSS variables mapped to tokens
       components/            # Button, Badge, Card, StatusIndicator, CodeBlock,
-                             # MarkdownRenderer, Field, Spinner, EmptyState,
-                             # BlockEditor (BlockNote-based markdown editor),
+                             # MarkdownRenderer (handles GFM alert blockquotes as styled callouts),
+                             # Field, Spinner, EmptyState,
+                             # BlockEditor (BlockNote-based markdown editor with custom CalloutBlock + slash menu),
+                             # CalloutBlock (custom BlockNote block: info/tip/warning/danger),
                              # ImageLightbox (click-to-fullscreen image overlay),
                              # ConfirmDialog (portal-based confirm, useConfirmDialog hook),
                              # TableOfContents (floating TOC with heading tracking),
@@ -124,30 +149,42 @@ src/
                              # Barrel export in index.ts (only allowed barrel)
     features/
       auth/pages/            # Login.tsx
-      project/pages/         # ProjectList, NewProject, ProjectDetail, ProjectSettings
+      project/pages/         # ProjectList, NewProject, ProjectDetail, ProjectSettings, ProjectDesign
       page/
-        pages/               # NewPage, PageView (with edit mode + live exploration + video upload)
-        components/           # PageTree (sidebar tree with move/reorder/delete)
-                             # TryDocReport (7-section test report view)
-                             # TableOfContents (Notion-style floating TOC)
+        pages/               # NewPage, PageView (with edit mode + live exploration + video upload), SharePage
+        components/           # PageTree, TryDocReport, PreflightPanel, ScreenRecorder,
+                             # VideoTimeline, NarratedPlayer
       chat/
+        pages/                # ChatPage (full-page chat)
         components/           # ChatPanel (slide-out RAG chat with dynamic suggestions)
       run/
         pages/               # RunDashboard, RunDetail (legacy, pre-project model)
         components/           # RunCard, StepTimeline
+      account/
+        pages/               # AccountSettings (tabs: Profile, Plan & Billing)
+      admin/
+        pages/               # AdminUsage (per-user table: counts + AI cost + overage € + quota %)
+      docs/
+        pages/                # PublicDocs (rendered via MarkdownRenderer)
     shared/
       api/
-        client.ts            # Typed API client with all DTOs and endpoints
+        client.ts            # Typed API client (DTOs + endpoints): profile, billing, admin, projects, runs, chat
+        db.ts                # Frontend-side Supabase repository (RLS-protected reads + simple writes)
         supabase.ts          # Frontend Supabase client (VITE_ env vars)
       hooks/
         useAsync.ts          # Generic async data fetching hook
         useAuth.ts           # Supabase Auth state management
+        useChatSessionToken.ts  # Stable per-tab UUID for chat session dedup
+      jobs/
+        JobContext, JobTracker, JobBadge, useJobRealtime  # Long-running job tracking via DB jobs table + Realtime
       layout/
-        Shell.tsx             # App shell with topbar + fullWidth option
+        Shell.tsx             # App shell with topbar + main; embeds AppRail
+        AppRail.tsx           # Persistent left rail (logo, Home, theme toggle, AvatarMenu)
+        AvatarMenu.tsx        # Avatar popup: email, Settings, View all plans, Admin · Usage (if admin), Sign out
   app.ts                     # Express app (local dev)
   server.ts                  # Server startup
 api/
-  index.ts                   # Vercel serverless entry point
+  index.ts                   # Vercel serverless entry point — same router mounts as src/app.ts
 docs/
   ARCHITECTURE.md            # Stack, data model, patterns, API routes
   WORKFLOWS.md               # All user flows step-by-step
@@ -243,7 +280,47 @@ Every DB call through `*.repository.ts`. Services NEVER call Supabase directly.
 - After generation → auto-copied to `doc_pages.content`
 
 ### Full schema reference
-See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 20 migrations.
+See `docs/DATABASE.md` — 13 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions), 28 migrations.
+
+---
+
+## SaaS / Billing Model
+
+User-facing **monthly token budget** per plan; each metered op consumes a configurable number of tokens. Users see a single percent — never raw counts. Admins see real € COGS per user.
+
+### Plans (seeded in `plans` table)
+| Plan | Price | Monthly tokens | Max projects | Overage |
+|---|---|---|---|---|
+| Free | 0 € | 3 000 | 1 | hard cap |
+| Startup | 49 € | 40 000 | 3 | hard cap |
+| Growth | 149 € | 124 000 | 10 | pay-as-you-go |
+| Business | 449 € | 800 000 | 40 | pay-as-you-go |
+
+Hard cap = blocks the operation when over budget (drives upgrades). Pay-as-you-go = lets the user continue, charged at `OVERAGE_EUR` rates.
+
+### Token weights (`src/features/billing/billing.service.ts`)
+Tunable in code, no migration needed:
+- `TOKEN_COSTS` — weight each op contributes to the monthly budget (`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`)
+- `EURO_COSTS` — real COGS in € per op (`0.10 / 0.30 / 0.40 / 0.02`) — drives the admin "AI cost" column
+- `OVERAGE_EUR` — billable rate per extra op once over quota (`0.15 / 0.45 / 0.60 / 0.03`, ≈ 1.5× COGS)
+- `OVERAGE_ENABLED_PLANS` — `Set('growth', 'business')`
+
+### Tracking
+- Increments wrap each successful metered op in a `try/catch` (a billing glitch never fails an AI op):
+  - Doc gen → `run.service.generateDoc` → `incrementUsage(ownerId, 'doc_run')`
+  - Voice-over → `run.routes /generate-voiceover` → `incrementUsage(ownerId, 'voiceover')`
+  - Try Doc → `run.service.analyzeTryDoc` → `incrementUsage(ownerId, 'try_doc')`
+  - Chat (widget + in-app) → `widget.routes` and `chat.routes` → `registerChatSession(...) + incrementUsage(ownerId, 'chat_sessions')` only on new session_token per month
+- `chat_sessions` table dedupes by `(project_id, session_token, period_month)` with a `source ∈ {widget, app}` column for analytics. Same monthly bucket regardless of source.
+
+### Admin
+- `/admin/usage?month=YYYY-MM` — restricted by `requireAdmin` middleware that checks email against `ADMIN_EMAILS` env var (comma-separated allowlist).
+- Returns rows sorted by real € COGS desc: email, plan, per-feature counts, AI cost €, overage € (if applicable), quota %.
+- Frontend page: `src/ui/features/admin/pages/AdminUsage.tsx`. Avatar menu shows the link only if `profile.isAdmin = true`.
+
+### Stripe (scaffolded, not live)
+- `plans.stripe_price_id`, `subscriptions.stripe_subscription_id`, `profiles.stripe_customer_id` columns are in place but null.
+- `POST /billing/subscription/select` mutates DB directly today. When Stripe lands: paid plans redirect to a Checkout Session; the `free` (downgrade) branch stays direct; webhook handler upserts `subscriptions`.
 
 ---
 
@@ -251,20 +328,30 @@ See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 20 mig
 
 ### Route structure
 ```
+# Account / billing (authenticated)
+/api/profile                               # GET PATCH: own profile (full_name)
+/api/billing/plans                         # GET: list all plans
+/api/billing/summary                       # GET: current plan + subscription + usage %
+/api/billing/subscription/select           # POST: switch plan (Stripe Checkout TODO)
+
+# Admin (authenticated + ADMIN_EMAILS allowlist)
+/api/admin/usage                           # GET ?month=YYYY-MM: per-user usage report
+
 # Projects
 /api/projects                              # Project CRUD
-/api/projects/:pid/pages                   # Page hierarchy + auto-generate
+/api/projects/:pid/pages                   # Page hierarchy
 /api/projects/:pid/pages/:id/doc           # Page documentation
 /api/projects/:pid/pages/:id/run           # Latest run for page
 /api/projects/:pid/widget-key              # POST: generate key, DELETE: disable widget
+/api/projects/:pid/mcp-key                 # POST: generate MCP key, DELETE: disable
 
 # Runs
 /api/runs                                  # Run CRUD
 /api/runs/:id/explore                      # POST: SSE stream (live exploration)
 /api/runs/:id/cancel                       # POST: Cancel running exploration
 /api/runs/:id/analyze-video                # POST: Gemini video analysis
-/api/runs/:id/generate-doc                 # POST: Doc generation
-/api/runs/:id/generate-voiceover           # POST: ElevenLabs TTS voice-over
+/api/runs/:id/generate-doc                 # POST: Doc generation (bumps doc_run usage)
+/api/runs/:id/generate-voiceover           # POST: ElevenLabs voice-over (bumps voiceover usage)
 /api/runs/:id/regenerate-segment           # POST: Regenerate single voiceover segment
 /api/runs/:id/voiceover-segments           # PUT: Adjust voiceover segment timing
 /api/runs/:id/trim-video                   # POST: Trim video to time range
@@ -274,12 +361,12 @@ See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 20 mig
 /api/runs/:id/questions                    # Blocker questions
 
 # Chat (authenticated)
-/api/projects/:pid/chat                    # POST: RAG chat with documentation
+/api/projects/:pid/chat                    # POST: RAG chat (bumps chat_sessions on new sessionToken)
 /api/projects/:pid/chat/index              # POST: Index/re-index doc embeddings
 /api/projects/:pid/chat/suggestions        # GET: Dynamic suggestions (cached 1h)
 
 # Try Doc
-/api/runs/:id/analyze-try                  # POST: Gemini analysis of test run
+/api/runs/:id/analyze-try                  # POST: Gemini analysis (bumps try_doc usage)
 /api/projects/:pid/pages/:id/test-report   # GET: latest test report for page
 /api/projects/:pid/pages/:id/preflight     # POST: pre-flight check before Try Doc
 /api/projects/:pid/pages/:id/full          # GET: combined page + run + doc data
@@ -293,7 +380,7 @@ See `docs/DATABASE.md` — 8 tables (including `doc_embeddings` for RAG), 20 mig
 /api/docs/:projectId/:slug                 # GET: public page content
 
 # Widget (public — API key auth, no JWT)
-/api/widget/:key/chat                      # POST: Public chat (rate limited 30/min)
+/api/widget/:key/chat                      # POST: Public chat (rate limited 30/min, bumps chat_sessions)
 /api/widget/:key/config                    # GET: Widget config + suggestions
 /api/widget/:key/walkthrough               # POST: AI-guided walkthrough (rate limited 10/min)
 ```
@@ -319,9 +406,10 @@ HTTP status codes: 200, 201, 400, 401, 404, 422, 500.
 - CSS Modules for all components (`.module.css`)
 - CSS variables from `globals.css` map to tokens — never hardcode colors
 - Status always uses the status color tokens
-- `MarkdownRenderer` for rich doc display (react-markdown)
+- `MarkdownRenderer` for rich doc display (react-markdown). Detects GitHub-style alert blockquotes (`> [!TIP]`, `> [!WARNING]`, etc.) and renders them as styled callouts.
 - `CodeBlock` for raw code display
-- `BlockEditor` — BlockNote (TipTap/ProseMirror) markdown editor with auto-save
+- `BlockEditor` — BlockNote (TipTap/ProseMirror) markdown editor with auto-save. Custom schema includes the `CalloutBlock` for admonitions; slash menu has `/info`, `/tip`, `/warning`, `/danger` entries. Code blocks render with a forced dark theme (`#161616` bg + `#f5f5f5` text) since the editor-wide transparent override otherwise leaks onto them.
+- `CalloutBlock` — custom BlockNote block (info/tip/warning/danger). Round-trips to markdown as GFM alert blockquotes (`> [!TIP]\n> content`); on load, plain quote blocks matching that pattern are promoted back to callouts.
 - `ConfirmDialog` (via `useConfirmDialog` hook) — portal-based confirm with danger/primary variants
 - `ProgressLoader` — multi-step progress with animated indicators
 - `TableOfContents` — floating side indicator, expands on hover to show headings
@@ -331,14 +419,17 @@ HTTP status codes: 200, 201, 400, 401, 404, 422, 500.
 - Feature-first organization mirrors backend
 - `useAsync` hook for data fetching
 - `useAuth` hook for Supabase Auth
-- `Shell` layout with `fullWidth` option for project sidebar
+- `useChatSessionToken(projectId)` — stable per-tab UUID for chat session dedup (mirrors widget.js)
+- `Shell` layout with `fullWidth` option for project sidebar; embeds the persistent `AppRail`
+- `AppRail` — narrow left rail visible on every authenticated page. Logo + Home + theme toggle + `AvatarMenu` at the bottom.
+- `AvatarMenu` — popup with user email, Settings, View all plans, **Admin · Usage** (only when `profile.isAdmin`), Sign out.
 - SSE streaming via fetch + ReadableStream for live exploration
 
 ---
 
 ## Environment Variables
 
-**Backend** (validated at startup via Zod):
+**Backend** (validated at startup via Zod, see `src/shared/config/env.ts`):
 ```
 # Required
 NODE_ENV, PORT, SUPABASE_URL, SUPABASE_SERVICE_KEY,
@@ -347,6 +438,9 @@ GEMINI_API_KEY, BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
 # Optional
 ANTHROPIC_API_KEY    # Only needed for Try Doc testing (Stagehand)
 ELEVENLABS_API_KEY   # Optional — voice-over narration
+VIDEO_SERVICE_URL    # Optional — external video processing service
+ADMIN_EMAILS         # Comma-separated allowlist for /api/admin/* routes
+                     # e.g. ADMIN_EMAILS=you@example.com,partner@example.com
 ```
 
 **Frontend** (Vite prefix):
@@ -380,8 +474,12 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [x] ~~No usage analytics/logging for widget chat messages~~ — `chat_sessions` counter tracks widget + in-app sessions per month
 - [ ] Try Doc report could include screenshots from Stagehand steps
 - [x] ~~Widget config slow~~ — edge caching + inline data-cfg attribute
+- [ ] **Quota enforcement not active** — usage is tracked but Free / Startup don't yet hard-block at 100 % (`requireQuota` middleware not written). Ship before opening paid signups.
+- [ ] **Stripe wiring missing** — `plans.stripe_price_id`, `subscriptions.stripe_subscription_id`, `profiles.stripe_customer_id` columns are in place but plan switching mutates DB directly. Need Checkout Session + webhook handler.
+- [ ] Code blocks have no syntax highlighting (Shiki = ~2 MB to bundle, deferred). Language picker also not yet exposed.
+- [ ] `src/app.ts` and `api/index.ts` duplicate router mounts — easy to forget one when adding routes (already happened for billing/profile/admin). Should factor into a shared `mountRouters(app)` helper.
 
 ---
 
-*Last updated: 2026-04-17*
-*Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19*
+*Last updated: 2026-04-18*
+*Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19 / BlockNote 0.47*

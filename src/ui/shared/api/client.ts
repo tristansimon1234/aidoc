@@ -199,6 +199,7 @@ export interface AdminUsageRowDTO {
   tokensUsed: number
   euroByFeature: Record<UsageFeatureKey, number>
   euroCost: number
+  overageEur: number
   percent: number
 }
 
