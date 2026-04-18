@@ -11,20 +11,20 @@ import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js
 
 export const chatRouter = Router({ mergeParams: true })
 
-// Fire-and-forget: count the in-app ChatPanel the same way as widget sessions
-// (dedup per (project, token, month)). Never blocks the chat response.
-function trackAppChatSession(projectId: string, sessionToken: string | undefined): void {
+// Count the in-app ChatPanel the same way as widget sessions (dedup per
+// (project, token, month)). Awaited so the usage counter actually moves —
+// serverless tears the function down after res.send() and would kill a
+// fire-and-forget call.
+async function trackAppChatSession(projectId: string, sessionToken: string | undefined): Promise<void> {
   if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
-  void (async () => {
-    try {
-      const ownerId = await findOwnerUserIdByProjectId(projectId)
-      if (!ownerId) return
-      const isNew = await registerChatSession(projectId, ownerId, sessionToken, 'app')
-      if (isNew) await incrementUsage(ownerId, 'chat_sessions')
-    } catch (err) {
-      console.warn('[usage] app chat session track failed:', (err as Error).message)
-    }
-  })()
+  try {
+    const ownerId = await findOwnerUserIdByProjectId(projectId)
+    if (!ownerId) return
+    const isNew = await registerChatSession(projectId, ownerId, sessionToken, 'app')
+    if (isNew) await incrementUsage(ownerId, 'chat_sessions')
+  } catch (err) {
+    console.warn('[usage] app chat session track failed:', (err as Error).message)
+  }
 }
 
 // Chat with project documentation
@@ -42,12 +42,12 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
       if (ownerForQuota) await enforceQuotaOrThrow(ownerForQuota)
 
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
-      trackAppChatSession(params.data.id, sessionToken)
-
-      // Kick off the classifier IN PARALLEL with the chat reply — the classifier
-      // is faster than the chat call, so it costs us nothing on the user-facing
-      // latency, and we avoid the serverless fire-and-forget pitfall (functions
-      // get torn down after res.send, leaving background work unfinished).
+      // Kick off the session counter + classifier IN PARALLEL with the chat
+      // reply. They're both faster than the chat Gemini call, so they cost us
+      // nothing on user-facing latency — and running them awaited avoids the
+      // serverless fire-and-forget pitfall (functions get torn down after
+      // res.send, leaving background work unfinished).
+      const sessionTrackPromise = trackAppChatSession(params.data.id, sessionToken)
       const classifyPromise = sessionToken
         ? classifyMessageContent(body.data.message)
         : Promise.resolve(null)
@@ -80,6 +80,10 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
           console.warn('[analytics] app chat log failed:', (err as Error).message)
         }
       }
+
+      // Ensure the session counter INSERT/increment is flushed before we end
+      // the request — otherwise Vercel can kill it mid-flight.
+      await sessionTrackPromise
 
       res.status(200).json(result)
     } catch (err) {

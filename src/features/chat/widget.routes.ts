@@ -9,18 +9,16 @@ import { classifyMessageContent, applyClassificationToMessage } from '../analyti
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import type { Project } from '../project/project.types.js'
 
-// Fire-and-forget session tracking: we don't want AI latency coupled to
-// billing, and we don't want to block the user if the counter write fails.
-function trackWidgetSession(project: Project, sessionToken: string | undefined): void {
+// Widget session tracking — awaited so `incrementUsage` actually fires on
+// Vercel (fire-and-forget gets killed when the function tears down).
+async function trackWidgetSession(project: Project, sessionToken: string | undefined): Promise<void> {
   if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
-  void (async () => {
-    try {
-      const isNew = await registerChatSession(project.id, project.userId, sessionToken, 'widget')
-      if (isNew) await incrementUsage(project.userId, 'chat_sessions')
-    } catch (err) {
-      console.warn('[usage] widget session track failed:', (err as Error).message)
-    }
-  })()
+  try {
+    const isNew = await registerChatSession(project.id, project.userId, sessionToken, 'widget')
+    if (isNew) await incrementUsage(project.userId, 'chat_sessions')
+  } catch (err) {
+    console.warn('[usage] widget session track failed:', (err as Error).message)
+  }
 }
 
 export const widgetRouter = Router()
@@ -95,11 +93,11 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      // Billing: register the chat session (dedup per cookie+month)
+      // Billing: register the chat session (dedup per cookie+month). Run the
+      // tracker + classifier in parallel with the chat Gemini call so neither
+      // adds user-visible latency.
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
-      trackWidgetSession(project, sessionToken)
-
-      // Classifier in parallel with the chat Gemini call — no added user latency.
+      const sessionTrackPromise = trackWidgetSession(project, sessionToken)
       const classifyPromise = sessionToken
         ? classifyMessageContent(body.data.message)
         : Promise.resolve(null)
@@ -134,6 +132,8 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
           console.warn('[analytics] widget chat log failed:', (err as Error).message)
         }
       }
+
+      await sessionTrackPromise
 
       res.status(200).json(result)
     } catch (err) {

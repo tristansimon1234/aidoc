@@ -48,17 +48,16 @@ setInterval(() => {
   for (const [k, v] of publicRateMap) if (now > v.resetAt) publicRateMap.delete(k)
 }, 300_000).unref?.()
 
-// Fire-and-forget session tracking — same dedup model as widget chat
-function trackPublicSession(project: Project, sessionToken: string | undefined): void {
+// Public-docs session tracking — awaited so `incrementUsage` actually fires
+// on Vercel (fire-and-forget gets killed when the function tears down).
+async function trackPublicSession(project: Project, sessionToken: string | undefined): Promise<void> {
   if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
-  void (async () => {
-    try {
-      const isNew = await registerChatSession(project.id, project.userId, sessionToken, 'widget')
-      if (isNew) await incrementUsage(project.userId, 'chat_sessions')
-    } catch (err) {
-      console.warn('[usage] public docs chat session track failed:', (err as Error).message)
-    }
-  })()
+  try {
+    const isNew = await registerChatSession(project.id, project.userId, sessionToken, 'widget')
+    if (isNew) await incrementUsage(project.userId, 'chat_sessions')
+  } catch (err) {
+    console.warn('[usage] public docs chat session track failed:', (err as Error).message)
+  }
 }
 
 async function loadChatEnabledProject(projectId: string): Promise<Project> {
@@ -150,9 +149,8 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       if (!body.success) throw new ValidationError(body.error.flatten())
 
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
-      trackPublicSession(project, sessionToken)
-
-      // Classifier in parallel with the chat Gemini call — no added user latency.
+      // Run session counter + classifier in parallel with the chat Gemini call.
+      const sessionTrackPromise = trackPublicSession(project, sessionToken)
       const classifyPromise = sessionToken
         ? classifyMessageContent(body.data.message)
         : Promise.resolve(null)
@@ -185,6 +183,8 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
           console.warn('[analytics] public chat log failed:', (err as Error).message)
         }
       }
+
+      await sessionTrackPromise
 
       res.status(200).json(result)
     } catch (err) {
