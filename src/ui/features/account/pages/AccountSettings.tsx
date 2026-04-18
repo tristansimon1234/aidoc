@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Spinner, Badge, Field, useConfirmDialog } from '../../../design-system/components/index.js'
-import { api, type BillingSummaryDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO } from '../../../shared/api/client.js'
+import { api, type BillingSummaryDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
 import { Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import styles from './AccountSettings.module.css'
@@ -310,10 +310,20 @@ function TeamTab(): React.ReactElement {
     setLoading(true); setError(null)
     try {
       const list = await api.teams.list()
-      // Single-workspace model: the personal team is the anchor.
-      const personal = list.find((t) => t.team.personal) ?? list[0]
-      if (!personal) { setError('No workspace found'); return }
-      const data = await api.teams.get(personal.team.id)
+      // Pick order of preference:
+      // 1. The active team in localStorage (set when the user accepted an invite)
+      // 2. The first non-personal team (user was invited to a real workspace —
+      //    that's what they want to manage, not their empty solo workspace)
+      // 3. Their personal team
+      const activeId = getActiveTeamId()
+      const pick = list.find((t) => t.team.id === activeId)
+        ?? list.find((t) => !t.team.personal)
+        ?? list[0]
+      if (!pick) { setError('No workspace found'); return }
+      // Lock in the choice so sibling API calls (billing summary, etc.)
+      // attach the same X-Team-Id header.
+      setActiveTeamId(pick.team.id)
+      const data = await api.teams.get(pick.team.id)
       setTeam(data.team)
       setMembers(data.members)
       setMyRole(data.role)
