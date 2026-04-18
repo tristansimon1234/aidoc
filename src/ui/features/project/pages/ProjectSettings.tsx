@@ -40,7 +40,6 @@ export function ProjectSettings(): React.ReactElement {
     outletProject.resources ?? [],
   )
   const [uploadError, setUploadError] = useState<string | null>(null)
-  const [walkthroughEnabled, setWalkthroughEnabled] = useState(outletProject.walkthroughEnabled ?? false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -53,7 +52,6 @@ export function ProjectSettings(): React.ReactElement {
     setContext(outletProject.context ?? { audience: '', workflow: '', quirks: '' })
     setCredentials(outletProject.credentials ?? [])
     setResources(outletProject.resources ?? [])
-    setWalkthroughEnabled(outletProject.walkthroughEnabled ?? false)
   }, [outletProject])
 
   const handleSave = async (): Promise<void> => {
@@ -67,7 +65,6 @@ export function ProjectSettings(): React.ReactElement {
         context: (context.audience || context.workflow || context.quirks) ? context : undefined,
         credentials: validCreds.length > 0 ? validCreds : undefined,
         resources: validResources,
-        walkthroughEnabled,
       })
       setProject(updated)
       setParentProject(updated)
@@ -124,15 +121,6 @@ export function ProjectSettings(): React.ReactElement {
                 <label className={styles.label}>Description</label>
                 <textarea className={styles.textarea} value={description} onChange={(e) => setDescription(e.target.value)}
                   placeholder="What does your product do?" rows={2} />
-              </div>
-              <div className={styles.field} style={{ marginTop: 'var(--space-md)' }}>
-                <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={walkthroughEnabled} onChange={(e) => setWalkthroughEnabled(e.target.checked)} />
-                  Enable interactive walkthrough in widget
-                </label>
-                <p className={styles.sectionDesc} style={{ marginTop: '4px' }}>
-                  When enabled, the widget can guide users step-by-step through your app by highlighting UI elements. The AI reads interactive elements on the page (buttons, links, form fields) to provide visual guidance.
-                </p>
               </div>
               <div className={styles.saveBar}>
                 <Button size="sm" onClick={() => void handleSave()} disabled={saving}>

@@ -52,6 +52,18 @@ export interface GenerationResult {
   usage: GeminiUsage
 }
 
+function rewriteInternalLinks(markdown: string, projectId?: string, knownSlugs?: string[]): string {
+  if (!projectId || !knownSlugs || knownSlugs.length === 0) return markdown
+  const slugSet = new Set(knownSlugs)
+  return markdown.replace(
+    /\]\(\/([a-z0-9][a-z0-9-]*)(#[^)]*)?\)/gi,
+    (match, slug: string, hash: string | undefined) => {
+      if (!slugSet.has(slug)) return match
+      return `](/docs/${projectId}/${slug}${hash ?? ''})`
+    },
+  )
+}
+
 export async function generateDocumentation(context: {
   featureName: string
   goal: string
@@ -63,6 +75,8 @@ export async function generateDocumentation(context: {
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
   runStatus?: string
   isVideoRun?: boolean
+  projectId?: string
+  knownSlugs?: string[]
 }): Promise<GenerationResult> {
   const systemPrompt = context.isVideoRun ? VIDEO_DOC_SYSTEM_PROMPT : getDocSystemPrompt()
   const userPrompt = buildDocumentationPrompt(context)
@@ -76,7 +90,10 @@ export async function generateDocumentation(context: {
   const parts = response.text.split('---JSON---')
   // Replace screenshot placeholders with actual URLs (Gemini can't reproduce UUIDs reliably)
   const screenshotMap = buildScreenshotMap(context.steps)
-  const markdown = replaceScreenshotPlaceholders(parts[0]?.trim() ?? '', screenshotMap)
+  let markdown = replaceScreenshotPlaceholders(parts[0]?.trim() ?? '', screenshotMap)
+  // Rewrite Gemini-generated `/slug` links to absolute public-doc URLs so they
+  // resolve consistently in both the editor and the public docs SPA.
+  markdown = rewriteInternalLinks(markdown, context.projectId, context.knownSlugs)
   const jsonStr = parts[1]?.trim() ?? '{}'
 
   let json: Record<string, unknown>

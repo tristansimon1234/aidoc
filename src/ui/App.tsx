@@ -33,6 +33,7 @@ export function App(): React.ReactElement {
       <Routes>
         {/* Public — no auth */}
         <Route path="/docs/:projectId" element={<PublicDocs />} />
+        <Route path="/docs/:projectId/:slug" element={<PublicDocs />} />
 
         {/* Auth gate */}
         {!user ? (

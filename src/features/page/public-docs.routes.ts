@@ -51,6 +51,14 @@ publicDocsRouter.get('/:projectId', (req: Request, res: Response, next: NextFunc
         }
       }))
 
+      const widget = project.publicDocsChatEnabled && project.widgetEnabled && project.widgetApiKey
+        ? {
+            apiKey: project.widgetApiKey,
+            position: project.design?.widgetPosition ?? 'right',
+            greeting: project.design?.widgetGreeting ?? '',
+          }
+        : null
+
       res.status(200).json({
         project: {
           id: project.id,
@@ -58,6 +66,7 @@ publicDocsRouter.get('/:projectId', (req: Request, res: Response, next: NextFunc
           description: project.description,
           design: project.design,
         },
+        widget,
         pages: pagesWithVideo,
       })
     } catch (err) {

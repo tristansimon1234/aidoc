@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
@@ -69,6 +69,12 @@ interface PublicProject {
   name: string
   description: string | null
   design: ProjectDesignDTO | null
+}
+
+interface PublicWidgetConfig {
+  apiKey: string
+  position: string
+  greeting: string
 }
 
 // --- Search helper: search titles + content (same as admin) ---
@@ -167,8 +173,10 @@ function NavTree({ items, activePage, onSelect, depth = 0 }: {
 }
 
 export function PublicDocs(): React.ReactElement {
-  const { projectId } = useParams<{ projectId: string }>()
+  const { projectId, slug } = useParams<{ projectId: string; slug?: string }>()
+  const navigate = useNavigate()
   const [project, setProject] = useState<PublicProject | null>(null)
+  const [widget, setWidget] = useState<PublicWidgetConfig | null>(null)
   const [pages, setPages] = useState<PublicPage[]>([])
   const [activePage, setActivePage] = useState<PublicPage | null>(null)
   const [loading, setLoading] = useState(true)
@@ -194,17 +202,68 @@ export function PublicDocs(): React.ReactElement {
       try {
         const res = await fetch(`/api/docs/${projectId}`)
         if (!res.ok) throw new Error('Not found')
-        const data = await res.json() as { project: PublicProject; pages: PublicPage[] }
+        const data = await res.json() as { project: PublicProject; widget: PublicWidgetConfig | null; pages: PublicPage[] }
         setProject(data.project)
+        setWidget(data.widget ?? null)
         setPages(data.pages)
-        if (data.pages.length > 0) setActivePage(data.pages[0] ?? null)
+        if (data.pages.length > 0) {
+          const initial = (slug ? data.pages.find((p) => p.slug === slug) : null) ?? data.pages[0] ?? null
+          setActivePage(initial)
+        }
       } catch {
         setError('Documentation not found')
       } finally {
         setLoading(false)
       }
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
+
+  // Sync active page when the URL slug changes (back/forward, deep link)
+  useEffect(() => {
+    if (!slug || pages.length === 0) return
+    const match = pages.find((p) => p.slug === slug)
+    if (match && match.id !== activePage?.id) setActivePage(match)
+  }, [slug, pages, activePage?.id])
+
+  const selectPage = useCallback((page: PublicPage) => {
+    setActivePage(page)
+    if (projectId) navigate(`/docs/${projectId}/${page.slug}`, { replace: true })
+  }, [navigate, projectId])
+
+  // Inject chat widget script when enabled by the project owner
+  useEffect(() => {
+    if (!widget) return
+    const SCRIPT_ID = 'aidoc-public-widget'
+    if (document.getElementById(SCRIPT_ID)) return
+
+    const script = document.createElement('script')
+    script.id = SCRIPT_ID
+    script.src = `${window.location.origin}/widget.js`
+    script.setAttribute('data-key', widget.apiKey)
+    script.setAttribute('data-position', widget.position)
+    if (widget.greeting) script.setAttribute('data-greeting', widget.greeting)
+    if (project?.design) {
+      const cfg: Record<string, string> = {}
+      if (project.design.accentColor) cfg.accentColor = project.design.accentColor
+      if (project.design.bgColor) cfg.bgColor = project.design.bgColor
+      if (project.design.textColor) cfg.textColor = project.design.textColor
+      if (project.design.font) cfg.font = project.design.font
+      if (Object.keys(cfg).length > 0) script.setAttribute('data-cfg', JSON.stringify(cfg))
+    }
+    document.body.appendChild(script)
+
+    return () => {
+      script.remove()
+      document.getElementById('aidoc-widget-style')?.remove()
+      document.getElementById('aidoc-widget-btn')?.remove()
+      document.getElementById('aidoc-widget-panel')?.remove()
+      document.getElementById('aidoc-wt-bar')?.remove()
+      document.getElementById('aidoc-wt-overlay')?.remove()
+      document.getElementById('aidoc-wt-ring')?.remove()
+      document.getElementById('aidoc-wt-tooltip')?.remove()
+    }
+  }, [widget, project?.design])
 
   // Load Google Font if the design uses a custom font
   const designFont = project?.design?.font
@@ -262,7 +321,7 @@ export function PublicDocs(): React.ReactElement {
                 {results.length === 0 ? (
                   <div className={styles.searchEmpty}>No results</div>
                 ) : results.map((r) => (
-                  <button key={r.page.id} className={styles.searchResult} onClick={() => { setActivePage(r.page); setSearch(''); setSearchFocused(false) }}>
+                  <button key={r.page.id} className={styles.searchResult} onClick={() => { selectPage(r.page); setSearch(''); setSearchFocused(false) }}>
                     <span className={styles.searchResultTitle}>{r.page.title}</span>
                     <span className={styles.searchResultSnippet}>{r.snippet}</span>
                   </button>
@@ -276,7 +335,7 @@ export function PublicDocs(): React.ReactElement {
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
           <nav className={styles.nav}>
-            <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={setActivePage} />
+            <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={selectPage} />
           </nav>
         </aside>
 
@@ -300,7 +359,7 @@ export function PublicDocs(): React.ReactElement {
                   return (
                     <div className={styles.childPages}>
                       {children.map((child) => (
-                        <button key={child.id} className={styles.childPageLink} onClick={() => setActivePage(child)}>
+                        <button key={child.id} className={styles.childPageLink} onClick={() => selectPage(child)}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
                           {child.title}
                         </button>

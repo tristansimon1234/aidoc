@@ -39,7 +39,7 @@ export function SharePage(): React.ReactElement {
       </div>
 
       <div className={styles.tabContent}>
-        {activeTab === 'publish' && <PublishSection project={project} />}
+        {activeTab === 'publish' && <PublishSection project={project} setProject={setProject} />}
         {activeTab === 'widget' && <WidgetSection project={project} setProject={setProject} />}
         {activeTab === 'mcp' && <McpSection project={project} setProject={setProject} />}
         {activeTab === 'team' && <TeamSection />}
@@ -50,9 +50,17 @@ export function SharePage(): React.ReactElement {
 
 // --- Publish ---
 
-function PublishSection({ project }: { project: ProjectDTO }): React.ReactElement {
+function PublishSection({ project, setProject }: { project: ProjectDTO; setProject: (p: ProjectDTO) => void }): React.ReactElement {
   const [copied, setCopied] = useState(false)
+  const [chatEnabled, setChatEnabled] = useState(project.publicDocsChatEnabled ?? false)
   const publicUrl = `${window.location.origin}/docs/${project.id}`
+  const widgetReady = Boolean(project.widgetEnabled && project.widgetApiKey)
+
+  const toggleChat = async (next: boolean): Promise<void> => {
+    setChatEnabled(next)
+    const updated = await updateProject(project.id, { publicDocsChatEnabled: next })
+    setProject(updated)
+  }
 
   return (
     <div className={styles.section}>
@@ -75,6 +83,23 @@ function PublishSection({ project }: { project: ProjectDTO }): React.ReactElemen
         </div>
       </div>
 
+      <div className={styles.field}>
+        <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: widgetReady ? 'pointer' : 'not-allowed', opacity: widgetReady ? 1 : 0.6 }}>
+          <input
+            type="checkbox"
+            checked={chatEnabled && widgetReady}
+            disabled={!widgetReady}
+            onChange={(e) => void toggleChat(e.target.checked)}
+          />
+          Embed chat widget on public docs
+        </label>
+        <span className={styles.hint}>
+          {widgetReady
+            ? 'Show the AI chat bubble on this public docs site so visitors can ask questions.'
+            : 'Enable the widget in the Widget tab first.'}
+        </span>
+      </div>
+
       <div className={styles.infoBox}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
           <circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" />
@@ -94,7 +119,14 @@ function WidgetSection({ project, setProject }: { project: ProjectDTO; setProjec
   const [copied, setCopied] = useState<string | null>(null)
   const [position, setPosition] = useState<'right' | 'left'>((project.design?.widgetPosition as 'right' | 'left') ?? 'right')
   const [greeting, setGreeting] = useState(project.design?.widgetGreeting ?? '')
+  const [walkthroughEnabled, setWalkthroughEnabled] = useState(project.walkthroughEnabled ?? false)
   const [testing, setTesting] = useState(false)
+
+  const toggleWalkthrough = async (next: boolean): Promise<void> => {
+    setWalkthroughEnabled(next)
+    const updated = await updateProject(project.id, { walkthroughEnabled: next })
+    setProject(updated)
+  }
   const saveWidgetConfig = async (pos: string, greet: string): Promise<void> => {
     const design = { ...(project.design ?? { accentColor: '#635BFF', bgColor: '#0C0C0E', textColor: '#E5E5E5', font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }), widgetPosition: pos, widgetGreeting: greet }
     const updated = await updateProject(project.id, { design })
@@ -220,6 +252,16 @@ function WidgetSection({ project, setProject }: { project: ProjectDTO; setProjec
           <label className={styles.label}>Greeting</label>
           <input className={styles.fieldInput} value={greeting} onChange={(e) => setGreeting(e.target.value)} onBlur={() => void saveWidgetConfig(position, greeting)} placeholder="Hi! Ask me anything." />
         </div>
+      </div>
+
+      <div className={styles.field}>
+        <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+          <input type="checkbox" checked={walkthroughEnabled} onChange={(e) => void toggleWalkthrough(e.target.checked)} />
+          Enable interactive walkthrough
+        </label>
+        <span className={styles.hint}>
+          Lets the widget guide users step-by-step through your app by highlighting UI elements (buttons, links, form fields). When off, the widget only answers questions.
+        </span>
       </div>
 
       <div className={styles.field}>

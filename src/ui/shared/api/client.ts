@@ -135,6 +135,7 @@ export interface ProjectDTO {
   mcpApiKey: string | null
   mcpEnabled: boolean
   walkthroughEnabled: boolean
+  publicDocsChatEnabled: boolean
   createdAt: string
   updatedAt: string
 }
