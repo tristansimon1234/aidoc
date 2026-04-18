@@ -72,22 +72,48 @@ export function buildScreenshotMap(steps: StepSummary[]): Map<string, string> {
 /**
  * Replace screenshot placeholders in generated markdown with actual URLs.
  * Also appends any missing screenshots that Gemini failed to place.
+ *
+ * Gemini sometimes drops the `![caption](...)` wrapper and leaves a bare
+ * `{{SCREENSHOT_N}}` placeholder on its own line — which would render as a
+ * plain link instead of an embedded image. We handle both cases:
+ *   1. `![caption]({{SCREENSHOT_N}})` → `![caption](url)` (image embed preserved)
+ *   2. Bare `{{SCREENSHOT_N}}` → `![Screenshot](url)` (wrap so it renders inline)
  */
 export function replaceScreenshotPlaceholders(markdown: string, screenshotMap: Map<string, string>): string {
   let result = markdown
   const missing: string[] = []
   for (const [placeholder, url] of screenshotMap) {
-    if (result.includes(placeholder)) {
-      result = result.replaceAll(placeholder, url)
-    } else {
+    if (!result.includes(placeholder)) {
       missing.push(`![Screenshot](${url})`)
+      continue
     }
+    // Replace placeholders already inside image syntax first
+    const escapedPlaceholder = placeholder.replace(/[{}]/g, '\\$&')
+    const imageSyntaxRegex = new RegExp(`!\\[([^\\]]*)\\]\\(${escapedPlaceholder}\\)`, 'g')
+    result = result.replace(imageSyntaxRegex, `![$1](${url})`)
+    // Any remaining bare occurrences get wrapped so they render as an embedded image
+    result = result.replaceAll(placeholder, `![Screenshot](${url})`)
   }
   // Append missed screenshots so no image is lost
   if (missing.length > 0) {
     result += '\n\n' + missing.join('\n\n')
   }
+  // Defense in depth: promote any remaining bare image URLs that sit alone on a
+  // line to markdown image embeds. Catches cases where Gemini inlined a raw
+  // storage URL instead of using the placeholder syntax.
+  result = wrapBareImageUrls(result)
   return result
+}
+
+/**
+ * Wrap bare image URLs that appear alone on their own line as markdown image
+ * embeds. Only matches known image extensions so we don't grab unrelated links.
+ */
+function wrapBareImageUrls(markdown: string): string {
+  const bareImageLineRegex = /^(\s*)(https?:\/\/\S+\.(?:jpg|jpeg|png|webp|gif|avif))(\s*)$/gim
+  return markdown.replace(bareImageLineRegex, (_match, lead: string, url: string, trail: string) =>
+    `${lead}![Screenshot](${url})${trail}`,
+  )
 }
 
 function countByImportance(steps: StepSummary[]): { key: number; supporting: number; withScreenshots: number } {
