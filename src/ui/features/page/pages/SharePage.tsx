@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
 import { type ProjectDTO } from '../../../shared/api/client.js'
 import { api } from '../../../shared/api/client.js'
@@ -365,23 +365,22 @@ function McpSection({ project, setProject }: { project: ProjectDTO; setProject: 
 }
 
 // --- Team ---
+// Team is managed at the workspace level in Account → Team. This section is
+// just a shortcut to that page; we don't show per-project membership here.
 
 function TeamSection(): React.ReactElement {
   return (
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
         <h2 className={styles.sectionTitle}>Team</h2>
-        <p className={styles.sectionDesc}>Invite team members to collaborate on your documentation.</p>
+        <p className={styles.sectionDesc}>
+          Members are managed at the workspace level — everyone you invite gets access to every project in this workspace.
+        </p>
       </div>
-      <div className={styles.memberRow}>
-        <div className={styles.memberAvatar}>Y</div>
-        <div className={styles.memberInfo}>
-          <span className={styles.memberName}>You</span>
-          <span className={styles.memberRole}>Owner</span>
-        </div>
-        <span className={styles.roleBadge}>Full access</span>
+      <div>
+        <Link to="/account?tab=team"><Button size="sm">Manage team →</Button></Link>
       </div>
-      <p className={styles.comingSoon}>Team collaboration coming soon.</p>
     </div>
   )
 }
+

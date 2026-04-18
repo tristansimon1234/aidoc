@@ -19,7 +19,6 @@ import { AdminUsage } from './features/admin/pages/AdminUsage.js'
 import { ForgotPassword } from './features/auth/pages/ForgotPassword.js'
 import { ResetPassword } from './features/auth/pages/ResetPassword.js'
 import { AcceptInvite } from './features/team/pages/AcceptInvite.js'
-import { TeamSettings } from './features/team/pages/TeamSettings.js'
 
 export function App(): React.ReactElement {
   const { user, loading, signIn, signUp, signOut } = useAuth()
@@ -54,7 +53,6 @@ export function App(): React.ReactElement {
             <Route path="/" element={<ProjectList onSignOut={signOut} />} />
             <Route path="/account" element={<AccountSettings />} />
             <Route path="/admin/usage" element={<AdminUsage />} />
-            <Route path="/teams/:teamId" element={<TeamSettings />} />
             <Route path="/projects/new" element={<NewProject />} />
             <Route path="/projects/:projectId" element={<ProjectDetail />}>
               <Route path="pages/new" element={<NewPage />} />

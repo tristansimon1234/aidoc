@@ -163,6 +163,7 @@ export interface ProjectDesignDTO {
 export interface ProjectDTO {
   id: string
   userId: string
+  teamId: string
   name: string
   baseUrl: string
   description: string | null
