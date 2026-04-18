@@ -122,8 +122,11 @@ ALTER TABLE usage_counters ALTER COLUMN team_id SET NOT NULL;
 ALTER TABLE usage_counters DROP CONSTRAINT usage_counters_pkey;
 ALTER TABLE usage_counters ADD PRIMARY KEY (team_id, period_month, feature);
 
--- Re-point the increment_usage RPC to take a team_id. Keeps the same name +
--- SECURITY DEFINER contract so the middleware just swaps the arg.
+-- Re-point the increment_usage RPC to take a team_id. Postgres won't let us
+-- rename an input parameter via CREATE OR REPLACE, so drop the old (user-id)
+-- signature first, then recreate with the new (team-id) signature.
+DROP FUNCTION IF EXISTS public.increment_usage(uuid, text, integer);
+
 CREATE OR REPLACE FUNCTION public.increment_usage(
   p_team_id uuid,
   p_feature text,
