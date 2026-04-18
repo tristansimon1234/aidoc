@@ -160,7 +160,12 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initializedRef = useRef(false)
   const lastContentRef = useRef('')
-  const suppressNextChangeRef = useRef(false)
+  // Signature of the last `editor.document` we programmatically loaded. We
+  // compare against it on every onChange: if the blocks haven't actually
+  // moved, it's a spurious event from replaceBlocks (or BlockNote's own
+  // normalization) and we skip the save. This prevents the load path from
+  // writing back a lossy round-trip of the loaded content.
+  const loadedSignatureRef = useRef<string>('')
   const containerRef = useRef<HTMLDivElement>(null)
   const { lightbox, openLightbox } = useImageLightbox()
 
@@ -216,10 +221,12 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
           .replace(/^(\s*[-*]\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
           .replace(/(!\[.*?\]\(.*?\))(?=\S)/g, '$1\n')
 
-        suppressNextChangeRef.current = true
         const blocks = await editor.tryParseMarkdownToBlocks(prepared)
         const promoted = promoteCallouts(blocks)
         editor.replaceBlocks(editor.document, promoted)
+        // Snapshot the document AFTER replacement — any onChange whose blocks
+        // still match this snapshot is spurious and must not trigger a save.
+        loadedSignatureRef.current = JSON.stringify(editor.document)
       } catch {
         // markdown parsing failed
       }
@@ -248,11 +255,15 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const handleChange = useCallback(() => {
     if (readOnly) return
 
-    // Skip save when content was loaded programmatically (not user edit)
-    if (suppressNextChangeRef.current) {
-      suppressNextChangeRef.current = false
-      return
-    }
+    // Skip saves whose blocks haven't actually moved since the load. Without
+    // this, BlockNote's own post-replace normalization passes can fire
+    // onChange events that would otherwise persist a lossy round-trip of
+    // the just-loaded content — e.g. images inside numbered lists get
+    // dropped because tryParseMarkdownToBlocks / blocksToMarkdownLossy
+    // don't round-trip them cleanly.
+    const currentSignature = JSON.stringify(editor.document)
+    if (currentSignature === loadedSignatureRef.current) return
+    loadedSignatureRef.current = currentSignature
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
