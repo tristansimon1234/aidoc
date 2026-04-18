@@ -34,6 +34,83 @@ function getCalloutItems(editor: Editor): DefaultReactSuggestionItem[] {
   ]
 }
 
+// Flatten list-item continuation paragraphs so they don't collide with
+// BlockNote's indented-code-block rule. Given:
+//
+//   3.  **Title**
+//       First paragraph of the item.
+//
+//       ![Image](url)
+//
+//       Second paragraph.
+//
+// we emit:
+//
+//   3. **Title** First paragraph of the item.
+//
+//   ![Image](url)
+//
+//   Second paragraph.
+//
+// Nested bullets stay indented (BlockNote handles those fine), and fenced
+// code blocks are passed through untouched.
+function normalizeListContinuation(markdown: string): string {
+  const lines = markdown.split('\n')
+  const out: string[] = []
+  let inFenced = false
+  let i = 0
+
+  const isIndented = (s: string): boolean => /^ {4,}\S/.test(s)
+  const isIndentedBullet = (s: string): boolean => /^ {4,}(?:[*\-+]|\d+\.)\s/.test(s)
+
+  while (i < lines.length) {
+    const line = lines[i]!
+
+    if (/^\s*```/.test(line)) {
+      inFenced = !inFenced
+      out.push(line)
+      i++
+      continue
+    }
+    if (inFenced) {
+      out.push(line)
+      i++
+      continue
+    }
+
+    const listMatch = /^(\s*)(\d+\.)\s+(.*)$/.exec(line)
+    if (listMatch) {
+      const prefix = listMatch[1] ?? ''
+      const marker = listMatch[2]!
+      const rest = listMatch[3]!
+      const next = lines[i + 1]
+      // If the very next line is indented non-bullet continuation, merge it
+      // into the list item so the marker isn't left alone with the image.
+      if (next !== undefined && isIndented(next) && !isIndentedBullet(next)) {
+        out.push(`${prefix}${marker} ${rest} ${next.trimStart()}`)
+        i += 2
+        continue
+      }
+      out.push(`${prefix}${marker} ${rest}`)
+      i++
+      continue
+    }
+
+    // Dedent indented continuation paragraphs/images to root level. Keep
+    // sub-bullets indented — BlockNote handles nested lists correctly.
+    if (line.startsWith('    ') && !isIndentedBullet(line)) {
+      out.push(line.slice(4))
+      i++
+      continue
+    }
+
+    out.push(line)
+    i++
+  }
+
+  return out.join('\n')
+}
+
 // After parsing markdown, BlockNote returns plain `quote` blocks even for our
 // GFM-alert syntax (`> [!TIP]\n> content`). Walk the tree and promote those
 // to `callout` blocks so reload preserves the styling round-trip.
@@ -129,8 +206,12 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
 
     void (async () => {
       try {
-        // Ensure images are on their own lines (BlockNote needs block-level images, not inline)
-        const prepared = content
+        // BlockNote's markdown parser (per the official docs) is explicitly
+        // lossy: a paragraph/image indented 4 spaces under a numbered list
+        // item gets treated as an indented code block, not as list-item
+        // continuation. Flatten those into root-level blocks so the image
+        // and following text round-trip as real image + paragraph blocks.
+        const prepared = normalizeListContinuation(content)
           .replace(/^(\s*\d+\.\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
           .replace(/^(\s*[-*]\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
           .replace(/(!\[.*?\]\(.*?\))(?=\S)/g, '$1\n')
