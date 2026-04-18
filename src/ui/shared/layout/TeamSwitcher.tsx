@@ -39,6 +39,19 @@ export function TeamSwitcher(): React.ReactElement | null {
     })()
   }, [])
 
+  // Close on outside click — kept ABOVE any conditional returns so the hook
+  // order stays stable across renders (React #310 fires otherwise).
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent): void => {
+      if (popupRef.current?.contains(e.target as Node)) return
+      if (btnRef.current?.contains(e.target as Node)) return
+      setOpen(false); setCreating(false); setNewName('')
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
   const activeId = getActiveTeamId()
   const active = teams.find((t) => t.team.id === activeId) ?? teams[0]
   if (!active) return null
@@ -50,18 +63,6 @@ export function TeamSwitcher(): React.ReactElement | null {
     if (rect) setPopupPos({ left: rect.right + 8, top: rect.top })
     setOpen(true)
   }
-
-  // Close on outside click
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent): void => {
-      if (popupRef.current?.contains(e.target as Node)) return
-      if (btnRef.current?.contains(e.target as Node)) return
-      setOpen(false); setCreating(false); setNewName('')
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
 
   const switchTeam = (teamId: string): void => {
     if (teamId === activeId) { setOpen(false); return }
