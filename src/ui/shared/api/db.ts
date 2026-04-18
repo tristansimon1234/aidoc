@@ -67,10 +67,24 @@ export async function createProject(body: {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
+  // Projects now require a team_id (NOT NULL since the teams migration).
+  // Look up the user's personal team as the default landing spot — matches
+  // the backend's resolveActiveTeam fallback behaviour.
+  const { data: personal, error: teamErr } = await supabase
+    .from('teams')
+    .select('id')
+    .eq('created_by', user.id)
+    .eq('personal', true)
+    .maybeSingle()
+  if (teamErr) throw new Error(teamErr.message)
+  if (!personal) throw new Error('No personal workspace — try signing out and back in')
+  const teamId = (personal as { id: string }).id
+
   const { data, error } = await supabase
     .from('projects')
     .insert({
       user_id: user.id,
+      team_id: teamId,
       name: body.name,
       base_url: body.baseUrl,
       description: body.description ?? null,
