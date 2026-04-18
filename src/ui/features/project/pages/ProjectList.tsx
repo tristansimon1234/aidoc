@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
-import { Button, Card, Spinner, EmptyState } from '../../../design-system/components/index.js'
+import { Button, Card, Spinner, EmptyState, useConfirmDialog } from '../../../design-system/components/index.js'
 import { useAsync } from '../../../shared/hooks/useAsync.js'
 import { fetchProjects, updateProject } from '../../../shared/api/db.js'
 import type { ProjectDTO } from '../../../shared/api/client.js'
@@ -16,6 +16,7 @@ interface ProjectListProps {
 export function ProjectList(_props: ProjectListProps): React.ReactElement {
   const navigate = useNavigate()
   const { data: projects, loading, error, refetch } = useAsync(() => fetchProjects())
+  const { dialog: confirmDialog, confirm } = useConfirmDialog()
   const [query, setQuery] = useState('')
   const [showArchived, setShowArchived] = useState(false)
 
@@ -35,15 +36,33 @@ export function ProjectList(_props: ProjectListProps): React.ReactElement {
   const handleArchive = async (e: React.MouseEvent, project: ProjectDTO): Promise<void> => {
     e.stopPropagation()
     const archiving = !project.archivedAt
-    const confirmMsg = archiving
-      ? `Archive "${project.name}"? You can restore it later from the Archived view.`
-      : `Restore "${project.name}" to your active projects?`
-    if (!window.confirm(confirmMsg)) return
+    const ok = await confirm(archiving
+      ? {
+          title: `Archive "${project.name}"?`,
+          message: 'It will disappear from your active list. You can restore it from the Archived view anytime.',
+          confirmLabel: 'Archive',
+          cancelLabel: 'Cancel',
+          variant: 'danger',
+        }
+      : {
+          title: `Restore "${project.name}"?`,
+          message: 'This project will show up again in your active list.',
+          confirmLabel: 'Restore',
+          cancelLabel: 'Cancel',
+          variant: 'primary',
+        })
+    if (!ok) return
     try {
       await updateProject(project.id, { archivedAt: archiving ? new Date().toISOString() : null })
       refetch()
     } catch (err) {
-      window.alert(`Failed to ${archiving ? 'archive' : 'restore'} project: ${(err as Error).message}`)
+      await confirm({
+        title: archiving ? 'Archive failed' : 'Restore failed',
+        message: (err as Error).message,
+        confirmLabel: 'OK',
+        cancelLabel: 'Dismiss',
+        variant: 'primary',
+      })
     }
   }
 
@@ -51,6 +70,7 @@ export function ProjectList(_props: ProjectListProps): React.ReactElement {
 
   return (
     <Shell>
+      {confirmDialog}
       <div className={styles.header}>
         <div>
           <h1 className={styles.title}>Projects</h1>
