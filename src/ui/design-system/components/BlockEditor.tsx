@@ -1,76 +1,9 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
-import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
-import type { DefaultReactSuggestionItem } from '@blocknote/react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
 import { useImageLightbox } from './ImageLightbox.js'
 import styles from './BlockEditor.module.css'
-
-// Supported code-block languages. Without this the code block renders as a
-// plain <pre>; with it BlockNote shows the language dropdown in the block's
-// handle menu. No syntax highlighting yet — that would require shipping
-// Shiki (~2 MB). Good enough for now, users can still pick their language.
-const SUPPORTED_LANGUAGES = {
-  text: { name: 'Plain text' },
-  javascript: { name: 'JavaScript', aliases: ['js'] },
-  typescript: { name: 'TypeScript', aliases: ['ts'] },
-  tsx: { name: 'TSX' },
-  jsx: { name: 'JSX' },
-  python: { name: 'Python', aliases: ['py'] },
-  bash: { name: 'Bash', aliases: ['sh', 'shell'] },
-  json: { name: 'JSON' },
-  yaml: { name: 'YAML', aliases: ['yml'] },
-  html: { name: 'HTML' },
-  css: { name: 'CSS' },
-  sql: { name: 'SQL' },
-  markdown: { name: 'Markdown', aliases: ['md'] },
-  go: { name: 'Go' },
-  rust: { name: 'Rust', aliases: ['rs'] },
-} as const
-
-type CalloutType = 'INFO' | 'TIP' | 'WARNING' | 'DANGER'
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function getCalloutItems(editor: any): DefaultReactSuggestionItem[] {
-  const insertCallout = (type: CalloutType): void => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    insertOrUpdateBlockForSlashMenu(editor, {
-      type: 'quote',
-      content: [{ type: 'text', text: `[!${type}] `, styles: {} }],
-    } as any)
-  }
-  return [
-    {
-      title: 'Info callout',
-      subtext: 'Blue info box for general notes',
-      group: 'Callouts',
-      aliases: ['info', 'note', 'callout'],
-      onItemClick: () => insertCallout('INFO'),
-    },
-    {
-      title: 'Tip callout',
-      subtext: 'Green tip box for helpful hints',
-      group: 'Callouts',
-      aliases: ['tip', 'hint', 'callout'],
-      onItemClick: () => insertCallout('TIP'),
-    },
-    {
-      title: 'Warning callout',
-      subtext: 'Orange warning box for caveats',
-      group: 'Callouts',
-      aliases: ['warning', 'warn', 'callout'],
-      onItemClick: () => insertCallout('WARNING'),
-    },
-    {
-      title: 'Danger callout',
-      subtext: 'Red danger box for destructive actions',
-      group: 'Callouts',
-      aliases: ['danger', 'caution', 'error', 'callout'],
-      onItemClick: () => insertCallout('DANGER'),
-    },
-  ]
-}
 
 interface BlockEditorProps {
   content: string
@@ -100,29 +33,12 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   }, [])
 
   const editor = useCreateBlockNote({
-    codeBlock: {
-      defaultLanguage: 'text',
-      supportedLanguages: SUPPORTED_LANGUAGES,
-    },
     domAttributes: {
       editor: {
         class: styles.editor ?? '',
       },
     },
   })
-
-  // Slash menu: default items + our four callout entries, memo-stable per editor
-  const getSlashItems = useMemo(
-    () => async (query: string) =>
-      filterSuggestionItems(
-        [
-          ...getDefaultReactSlashMenuItems(editor),
-          ...getCalloutItems(editor),
-        ],
-        query,
-      ),
-    [editor],
-  )
 
   // Parse markdown into blocks — on mount and when content changes
   useEffect(() => {
@@ -170,38 +86,6 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
     return () => el.removeEventListener('click', handler, true)
   }, [openLightbox])
 
-  // Annotate quote blocks that start with the GitHub-style alert marker
-  // ([!NOTE] / [!TIP] / [!WARNING] / [!DANGER] / [!INFO]) with a
-  // `data-callout-type` attribute so the CSS can render them as callouts.
-  //
-  // We ONLY toggle an attribute — never mutate the DOM itself. Rewriting the
-  // text nodes fights ProseMirror's reconciliation and crashes the editor.
-  // The `[!TYPE]` marker stays visible as the user's markdown source, which
-  // is fine in edit mode; the read-only `MarkdownRenderer` hides it.
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const CALLOUT_RE = /^\s*\[!(NOTE|INFO|TIP|WARNING|DANGER|CAUTION)\]/i
-
-    const scan = (): void => {
-      const quotes = el.querySelectorAll<HTMLElement>('[data-content-type="quote"]')
-      quotes.forEach((q) => {
-        const firstText = q.textContent?.split('\n')[0] ?? ''
-        const match = CALLOUT_RE.exec(firstText)
-        if (match) {
-          q.setAttribute('data-callout-type', match[1]!.toUpperCase())
-        } else if (q.hasAttribute('data-callout-type')) {
-          q.removeAttribute('data-callout-type')
-        }
-      })
-    }
-
-    scan()
-    const observer = new MutationObserver(scan)
-    observer.observe(el, { childList: true, subtree: true, characterData: true })
-    return () => observer.disconnect()
-  }, [])
-
   const handleChange = useCallback(() => {
     if (readOnly) return
 
@@ -245,13 +129,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
         editable={!readOnly}
         onChange={handleChange}
         theme={theme}
-        slashMenu={false}
-      >
-        <SuggestionMenuController
-          triggerCharacter="/"
-          getItems={getSlashItems}
-        />
-      </BlockNoteView>
+      />
       {lightbox}
     </div>
   )
