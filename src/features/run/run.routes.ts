@@ -42,6 +42,10 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
 
+      // Exploration is the single most expensive op we run (Claude + Browserbase
+      // + Gemini). Refuse hard-cap plans at 100% before spinning up a browser.
+      await enforceQuotaOrThrow(getUserId(req))
+
       const body = req.body as { context?: string }
       const context = typeof body.context === 'string' ? body.context : undefined
 
@@ -135,6 +139,9 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
+
+      await enforceQuotaOrThrow(getUserId(req))
+
       const body = req.body as { videoPath?: string; generateDoc?: boolean }
       if (!body.videoPath || typeof body.videoPath !== 'string') {
         throw new ValidationError('videoPath is required')
@@ -565,6 +572,9 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
+
+      await enforceQuotaOrThrow(getUserId(req))
+
       const body = req.body as { stepIndex: number; text?: string; voiceId?: string }
       if (body.stepIndex == null) throw new ValidationError('stepIndex is required')
 
