@@ -9,9 +9,10 @@
   font-size: var(--text-xs);
   line-height: 1.4;
   flex-wrap: wrap;
-  position: sticky;
-  top: 0;
-  z-index: 60;
+  /* Not sticky on purpose — the topbar below is already sticky at top:0,
+     and two overlapping sticky elements fight each other. Banner sits in
+     flow above the topbar and scrolls away with content. */
+  flex-shrink: 0;
 }
 
 .icon {
