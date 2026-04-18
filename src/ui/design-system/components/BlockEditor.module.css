@@ -81,3 +81,108 @@
   color: var(--color-muted-fg);
   z-index: 10;
 }
+
+/* Inline code — readable in both light + dark */
+.editor code,
+.editor [class*="inline-content"] code {
+  background-color: var(--color-secondary) !important;
+  color: var(--color-fg) !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 0.9em !important;
+  border: 1px solid var(--color-border) !important;
+}
+
+/* Code blocks (fenced) */
+.editor pre,
+.editor [data-content-type="codeBlock"],
+.editor [data-content-type="code-block"] {
+  background-color: var(--color-card) !important;
+  color: var(--color-fg) !important;
+  border: 1px solid var(--color-border) !important;
+  border-radius: var(--radius-lg) !important;
+  padding: var(--space-md) !important;
+  font-family: var(--font-mono) !important;
+  font-size: var(--text-sm) !important;
+  overflow-x: auto !important;
+  line-height: 1.6 !important;
+}
+
+.editor pre code,
+.editor [data-content-type="codeBlock"] code,
+.editor [data-content-type="code-block"] code {
+  background-color: transparent !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  color: inherit !important;
+}
+
+/* Links — use primary color, underlined */
+.editor a,
+.editor a:visited {
+  color: var(--color-primary) !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px !important;
+  text-decoration-thickness: 1px !important;
+}
+
+.editor a:hover {
+  opacity: 0.8 !important;
+}
+
+/* Callouts — styled blockquotes that start with GitHub-style [!TYPE] marker.
+   The `data-callout-type` attribute is added at runtime by BlockEditor.tsx
+   after scanning the DOM. Use GFM markdown: > [!NOTE] / [!TIP] / [!WARNING]
+   / [!DANGER] / [!INFO]. Clean markdown round-trip guaranteed. */
+.editor [data-content-type="quote"][data-callout-type] {
+  padding: var(--space-md) var(--space-md) var(--space-md) var(--space-lg) !important;
+  border-radius: var(--radius-lg) !important;
+  border-left: 3px solid var(--callout-accent, var(--color-primary)) !important;
+  background: var(--callout-bg, color-mix(in srgb, var(--color-primary) 8%, transparent)) !important;
+  margin: var(--space-md) 0 !important;
+  position: relative !important;
+}
+
+.editor [data-content-type="quote"][data-callout-type]::before {
+  content: var(--callout-label, "Note") !important;
+  display: block !important;
+  font-size: var(--text-xs) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: var(--callout-accent, var(--color-primary)) !important;
+  margin-bottom: var(--space-xs) !important;
+}
+
+/* Hide the `[!TYPE]` marker in the rendered output — we add the badge via ::before */
+.editor [data-content-type="quote"][data-callout-type] [data-callout-marker] {
+  display: none !important;
+}
+
+.editor [data-content-type="quote"][data-callout-type="NOTE"],
+.editor [data-content-type="quote"][data-callout-type="INFO"] {
+  --callout-accent: var(--color-primary);
+  --callout-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --callout-label: "Info";
+}
+
+.editor [data-content-type="quote"][data-callout-type="TIP"] {
+  --callout-accent: var(--color-success);
+  --callout-bg: color-mix(in srgb, var(--color-success) 10%, transparent);
+  --callout-label: "Tip";
+}
+
+.editor [data-content-type="quote"][data-callout-type="WARNING"] {
+  --callout-accent: var(--color-warning);
+  --callout-bg: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  --callout-label: "Warning";
+}
+
+.editor [data-content-type="quote"][data-callout-type="DANGER"],
+.editor [data-content-type="quote"][data-callout-type="CAUTION"] {
+  --callout-accent: var(--color-destructive);
+  --callout-bg: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  --callout-label: "Danger";
+}

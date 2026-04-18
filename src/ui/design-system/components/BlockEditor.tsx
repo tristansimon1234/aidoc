@@ -5,6 +5,12 @@ import '@blocknote/mantine/style.css'
 import { useImageLightbox } from './ImageLightbox.js'
 import styles from './BlockEditor.module.css'
 
+function findFirstTextNode(root: Node): Text | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const node = walker.nextNode()
+  return node instanceof Text ? node : null
+}
+
 interface BlockEditorProps {
   content: string
   onSave: (markdown: string) => Promise<void>
@@ -85,6 +91,48 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
     el.addEventListener('click', handler, true)
     return () => el.removeEventListener('click', handler, true)
   }, [openLightbox])
+
+  // Annotate quote blocks that follow the GitHub-style alert syntax
+  // ([!NOTE] / [!TIP] / [!WARNING] / [!DANGER] / [!INFO]) with a
+  // `data-callout-type` attribute so the CSS can render them as callouts.
+  // Keeps markdown clean + round-trippable — the [!TYPE] stays in the text,
+  // we just hide it visually via a `data-callout-marker` span.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const CALLOUT_RE = /^\[!(NOTE|INFO|TIP|WARNING|DANGER|CAUTION)\]\s*$/i
+
+    const scan = (): void => {
+      const quotes = el.querySelectorAll<HTMLElement>('[data-content-type="quote"]')
+      quotes.forEach((q) => {
+        const firstText = q.textContent?.split('\n')[0]?.trim() ?? ''
+        const match = CALLOUT_RE.exec(firstText)
+        if (match) {
+          const type = match[1]!.toUpperCase()
+          q.setAttribute('data-callout-type', type)
+          // Wrap the `[!TYPE]` text so we can hide it via CSS without losing markdown
+          const firstTextNode = findFirstTextNode(q)
+          if (firstTextNode?.parentElement && !firstTextNode.parentElement.hasAttribute('data-callout-marker')) {
+            const span = document.createElement('span')
+            span.setAttribute('data-callout-marker', '')
+            span.textContent = firstTextNode.nodeValue?.match(/\[![A-Z]+\]\s*/i)?.[0] ?? ''
+            if (span.textContent) {
+              const remaining = firstTextNode.nodeValue?.slice(span.textContent.length) ?? ''
+              firstTextNode.nodeValue = remaining
+              firstTextNode.parentElement.insertBefore(span, firstTextNode)
+            }
+          }
+        } else {
+          q.removeAttribute('data-callout-type')
+        }
+      })
+    }
+
+    scan()
+    const observer = new MutationObserver(scan)
+    observer.observe(el, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [])
 
   const handleChange = useCallback(() => {
     if (readOnly) return
