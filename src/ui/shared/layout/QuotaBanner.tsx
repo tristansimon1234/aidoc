@@ -25,7 +25,7 @@ export function QuotaBanner(): React.ReactElement | null {
       <span className={styles.text}>
         <strong>Monthly quota exhausted</strong>
         {' '}— your {planName ?? 'current'} plan is at {Math.round(percent)}%.
-        {' '}Upgrade to record or upload new videos.
+        {' '}Upgrade to continue using AI.
       </span>
       <Link to="/account?tab=billing" className={styles.link}>Upgrade plan →</Link>
     </div>
