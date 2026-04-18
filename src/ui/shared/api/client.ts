@@ -395,11 +395,14 @@ export const api = {
   analytics: {
     report: (projectId: string, period: AnalyticsPeriodDTO): Promise<AnalyticsReportDTO> =>
       request(`/projects/${projectId}/analytics?period=${period}`),
+    recommendations: (projectId: string, period: AnalyticsPeriodDTO): Promise<AnalyticsRecommendationsDTO> =>
+      request(`/projects/${projectId}/analytics/recommendations?period=${period}`, { method: 'POST' }),
   },
 }
 
 export type AnalyticsPeriodDTO = '7d' | '30d' | '90d'
 export type AnalyticsChatSourceDTO = 'widget' | 'public' | 'app'
+export type AnalyticsMessageCategoryDTO = 'onboarding' | 'pricing' | 'how-to' | 'error' | 'integration' | 'account' | 'other'
 
 export interface AnalyticsReportDTO {
   periodStart: string
@@ -424,13 +427,19 @@ export interface AnalyticsReportDTO {
     uniqueSessions: number
     topPages: { slug: string; title: string | null; views: number }[]
   }
-  insights: {
-    overallSentiment: { score: 'positive' | 'neutral' | 'negative' | 'mixed'; summary: string }
-    painPoints: { topic: string; frequency: number; severity: 'high' | 'medium' | 'low'; examples: string[] }[]
-    frustrationSignals: { excerpt: string; reason: string; severity: 'high' | 'medium' | 'low' }[]
-    contentGaps: { question: string; askedCount: number; suggestedPage: string | null }[]
-    recommendations: { type: 'content' | 'product' | 'ux'; title: string; description: string; priority: 'high' | 'medium' | 'low' }[]
-  } | null
+  painPoints: {
+    category: AnalyticsMessageCategoryDTO
+    total: number
+    negative: number
+    frustrated: number
+    examples: string[]
+  }[]
+  frustrationSignals: {
+    content: string
+    source: AnalyticsChatSourceDTO
+    createdAt: string
+    category: AnalyticsMessageCategoryDTO | null
+  }[]
   recentSamples: {
     role: 'user' | 'assistant'
     content: string
@@ -439,6 +448,18 @@ export interface AnalyticsReportDTO {
     sentiment: 'positive' | 'neutral' | 'negative' | null
     frustrationFlag: boolean
     language: string | null
+    category: AnalyticsMessageCategoryDTO | null
+  }[]
+}
+
+export interface AnalyticsRecommendationsDTO {
+  generatedAt: string
+  summary: string
+  items: {
+    type: 'content' | 'product' | 'ux'
+    title: string
+    description: string
+    priority: 'high' | 'medium' | 'low'
   }[]
 }
 

@@ -124,14 +124,22 @@ Every metered op (`doc_run`, `voiceover`, `try_doc`, `chat_sessions`) is increme
 ### Chat Session Dedup
 `widget` and `app` chat traffic share the same `chat_sessions` quota. Each request carries a `sessionToken` (per-tab UUID stored in `sessionStorage`). The `chat_sessions` table's PK `(project_id, session_token, period_month)` ensures `incrementUsage('chat_sessions')` only fires once per token per calendar month. The `source` column splits widget vs in-app for analytics without affecting billing.
 
-### Analytics (hybrid: write-time classify + read-time aggregate + cached LLM pass)
+### Analytics (write-time classify, SQL-only dashboard, on-demand recommendations)
 Every chat turn (user + assistant, across widget / public docs / in-app) is persisted in `chat_messages`. Public doc page views ping `POST /api/docs/:projectId/view`, which inserts into `doc_page_views`. Both tables are service-role write, owner-only read via RLS (`auth.uid() = user_id` on a denormalised `user_id` column).
 
-**Write-time per-message classification** — right after each chat turn is persisted, `classifyAndStoreUserMessage()` makes a tiny Gemini call (150 in / 80 out max) and writes `sentiment` / `frustration_flag` / `language` back onto the user-role row. This is fire-and-forget, so a classification hiccup never slows or breaks the chat reply. These columns power UI filters ("show only negative", "show only frustrated") and future real-time alerts without re-running the heavy analytics pass.
+**Write-time classification** — right after each user chat turn is persisted, `classifyAndStoreUserMessage()` makes a tiny Gemini call (~150 in / 80 out tokens) that writes `sentiment` / `frustration_flag` / `language` / `category` back onto the user-role row. `category` is one of `onboarding | pricing | how-to | error | integration | account | other`. Fire-and-forget: a classification hiccup never slows or breaks the chat reply. These columns are what the dashboard aggregates over.
 
-**Read-time aggregate + insights** — `GET /api/projects/:id/analytics?period=7d|30d|90d` does two things: (1) aggregates counts / source breakdown / top pages / sentiment counts from SQL over the whole period, (2) passes the last 200 **user-role** messages to Gemini (`ANALYTICS_SYSTEM_PROMPT` / `buildAnalyticsPrompt`) for pain-point clustering, content gaps, frustration signals, and prioritised recommendations — patterns that genuinely need cross-message context. The LLM output is Zod-validated with the same JSON-repair fallback used by Try Doc (`analytics.service.ts` → `parseGeminiJson`) and cached in memory for 10 min per `(project, period)`. Gemini writes the insights in the users' dominant language.
+**Read-time dashboard = pure SQL** — `GET /api/projects/:id/analytics?period=7d|30d|90d` does zero LLM calls. It computes:
+- KPIs + source breakdown + sentiment counts via `computeChatStats()`
+- Pain points via `computePainPoints()` — `GROUP BY category` on user messages, sorted by `frustrated + negative` volume, with up to 3 example quotes per bucket (frustrated > negative > neutral preference)
+- Frustration signals = the 10 most recent user messages where `frustration_flag = true`
+- Top viewed public-doc pages, recent-samples list, etc.
 
-All tracking + classification writes are fire-and-forget (wrapped in try/catch) so analytics never blocks a chat reply or a page view.
+Result: dashboard loads in <50ms from a single DB round-trip, no cold-start cache issues, cost scales with message volume (per-classifier call) instead of dashboard opens.
+
+**On-demand recommendations** — `POST /api/projects/:id/analytics/recommendations?period=...` is an explicit owner-initiated action that runs the Gemini synthesis pass on the last 200 user messages (`ANALYTICS_SYSTEM_PROMPT` in `prompt.builder.ts`). 5-minute cooldown per `(project, period)` to avoid accidental double-spend. Returns `{ summary, items[] }` — prioritised actionable fixes (`type: content | product | ux`).
+
+All tracking + classification writes are fire-and-forget so analytics never blocks a chat reply or a page view.
 
 ### Admin Allowlist
 `/api/admin/*` is gated by the `requireAdmin` middleware which reads `req.userId` (set by auth middleware), looks up the email via `profile.repository.findAuthUserEmail`, and compares against `isAdminEmail(email)` (env-driven, see `ADMIN_EMAILS`). The frontend hides the "Admin · Usage" menu entry unless `profile.isAdmin = true` — the admin email list never leaks to the bundle.

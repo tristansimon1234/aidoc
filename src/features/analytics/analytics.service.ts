@@ -8,20 +8,20 @@ import {
   MESSAGE_CLASSIFIER_SYSTEM_PROMPT,
   buildMessageClassifierPrompt,
 } from '../../shared/ai/prompt.builder.js'
-import { AiInsightsSchema } from './analytics.schema.js'
+import { AiRecommendationsSchema } from './analytics.schema.js'
 import {
   fetchChatRowsSince,
   fetchPageViewsSince,
   computeChatStats,
   computeViewStats,
+  computePainPoints,
   sampleUserMessages,
   updateMessageClassification,
+  type MessageCategory,
 } from './analytics.repository.js'
-import type { AiInsights, AnalyticsPeriod, AnalyticsReport, ChatSource } from './analytics.types.js'
+import type { AiRecommendations, AnalyticsPeriod, AnalyticsReport, ChatSource, FrustrationSignal } from './analytics.types.js'
 
 const PERIOD_DAYS: Record<AnalyticsPeriod, number> = { '7d': 7, '30d': 30, '90d': 90 }
-const INSIGHTS_CACHE_TTL_MS = 10 * 60 * 1000
-const insightsCache = new Map<string, { insights: AiInsights; expiresAt: number }>()
 
 // Strip Gemini's markdown fences / surrounding chatter, extract the JSON body,
 // and attempt a structural repair if the initial parse fails. Same pattern
@@ -76,19 +76,18 @@ export async function getReport(
   const titleBySlug = new Map(pages.map((p) => [p.slug, p.title]))
   const chatStats = computeChatStats(chatRows)
   const viewStats = computeViewStats(viewRows, titleBySlug)
+  const painPoints = computePainPoints(chatRows)
 
-  const samples = sampleUserMessages(chatRows, 200)
-  const insights = samples.length > 0
-    ? await getCachedInsights(projectId, period, async () => generateInsights({
-        productName: project.name,
-        productDescription: project.description,
-        sessionCount: chatStats.totalSessions,
-        messageCount: chatStats.totalMessages,
-        sampleUserMessages: samples,
-        topPages: viewStats.topPages,
-        allPageTitles: pages.map((p) => p.title),
-      }))
-    : null
+  // Top frustration signals: surface the 10 most recent user messages flagged frustrated.
+  const frustrationSignals: FrustrationSignal[] = chatRows
+    .filter((r) => r.role === 'user' && r.frustration_flag)
+    .slice(0, 10)
+    .map((r) => ({
+      content: r.content.length > 240 ? `${r.content.slice(0, 240)}…` : r.content,
+      source: r.source,
+      createdAt: r.created_at,
+      category: r.category,
+    }))
 
   const recentSamples = chatRows.slice(0, 40).map((r) => ({
     role: r.role,
@@ -98,6 +97,7 @@ export async function getReport(
     sentiment: r.sentiment ?? null,
     frustrationFlag: Boolean(r.frustration_flag),
     language: r.language ?? null,
+    category: r.category,
   }))
 
   return {
@@ -106,35 +106,84 @@ export async function getReport(
     period,
     chatStats,
     viewStats,
-    insights,
+    painPoints,
+    frustrationSignals,
     recentSamples,
   }
 }
 
-async function getCachedInsights(
+// --- On-demand recommendations (explicit owner action, not automatic) ---
+
+const RECO_COOLDOWN_MS = 5 * 60 * 1000
+const recommendationsCache = new Map<string, { result: AiRecommendations; expiresAt: number }>()
+
+export async function getRecommendations(
   projectId: string,
+  ownerUserId: string,
   period: AnalyticsPeriod,
-  loader: () => Promise<AiInsights>,
-): Promise<AiInsights | null> {
-  const key = `${projectId}:${period}`
-  const cached = insightsCache.get(key)
-  if (cached && Date.now() < cached.expiresAt) return cached.insights
-  try {
-    const insights = await loader()
-    insightsCache.set(key, { insights, expiresAt: Date.now() + INSIGHTS_CACHE_TTL_MS })
-    return insights
-  } catch (err) {
-    console.warn('[analytics] insights generation failed:', (err as Error).message)
-    return null
+): Promise<AiRecommendations> {
+  const project = await findProjectById(projectId)
+  if (!project) throw new NotFoundError('Project')
+  if (project.userId !== ownerUserId) throw new AppError('Forbidden', 'FORBIDDEN', 403)
+
+  const cacheKey = `${projectId}:${period}`
+  const cached = recommendationsCache.get(cacheKey)
+  if (cached && Date.now() < cached.expiresAt) return cached.result
+
+  const days = PERIOD_DAYS[period]
+  const periodEnd = new Date()
+  const periodStart = new Date(periodEnd.getTime() - days * 24 * 60 * 60 * 1000)
+  const sinceIso = periodStart.toISOString()
+
+  const [chatRows, viewRows, pages] = await Promise.all([
+    fetchChatRowsSince(projectId, sinceIso),
+    fetchPageViewsSince(projectId, sinceIso),
+    findPagesByProjectId(projectId),
+  ])
+  const chatStats = computeChatStats(chatRows)
+  const viewStats = computeViewStats(viewRows, new Map(pages.map((p) => [p.slug, p.title])))
+  const samples = sampleUserMessages(chatRows, 200)
+
+  if (samples.length < 20) {
+    throw new AppError('Not enough data yet — wait for more chat traffic.', 'NOT_ENOUGH_DATA', 409)
   }
+
+  const userPrompt = buildAnalyticsPrompt({
+    productName: project.name,
+    productDescription: project.description,
+    sessionCount: chatStats.totalSessions,
+    messageCount: chatStats.totalMessages,
+    sampleUserMessages: samples,
+    topPages: viewStats.topPages,
+    allPageTitles: pages.map((p) => p.title),
+  })
+
+  const response = await generateText({
+    systemPrompt: ANALYTICS_SYSTEM_PROMPT,
+    userPrompt,
+    maxTokens: 2048,
+  })
+  const parsed = parseGeminiJson(response.text)
+  const validated = AiRecommendationsSchema.parse(parsed)
+
+  const result: AiRecommendations = {
+    generatedAt: new Date().toISOString(),
+    summary: validated.summary,
+    items: validated.items,
+  }
+  recommendationsCache.set(cacheKey, { result, expiresAt: Date.now() + RECO_COOLDOWN_MS })
+  return result
 }
 
 // --- Per-message classifier (write-time, fire-and-forget) ---
+
+const VALID_CATEGORIES: readonly MessageCategory[] = ['onboarding', 'pricing', 'how-to', 'error', 'integration', 'account', 'other']
 
 interface ClassifyResult {
   sentiment: 'positive' | 'neutral' | 'negative'
   frustrated: boolean
   language: string | null
+  category: MessageCategory | null
 }
 
 function parseClassifierResponse(raw: string): ClassifyResult | null {
@@ -148,10 +197,14 @@ function parseClassifierResponse(raw: string): ClassifyResult | null {
     const parsed = JSON.parse(jsonStr) as Record<string, unknown>
     const sentiment = parsed.sentiment
     if (sentiment !== 'positive' && sentiment !== 'neutral' && sentiment !== 'negative') return null
+    const category = typeof parsed.category === 'string' && (VALID_CATEGORIES as readonly string[]).includes(parsed.category)
+      ? (parsed.category as MessageCategory)
+      : 'other'
     return {
       sentiment,
       frustrated: Boolean(parsed.frustrated),
       language: typeof parsed.language === 'string' ? parsed.language.slice(0, 8) : null,
+      category,
     }
   } catch { return null }
 }
@@ -169,27 +222,9 @@ export async function classifyAndStoreUserMessage(messageId: string, content: st
       sentiment: parsed.sentiment,
       frustration_flag: parsed.frustrated,
       language: parsed.language,
+      category: parsed.category,
     })
   } catch (err) {
     console.warn('[analytics] classifier failed:', (err as Error).message)
   }
-}
-
-async function generateInsights(input: {
-  productName: string
-  productDescription: string | null
-  sessionCount: number
-  messageCount: number
-  sampleUserMessages: string[]
-  topPages: { title: string | null; slug: string; views: number }[]
-  allPageTitles: string[]
-}): Promise<AiInsights> {
-  const userPrompt = buildAnalyticsPrompt(input)
-  const result = await generateText({
-    systemPrompt: ANALYTICS_SYSTEM_PROMPT,
-    userPrompt,
-    maxTokens: 4096,
-  })
-  const parsed = parseGeminiJson(result.text)
-  return AiInsightsSchema.parse(parsed)
 }

@@ -40,9 +40,16 @@ export async function logChatMessages(input: {
   return { userMessageId: userRow?.id ?? null }
 }
 
+export type MessageCategory = 'onboarding' | 'pricing' | 'how-to' | 'error' | 'integration' | 'account' | 'other'
+
 export async function updateMessageClassification(
   messageId: string,
-  fields: { sentiment: 'positive' | 'neutral' | 'negative'; frustration_flag: boolean; language: string | null },
+  fields: {
+    sentiment: 'positive' | 'neutral' | 'negative'
+    frustration_flag: boolean
+    language: string | null
+    category: MessageCategory | null
+  },
 ): Promise<void> {
   const { error } = await supabase
     .from('chat_messages')
@@ -50,6 +57,7 @@ export async function updateMessageClassification(
       sentiment: fields.sentiment,
       frustration_flag: fields.frustration_flag,
       language: fields.language,
+      category: fields.category,
     })
     .eq('id', messageId)
   if (error) throw new DatabaseError(error.message)
@@ -85,12 +93,13 @@ interface ChatRow {
   sentiment: 'positive' | 'neutral' | 'negative' | null
   frustration_flag: boolean | null
   language: string | null
+  category: MessageCategory | null
 }
 
 export async function fetchChatRowsSince(projectId: string, sinceIso: string): Promise<ChatRow[]> {
   const { data, error } = await supabase
     .from('chat_messages')
-    .select('role, content, source, session_token, created_at, sentiment, frustration_flag, language')
+    .select('role, content, source, session_token, created_at, sentiment, frustration_flag, language, category')
     .eq('project_id', projectId)
     .gte('created_at', sinceIso)
     .order('created_at', { ascending: false })
@@ -187,6 +196,48 @@ export function computeViewStats(rows: ViewRow[], pageTitleBySlug: Map<string, s
     uniqueSessions: sessions.size,
     topPages,
   }
+}
+
+export interface PainPointBucket {
+  category: MessageCategory
+  total: number
+  negative: number
+  frustrated: number
+  examples: string[]
+}
+
+/** Aggregate user-role messages by category + sentiment. Examples prefer
+ *  frustrated > negative > any so the owner sees the strongest evidence first. */
+export function computePainPoints(rows: ChatRow[]): PainPointBucket[] {
+  const buckets = new Map<MessageCategory, { total: number; negative: number; frustrated: number; candidates: { frustrated: string[]; negative: string[]; neutral: string[] } }>()
+  for (const r of rows) {
+    if (r.role !== 'user') continue
+    const cat = r.category
+    if (!cat) continue
+    let b = buckets.get(cat)
+    if (!b) {
+      b = { total: 0, negative: 0, frustrated: 0, candidates: { frustrated: [], negative: [], neutral: [] } }
+      buckets.set(cat, b)
+    }
+    b.total += 1
+    const snippet = r.content.length > 180 ? `${r.content.slice(0, 180)}…` : r.content
+    if (r.frustration_flag) {
+      b.frustrated += 1
+      if (b.candidates.frustrated.length < 3) b.candidates.frustrated.push(snippet)
+    } else if (r.sentiment === 'negative') {
+      b.negative += 1
+      if (b.candidates.negative.length < 3) b.candidates.negative.push(snippet)
+    } else if (b.candidates.neutral.length < 3) {
+      b.candidates.neutral.push(snippet)
+    }
+  }
+  return Array.from(buckets.entries())
+    .map(([category, b]) => {
+      const examples = [...b.candidates.frustrated, ...b.candidates.negative, ...b.candidates.neutral].slice(0, 3)
+      return { category, total: b.total, negative: b.negative, frustrated: b.frustrated, examples }
+    })
+    .filter((b) => b.category !== 'other' || b.total > 0)
+    .sort((a, b) => (b.frustrated + b.negative) - (a.frustrated + a.negative) || b.total - a.total)
 }
 
 export function sampleUserMessages(rows: ChatRow[], limit: number): string[] {

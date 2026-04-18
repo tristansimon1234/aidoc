@@ -1,8 +1,15 @@
 import { useMemo, useState } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { Spinner, EmptyState } from '../../../design-system/components/index.js'
+import { Button, Spinner, EmptyState } from '../../../design-system/components/index.js'
 import { useAsync } from '../../../shared/hooks/useAsync.js'
-import { api, type AnalyticsPeriodDTO, type AnalyticsReportDTO, type ProjectDTO } from '../../../shared/api/client.js'
+import {
+  api,
+  type AnalyticsMessageCategoryDTO,
+  type AnalyticsPeriodDTO,
+  type AnalyticsReportDTO,
+  type AnalyticsRecommendationsDTO,
+  type ProjectDTO,
+} from '../../../shared/api/client.js'
 import styles from './AnalyticsPage.module.css'
 
 const PERIODS: { id: AnalyticsPeriodDTO; label: string }[] = [
@@ -17,16 +24,22 @@ const SOURCE_COLORS: Record<'widget' | 'public' | 'app', string> = {
   app: 'var(--color-warning)',
 }
 
+const CATEGORY_LABELS: Record<AnalyticsMessageCategoryDTO, string> = {
+  onboarding: 'Onboarding',
+  pricing: 'Pricing & plans',
+  'how-to': 'How-to',
+  error: 'Errors / bugs',
+  integration: 'Integration',
+  account: 'Account & login',
+  other: 'Other',
+}
+
 function formatNumber(n: number): string {
   return new Intl.NumberFormat('en-US').format(n)
 }
 
 function SeverityPill({ level }: { level: 'high' | 'medium' | 'low' }): React.ReactElement {
   return <span className={`${styles.pill} ${styles[`pill_${level}`]}`}>{level}</span>
-}
-
-function SentimentBadge({ score }: { score: 'positive' | 'neutral' | 'negative' | 'mixed' }): React.ReactElement {
-  return <span className={`${styles.sentiment} ${styles[`sentiment_${score}`]}`}>{score}</span>
 }
 
 function SourceBar({ bySource, total }: {
@@ -67,6 +80,27 @@ export function AnalyticsPage(): React.ReactElement {
   const { project } = useOutletContext<{ project: ProjectDTO }>()
   const [period, setPeriod] = useState<AnalyticsPeriodDTO>('30d')
   const { data, loading, error } = useAsync(() => api.analytics.report(project.id, period), [project.id, period])
+  const [sampleFilter, setSampleFilter] = useState<'all' | 'negative' | 'frustrated'>('all')
+
+  // Recommendations (explicit owner action)
+  const [recos, setRecos] = useState<AnalyticsRecommendationsDTO | null>(null)
+  const [recosLoading, setRecosLoading] = useState(false)
+  const [recosError, setRecosError] = useState<string | null>(null)
+
+  const handleGenerateRecos = async (): Promise<void> => {
+    setRecosLoading(true); setRecosError(null)
+    try {
+      const result = await api.analytics.recommendations(project.id, period)
+      setRecos(result)
+    } catch (err) {
+      setRecosError((err as Error).message)
+    } finally {
+      setRecosLoading(false)
+    }
+  }
+
+  // Reset on-demand state when period changes
+  useMemo(() => { setRecos(null); setRecosError(null) }, [period])
 
   const kpis = useMemo(() => {
     if (!data) return null
@@ -86,7 +120,6 @@ export function AnalyticsPage(): React.ReactElement {
     ]
   }, [data])
 
-  const [sampleFilter, setSampleFilter] = useState<'all' | 'negative' | 'frustrated'>('all')
   const filteredSamples = useMemo(() => {
     if (!data) return []
     const users = data.recentSamples.filter((s) => s.role === 'user')
@@ -100,7 +133,7 @@ export function AnalyticsPage(): React.ReactElement {
       <div className={styles.header}>
         <div>
           <h1 className={styles.title}>Analytics</h1>
-          <p className={styles.subtitle}>How users interact with your chat and public docs — with an AI-generated read on what to fix next.</p>
+          <p className={styles.subtitle}>What your users ask, what frustrates them, and where to fix next — all derived from the conversations they had with your chat.</p>
         </div>
         <div className={styles.periodGroup}>
           {PERIODS.map((p) => (
@@ -160,55 +193,89 @@ export function AnalyticsPage(): React.ReactElement {
           </div>
 
           <div className={styles.section}>
-            <div className={styles.insightsHeader}>
-              <h2 className={styles.sectionTitle}>AI insights</h2>
-              {data.insights && <SentimentBadge score={data.insights.overallSentiment.score} />}
-            </div>
-            {!data.insights ? (
-              <p className={styles.empty}>Not enough messages yet — ask users to chat with the docs and come back in a bit.</p>
+            <h2 className={styles.sectionTitle}>Pain points by topic</h2>
+            {data.painPoints.length === 0 ? (
+              <p className={styles.empty}>Not enough classified messages yet. Come back once users have asked a few questions.</p>
             ) : (
+              <ul className={styles.painList}>
+                {data.painPoints.map((pp) => {
+                  const intensity = pp.total === 0 ? 0 : Math.round(((pp.negative + pp.frustrated) / pp.total) * 100)
+                  return (
+                    <li key={pp.category} className={styles.painItem}>
+                      <div className={styles.painHeader}>
+                        <span className={styles.painCategory}>{CATEGORY_LABELS[pp.category]}</span>
+                        <span className={styles.painStats}>
+                          <span>{pp.total} msgs</span>
+                          {pp.negative > 0 && <span className={styles.negativeChip}>{pp.negative} negative</span>}
+                          {pp.frustrated > 0 && <span className={styles.frustrationChip}>{pp.frustrated} frustrated</span>}
+                          {intensity > 0 && <span className={styles.painIntensity}>{intensity}% pain</span>}
+                        </span>
+                      </div>
+                      {pp.examples.length > 0 && (
+                        <ul className={styles.quoteList}>
+                          {pp.examples.map((q, i) => <li key={i}>"{q}"</li>)}
+                        </ul>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+
+          <div className={styles.section}>
+            <h2 className={styles.sectionTitle}>Frustration signals</h2>
+            {data.frustrationSignals.length === 0 ? (
+              <p className={styles.empty}>No frustration signals picked up — 🎉</p>
+            ) : (
+              <ul className={styles.signalList}>
+                {data.frustrationSignals.map((s, i) => (
+                  <li key={i} className={styles.signalItem}>
+                    <span className={styles.signalSource} style={{ color: SOURCE_COLORS[s.source] }}>{s.source}</span>
+                    <span className={styles.signalContent}>
+                      "{s.content}"
+                      {s.category && <span className={styles.signalCategory}>{CATEGORY_LABELS[s.category]}</span>}
+                    </span>
+                    <span className={styles.signalDate}>{new Date(s.createdAt).toLocaleDateString()}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.recoHeader}>
+              <div>
+                <h2 className={styles.sectionTitle}>AI recommendations</h2>
+                <p className={styles.recoDesc}>On-demand: we ask Gemini to synthesise prioritised fixes from the last 200 user messages. Fresh every 5 minutes, or on your click.</p>
+              </div>
+              <Button size="sm" onClick={() => void handleGenerateRecos()} disabled={recosLoading}>
+                {recosLoading ? 'Generating…' : recos ? 'Regenerate' : 'Generate recommendations'}
+              </Button>
+            </div>
+            {recosError && <p className={styles.recoError}>{recosError}</p>}
+            {recos && (
               <>
-                <p className={styles.summary}>{data.insights.overallSentiment.summary}</p>
-
-                <InsightsBlock
-                  title="Pain points"
-                  empty="No recurring pain points surfaced."
-                  items={data.insights.painPoints.map((p) => ({
-                    title: `${p.topic}`,
-                    meta: <>{p.frequency > 0 && <span>{p.frequency}×</span>} <SeverityPill level={p.severity} /></>,
-                    body: p.examples.length > 0 ? <ul className={styles.quoteList}>{p.examples.map((e, i) => <li key={i}>"{e}"</li>)}</ul> : null,
-                  }))}
-                />
-
-                <InsightsBlock
-                  title="Content gaps"
-                  empty="No content gaps detected."
-                  items={data.insights.contentGaps.map((g) => ({
-                    title: g.question,
-                    meta: g.askedCount > 0 ? <span>{g.askedCount} asks</span> : null,
-                    body: g.suggestedPage ? <p className={styles.suggestion}>Suggested page: <b>{g.suggestedPage}</b></p> : null,
-                  }))}
-                />
-
-                <InsightsBlock
-                  title="Frustration signals"
-                  empty="No frustration signals picked up — 🎉"
-                  items={data.insights.frustrationSignals.map((s) => ({
-                    title: `"${s.excerpt}"`,
-                    meta: <SeverityPill level={s.severity} />,
-                    body: <p className={styles.suggestion}>{s.reason}</p>,
-                  }))}
-                />
-
-                <InsightsBlock
-                  title="Recommendations"
-                  empty="No actionable recommendations yet."
-                  items={data.insights.recommendations.map((r) => ({
-                    title: r.title,
-                    meta: <><span className={styles.recType}>{r.type}</span><SeverityPill level={r.priority} /></>,
-                    body: <p className={styles.suggestion}>{r.description}</p>,
-                  }))}
-                />
+                <p className={styles.summary}>{recos.summary}</p>
+                {recos.items.length === 0 ? (
+                  <p className={styles.empty}>Not enough signal for actionable recommendations yet.</p>
+                ) : (
+                  <ul className={styles.recoList}>
+                    {recos.items.map((r, i) => (
+                      <li key={i} className={styles.recoItem}>
+                        <div className={styles.recoItemHeader}>
+                          <span className={styles.recoTitleText}>{r.title}</span>
+                          <span className={styles.insightMeta}>
+                            <span className={styles.recType}>{r.type}</span>
+                            <SeverityPill level={r.priority} />
+                          </span>
+                        </div>
+                        <p className={styles.suggestion}>{r.description}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className={styles.recoFootnote}>Generated {new Date(recos.generatedAt).toLocaleString()}</p>
               </>
             )}
           </div>
@@ -241,6 +308,7 @@ export function AnalyticsPage(): React.ReactElement {
                       {s.content}
                       {s.frustrationFlag && <span className={styles.frustrationChip}>frustrated</span>}
                       {s.sentiment === 'negative' && !s.frustrationFlag && <span className={styles.negativeChip}>negative</span>}
+                      {s.category && <span className={styles.signalCategory}>{CATEGORY_LABELS[s.category]}</span>}
                     </span>
                     <span className={styles.sampleDate}>{new Date(s.createdAt).toLocaleDateString()}</span>
                   </li>
@@ -249,31 +317,6 @@ export function AnalyticsPage(): React.ReactElement {
             )}
           </div>
         </>
-      )}
-    </div>
-  )
-}
-
-interface InsightItem { title: React.ReactNode; meta?: React.ReactNode; body?: React.ReactNode }
-
-function InsightsBlock({ title, empty, items }: { title: string; empty: string; items: InsightItem[] }): React.ReactElement {
-  return (
-    <div className={styles.insightGroup}>
-      <h3 className={styles.insightTitle}>{title}</h3>
-      {items.length === 0 ? (
-        <p className={styles.empty}>{empty}</p>
-      ) : (
-        <ul className={styles.insightList}>
-          {items.map((it, i) => (
-            <li key={i} className={styles.insightItem}>
-              <div className={styles.insightHeader}>
-                <span className={styles.insightLabel}>{it.title}</span>
-                {it.meta && <span className={styles.insightMeta}>{it.meta}</span>}
-              </div>
-              {it.body && <div className={styles.insightBody}>{it.body}</div>}
-            </li>
-          ))}
-        </ul>
       )}
     </div>
   )

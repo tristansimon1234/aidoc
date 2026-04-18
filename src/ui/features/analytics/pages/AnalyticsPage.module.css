@@ -473,3 +473,174 @@
   color: var(--color-muted-fg);
   font-variant-numeric: tabular-nums;
 }
+
+/* Pain points (SQL-derived by category) */
+.painList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.painItem {
+  padding: var(--space-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.painHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.painCategory {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.painStats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+  flex-wrap: wrap;
+}
+
+.painIntensity {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-secondary);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Frustration signals */
+.signalList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.signalItem {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+  align-items: center;
+}
+
+.signalItem:last-child { border-bottom: none; }
+
+.signalSource {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.signalContent {
+  color: var(--color-fg);
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.signalCategory {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--color-secondary);
+  color: var(--color-muted-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  font-style: normal;
+  vertical-align: middle;
+}
+
+.signalDate {
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Recommendations (on-demand) */
+.recoHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.recoHeader .sectionTitle { margin: 0; }
+
+.recoDesc {
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+  margin: 4px 0 0;
+  max-width: 520px;
+  line-height: 1.5;
+}
+
+.recoError {
+  font-size: var(--text-sm);
+  color: var(--color-destructive);
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm);
+  background: var(--color-status-failed-bg, #fee);
+  border-radius: 6px;
+}
+
+.recoList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.recoItem {
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.recoItemHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.recoTitleText {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+.recoFootnote {
+  font-size: 10px;
+  color: var(--color-muted-fg);
+  margin: var(--space-sm) 0 0;
+  text-align: right;
+}

@@ -195,6 +195,7 @@ source            text NOT NULL CHECK (source IN ('widget','public','app'))
 sentiment         text CHECK (sentiment IN ('positive','neutral','negative'))  -- user rows only, NULL until classified
 frustration_flag  boolean NOT NULL DEFAULT false                                -- user rows only
 language          text                                                          -- 2-letter ISO code, user rows only
+category          text CHECK (category IN ('onboarding','pricing','how-to','error','integration','account','other'))  -- intent bucket, user rows only
 created_at        timestamptz NOT NULL DEFAULT now()
 ```
 **Indexes**: `idx_chat_messages_project_time` (project_id, created_at DESC), `idx_chat_messages_project_sentiment` (partial, user+classified), `idx_chat_messages_project_frustrated` (partial, user+frustrated)
@@ -287,6 +288,7 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 32 | `20260418000001_add_projects_archived_at.sql` | Add nullable `archived_at` to projects for the Archive / Restore toggle on the project list |
 | 33 | `20260418000002_add_analytics_tables.sql` | `chat_messages` + `doc_page_views` — powers the per-project Analytics tab with AI sentiment insights |
 | 34 | `20260418000003_add_chat_messages_classification.sql` | Add `sentiment` / `frustration_flag` / `language` to `chat_messages` — write-time classification enables filters + trend signals |
+| 35 | `20260418000004_add_chat_messages_category.sql` | Add `category` to `chat_messages` — enables SQL-only pain-point aggregation on the Analytics tab |
 
 ## Relationships
 

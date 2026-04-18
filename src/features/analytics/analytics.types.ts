@@ -1,6 +1,7 @@
 export type AnalyticsPeriod = '7d' | '30d' | '90d'
 export type ChatSource = 'widget' | 'public' | 'app'
 export type ViewSource = 'public' | 'app'
+export type MessageCategory = 'onboarding' | 'pricing' | 'how-to' | 'error' | 'integration' | 'account' | 'other'
 
 export interface ChatStats {
   totalSessions: number
@@ -23,28 +24,27 @@ export interface ViewStats {
   topPages: { slug: string; title: string | null; views: number }[]
 }
 
-export interface AiInsights {
-  overallSentiment: {
-    score: 'positive' | 'neutral' | 'negative' | 'mixed'
-    summary: string
-  }
-  painPoints: {
-    topic: string
-    frequency: number
-    severity: 'high' | 'medium' | 'low'
-    examples: string[]
-  }[]
-  frustrationSignals: {
-    excerpt: string
-    reason: string
-    severity: 'high' | 'medium' | 'low'
-  }[]
-  contentGaps: {
-    question: string
-    askedCount: number
-    suggestedPage: string | null
-  }[]
-  recommendations: {
+/** SQL-derived pain-point bucket (one per message category). */
+export interface PainPoint {
+  category: MessageCategory
+  total: number
+  negative: number
+  frustrated: number
+  examples: string[]
+}
+
+export interface FrustrationSignal {
+  content: string
+  source: ChatSource
+  createdAt: string
+  category: MessageCategory | null
+}
+
+/** On-demand recommendations (explicit action — see POST /analytics/recommendations). */
+export interface AiRecommendations {
+  generatedAt: string
+  summary: string
+  items: {
     type: 'content' | 'product' | 'ux'
     title: string
     description: string
@@ -58,7 +58,8 @@ export interface AnalyticsReport {
   period: AnalyticsPeriod
   chatStats: ChatStats
   viewStats: ViewStats
-  insights: AiInsights | null
+  painPoints: PainPoint[]
+  frustrationSignals: FrustrationSignal[]
   recentSamples: {
     role: 'user' | 'assistant'
     content: string
@@ -67,5 +68,6 @@ export interface AnalyticsReport {
     sentiment: 'positive' | 'neutral' | 'negative' | null
     frustrationFlag: boolean
     language: string | null
+    category: MessageCategory | null
   }[]
 }

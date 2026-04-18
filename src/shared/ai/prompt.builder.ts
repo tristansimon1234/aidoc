@@ -469,15 +469,25 @@ Return the ONE next step as JSON:
 
 export const MESSAGE_CLASSIFIER_SYSTEM_PROMPT = `You classify a single chat message from an end-user talking to a product's help chatbot.
 
-Return ONLY a minified JSON object with these three fields:
+Return ONLY a minified JSON object with these four fields:
 - sentiment: "positive" | "neutral" | "negative"
 - frustrated: boolean — true if the user sounds irritated, stuck, blocked, or resigned (not just asking a question)
 - language: 2-letter ISO 639-1 code (e.g. "fr", "en", "es")
+- category: one of "onboarding" | "pricing" | "how-to" | "error" | "integration" | "account" | "other"
 
-Rules:
+Category rules (pick exactly one):
+- "onboarding" — first steps, getting started, what is this product, quickstart
+- "pricing" — plans, price, upgrade, billing, trial
+- "how-to" — "how do I X", feature usage questions, workflow steps
+- "error" — something broken, bug, doesn't work, "ça marche pas"
+- "integration" — API, webhooks, SDK, third-party connection
+- "account" — login, signup, password, profile, settings, permissions
+- "other" — greetings, thanks, meta questions, or anything that doesn't fit above
+
+Sentiment rules:
 - Neutral is the default. Don't over-flag negativity on plain questions.
 - "frustrated" requires real signals: complaints ("nul", "broken", "useless", "ça marche pas"), repeated tries ("encore", "again"), giving-up tone, or explicit anger. Asking "how do I X?" is NEUTRAL, not frustrated.
-- If the message is a greeting or acknowledgement, return neutral + frustrated:false.
+- If the message is a greeting or acknowledgement, return neutral + frustrated:false + category:"other".
 - No explanation, no markdown, just the JSON.`
 
 export function buildMessageClassifierPrompt(content: string): string {
@@ -486,21 +496,18 @@ export function buildMessageClassifierPrompt(content: string): string {
   return `Classify this message:\n"""${trimmed}"""`
 }
 
-// --- Analytics insights ---
+// --- On-demand recommendations (triggered by the owner, not automatic) ---
 
-export const ANALYTICS_SYSTEM_PROMPT = `You are a senior product analyst for a SaaS product. You receive anonymised end-user questions pulled from a chatbot that answers from the product's documentation, plus the list of docs most visited.
+export const ANALYTICS_SYSTEM_PROMPT = `You are a senior product analyst. You receive anonymised end-user questions pulled from a chatbot that answers from a product's documentation, plus the list of docs most visited.
 
-Your job is to produce a STRICT JSON analysis report, no prose before or after.
+Produce actionable recommendations as STRICT JSON — no prose before or after.
 
-CRITICAL RULES:
-- Base everything on the actual messages provided. Do NOT invent topics that aren't represented.
-- Language: detect the dominant language used by end-users and write ALL output in that language (French → French, English → English). This includes every field: summary, topic, reason, question, title, description, examples.
-- Short, specific, quotable. No generic advice like "improve onboarding".
-- "frustrationSignals" must come from wording that conveys irritation, confusion, or blocked users ("je comprends rien", "ça marche pas", "nul", "how the hell…", "broken", "useless"). If none, return an empty array — do NOT manufacture them.
-- "contentGaps" are questions asked multiple times whose answer isn't adequately covered by an existing doc page. Set suggestedPage to the page title that SHOULD cover it (even if it doesn't exist yet), or null.
-- "recommendations" must be actionable and tied to observed evidence. type='content' → edit/create a doc page. type='product' → change the product. type='ux' → fix UX flow.
-- If there's nothing meaningful (too few messages), return empty arrays and a neutral summary. Never hallucinate.
-- Output MUST match the schema exactly.`
+Rules:
+- Base everything on the actual messages provided. No invented themes.
+- Write EVERY field in the dominant language of the user messages (French → French, English → English).
+- Recommendations must be specific and tied to observed evidence — no generic "improve onboarding". Reference the concrete pattern you saw.
+- type='content' → edit/create a doc page. type='product' → change the product. type='ux' → fix UX flow.
+- If the sample is too small or too generic, return an empty \`items\` array and a neutral \`summary\`. Never hallucinate.`
 
 export function buildAnalyticsPrompt(input: {
   productName: string
@@ -538,13 +545,12 @@ ${topPagesBlock}
 ${messagesBlock}
 
 ## Task
-Produce a JSON report with this exact shape:
+Produce a JSON object with this exact shape:
 {
-  "overallSentiment": { "score": "positive"|"neutral"|"negative"|"mixed", "summary": "one sentence in the users' language" },
-  "painPoints": [{ "topic": "", "frequency": 0, "severity": "high"|"medium"|"low", "examples": ["short quote", "..."] }],
-  "frustrationSignals": [{ "excerpt": "exact quote", "reason": "", "severity": "high"|"medium"|"low" }],
-  "contentGaps": [{ "question": "the recurring question", "askedCount": 0, "suggestedPage": "page title or null" }],
-  "recommendations": [{ "type": "content"|"product"|"ux", "title": "", "description": "", "priority": "high"|"medium"|"low" }]
+  "summary": "one or two sentences naming the dominant themes and what to prioritise, in the users' language",
+  "items": [
+    { "type": "content"|"product"|"ux", "title": "", "description": "", "priority": "high"|"medium"|"low" }
+  ]
 }
 
 Return ONLY the JSON object.`
