@@ -16,13 +16,7 @@ export function ProjectList(_props: ProjectListProps): React.ReactElement {
   const { data: projects, loading, error } = useAsync(() => fetchProjects())
 
   return (
-    <Shell
-      actions={
-        <Link to="/projects/new">
-          <Button size="sm">New Project</Button>
-        </Link>
-      }
-    >
+    <Shell>
       <div className={styles.header}>
         <div>
           <h1 className={styles.title}>Projects</h1>
@@ -30,6 +24,9 @@ export function ProjectList(_props: ProjectListProps): React.ReactElement {
             <p className={styles.subtitle}>{projects.length} project{projects.length !== 1 ? 's' : ''}</p>
           )}
         </div>
+        <Link to="/projects/new">
+          <Button size="sm">New Project</Button>
+        </Link>
       </div>
 
       {loading && <div style={{ display: 'flex', justifyContent: 'center', padding: 'var(--space-2xl)' }}><Spinner size="lg" /></div>}
