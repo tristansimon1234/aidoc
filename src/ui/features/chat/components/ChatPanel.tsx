@@ -101,9 +101,13 @@ export function ChatPanel({
         { role: 'assistant', content: response.answer, sources: response.sources, followUps: response.followUps },
       ])
     } catch (err) {
+      const e = err as Error & { code?: string | null }
+      const friendly = e.code === 'QUOTA_EXCEEDED'
+        ? "This project's chat quota is exhausted for the month. Please try again later."
+        : `Sorry, something went wrong: ${e.message}`
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: `Sorry, something went wrong. Please try again.` },
+        { role: 'assistant', content: friendly },
       ])
     } finally {
       setSending(false)

@@ -22,10 +22,13 @@ export function useJobRealtime(): void {
 
     const ids = new Set(runningIds.split(','))
 
-    const handleUpdate = (row: { run_id: string; status: string }) => {
+    const handleUpdate = (row: { run_id: string; status: string; error?: string | null }) => {
       if (!ids.has(row.run_id)) return
       if (row.status === 'completed' || row.status === 'failed') {
-        updateJobRef.current(row.run_id, { status: row.status as 'completed' | 'failed' })
+        updateJobRef.current(row.run_id, {
+          status: row.status as 'completed' | 'failed',
+          error: row.error ?? null,
+        })
       }
     }
 
@@ -45,7 +48,7 @@ export function useJobRealtime(): void {
         try {
           const { data } = await supabase
             .from('jobs')
-            .select('run_id, status')
+            .select('run_id, status, error')
             .in('run_id', [...ids])
             .order('created_at', { ascending: false })
 
@@ -55,7 +58,7 @@ export function useJobRealtime(): void {
             const rid = row.run_id as string
             if (seen.has(rid)) continue
             seen.add(rid)
-            handleUpdate(row as { run_id: string; status: string })
+            handleUpdate(row as { run_id: string; status: string; error?: string | null })
           }
         } catch { /* retry next cycle */ }
       })()

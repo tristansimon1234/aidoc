@@ -62,7 +62,7 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
-  const { addJob, getJobForPage } = useJobs()
+  const { addJob, failJob, getJobForPage } = useJobs()
   const activeDocJob = getJobForPage(pageId, 'doc-gen')
   const [elapsed, setElapsed] = useState(0)
   const [hasExtension, setHasExtension] = useState(false)
@@ -141,13 +141,18 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
       setStatus('analyzing')
       addJob({ runId: run.id, pageId, pageTitle: page.title, type: 'doc-gen', status: 'running' })
 
-      // Fire-and-forget: the fetch runs in background even if component unmounts
+      // Fire-and-forget: the fetch runs in background even if component unmounts.
+      // If the HTTP request itself fails before a backend job can be created
+      // (e.g. 402 QUOTA_EXCEEDED), surface it in the job tracker so the user
+      // sees a reason rather than a silent failure.
       api.runs.analyzeVideo(run.id, videoPath, { generateDoc: true })
         .then(() => {
           // Polling will detect the generated_docs row and mark job complete
         })
         .catch((err) => {
-          console.error('[process-video] Pipeline failed:', err)
+          const e = err as Error & { code?: string | null }
+          console.error('[process-video] Pipeline failed:', e)
+          failJob(run.id, e.message, e.code ?? null)
         })
     } catch (err) {
       setError((err as Error).message)
