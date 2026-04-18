@@ -2,7 +2,9 @@
 
 ## Overview
 
-AiDoc is an AI-powered documentation tool that automatically explores web applications and generates user-facing product guides. It uses Stagehand (Browserbase) for browser automation and Claude (Anthropic) for content generation.
+AiDoc is an AI-powered documentation platform: users record their screen (or upload a video) and Gemini turns it into a structured product guide with screenshots and voice-over. The same content is then served back to end-users via an embeddable AI chat widget. A Try Doc agent (Stagehand on Browserbase) re-runs the documented flows to flag stale steps.
+
+A SaaS layer sits on top: per-user profile, plan + subscription, monthly token budget, and an admin dashboard for operators.
 
 ## Stack
 
@@ -10,12 +12,13 @@ AiDoc is an AI-powered documentation tool that automatically explores web applic
 |---|---|
 | Runtime | Node.js 20+ / TypeScript 5.9 (strict) |
 | Backend | Express 5 (serverless on Vercel) |
-| Browser | Stagehand 3 (Browserbase cloud) |
-| AI (exploration) | Claude Sonnet 4 (reliable, via Stagehand `STAGEHAND_MODEL`) |
-| AI (doc generation) | Gemini 2.5 Flash (doc generation, chat, analysis) |
+| Browser | Stagehand 3 (Browserbase cloud) — Try Doc only |
+| AI (exploration / Try Doc) | Claude Sonnet 4 via Stagehand (`STAGEHAND_MODEL`) |
+| AI (doc generation, chat, analysis) | Gemini 2.5 Flash |
+| AI (voice-over) | ElevenLabs `eleven_multilingual_v2` |
 | AI (embeddings) | Gemini embedding model (768-dim vectors) |
 | Database | Supabase (Postgres + Auth + Storage + RLS + pgvector) |
-| Frontend | React 19 + Vite 8 + React Router 7 |
+| Frontend | React 19 + Vite 8 + React Router 7 + BlockNote 0.47 |
 | Validation | Zod 4 |
 | Deployment | Vercel (serverless + static) |
 
@@ -23,41 +26,56 @@ AiDoc is an AI-powered documentation tool that automatically explores web applic
 
 ```
 User (Supabase Auth)
-  ├─ Profile (fullName, stripeCustomerId)  ← 1:1, auto-created by trigger
-  ├─ Subscription (planId, status, stripeSubscriptionId)  ← 1:1 active, auto-created free
-  └─ Project (name, baseUrl, context{audience,workflow,quirks}, credentials[], design{logoUrl})  ← RLS by user_id
-       └─ DocPage (title, slug, parentId, sortOrder, content, briefing{objective,knowledge,resources[]}, status)
+  ├─ Profile (fullName, stripeCustomerId)               ← 1:1, auto-created by trigger
+  ├─ Subscription (planId, status, stripeSubscriptionId) ← 1:1 active, auto-created free
+  ├─ UsageCounter (periodMonth, feature, count) ×4      ← per-month per-feature counts
+  └─ Project (name, baseUrl, context{audience,workflow,quirks}, credentials[],
+              design{logoUrl}, widgetApiKey, mcpApiKey)  ← RLS by user_id
+       ├─ ChatSession (sessionToken, periodMonth, source∈{widget,app})  ← dedup for chat_sessions counter
+       ├─ DocEmbedding (chunk, vector(768))             ← pgvector / RAG
+       └─ DocPage (title, slug, parentId, sortOrder, content,
+                   briefing{objective,knowledge,resources[]}, status, isPublic)
+            ├─ Job (type∈{doc-gen,voiceover,try-doc}, status)  ← async job tracking, Realtime
             └─ Run (featureName, startUrl, goal, status, tokenUsage, summary_json{tryDocReport})
                  ├─ RunStep (action, observation, screenshotPath)
                  ├─ RunQuestion (question, answer)
                  └─ GeneratedDoc (markdownContent, jsonContent)
+
+Plans (seeded: free / startup / growth / business)      ← public read; Stripe IDs nullable
 ```
 
 ## Feature Directory Structure
 
 ```
 src/features/
-  project/          # User workspace CRUD
-  page/             # Doc page hierarchy + auto-generate
+  project/          # User workspace CRUD + URL analyzer + widget/MCP key gen
+  page/             # Doc page hierarchy + preflight + briefing
                     #   components/TryDocReport.tsx (7-section test report view)
-                    #   components/TableOfContents.tsx (design-system)
-  run/              # Exploration run lifecycle
-  exploration/      # Stagehand agent + browser automation
-  documentation/    # Doc generation (prompt + Claude call)
+  run/              # Run lifecycle: explore, video analysis, doc gen, voiceover, Try Doc
+  exploration/      # Stagehand agent + browser automation (Try Doc)
+  documentation/    # Doc generation (prompt + Gemini call) + voice-over
   questions/        # Blocker questions during exploration
+  chat/             # RAG chat (project + widget) + walkthrough + MCP server
+  profile/          # 1:1 with auth.users — full_name, stripe_customer_id, isAdmin flag
+  billing/          # Plans + subscriptions + monthly token budget + overage rates
+  admin/            # /admin/usage dashboard, gated by ADMIN_EMAILS
 
 src/shared/
-  ai/               # Anthropic client, types, prompt builder
-  browser/          # Stagehand client (playwright.client.ts)
-  db/               # Supabase client + storage repository
-  config/           # Zod-validated env vars
-  middleware/       # Auth (Supabase JWT) + error handling
+  ai/               # Gemini, Anthropic, ElevenLabs clients + prompt builder
+  browser/          # Stagehand wrapper
+  db/               # Supabase client + storage.repository (upload/download/signed URLs)
+  config/           # Zod-validated env vars + isAdminEmail()
+  middleware/       # auth (JWT), admin (allowlist), error
+  usage/            # incrementUsage RPC + listUsageForCurrentMonth + chat session dedup
   validation/       # Shared Zod schemas
 
 src/ui/
   design-system/    # Tokens, CSS modules, components (barrel export)
-  features/         # Feature-organized pages and components
-  shared/           # API client, hooks, layout
+                    #   BlockEditor + CalloutBlock — BlockNote with custom callout schema
+  features/         # auth, project, page, run, chat, account, admin, docs
+  shared/           # API client, RLS-protected db.ts, hooks, jobs, layout
+                    #   layout/AppRail — persistent left rail with avatar menu
+                    #   layout/AvatarMenu — Settings / View all plans / Admin / Sign out
 ```
 
 ## File Naming Convention
@@ -99,43 +117,36 @@ Optimistic updates: sidebar drag-and-drop applies changes instantly, syncs to DB
 ### Smart RAG
 Smart RAG: greetings/small talk skip embedding search (`needsDocSearch` heuristic)
 
+### Token-based Billing
+Every metered op (`doc_run`, `voiceover`, `try_doc`, `chat_sessions`) is incremented in `usage_counters` after success. Token weight, real € COGS, and overage rates live in `src/features/billing/billing.service.ts` as constants (`TOKEN_COSTS`, `EURO_COSTS`, `OVERAGE_EUR`, `OVERAGE_ENABLED_PLANS`) — tunable in code, no migration. Users see one percent (single bar in `/account?tab=billing`); admins see real € COGS and billable overage in `/admin/usage`.
+
+### Chat Session Dedup
+`widget` and `app` chat traffic share the same `chat_sessions` quota. Each request carries a `sessionToken` (per-tab UUID stored in `sessionStorage`). The `chat_sessions` table's PK `(project_id, session_token, period_month)` ensures `incrementUsage('chat_sessions')` only fires once per token per calendar month. The `source` column splits widget vs in-app for analytics without affecting billing.
+
+### Admin Allowlist
+`/api/admin/*` is gated by the `requireAdmin` middleware which reads `req.userId` (set by auth middleware), looks up the email via `profile.repository.findAuthUserEmail`, and compares against `isAdminEmail(email)` (env-driven, see `ADMIN_EMAILS`). The frontend hides the "Admin · Usage" menu entry unless `profile.isAdmin = true` — the admin email list never leaks to the bundle.
+
 ### Error Handling
 ```typescript
 AppError → { error: string, code: string, details?: unknown }
 ├─ NotFoundError (404)
 ├─ ValidationError (422)
-└─ DatabaseError (500)
+├─ DatabaseError (500)
+└─ generic AppError(message, code, statusCode)  // 401, 402, 403, 429, etc.
 ```
 
 ## API Route Structure
 
-```
-/api/health                                    GET    (no auth)
-/api/profile                                   GET PATCH   (authenticated — own profile)
-/api/billing/plans                             GET         (authenticated — list all plans)
-/api/billing/summary                           GET         (authenticated — current plan + subscription)
-/api/billing/subscription/select               POST        (authenticated — temp; Stripe Checkout later)
-/api/admin/usage                               GET         (admin-only — monthly usage for all users)
-/api/projects                                  GET POST
-/api/projects/:id                              GET PUT DELETE
-/api/projects/:pid/pages                       GET POST
-/api/projects/:pid/pages/auto-generate         POST
-/api/projects/:pid/pages/reorder               PUT
-/api/projects/:pid/pages/:id                   GET PUT DELETE
-/api/projects/:pid/pages/:id/doc               GET
-/api/projects/:pid/pages/:id/run               GET
-/api/runs                                      GET POST
-/api/runs/:id                                  GET
-/api/runs/:id/explore                          GET (SSE stream)
-/api/runs/:id/generate-doc                     POST
-/api/runs/:id/steps                            GET
-/api/runs/:id/questions                        GET
-/api/runs/:id/questions/:qid/answer            POST
-/api/runs/:id/doc                              GET
-/api/runs/:id/analyze-try                      POST
-/api/projects/:pid/pages/:id/test-report       GET
-/api/projects/:pid/logo                        POST
-```
+See `CLAUDE.md` § "API Design > Route structure" for the full annotated list. High-level groups:
+
+- `/api/profile` `/api/billing/*` `/api/admin/*` — SaaS layer (auth + admin allowlist)
+- `/api/projects/*` `/api/projects/:pid/pages/*` `/api/projects/:pid/chat*` — workspace + content
+- `/api/runs/*` — long-running ops: explore, video analyze, doc gen, voice-over, Try Doc
+- `/api/widget/:key/*` — public, API-key auth, rate-limited
+- `/api/docs/:projectId*` — public docs (per-page `is_public`)
+- `/api/mcp/*` — Model Context Protocol server for IDE integrations
+
+The same set is mounted twice: in `src/app.ts` for local dev (`npm run dev:server`) and in `api/index.ts` for the Vercel serverless function (with `/api` prefix). Adding a route requires touching both.
 
 ## Deployment
 

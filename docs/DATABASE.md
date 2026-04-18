@@ -118,9 +118,12 @@ features             jsonb NOT NULL DEFAULT '[]'  -- human-readable bullets for 
 created_at           timestamptz DEFAULT now()
 ```
 **RLS**: SELECT allowed to anyone (public pricing data).
-**Seeded**: 4 rows — free / startup (49€) / growth (149€) / business (449€).
-**Token costs** (app-side constant in `billing.service.ts`, tunable without migration):
-`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`.
+**Seeded** (after 20260417000007): free=3 000 tk · startup=40 000 tk (49€) · growth=124 000 tk (149€) · business=800 000 tk (449€).
+**Token costs** (app-side constants in `src/features/billing/billing.service.ts`, tunable without migration):
+`TOKEN_COSTS = { doc_run: 100, voiceover: 300, try_doc: 400, chat_sessions: 20 }`
+`EURO_COSTS = { doc_run: 0.10, voiceover: 0.30, try_doc: 0.40, chat_sessions: 0.02 }` (real COGS)
+`OVERAGE_EUR = { doc_run: 0.15, voiceover: 0.45, try_doc: 0.60, chat_sessions: 0.03 }` (~1.5× COGS, ~50% margin)
+`OVERAGE_ENABLED_PLANS = { 'growth', 'business' }` — Free + Startup hit a hard cap instead.
 
 ### subscriptions
 ```sql
@@ -143,13 +146,14 @@ updated_at              timestamptz DEFAULT now()
 ```sql
 user_id       uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
 period_month  date NOT NULL
-feature       text NOT NULL CHECK (feature IN ('doc_run','voiceover','try_doc','widget_sessions'))
+feature       text NOT NULL CHECK (feature IN ('doc_run','voiceover','try_doc','chat_sessions'))
 count         integer NOT NULL DEFAULT 0
 updated_at    timestamptz DEFAULT now()
 PRIMARY KEY (user_id, period_month, feature)
 ```
 **RLS**: SELECT `auth.uid() = user_id`.
 **RPC**: `increment_usage(p_user_id, p_feature, p_delta)` — atomic `INSERT ... ON CONFLICT DO UPDATE`, SECURITY DEFINER. Called from backend services after each successful metered operation.
+**Token weights + €COGS + overage rates** live in code at `src/features/billing/billing.service.ts` (`TOKEN_COSTS`, `EURO_COSTS`, `OVERAGE_EUR`, `OVERAGE_ENABLED_PLANS`) — tunable without migration.
 
 ### chat_sessions
 ```sql
@@ -242,36 +246,49 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 24 | `20260417000001_add_mcp_api_key.sql` | Add MCP API key + enabled flag to projects |
 | 25 | `20260417000002_add_profiles_and_language.sql` | `profiles` table (1:1 with auth.users) + trigger to auto-create on signup |
 | 26 | `20260417000003_add_plans_and_subscriptions.sql` | `plans` (seeded) + `subscriptions` (free by default) + trigger extension + backfill |
-| 27 | `20260417000004_add_usage_tracking.sql` | `usage_counters` + `increment_usage` RPC + `widget_sessions` dedup table |
+| 27 | `20260417000004_add_usage_tracking.sql` | `usage_counters` + `increment_usage` RPC + `chat_sessions` dedup table (widget + in-app) |
 | 28 | `20260417000005_switch_to_token_usage.sql` | Replace per-feature quotas with a single `monthly_tokens` budget + opaque features |
+| 29 | `20260417000006_restore_approx_features.sql` | Restore approximate per-feature quota bullets (with `~` prefix) in plan features |
+| 30 | `20260417000007_growth_quota_tune.sql` | Reduce Growth budget 180k → 124k tokens (margin safety) + "Pay-as-you-go beyond quota" bullet |
 
 ## Relationships
 
 ```
+auth.users 1:1 profiles (CASCADE)
+auth.users 1:1 subscriptions (active, CASCADE) — plan_id → plans
+auth.users 1:N usage_counters (CASCADE)
 projects 1:N doc_pages (CASCADE)
 projects 1:N doc_embeddings (CASCADE)
+projects 1:N chat_sessions (CASCADE)
+projects 1:N jobs (CASCADE)
 doc_pages 1:N doc_pages (self-ref via parent_id, SET NULL)
 doc_pages 1:N doc_embeddings (CASCADE)
 doc_pages 1:N runs (via doc_page_id, SET NULL)
+doc_pages 1:N jobs (CASCADE)
 runs 1:N run_steps (CASCADE)
 runs 1:N run_questions (CASCADE)
 runs 1:1 generated_docs (CASCADE)
 runs 1:N artifacts (CASCADE)
+runs 1:N jobs (CASCADE)
 ```
 
 ## Row Level Security (RLS)
 
-All tables have RLS enabled. Policies chain through project ownership:
+All tables have RLS enabled. Policies chain through project ownership or direct user ownership:
 
 | Table | Policy | Logic |
 |---|---|---|
+| `profiles` | Users read/update own profile | `auth.uid() = id` |
+| `subscriptions` | Users read own subscription | `auth.uid() = user_id` (SELECT only; writes via service role) |
+| `usage_counters` | Users read own usage | `auth.uid() = user_id` (SELECT only; writes via RPC) |
+| `chat_sessions` | Users read own sessions | `auth.uid() = user_id` (SELECT only; writes via service role) |
+| `plans` | Public pricing | SELECT allowed to all (no RLS filter) |
 | `projects` | Users see own projects | `auth.uid() = user_id` |
 | `doc_pages` | Users access own project pages | `project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())` |
 | `runs` | Users access own runs | Via `doc_page_id → doc_pages → projects.user_id` |
-| `run_steps` | Users access own run steps | Via `run_id → runs → doc_pages → projects.user_id` |
-| `run_questions` | Users access own questions | Via `run_id → runs → doc_pages → projects.user_id` |
-| `generated_docs` | Users access own docs | Via `run_id → runs → doc_pages → projects.user_id` |
-| `artifacts` | Users access own artifacts | Via `run_id → runs → doc_pages → projects.user_id` |
+| `run_steps` / `run_questions` / `generated_docs` / `artifacts` | Chain via `run_id → runs → doc_pages → projects.user_id` |
+| `jobs` | Users see own jobs | `project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())` |
+| `doc_embeddings` | Via `project_id → projects.user_id` | |
 
 **Note**: The backend uses the Supabase **service key** which bypasses RLS. RLS protects direct client access. Page routes also verify ownership via `verifyProjectOwnership` middleware.
 
