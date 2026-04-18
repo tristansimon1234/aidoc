@@ -271,3 +271,32 @@ export async function markInviteAccepted(token: string): Promise<void> {
     .eq('token', token)
   if (error) throw new DatabaseError(error.message)
 }
+
+export async function listPendingInvites(teamId: string): Promise<{ id: string; email: string; role: TeamRole; createdAt: Date; expiresAt: Date }[]> {
+  const { data, error } = await supabase
+    .from('team_invites')
+    .select('id, email, role, created_at, expires_at')
+    .eq('team_id', teamId)
+    .is('accepted_at', null)
+    .order('created_at', { ascending: false })
+  if (error) throw new DatabaseError(error.message)
+  return (data ?? []).map((row) => {
+    const r = row as { id: string; email: string; role: TeamRole; created_at: string; expires_at: string }
+    return {
+      id: r.id,
+      email: r.email,
+      role: r.role,
+      createdAt: new Date(r.created_at),
+      expiresAt: new Date(r.expires_at),
+    }
+  })
+}
+
+export async function deleteInvite(teamId: string, inviteId: string): Promise<void> {
+  const { error } = await supabase
+    .from('team_invites')
+    .delete()
+    .eq('team_id', teamId)
+    .eq('id', inviteId)
+  if (error) throw new DatabaseError(error.message)
+}

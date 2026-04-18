@@ -7,6 +7,10 @@ export interface Plan {
   currency: string
   stripePriceId: string | null
   monthlyTokens: number
+  /** Maximum total team size (owner + members + pending invites) on this plan.
+   *  Same constant as MAX_TEAM_MEMBERS in billing.service — surfaced to the
+   *  frontend so plan cards can show "X team members" without duplicating. */
+  maxMembers: number
   sortOrder: number
   features: string[]
 }

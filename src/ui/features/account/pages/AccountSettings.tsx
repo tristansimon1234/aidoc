@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Spinner, Badge, Field, useConfirmDialog } from '../../../design-system/components/index.js'
-import { api, type BillingSummaryDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO } from '../../../shared/api/client.js'
+import { api, type BillingSummaryDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO } from '../../../shared/api/client.js'
 import { Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import styles from './AccountSettings.module.css'
@@ -243,6 +243,11 @@ function BillingTab(): React.ReactElement {
               </div>
 
               <ul className={styles.planFeatures}>
+                <li>
+                  {plan.maxMembers === 1
+                    ? '1 team member (you)'
+                    : `${plan.maxMembers} team members`}
+                </li>
                 {plan.features.map((f) => (
                   <li key={f}>{f}</li>
                 ))}
@@ -292,6 +297,7 @@ function TeamTab(): React.ReactElement {
   const [members, setMembers] = useState<TeamMemberDTO[]>([])
   const [myRole, setMyRole] = useState<TeamRoleDTO>('member')
   const [seats, setSeats] = useState<TeamSeatInfoDTO | null>(null)
+  const [pendingInvites, setPendingInvites] = useState<TeamInviteDTO[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -312,6 +318,7 @@ function TeamTab(): React.ReactElement {
       setMembers(data.members)
       setMyRole(data.role)
       setSeats(data.seats)
+      setPendingInvites(data.pendingInvites)
     } catch (err) {
       setError((err as Error).message)
     } finally { setLoading(false) }
@@ -330,6 +337,21 @@ function TeamTab(): React.ReactElement {
     } catch (err) {
       setInviteError((err as Error).message)
     } finally { setInviting(false) }
+  }
+
+  const handleCancelInvite = async (invite: TeamInviteDTO): Promise<void> => {
+    if (!team) return
+    const ok = await confirm({
+      title: `Cancel invite to ${invite.email}?`,
+      message: 'The invitation link will no longer work.',
+      confirmLabel: 'Cancel invite',
+      variant: 'danger',
+    })
+    if (!ok) return
+    try {
+      await api.teams.cancelInvite(team.id, invite.id)
+      await load()
+    } catch (err) { setError((err as Error).message) }
   }
 
   const handleRemove = async (member: TeamMemberDTO): Promise<void> => {
@@ -423,6 +445,48 @@ function TeamTab(): React.ReactElement {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {pendingInvites.length > 0 && (
+        <div className={styles.field}>
+          <label className={styles.label}>Pending invitations ({pendingInvites.length})</label>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {pendingInvites.map((inv) => {
+              const expiresIn = Math.max(0, Math.ceil((new Date(inv.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+              return (
+                <div key={inv.id} style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-sm)',
+                  padding: 'var(--space-sm) 0',
+                  borderBottom: '1px solid var(--color-border)',
+                }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: '50%',
+                    background: 'var(--color-secondary)', color: 'var(--color-muted-fg)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: 600, fontSize: 14,
+                  }}>?</div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.email}</span>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+                      Expires in {expiresIn} day{expiresIn === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <span style={{
+                    fontSize: 10, padding: '2px 8px', borderRadius: 999,
+                    textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
+                    background: 'var(--color-status-pending-bg, var(--color-secondary))',
+                    color: 'var(--color-warning, var(--color-muted-fg))',
+                  }}>Invited</span>
+                  {isOwner && (
+                    <Button size="sm" variant="ghost" onClick={() => void handleCancelInvite(inv)}>Cancel</Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

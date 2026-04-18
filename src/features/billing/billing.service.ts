@@ -4,7 +4,7 @@ import { listUsageForCurrentMonth } from '../../shared/usage/usage.repository.js
 import type { BillingSummary, Plan, PlanId, UsageSnapshot } from './billing.types.js'
 
 export async function listPlans(): Promise<Plan[]> {
-  return billingRepo.listPlans()
+  return billingRepo.listPlans(MAX_TEAM_MEMBERS)
 }
 
 // Token cost of each metered operation. Kept in code (not DB) so we can
@@ -63,7 +63,7 @@ function pctOf(tokens: number, budget: number): number {
 
 export async function getSummary(ownerUserId: string, teamId: string): Promise<BillingSummary> {
   const [plans, subscription, counters] = await Promise.all([
-    billingRepo.listPlans(),
+    billingRepo.listPlans(MAX_TEAM_MEMBERS),
     billingRepo.ensureFreeSubscription(ownerUserId, teamId),
     listUsageForCurrentMonth(teamId),
   ])
@@ -106,7 +106,7 @@ export interface QuotaCheck {
  */
 export async function checkQuota(teamId: string): Promise<QuotaCheck> {
   const [plans, subscription, counters] = await Promise.all([
-    billingRepo.listPlans(),
+    billingRepo.listPlans(MAX_TEAM_MEMBERS),
     billingRepo.findActiveSubscriptionByTeam(teamId),
     listUsageForCurrentMonth(teamId),
   ])
@@ -155,7 +155,7 @@ export interface SeatStatus {
  */
 export async function checkTeamSeats(teamId: string): Promise<SeatStatus> {
   const [plans, subscription, seats] = await Promise.all([
-    billingRepo.listPlans(),
+    billingRepo.listPlans(MAX_TEAM_MEMBERS),
     billingRepo.findActiveSubscriptionByTeam(teamId),
     (await import('../team/team.repository.js')).countTeamSeats(teamId),
   ])

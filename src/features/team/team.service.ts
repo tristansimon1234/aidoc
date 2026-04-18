@@ -35,13 +35,14 @@ export async function listTeams(userId: string): Promise<{ team: Team; role: Tea
   return teamRepo.findTeamsByUserId(userId)
 }
 
-export async function getTeam(teamId: string, userId: string): Promise<{ team: Team; members: TeamMember[]; role: TeamRole; seats: { used: number; max: number; planName: string; allowed: boolean } }> {
+export async function getTeam(teamId: string, userId: string): Promise<{ team: Team; members: TeamMember[]; role: TeamRole; seats: { used: number; max: number; planName: string; allowed: boolean }; pendingInvites: { id: string; email: string; role: TeamRole; createdAt: Date; expiresAt: Date }[] }> {
   const member = await teamRepo.findMember(teamId, userId)
   if (!member) throw new AppError('Not a team member', 'FORBIDDEN', 403)
   const team = await teamRepo.findTeamById(teamId)
   if (!team) throw new NotFoundError('Team')
-  const [members, { checkTeamSeats }] = await Promise.all([
+  const [members, pendingInvites, { checkTeamSeats }] = await Promise.all([
     teamRepo.listMembers(teamId),
+    teamRepo.listPendingInvites(teamId),
     import('../billing/billing.service.js'),
   ])
   const seatStatus = await checkTeamSeats(teamId)
@@ -55,7 +56,13 @@ export async function getTeam(teamId: string, userId: string): Promise<{ team: T
       planName: seatStatus.planName,
       allowed: seatStatus.allowed,
     },
+    pendingInvites,
   }
+}
+
+export async function cancelInvite(teamId: string, callerId: string, inviteId: string): Promise<void> {
+  await requireRole(teamId, callerId)
+  await teamRepo.deleteInvite(teamId, inviteId)
 }
 
 export async function createTeam(userId: string, input: CreateTeamInput): Promise<Team> {

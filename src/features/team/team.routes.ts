@@ -137,6 +137,20 @@ teamRouter.patch('/:id/members/:userId/role', (req: Request, res: Response, next
   })()
 })
 
+teamRouter.delete('/:id/invites/:inviteId', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const id = req.params.id as string
+      const inviteId = req.params.inviteId as string
+      if (!/^[0-9a-f-]{36}$/i.test(id) || !/^[0-9a-f-]{36}$/i.test(inviteId)) {
+        throw new ValidationError('Invalid id')
+      }
+      await teamService.cancelInvite(id, getUserId(req), inviteId)
+      res.status(204).end()
+    } catch (err) { next(err) }
+  })()
+})
+
 // --- Invite accept lives on the authed teamRouter, not the public one ---
 teamRouter.post('/invites/:token/accept', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {

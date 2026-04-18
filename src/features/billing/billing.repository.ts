@@ -13,7 +13,7 @@ interface PlanRow {
   features: string[] | null
 }
 
-function mapToPlan(row: PlanRow): Plan {
+function mapToPlan(row: PlanRow, maxMembers: number): Plan {
   return {
     id: row.id as PlanId,
     name: row.name,
@@ -21,6 +21,7 @@ function mapToPlan(row: PlanRow): Plan {
     currency: row.currency,
     stripePriceId: row.stripe_price_id,
     monthlyTokens: row.monthly_tokens,
+    maxMembers,
     sortOrder: row.sort_order,
     features: row.features ?? [],
   }
@@ -56,13 +57,13 @@ function mapToSubscription(row: SubscriptionRow): Subscription {
   }
 }
 
-export async function listPlans(): Promise<Plan[]> {
+export async function listPlans(maxMembersByPlan: Record<string, number>): Promise<Plan[]> {
   const { data, error } = await supabase
     .from('plans')
     .select('*')
     .order('sort_order', { ascending: true })
   if (error) throw new DatabaseError(error.message)
-  return (data as PlanRow[]).map(mapToPlan)
+  return (data as PlanRow[]).map((row) => mapToPlan(row, maxMembersByPlan[row.id] ?? 1))
 }
 
 /** Look up the active subscription for a team (teams are the billing entity

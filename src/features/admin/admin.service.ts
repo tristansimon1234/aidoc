@@ -1,5 +1,5 @@
-import * as billingRepo from '../billing/billing.repository.js'
 import * as adminRepo from './admin.repository.js'
+import * as billingService from '../billing/billing.service.js'
 import { TOKEN_COSTS, EURO_COSTS, OVERAGE_EUR, OVERAGE_ENABLED_PLANS } from '../billing/billing.service.js'
 import type { UsageFeature } from '../../shared/usage/usage.repository.js'
 import type { AdminUsageReport, AdminUsageRow } from './admin.types.js'
@@ -14,7 +14,7 @@ export async function getUsageReport(periodMonth: string): Promise<AdminUsageRep
     adminRepo.listUsageCountersForMonth(periodMonth),
     adminRepo.listProfiles(),
     adminRepo.listActiveSubscriptions(),
-    billingRepo.listPlans(),
+    billingService.listPlans(),
   ])
 
   const planById = new Map(plans.map((p) => [p.id, p]))

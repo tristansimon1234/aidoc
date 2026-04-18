@@ -202,6 +202,8 @@ export interface PlanDTO {
   currency: string
   stripePriceId: string | null
   monthlyTokens: number
+  /** Total seats (owner + members + pending invites) the plan allows. */
+  maxMembers: number
   sortOrder: number
   features: string[]
 }
@@ -446,8 +448,10 @@ export const api = {
     list: (): Promise<{ team: TeamDTO; role: TeamRoleDTO }[]> => request('/teams'),
     create: (name: string): Promise<TeamDTO> =>
       request('/teams', { method: 'POST', body: JSON.stringify({ name }) }),
-    get: (teamId: string): Promise<{ team: TeamDTO; members: TeamMemberDTO[]; role: TeamRoleDTO; seats: TeamSeatInfoDTO }> =>
+    get: (teamId: string): Promise<{ team: TeamDTO; members: TeamMemberDTO[]; role: TeamRoleDTO; seats: TeamSeatInfoDTO; pendingInvites: TeamInviteDTO[] }> =>
       request(`/teams/${teamId}`),
+    cancelInvite: (teamId: string, inviteId: string): Promise<void> =>
+      request(`/teams/${teamId}/invites/${inviteId}`, { method: 'DELETE' }),
     rename: (teamId: string, name: string): Promise<TeamDTO> =>
       request(`/teams/${teamId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
     delete: (teamId: string): Promise<void> =>
@@ -493,6 +497,14 @@ export interface TeamSeatInfoDTO {
   max: number        // from the team's plan
   planName: string
   allowed: boolean   // false when used >= max — UI disables the invite form
+}
+
+export interface TeamInviteDTO {
+  id: string
+  email: string
+  role: TeamRoleDTO
+  createdAt: string
+  expiresAt: string
 }
 
 export type AnalyticsPeriodDTO = '7d' | '30d' | '90d'
