@@ -12,6 +12,7 @@ import { registerChatSession, incrementUsage } from '../../shared/usage/usage.re
 import { logChatMessages, logPageView } from '../analytics/analytics.repository.js'
 import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { PageViewPingSchema } from '../analytics/analytics.schema.js'
+import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { findPagesByProjectId } from './page.repository.js'
 import type { Project } from '../project/project.types.js'
 
@@ -141,6 +142,9 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       checkPublicChatLimit(projectId, clientIp(req))
 
       const project = await loadChatEnabledProject(projectId)
+
+      // Block public-docs chat when the owner has exhausted their quota.
+      await enforceQuotaOrThrow(project.userId)
 
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())

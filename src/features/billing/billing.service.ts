@@ -73,6 +73,51 @@ export async function getSummary(userId: string): Promise<BillingSummary> {
   return { plan, subscription, usage: snapshot }
 }
 
+export interface QuotaCheck {
+  allowed: boolean
+  percent: number
+  planId: PlanId
+  monthlyTokens: number
+  tokensUsed: number
+  overageEnabled: boolean
+}
+
+/**
+ * Pre-flight quota check — call before any metered operation (chat, doc gen,
+ * voiceover, try doc). Returns `allowed: false` when a hard-cap plan
+ * (Free / Startup) has hit 100% of its monthly token budget. Overage-enabled
+ * plans (Growth / Business) always pass through; they'll be billed the overage
+ * via `OVERAGE_EUR` when Stripe is wired.
+ */
+export async function checkQuota(userId: string): Promise<QuotaCheck> {
+  const [plans, subscription, counters] = await Promise.all([
+    billingRepo.listPlans(),
+    billingRepo.ensureFreeSubscription(userId),
+    listUsageForCurrentMonth(userId),
+  ])
+  const plan = plans.find((p) => p.id === subscription.planId)
+  if (!plan) throw new NotFoundError('Plan')
+
+  const tokensUsed =
+    counters.doc_run * TOKEN_COSTS.doc_run +
+    counters.voiceover * TOKEN_COSTS.voiceover +
+    counters.try_doc * TOKEN_COSTS.try_doc +
+    counters.chat_sessions * TOKEN_COSTS.chat_sessions
+
+  const percent = pctOf(tokensUsed, plan.monthlyTokens)
+  const overageEnabled = OVERAGE_ENABLED_PLANS.has(plan.id)
+  const allowed = overageEnabled || tokensUsed < plan.monthlyTokens
+
+  return {
+    allowed,
+    percent,
+    planId: plan.id,
+    monthlyTokens: plan.monthlyTokens,
+    tokensUsed,
+    overageEnabled,
+  }
+}
+
 // Plan selection. No Stripe yet — mutates the DB directly.
 // When Stripe is wired in, this function will redirect paid plans to a
 // Checkout Session and only paid webhooks will mutate the subscription;

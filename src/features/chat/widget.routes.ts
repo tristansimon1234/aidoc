@@ -6,6 +6,7 @@ import * as chatService from './chat.service.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
 import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
+import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import type { Project } from '../project/project.types.js'
 
 // Fire-and-forget session tracking: we don't want AI latency coupled to
@@ -87,6 +88,9 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       const { findProjectByWidgetKey } = await import('../project/project.repository.js')
       const project = await findProjectByWidgetKey(widgetKey)
       if (!project) throw new NotFoundError('Widget not found or disabled')
+
+      // Block the widget owner when their monthly quota is exhausted.
+      await enforceQuotaOrThrow(project.userId)
 
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())

@@ -3,8 +3,13 @@ import type { Request, Response, NextFunction } from 'express'
 import { ValidationError, AppError } from '../../shared/middleware/error.middleware.js'
 import { CreateRunSchema, RunIdParamSchema } from './run.schema.js'
 import * as runService from './run.service.js'
+import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 
 export const runRouter = Router()
+
+function getUserId(req: Request): string {
+  return (req as Request & { userId: string }).userId
+}
 
 runRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
   void (async () => {
@@ -194,6 +199,10 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
 
+      // Refuse hard-cap plans (Free / Startup) at 100% budget — doc gen is the
+      // most expensive op we run.
+      await enforceQuotaOrThrow(getUserId(req))
+
       // Verify run has steps before generating
       const steps = await runService.getRunSteps(params.data.id)
       if (steps.length === 0) {
@@ -244,6 +253,9 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
+
+      await enforceQuotaOrThrow(getUserId(req))
+
       const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
 
       // Check ElevenLabs is configured before attempting
@@ -709,6 +721,9 @@ runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunct
     try {
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
+
+      await enforceQuotaOrThrow(getUserId(req))
+
       const body = req.body as { pageContent: string; pageTitle: string; pageId: string }
       if (!body.pageContent) throw new ValidationError('pageContent is required')
       const report = await runService.analyzeTryDoc(params.data.id, body.pageContent, body.pageTitle, body.pageId)

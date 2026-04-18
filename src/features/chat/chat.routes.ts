@@ -7,6 +7,7 @@ import { UuidParamSchema } from '../../shared/validation/schemas.js'
 import { registerChatSession, incrementUsage, findOwnerUserIdByProjectId } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
 import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
+import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 
 export const chatRouter = Router({ mergeParams: true })
 
@@ -35,6 +36,10 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
 
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
+
+      // Block hard-cap plans (Free / Startup) before spending on Gemini.
+      const ownerForQuota = await findOwnerUserIdByProjectId(params.data.id)
+      if (ownerForQuota) await enforceQuotaOrThrow(ownerForQuota)
 
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
       trackAppChatSession(params.data.id, sessionToken)

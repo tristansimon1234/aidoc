@@ -493,7 +493,7 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [x] ~~No usage analytics/logging for widget chat messages~~ — `chat_sessions` counter tracks widget + in-app sessions per month
 - [ ] Try Doc report could include screenshots from Stagehand steps
 - [x] ~~Widget config slow~~ — edge caching + inline data-cfg attribute
-- [ ] **Quota enforcement not active** — usage is tracked but Free / Startup don't yet hard-block at 100 % (`requireQuota` middleware not written). Ship before opening paid signups.
+- [x] ~~Quota enforcement not active~~ — `enforceQuotaOrThrow` + `requireQuota` in `src/shared/middleware/quota.middleware.ts`. Free / Startup return 402 `QUOTA_EXCEEDED` at 100 %; Growth / Business pass through (overage billed). Wired on all 3 chat routes + doc-gen / voiceover / try-doc.
 - [ ] **Stripe wiring missing** — `plans.stripe_price_id`, `subscriptions.stripe_subscription_id`, `profiles.stripe_customer_id` columns are in place but plan switching mutates DB directly. Need Checkout Session + webhook handler.
 - [ ] Code blocks have no syntax highlighting (Shiki = ~2 MB to bundle, deferred). Language picker also not yet exposed.
 - [ ] `src/app.ts` and `api/index.ts` duplicate router mounts — easy to forget one when adding routes (already happened for billing/profile/admin). Should factor into a shared `mountRouters(app)` helper.
