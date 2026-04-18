@@ -4,24 +4,18 @@ import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { ChatRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { UuidParamSchema } from '../../shared/validation/schemas.js'
-import { registerChatSession, incrementUsage, findOwnerUserIdByProjectId } from '../../shared/usage/usage.repository.js'
+import { registerChatSession, incrementUsage, findTeamIdByProjectId, findOwnerUserIdByTeamId } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
 import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 
 export const chatRouter = Router({ mergeParams: true })
 
-// Count the in-app ChatPanel the same way as widget sessions (dedup per
-// (project, token, month)). Awaited so the usage counter actually moves —
-// serverless tears the function down after res.send() and would kill a
-// fire-and-forget call.
-async function trackAppChatSession(projectId: string, sessionToken: string | undefined): Promise<void> {
+async function trackAppChatSession(projectId: string, teamId: string, sessionToken: string | undefined): Promise<void> {
   if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
   try {
-    const ownerId = await findOwnerUserIdByProjectId(projectId)
-    if (!ownerId) return
-    const isNew = await registerChatSession(projectId, ownerId, sessionToken, 'app')
-    if (isNew) await incrementUsage(ownerId, 'chat_sessions')
+    const isNew = await registerChatSession(projectId, teamId, sessionToken, 'app')
+    if (isNew) await incrementUsage(teamId, 'chat_sessions')
   } catch (err) {
     console.warn('[usage] app chat session track failed:', (err as Error).message)
   }
@@ -37,17 +31,14 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      // Block hard-cap plans (Free / Startup) before spending on Gemini.
-      const ownerForQuota = await findOwnerUserIdByProjectId(params.data.id)
-      if (ownerForQuota) await enforceQuotaOrThrow(ownerForQuota)
+      const teamId = await findTeamIdByProjectId(params.data.id)
+      if (!teamId) throw new ValidationError('Project not found')
+
+      // Block hard-cap plans before spending on Gemini.
+      await enforceQuotaOrThrow(teamId)
 
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
-      // Kick off the session counter + classifier IN PARALLEL with the chat
-      // reply. They're both faster than the chat Gemini call, so they cost us
-      // nothing on user-facing latency — and running them awaited avoids the
-      // serverless fire-and-forget pitfall (functions get torn down after
-      // res.send, leaving background work unfinished).
-      const sessionTrackPromise = trackAppChatSession(params.data.id, sessionToken)
+      const sessionTrackPromise = trackAppChatSession(params.data.id, teamId, sessionToken)
       const classifyPromise = sessionToken
         ? classifyMessageContent(body.data.message)
         : Promise.resolve(null)
@@ -61,7 +52,8 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
 
       if (sessionToken) {
         try {
-          const ownerId = await findOwnerUserIdByProjectId(params.data.id)
+          // chat_messages keeps user_id as audit — pick the team's primary owner.
+          const ownerId = await findOwnerUserIdByTeamId(teamId)
           if (ownerId) {
             const { userMessageId } = await logChatMessages({
               projectId: params.data.id,
@@ -81,8 +73,6 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
         }
       }
 
-      // Ensure the session counter INSERT/increment is flushed before we end
-      // the request — otherwise Vercel can kill it mid-flight.
       await sessionTrackPromise
 
       res.status(200).json(result)

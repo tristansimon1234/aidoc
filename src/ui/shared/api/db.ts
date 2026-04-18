@@ -228,6 +228,7 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
   return {
     id: row.id as string,
     userId: row.user_id as string,
+    teamId: row.team_id as string,
     name: row.name as string,
     baseUrl: row.base_url as string,
     description: (row.description as string) ?? null,

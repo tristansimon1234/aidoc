@@ -1,13 +1,27 @@
 import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import type { Project, CreateProjectInput, UpdateProjectInput } from './project.types.js'
 import * as projectRepo from './project.repository.js'
+import { supabase } from '../../shared/db/supabase.client.js'
+import { DatabaseError } from '../../shared/middleware/error.middleware.js'
 
-function assertOwnership(project: Project, userId: string): void {
-  if (project.userId !== userId) throw new AppError('Forbidden', 'FORBIDDEN', 403)
+async function assertTeamMembership(teamId: string, userId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('team_members')
+    .select('team_id')
+    .eq('team_id', teamId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) throw new DatabaseError(error.message)
+  if (!data) throw new AppError('Forbidden', 'FORBIDDEN', 403)
 }
 
-export async function createProject(userId: string, input: CreateProjectInput): Promise<Project> {
-  const project = await projectRepo.createProject(userId, input)
+async function assertAccess(project: Project, userId: string): Promise<void> {
+  await assertTeamMembership(project.teamId, userId)
+}
+
+export async function createProject(userId: string, teamId: string, input: CreateProjectInput): Promise<Project> {
+  await assertTeamMembership(teamId, userId)
+  const project = await projectRepo.createProject(userId, teamId, input)
 
   // Auto-create a "Getting Started" page so the project isn't empty
   const { createPage } = await import('../page/page.repository.js')
@@ -26,24 +40,25 @@ export async function createProject(userId: string, input: CreateProjectInput): 
 export async function getProject(id: string, userId?: string): Promise<Project> {
   const project = await projectRepo.findProjectById(id)
   if (!project) throw new NotFoundError('Project')
-  if (userId) assertOwnership(project, userId)
+  if (userId) await assertAccess(project, userId)
   return project
 }
 
-export async function listProjects(userId: string): Promise<Project[]> {
-  return projectRepo.listProjectsByUserId(userId)
+export async function listProjects(userId: string, teamId?: string): Promise<Project[]> {
+  if (teamId) await assertTeamMembership(teamId, userId)
+  return projectRepo.listProjectsForUser(userId, teamId)
 }
 
 export async function updateProject(id: string, userId: string, input: UpdateProjectInput): Promise<Project> {
   const project = await projectRepo.findProjectById(id)
   if (!project) throw new NotFoundError('Project')
-  assertOwnership(project, userId)
+  await assertAccess(project, userId)
   return projectRepo.updateProject(id, input)
 }
 
 export async function deleteProject(id: string, userId: string): Promise<void> {
   const project = await projectRepo.findProjectById(id)
   if (!project) throw new NotFoundError('Project')
-  assertOwnership(project, userId)
+  await assertAccess(project, userId)
   return projectRepo.deleteProject(id)
 }

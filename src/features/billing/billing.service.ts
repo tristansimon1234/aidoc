@@ -4,7 +4,7 @@ import { listUsageForCurrentMonth } from '../../shared/usage/usage.repository.js
 import type { BillingSummary, Plan, PlanId, UsageSnapshot } from './billing.types.js'
 
 export async function listPlans(): Promise<Plan[]> {
-  return billingRepo.listPlans()
+  return billingRepo.listPlans(MAX_TEAM_MEMBERS)
 }
 
 // Token cost of each metered operation. Kept in code (not DB) so we can
@@ -41,6 +41,16 @@ export const OVERAGE_EUR = {
 
 export const OVERAGE_ENABLED_PLANS: ReadonlySet<PlanId> = new Set(['growth', 'business'])
 
+// Maximum total team size (owner + members) per plan. Pending invites count
+// toward the cap to prevent "blast a pile of invites, bypass check at accept".
+// Free = owner-only (can't invite); paid tiers scale up. Tunable in code.
+export const MAX_TEAM_MEMBERS: Record<PlanId, number> = {
+  free: 1,
+  startup: 6,      // owner + 5
+  growth: 26,      // owner + 25
+  business: 100,
+} as const
+
 function currentPeriodMonth(): string {
   const now = new Date()
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
@@ -51,11 +61,11 @@ function pctOf(tokens: number, budget: number): number {
   return Math.round((tokens / budget) * 1000) / 10  // one decimal
 }
 
-export async function getSummary(userId: string): Promise<BillingSummary> {
+export async function getSummary(ownerUserId: string, teamId: string): Promise<BillingSummary> {
   const [plans, subscription, counters] = await Promise.all([
-    billingRepo.listPlans(),
-    billingRepo.ensureFreeSubscription(userId),
-    listUsageForCurrentMonth(userId),
+    billingRepo.listPlans(MAX_TEAM_MEMBERS),
+    billingRepo.ensureFreeSubscription(ownerUserId, teamId),
+    listUsageForCurrentMonth(teamId),
   ])
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
@@ -91,13 +101,22 @@ export interface QuotaCheck {
  * (Free / Startup) has hit 100% of its monthly token budget. Overage-enabled
  * plans (Growth / Business) always pass through; they'll be billed the overage
  * via `OVERAGE_EUR` when Stripe is wired.
+ *
+ * Accepts a teamId since subscriptions are team-scoped post-teams migration.
  */
-export async function checkQuota(userId: string): Promise<QuotaCheck> {
+export async function checkQuota(teamId: string): Promise<QuotaCheck> {
   const [plans, subscription, counters] = await Promise.all([
-    billingRepo.listPlans(),
-    billingRepo.ensureFreeSubscription(userId),
-    listUsageForCurrentMonth(userId),
+    billingRepo.listPlans(MAX_TEAM_MEMBERS),
+    billingRepo.findActiveSubscriptionByTeam(teamId),
+    listUsageForCurrentMonth(teamId),
   ])
+
+  // Every team should have an active subscription (created by the signup
+  // trigger or createTeam). If not, treat as blocked to be safe.
+  if (!subscription) {
+    return { allowed: false, percent: 100, planId: 'free', monthlyTokens: 0, tokensUsed: 0, overageEnabled: false }
+  }
+
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
 
@@ -121,11 +140,43 @@ export async function checkQuota(userId: string): Promise<QuotaCheck> {
   }
 }
 
+export interface SeatStatus {
+  planId: PlanId
+  planName: string
+  seatsUsed: number      // active members + pending invites
+  seatsMax: number
+  allowed: boolean       // false when seatsUsed >= seatsMax
+}
+
+/**
+ * How many seats this team has consumed vs its plan's cap. The seat count is
+ * `active members + pending invites` so an owner can't blast 100 invites on
+ * a 5-seat plan and bypass the cap at acceptance time.
+ */
+export async function checkTeamSeats(teamId: string): Promise<SeatStatus> {
+  const [plans, subscription, seats] = await Promise.all([
+    billingRepo.listPlans(MAX_TEAM_MEMBERS),
+    billingRepo.findActiveSubscriptionByTeam(teamId),
+    (await import('../team/team.repository.js')).countTeamSeats(teamId),
+  ])
+  const planId: PlanId = subscription?.planId ?? 'free'
+  const plan = plans.find((p) => p.id === planId)
+  const seatsUsed = seats.members + seats.pendingInvites
+  const seatsMax = MAX_TEAM_MEMBERS[planId]
+  return {
+    planId,
+    planName: plan?.name ?? planId,
+    seatsUsed,
+    seatsMax,
+    allowed: seatsUsed < seatsMax,
+  }
+}
+
 // Plan selection. No Stripe yet — mutates the DB directly.
 // When Stripe is wired in, this function will redirect paid plans to a
 // Checkout Session and only paid webhooks will mutate the subscription;
 // the 'free' branch (downgrade) stays as-is.
-export async function selectPlan(userId: string, planId: PlanId): Promise<BillingSummary> {
-  await billingRepo.updateActiveSubscriptionPlan(userId, planId)
-  return getSummary(userId)
+export async function selectPlan(ownerUserId: string, teamId: string, planId: PlanId): Promise<BillingSummary> {
+  await billingRepo.updateActiveSubscriptionPlan(ownerUserId, teamId, planId)
+  return getSummary(ownerUserId, teamId)
 }

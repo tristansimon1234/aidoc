@@ -28,7 +28,8 @@ export interface ProjectDesign {
 
 export interface Project {
   id: string
-  userId: string
+  userId: string    // kept as audit / creator until cleanup migration
+  teamId: string    // billing + access control entity
   name: string
   baseUrl: string
   description: string | null

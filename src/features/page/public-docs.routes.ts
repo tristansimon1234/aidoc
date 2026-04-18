@@ -53,8 +53,8 @@ setInterval(() => {
 async function trackPublicSession(project: Project, sessionToken: string | undefined): Promise<void> {
   if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
   try {
-    const isNew = await registerChatSession(project.id, project.userId, sessionToken, 'widget')
-    if (isNew) await incrementUsage(project.userId, 'chat_sessions')
+    const isNew = await registerChatSession(project.id, project.teamId, sessionToken, 'widget')
+    if (isNew) await incrementUsage(project.teamId, 'chat_sessions')
   } catch (err) {
     console.warn('[usage] public docs chat session track failed:', (err as Error).message)
   }
@@ -143,7 +143,7 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       const project = await loadChatEnabledProject(projectId)
 
       // Block public-docs chat when the owner has exhausted their quota.
-      await enforceQuotaOrThrow(project.userId)
+      await enforceQuotaOrThrow(project.teamId)
 
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())

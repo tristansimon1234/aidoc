@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { SelectPlanSchema } from './billing.schema.js'
 import * as billingService from './billing.service.js'
+import { resolveActiveTeam } from '../../shared/middleware/team-context.middleware.js'
 
 export const billingRouter = Router()
 
@@ -24,7 +25,9 @@ billingRouter.get('/plans', (_req: Request, res: Response, next: NextFunction) =
 billingRouter.get('/summary', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const summary = await billingService.getSummary(getUserId(req))
+      const userId = getUserId(req)
+      const teamId = await resolveActiveTeam(req, userId)
+      const summary = await billingService.getSummary(userId, teamId)
       res.status(200).json(summary)
     } catch (err) {
       next(err)
@@ -41,7 +44,9 @@ billingRouter.post('/subscription/select', (req: Request, res: Response, next: N
     try {
       const parsed = SelectPlanSchema.safeParse(req.body)
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
-      const summary = await billingService.selectPlan(getUserId(req), parsed.data.planId)
+      const userId = getUserId(req)
+      const teamId = await resolveActiveTeam(req, userId)
+      const summary = await billingService.selectPlan(userId, teamId, parsed.data.planId)
       res.status(200).json(summary)
     } catch (err) {
       next(err)

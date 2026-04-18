@@ -13,7 +13,7 @@ interface PlanRow {
   features: string[] | null
 }
 
-function mapToPlan(row: PlanRow): Plan {
+function mapToPlan(row: PlanRow, maxMembers: number): Plan {
   return {
     id: row.id as PlanId,
     name: row.name,
@@ -21,6 +21,7 @@ function mapToPlan(row: PlanRow): Plan {
     currency: row.currency,
     stripePriceId: row.stripe_price_id,
     monthlyTokens: row.monthly_tokens,
+    maxMembers,
     sortOrder: row.sort_order,
     features: row.features ?? [],
   }
@@ -29,6 +30,7 @@ function mapToPlan(row: PlanRow): Plan {
 interface SubscriptionRow {
   id: string
   user_id: string
+  team_id: string | null
   plan_id: string
   status: string
   current_period_start: string | null
@@ -43,6 +45,7 @@ function mapToSubscription(row: SubscriptionRow): Subscription {
   return {
     id: row.id,
     userId: row.user_id,
+    teamId: row.team_id,
     planId: row.plan_id as PlanId,
     status: row.status as SubscriptionStatus,
     currentPeriodStart: row.current_period_start ? new Date(row.current_period_start) : null,
@@ -54,27 +57,25 @@ function mapToSubscription(row: SubscriptionRow): Subscription {
   }
 }
 
-export async function listPlans(): Promise<Plan[]> {
+export async function listPlans(maxMembersByPlan: Record<string, number>): Promise<Plan[]> {
   const { data, error } = await supabase
     .from('plans')
     .select('*')
     .order('sort_order', { ascending: true })
   if (error) throw new DatabaseError(error.message)
-  return (data as PlanRow[]).map(mapToPlan)
+  return (data as PlanRow[]).map((row) => mapToPlan(row, maxMembersByPlan[row.id] ?? 1))
 }
 
-export async function findActiveSubscription(userId: string): Promise<Subscription | null> {
-  // The unique index `subscriptions_active_user_idx` is meant to guarantee at
-  // most one active subscription per user, but some environments ended up
-  // with duplicates (e.g. migration applied out of order). Order + limit(1)
-  // keeps us resilient: we return the most recent one even if duplicates
-  // slipped through, instead of crashing every metered route with a
-  // "multiple rows" DATABASE_ERROR.
+/** Look up the active subscription for a team (teams are the billing entity
+ *  since 20260418000005_add_teams.sql). Defensive order+limit so that even
+ *  if a duplicate active row slipped in (e.g. backfill race), we return the
+ *  most recent one instead of crashing the whole metered path. */
+export async function findActiveSubscriptionByTeam(teamId: string): Promise<Subscription | null> {
   const { data, error } = await supabase
     .from('subscriptions')
     .select('*')
-    .eq('user_id', userId)
-    .neq('status', 'canceled')
+    .eq('team_id', teamId)
+    .eq('status', 'active')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
@@ -82,22 +83,23 @@ export async function findActiveSubscription(userId: string): Promise<Subscripti
   return data ? mapToSubscription(data as SubscriptionRow) : null
 }
 
-// Ensure every authenticated user has an active subscription. Acts as a
-// safety net in case the auth trigger didn't fire (e.g. legacy users).
-export async function ensureFreeSubscription(userId: string): Promise<Subscription> {
-  const existing = await findActiveSubscription(userId)
+/** Ensure the team has an active subscription. Acts as a safety net in case
+ *  the signup trigger didn't fire or the team was created before the trigger
+ *  extension. `ownerUserId` is written to the user_id audit column. */
+export async function ensureFreeSubscription(ownerUserId: string, teamId: string): Promise<Subscription> {
+  const existing = await findActiveSubscriptionByTeam(teamId)
   if (existing) return existing
   const { data, error } = await supabase
     .from('subscriptions')
-    .insert({ user_id: userId, plan_id: 'free', status: 'active' })
+    .insert({ user_id: ownerUserId, team_id: teamId, plan_id: 'free', status: 'active' })
     .select('*')
     .single()
   if (error) throw new DatabaseError(error.message)
   return mapToSubscription(data as SubscriptionRow)
 }
 
-export async function updateActiveSubscriptionPlan(userId: string, planId: PlanId): Promise<Subscription> {
-  const active = await ensureFreeSubscription(userId)
+export async function updateActiveSubscriptionPlan(ownerUserId: string, teamId: string, planId: PlanId): Promise<Subscription> {
+  const active = await ensureFreeSubscription(ownerUserId, teamId)
   const { data, error } = await supabase
     .from('subscriptions')
     .update({ plan_id: planId, updated_at: new Date().toISOString() })
