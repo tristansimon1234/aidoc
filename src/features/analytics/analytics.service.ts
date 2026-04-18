@@ -227,15 +227,24 @@ export async function classifyAndStoreUserMessage(messageId: string, content: st
 /** Pure Gemini call — callable in parallel with the chat reply generation so
  *  the classifier never adds latency to the user-visible response. */
 export async function classifyMessageContent(content: string): Promise<ClassifyResult | null> {
+  const preview = content.slice(0, 80)
   try {
+    console.log(`[classifier] start "${preview}"`)
     const result = await generateText({
       systemPrompt: MESSAGE_CLASSIFIER_SYSTEM_PROMPT,
       userPrompt: buildMessageClassifierPrompt(content),
-      maxTokens: 80,
+      maxTokens: 120,
     })
-    return parseClassifierResponse(result.text)
+    console.log(`[classifier] raw response: ${result.text.slice(0, 300)}`)
+    const parsed = parseClassifierResponse(result.text)
+    if (!parsed) {
+      console.warn(`[classifier] parse rejected — raw was: ${result.text}`)
+    } else {
+      console.log(`[classifier] parsed: ${JSON.stringify(parsed)}`)
+    }
+    return parsed
   } catch (err) {
-    console.warn('[analytics] classifier call failed:', (err as Error).message)
+    console.warn(`[classifier] Gemini call failed for "${preview}": ${(err as Error).message}`)
     return null
   }
 }
@@ -251,7 +260,8 @@ export async function applyClassificationToMessage(
       language: classified.language,
       category: classified.category,
     })
+    console.log(`[classifier] UPDATE ok for ${messageId} → ${JSON.stringify(classified)}`)
   } catch (err) {
-    console.warn('[analytics] classifier UPDATE failed:', (err as Error).message)
+    console.warn(`[classifier] UPDATE failed for ${messageId}: ${(err as Error).message}`)
   }
 }
