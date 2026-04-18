@@ -68,7 +68,10 @@
 .mainFull {
   flex: 1;
   width: 100%;
-  padding-bottom: var(--space-2xl);
+  /* No padding-bottom here — fullWidth pages (e.g. ProjectDetail) manage
+     their own sidebar + content-area layout. Padding-bottom on the inner
+     scrollable content area (`ProjectDetail.content`) handles breathing
+     room without also pushing the sidebar down. */
 }
 
 @media (max-width: 768px) {
