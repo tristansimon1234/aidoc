@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
-import type { ProjectDesignDTO } from '../../../shared/api/client.js'
+import type { ProjectDesignDTO, ChatResponseDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
+import { ChatPanel, type ChatApi } from '../../chat/components/ChatPanel.js'
 import styles from './PublicDocs.module.css'
 
 /** Lightweight narrated video player for public docs — syncs video + voiceover audio */
@@ -71,10 +72,35 @@ interface PublicProject {
   design: ProjectDesignDTO | null
 }
 
-interface PublicWidgetConfig {
-  apiKey: string
-  position: string
-  greeting: string
+// API client for the public, anonymous chat endpoints. Mirrors the shape
+// expected by ChatPanel but skips JWT auth — the routes are gated server-side
+// by `publicDocsChatEnabled` and rate-limited per IP.
+function buildPublicChatApi(): ChatApi {
+  return {
+    index: async (projectId: string) => {
+      const res = await fetch(`/api/docs/${projectId}/chat/status`)
+      if (!res.ok) return { indexed: 0 }
+      const body = await res.json() as { ready: boolean }
+      return { indexed: body.ready ? 1 : 0 }
+    },
+    suggestions: async (projectId: string) => {
+      const res = await fetch(`/api/docs/${projectId}/chat/suggestions`)
+      if (!res.ok) return { suggestions: [] }
+      return res.json() as Promise<{ suggestions: string[] }>
+    },
+    send: async (projectId, message, history, sessionToken) => {
+      const res = await fetch(`/api/docs/${projectId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history, sessionToken }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(err?.error ?? `Chat failed: ${res.status}`)
+      }
+      return res.json() as Promise<ChatResponseDTO>
+    },
+  }
 }
 
 // --- Search helper: search titles + content (same as admin) ---
@@ -176,7 +202,9 @@ export function PublicDocs(): React.ReactElement {
   const { projectId, slug } = useParams<{ projectId: string; slug?: string }>()
   const navigate = useNavigate()
   const [project, setProject] = useState<PublicProject | null>(null)
-  const [widget, setWidget] = useState<PublicWidgetConfig | null>(null)
+  const [chatEnabled, setChatEnabled] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const chatApiRef = useRef<ChatApi>(buildPublicChatApi())
   const [pages, setPages] = useState<PublicPage[]>([])
   const [activePage, setActivePage] = useState<PublicPage | null>(null)
   const [loading, setLoading] = useState(true)
@@ -202,9 +230,9 @@ export function PublicDocs(): React.ReactElement {
       try {
         const res = await fetch(`/api/docs/${projectId}`)
         if (!res.ok) throw new Error('Not found')
-        const data = await res.json() as { project: PublicProject; widget: PublicWidgetConfig | null; pages: PublicPage[] }
+        const data = await res.json() as { project: PublicProject; chatEnabled?: boolean; pages: PublicPage[] }
         setProject(data.project)
-        setWidget(data.widget ?? null)
+        setChatEnabled(Boolean(data.chatEnabled))
         setPages(data.pages)
         if (data.pages.length > 0) {
           const initial = (slug ? data.pages.find((p) => p.slug === slug) : null) ?? data.pages[0] ?? null
@@ -230,40 +258,6 @@ export function PublicDocs(): React.ReactElement {
     setActivePage(page)
     if (projectId) navigate(`/docs/${projectId}/${page.slug}`, { replace: true })
   }, [navigate, projectId])
-
-  // Inject chat widget script when enabled by the project owner
-  useEffect(() => {
-    if (!widget) return
-    const SCRIPT_ID = 'aidoc-public-widget'
-    if (document.getElementById(SCRIPT_ID)) return
-
-    const script = document.createElement('script')
-    script.id = SCRIPT_ID
-    script.src = `${window.location.origin}/widget.js`
-    script.setAttribute('data-key', widget.apiKey)
-    script.setAttribute('data-position', widget.position)
-    if (widget.greeting) script.setAttribute('data-greeting', widget.greeting)
-    if (project?.design) {
-      const cfg: Record<string, string> = {}
-      if (project.design.accentColor) cfg.accentColor = project.design.accentColor
-      if (project.design.bgColor) cfg.bgColor = project.design.bgColor
-      if (project.design.textColor) cfg.textColor = project.design.textColor
-      if (project.design.font) cfg.font = project.design.font
-      if (Object.keys(cfg).length > 0) script.setAttribute('data-cfg', JSON.stringify(cfg))
-    }
-    document.body.appendChild(script)
-
-    return () => {
-      script.remove()
-      document.getElementById('aidoc-widget-style')?.remove()
-      document.getElementById('aidoc-widget-btn')?.remove()
-      document.getElementById('aidoc-widget-panel')?.remove()
-      document.getElementById('aidoc-wt-bar')?.remove()
-      document.getElementById('aidoc-wt-overlay')?.remove()
-      document.getElementById('aidoc-wt-ring')?.remove()
-      document.getElementById('aidoc-wt-tooltip')?.remove()
-    }
-  }, [widget, project?.design])
 
   // Load Google Font if the design uses a custom font
   const designFont = project?.design?.font
@@ -375,6 +369,33 @@ export function PublicDocs(): React.ReactElement {
           )}
         </div>
       </div>
+
+      {chatEnabled && !chatOpen && (
+        <button
+          className={styles.chatLauncher}
+          onClick={() => setChatOpen(true)}
+          aria-label="Chat with the documentation"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          Chat with docs
+        </button>
+      )}
+
+      {chatEnabled && chatOpen && (
+        <ChatPanel
+          projectId={project.id}
+          projectName={project.name}
+          onClose={() => setChatOpen(false)}
+          apiOverride={chatApiRef.current}
+          onSourceClick={(s) => {
+            const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
+            if (target) selectPage(target)
+            setChatOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }

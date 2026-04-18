@@ -54,7 +54,6 @@ function PublishSection({ project, setProject }: { project: ProjectDTO; setProje
   const [copied, setCopied] = useState(false)
   const [chatEnabled, setChatEnabled] = useState(project.publicDocsChatEnabled ?? false)
   const publicUrl = `${window.location.origin}/docs/${project.id}`
-  const widgetReady = Boolean(project.widgetEnabled && project.widgetApiKey)
 
   const toggleChat = async (next: boolean): Promise<void> => {
     setChatEnabled(next)
@@ -84,19 +83,16 @@ function PublishSection({ project, setProject }: { project: ProjectDTO; setProje
       </div>
 
       <div className={styles.field}>
-        <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: widgetReady ? 'pointer' : 'not-allowed', opacity: widgetReady ? 1 : 0.6 }}>
+        <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
           <input
             type="checkbox"
-            checked={chatEnabled && widgetReady}
-            disabled={!widgetReady}
+            checked={chatEnabled}
             onChange={(e) => void toggleChat(e.target.checked)}
           />
-          Embed chat widget on public docs
+          Enable "Chat with docs" on public site
         </label>
         <span className={styles.hint}>
-          {widgetReady
-            ? 'Show the AI chat bubble on this public docs site so visitors can ask questions.'
-            : 'Enable the widget in the Widget tab first.'}
+          Adds a chat button to your public docs. Anonymous visitors can ask questions and get answers grounded in your documentation.
         </span>
       </div>
 
