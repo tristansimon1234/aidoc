@@ -6,7 +6,7 @@ import * as chatService from './chat.service.js'
 import { UuidParamSchema } from '../../shared/validation/schemas.js'
 import { registerChatSession, incrementUsage, findOwnerUserIdByProjectId } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
-import { classifyAndStoreUserMessage } from '../analytics/analytics.service.js'
+import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 
 export const chatRouter = Router({ mergeParams: true })
 
@@ -39,6 +39,14 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
       trackAppChatSession(params.data.id, sessionToken)
 
+      // Kick off the classifier IN PARALLEL with the chat reply — the classifier
+      // is faster than the chat call, so it costs us nothing on the user-facing
+      // latency, and we avoid the serverless fire-and-forget pitfall (functions
+      // get torn down after res.send, leaving background work unfinished).
+      const classifyPromise = sessionToken
+        ? classifyMessageContent(body.data.message)
+        : Promise.resolve(null)
+
       const result = await chatService.chat(
         params.data.id,
         body.data.message,
@@ -46,12 +54,10 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
         body.data.userContext,
       )
 
-      // Fire-and-forget: record the Q&A for analytics + classify the user message.
       if (sessionToken) {
-        void (async () => {
-          try {
-            const ownerId = await findOwnerUserIdByProjectId(params.data.id)
-            if (!ownerId) return
+        try {
+          const ownerId = await findOwnerUserIdByProjectId(params.data.id)
+          if (ownerId) {
             const { userMessageId } = await logChatMessages({
               projectId: params.data.id,
               userId: ownerId,
@@ -60,11 +66,14 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
               userMessage: body.data.message,
               assistantMessage: result.answer,
             })
-            if (userMessageId) await classifyAndStoreUserMessage(userMessageId, body.data.message)
-          } catch (err) {
-            console.warn('[analytics] app chat log failed:', (err as Error).message)
+            const classified = await classifyPromise
+            if (userMessageId && classified) {
+              await applyClassificationToMessage(userMessageId, classified)
+            }
           }
-        })()
+        } catch (err) {
+          console.warn('[analytics] app chat log failed:', (err as Error).message)
+        }
       }
 
       res.status(200).json(result)

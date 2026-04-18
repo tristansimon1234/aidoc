@@ -10,7 +10,7 @@ import { ChatRequestSchema } from '../chat/chat.schema.js'
 import { hasEmbeddings } from '../chat/chat.repository.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
 import { logChatMessages, logPageView } from '../analytics/analytics.repository.js'
-import { classifyAndStoreUserMessage } from '../analytics/analytics.service.js'
+import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { PageViewPingSchema } from '../analytics/analytics.schema.js'
 import { findPagesByProjectId } from './page.repository.js'
 import type { Project } from '../project/project.types.js'
@@ -148,6 +148,11 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
       trackPublicSession(project, sessionToken)
 
+      // Classifier in parallel with the chat Gemini call — no added user latency.
+      const classifyPromise = sessionToken
+        ? classifyMessageContent(body.data.message)
+        : Promise.resolve(null)
+
       const result = await chatService.chat(
         project.id,
         body.data.message,
@@ -158,23 +163,23 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       // Anonymous visitors don't get walkthrough hints (no DOM context)
       delete result.walkthroughAvailable
 
-      // Fire-and-forget: record the Q&A for analytics + classify the user message.
       if (sessionToken) {
-        void (async () => {
-          try {
-            const { userMessageId } = await logChatMessages({
-              projectId: project.id,
-              userId: project.userId,
-              sessionToken,
-              source: 'public',
-              userMessage: body.data.message,
-              assistantMessage: result.answer,
-            })
-            if (userMessageId) await classifyAndStoreUserMessage(userMessageId, body.data.message)
-          } catch (err) {
-            console.warn('[analytics] public chat log failed:', (err as Error).message)
+        try {
+          const { userMessageId } = await logChatMessages({
+            projectId: project.id,
+            userId: project.userId,
+            sessionToken,
+            source: 'public',
+            userMessage: body.data.message,
+            assistantMessage: result.answer,
+          })
+          const classified = await classifyPromise
+          if (userMessageId && classified) {
+            await applyClassificationToMessage(userMessageId, classified)
           }
-        })()
+        } catch (err) {
+          console.warn('[analytics] public chat log failed:', (err as Error).message)
+        }
       }
 
       res.status(200).json(result)

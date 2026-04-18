@@ -210,21 +210,48 @@ function parseClassifierResponse(raw: string): ClassifyResult | null {
 }
 
 export async function classifyAndStoreUserMessage(messageId: string, content: string): Promise<void> {
+  const classified = await classifyMessageContent(content)
+  if (!classified) return
+  try {
+    await updateMessageClassification(messageId, {
+      sentiment: classified.sentiment,
+      frustration_flag: classified.frustrated,
+      language: classified.language,
+      category: classified.category,
+    })
+  } catch (err) {
+    console.warn('[analytics] classifier UPDATE failed:', (err as Error).message)
+  }
+}
+
+/** Pure Gemini call — callable in parallel with the chat reply generation so
+ *  the classifier never adds latency to the user-visible response. */
+export async function classifyMessageContent(content: string): Promise<ClassifyResult | null> {
   try {
     const result = await generateText({
       systemPrompt: MESSAGE_CLASSIFIER_SYSTEM_PROMPT,
       userPrompt: buildMessageClassifierPrompt(content),
       maxTokens: 80,
     })
-    const parsed = parseClassifierResponse(result.text)
-    if (!parsed) return
+    return parseClassifierResponse(result.text)
+  } catch (err) {
+    console.warn('[analytics] classifier call failed:', (err as Error).message)
+    return null
+  }
+}
+
+export async function applyClassificationToMessage(
+  messageId: string,
+  classified: ClassifyResult,
+): Promise<void> {
+  try {
     await updateMessageClassification(messageId, {
-      sentiment: parsed.sentiment,
-      frustration_flag: parsed.frustrated,
-      language: parsed.language,
-      category: parsed.category,
+      sentiment: classified.sentiment,
+      frustration_flag: classified.frustrated,
+      language: classified.language,
+      category: classified.category,
     })
   } catch (err) {
-    console.warn('[analytics] classifier failed:', (err as Error).message)
+    console.warn('[analytics] classifier UPDATE failed:', (err as Error).message)
   }
 }
