@@ -56,27 +56,36 @@ export async function findMember(teamId: string, userId: string): Promise<{ role
 }
 
 export async function listMembers(teamId: string): Promise<TeamMember[]> {
-  const { data, error } = await supabase
+  // team_members.user_id references auth.users, not profiles, so PostgREST
+  // can't resolve a direct join. Do two queries and stitch in JS.
+  const { data: memberRows, error } = await supabase
     .from('team_members')
-    .select('team_id, user_id, role, joined_at, profiles!inner(email, full_name)')
+    .select('team_id, user_id, role, joined_at')
     .eq('team_id', teamId)
     .order('joined_at', { ascending: true })
   if (error) throw new DatabaseError(error.message)
-  return (data ?? []).map((row) => {
-    const r = row as unknown as {
-      team_id: string
-      user_id: string
-      role: TeamRole
-      joined_at: string
-      profiles: { email: string | null; full_name: string | null } | { email: string | null; full_name: string | null }[]
-    }
-    const profile = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
+  const rows = (memberRows ?? []) as { team_id: string; user_id: string; role: TeamRole; joined_at: string }[]
+  if (rows.length === 0) return []
+
+  const userIds = rows.map((r) => r.user_id)
+  const { data: profileRows, error: pErr } = await supabase
+    .from('profiles')
+    .select('id, email, full_name')
+    .in('id', userIds)
+  if (pErr) throw new DatabaseError(pErr.message)
+  const byId = new Map((profileRows ?? []).map((p) => {
+    const r = p as { id: string; email: string | null; full_name: string | null }
+    return [r.id, r]
+  }))
+
+  return rows.map((r) => {
+    const prof = byId.get(r.user_id)
     return {
       teamId: r.team_id,
       userId: r.user_id,
       role: r.role,
-      email: profile?.email ?? null,
-      fullName: profile?.full_name ?? null,
+      email: prof?.email ?? null,
+      fullName: prof?.full_name ?? null,
       joinedAt: new Date(r.joined_at),
     }
   })
@@ -200,9 +209,12 @@ export async function createInvite(input: {
 }
 
 export async function findInviteByToken(token: string): Promise<InviteWithTeam | null> {
+  // Same caveat as listMembers — no FK from team_invites.invited_by to
+  // profiles. Join the team (FK-backed) here, then resolve the inviter's
+  // profile in a second query.
   const { data, error } = await supabase
     .from('team_invites')
-    .select('id, team_id, email, role, expires_at, accepted_at, invited_by, teams!inner(name), profiles!team_invites_invited_by_fkey(full_name)')
+    .select('id, team_id, email, role, expires_at, accepted_at, invited_by, teams!inner(name)')
     .eq('token', token)
     .maybeSingle()
   if (error) throw new DatabaseError(error.message)
@@ -214,18 +226,28 @@ export async function findInviteByToken(token: string): Promise<InviteWithTeam |
     role: TeamRole
     expires_at: string
     accepted_at: string | null
+    invited_by: string
     teams: { name: string } | { name: string }[]
-    profiles: { full_name: string | null } | { full_name: string | null }[] | null
   }
   const team = Array.isArray(r.teams) ? r.teams[0] : r.teams
-  const profile = Array.isArray(r.profiles) ? r.profiles[0] : r.profiles
+
+  let inviterName: string | null = null
+  if (r.invited_by) {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', r.invited_by)
+      .maybeSingle()
+    inviterName = (prof as { full_name: string | null } | null)?.full_name ?? null
+  }
+
   return {
     id: r.id,
     teamId: r.team_id,
     teamName: team?.name ?? 'team',
     email: r.email,
     role: r.role,
-    inviterName: profile?.full_name ?? null,
+    inviterName,
     expiresAt: new Date(r.expires_at),
     acceptedAt: r.accepted_at ? new Date(r.accepted_at) : null,
   }
