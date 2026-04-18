@@ -31,6 +31,9 @@ export const UpdatePageSchema = z.object({
   sortOrder: z.number().int().optional(),
   status: z.enum(['draft', 'exploring', 'published']).optional(),
   content: z.string().optional(),
+  // BlockNote document JSON — validated shape-loosely as array; the editor
+  // owns the schema so we don't need to replicate it here.
+  contentBlocks: z.array(z.unknown()).optional(),
   customPrompt: z.string().optional(),
   briefing: PageBriefingSchema.optional(),
   isPublic: z.boolean().optional(),

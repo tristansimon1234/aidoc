@@ -255,6 +255,8 @@ export interface DocPageDTO {
   startUrl: string | null
   goal: string | null
   content: string | null
+  /** Lossless BlockNote document; null means "parse from `content`". */
+  contentBlocks: unknown
   customPrompt: string | null
   briefing: PageBriefingDTO | null
   status: 'draft' | 'exploring' | 'published'
