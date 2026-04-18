@@ -29,7 +29,7 @@ export function ForgotPassword(): React.ReactElement {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <h1 className={styles.logo}>aidoc</h1>
+          <h1 className={styles.logo}>doclee</h1>
           <p className={styles.subtitle}>Check your inbox — we sent a reset link to <strong>{email}</strong>.</p>
           <Link to="/login" className={styles.toggleLink}>Back to sign in</Link>
         </div>
@@ -40,7 +40,7 @@ export function ForgotPassword(): React.ReactElement {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <h1 className={styles.logo}>aidoc</h1>
+        <h1 className={styles.logo}>doclee</h1>
         <p className={styles.subtitle}>Reset your password</p>
         <form className={styles.form} onSubmit={(e) => void handleSubmit(e)}>
           <Field

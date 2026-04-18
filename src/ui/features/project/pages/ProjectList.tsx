@@ -135,10 +135,10 @@ export function ProjectList(_props: ProjectListProps): React.ReactElement {
         <div className={styles.welcome}>
           <div className={styles.welcomeContent}>
             <h2 className={styles.welcomeTitle}>
-              Generate docs, deploy an AI chatbot.
+              Turn a screen recording into a polished product guide.
             </h2>
             <p className={styles.welcomeDesc}>
-              Upload a screen recording or let AI explore your app. Get professional documentation and an embeddable chat widget in minutes.
+              Record or upload a video — Doclee writes the documentation, captures the screenshots, and adds a voice-over. Publish it, embed a chat that answers from it, and watch what your users actually need.
             </p>
 
             <div className={styles.features}>
@@ -147,32 +147,32 @@ export function ProjectList(_props: ProjectListProps): React.ReactElement {
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="m22 8-6 4 6 4V8z"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg>
                 </div>
                 <div>
-                  <p className={styles.featureTitle}>AI Documentation</p>
-                  <p className={styles.featureDesc}>Upload a video, get a full product guide with screenshots</p>
+                  <p className={styles.featureTitle}>Video → documentation</p>
+                  <p className={styles.featureDesc}>Upload a screen recording, get a structured guide with screenshots and an ElevenLabs voice-over</p>
                 </div>
               </div>
               <div className={styles.feature}>
                 <div className={styles.featureIcon} style={{ color: 'var(--color-primary)' }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09z"/><path d="M18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456z"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                 </div>
                 <div>
-                  <p className={styles.featureTitle}>Embeddable Chat Widget</p>
-                  <p className={styles.featureDesc}>Your users ask questions, AI answers from your docs</p>
+                  <p className={styles.featureTitle}>Public docs + AI chat</p>
+                  <p className={styles.featureDesc}>Share a public docs URL, drop a one-line widget on your app, or both — same RAG over your pages</p>
                 </div>
               </div>
               <div className={styles.feature}>
                 <div className={styles.featureIcon} style={{ color: 'var(--color-warning)' }}>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z"/><path d="M3.6 9h16.8"/><path d="M3.6 15h16.8"/><path d="M12 3a15 15 0 0 1 4 9 15 15 0 0 1-4 9 15 15 0 0 1-4-9 15 15 0 0 1 4-9z"/></svg>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="20" x2="21" y2="20"/><rect x="6" y="10" width="3" height="8" rx="0.5"/><rect x="11" y="6" width="3" height="12" rx="0.5"/><rect x="16" y="13" width="3" height="5" rx="0.5"/></svg>
                 </div>
                 <div>
-                  <p className={styles.featureTitle}>Auto-Exploration</p>
-                  <p className={styles.featureDesc}>AI agent browses your app and writes docs autonomously</p>
+                  <p className={styles.featureTitle}>Analytics + Try Doc</p>
+                  <p className={styles.featureDesc}>See what users ask, where they get stuck, and run an AI agent through your doc to verify it actually works</p>
                 </div>
               </div>
             </div>
 
             <Link to="/projects/new">
-              <Button>Create Your First Project</Button>
+              <Button>Create your first project</Button>
             </Link>
           </div>
         </div>

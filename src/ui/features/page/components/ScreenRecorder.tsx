@@ -22,7 +22,7 @@ interface DomEvent {
   pageTitle?: string
 }
 
-/** Check if the AiDoc Chrome extension is installed */
+/** Check if the doclee Chrome extension is installed */
 function isExtensionInstalled(): boolean {
   return typeof window !== 'undefined' && Boolean((window as unknown as Record<string, unknown>).__AIDOC_EXTENSION__)
 }

@@ -229,6 +229,10 @@ function BillingTab(): React.ReactElement {
         {sortedPlans.map((plan) => {
           const isCurrent = plan.id === currentPlanId
           const isBusy = selecting === plan.id
+          // Growth + Business require Stripe checkout, which isn't wired yet.
+          // We let users go free → startup directly (mutates the DB) but block
+          // anything paid until the webhook handler lands.
+          const stripeRequired = !isCurrent && (plan.id === 'growth' || plan.id === 'business')
           return (
             <div
               key={plan.id}
@@ -256,17 +260,24 @@ function BillingTab(): React.ReactElement {
               <Button
                 size="sm"
                 variant={isCurrent ? 'ghost' : 'primary'}
-                disabled={isCurrent || isBusy}
+                disabled={isCurrent || isBusy || stripeRequired}
                 onClick={() => void handleSelect(plan.id)}
               >
                 {isCurrent
                   ? 'Active'
                   : isBusy
                     ? 'Updating...'
-                    : plan.priceCents === 0
-                      ? 'Switch to Free'
-                      : 'Select'}
+                    : stripeRequired
+                      ? 'Coming soon'
+                      : plan.priceCents === 0
+                        ? 'Switch to Free'
+                        : 'Select'}
               </Button>
+              {stripeRequired && (
+                <p className={styles.billingFootnote} style={{ margin: 'var(--space-sm) 0 0', fontSize: 11 }}>
+                  Available once Stripe checkout is enabled.
+                </p>
+              )}
             </div>
           )
         })}

@@ -1,4 +1,4 @@
-# CLAUDE.md — AiDoc: AI Documentation Platform
+# CLAUDE.md — Doclee: AI Documentation Platform
 
 > This file is the source of truth for all code generation in this project.
 > Read it fully before writing any code. Never deviate from these rules.
@@ -8,7 +8,7 @@
 
 ## Project Overview
 
-AiDoc is a **project-based documentation platform** that generates user-facing product guides and deploys them as **embeddable AI chat widgets** on client apps. A **Try Doc** feature lets users test their documentation against the live product — an AI agent follows the doc steps as a naive user and generates a structured quality report.
+Doclee is a **project-based documentation platform** that generates user-facing product guides and deploys them as **embeddable AI chat widgets** on client apps. A **Try Doc** feature lets users test their documentation against the live product — an AI agent follows the doc steps as a naive user and generates a structured quality report.
 
 **Screen recording** is the primary (and only) documentation generation method. Users record their screen (or upload a video) → Gemini analyzes every action → extracts screenshots at key moments → generates structured documentation → ElevenLabs generates voice-over narration.
 
@@ -231,7 +231,7 @@ docs/
 
 ## Data Access
 
-AiDoc has **two** data-access layers because Supabase is designed to be safely callable from both the server (with the service-role key) and the browser (with the user's JWT + RLS). Each has its own file convention.
+Doclee has **two** data-access layers because Supabase is designed to be safely callable from both the server (with the service-role key) and the browser (with the user's JWT + RLS). Each has its own file convention.
 
 ### Backend (`src/features/**` + `src/shared/**`)
 
@@ -476,8 +476,8 @@ VIDEO_SERVICE_URL    # Optional — external video processing service
 ADMIN_EMAILS         # Comma-separated allowlist for /api/admin/* routes
                      # e.g. ADMIN_EMAILS=you@example.com,partner@example.com
 RESEND_API_KEY       # Optional — transactional email (team invites) via Resend
-EMAIL_FROM           # e.g. "aidoc <hello@aidoc.dev>" — sender used with Resend
-PUBLIC_APP_URL       # e.g. https://app.aidoc.dev — used to build invite accept links
+EMAIL_FROM           # e.g. "doclee <hello@doclee.tech>" — sender used with Resend
+PUBLIC_APP_URL       # e.g. https://app.doclee.tech — used to build invite accept links
                      # Auth emails (signup/reset/magic link) go through Supabase SMTP
                      # configured in the Supabase dashboard; see docs/EMAIL_TEMPLATES.md.
 ```

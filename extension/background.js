@@ -29,7 +29,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         target: { tabId: captureTabId },
         files: ['dom-capture.js'],
       }).catch((err) => {
-        console.error('[AiDoc] Failed to inject DOM capture script:', err);
+        console.error('[doclee] Failed to inject DOM capture script:', err);
       });
     });
 

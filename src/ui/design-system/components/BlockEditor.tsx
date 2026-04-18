@@ -119,12 +119,16 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initializedRef = useRef(false)
   const lastContentRef = useRef('')
-  // Only save after the user has actually interacted with the editor. Without
-  // this gate, BlockNote's replaceBlocks + its async normalization fire
-  // multiple onChange events during the initial load, each of which would
-  // otherwise persist a lossy markdown round-trip of the just-loaded content
-  // (e.g. images between numbered list items vanish).
-  const userInteractedRef = useRef(false)
+  // True while the editor is being hydrated from props. handleChange ignores
+  // onChange events fired during this window — replaceBlocks + BlockNote's
+  // async normalization emit several events that would otherwise persist a
+  // lossy round-trip of what we just loaded.
+  // After the load window closes, every onChange is treated as a real edit
+  // — earlier we tried to gate on user-interaction events (keydown / paste)
+  // but block deletion via the ⋮⋮ menu happens in a Mantine portal outside
+  // the editor container and fired no DOM event we could see, so deletes
+  // were silently dropped on save.
+  const loadingRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { lightbox, openLightbox } = useImageLightbox()
 
@@ -171,19 +175,25 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
     initializedRef.current = true
     lastContentRef.current = key
 
-    // Reset the user-interaction gate so load-time onChange events are ignored
-    // until the user actually types/pastes/etc.
-    userInteractedRef.current = false
+    // Hold the gate closed until the load + BlockNote's normalization tick
+    // settle.
+    loadingRef.current = true
 
     void (async () => {
-      if (contentBlocks && Array.isArray(contentBlocks) && contentBlocks.length > 0) {
-        // Lossless path: hydrate the JSON directly.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        editor.replaceBlocks(editor.document, contentBlocks as any[])
-        return
+      try {
+        if (contentBlocks && Array.isArray(contentBlocks) && contentBlocks.length > 0) {
+          // Lossless path: hydrate the JSON directly.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          editor.replaceBlocks(editor.document, contentBlocks as any[])
+          return
+        }
+        if (!content) return
+        await loadFromMarkdown(editor, content)
+      } finally {
+        // Defer one tick so the onChange events that BlockNote emits as
+        // part of replaceBlocks/normalization run with loadingRef still true.
+        setTimeout(() => { loadingRef.current = false }, 0)
       }
-      if (!content) return
-      await loadFromMarkdown(editor, content)
     })()
   }, [editor, content, contentBlocks])
 
@@ -206,37 +216,12 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
     return () => el.removeEventListener('click', handler, true)
   }, [openLightbox])
 
-  // Flip the user-interaction gate on real input events so subsequent
-  // onChange events are allowed to persist. Captured at the container so
-  // we see events from anywhere in BlockNote's DOM.
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const mark = (): void => { userInteractedRef.current = true }
-    el.addEventListener('keydown', mark, true)
-    el.addEventListener('paste', mark, true)
-    el.addEventListener('cut', mark, true)
-    el.addEventListener('drop', mark, true)
-    el.addEventListener('beforeinput', mark, true)
-    return () => {
-      el.removeEventListener('keydown', mark, true)
-      el.removeEventListener('paste', mark, true)
-      el.removeEventListener('cut', mark, true)
-      el.removeEventListener('drop', mark, true)
-      el.removeEventListener('beforeinput', mark, true)
-    }
-  }, [])
-
   const handleChange = useCallback(() => {
     if (readOnly) return
-
-    // Only persist real user edits. Without this gate, replaceBlocks and
-    // BlockNote's async normalization fire onChange events that would
-    // overwrite page.content with a lossy markdown round-trip of what
-    // was just loaded (e.g. images inside numbered lists get dropped
-    // because tryParseMarkdownToBlocks / blocksToMarkdownLossy don't
-    // round-trip them cleanly).
-    if (!userInteractedRef.current) return
+    // While props-driven load is happening, swallow the noisy normalization
+    // events that BlockNote fires after replaceBlocks. After this window,
+    // trust every onChange — it's a real document mutation.
+    if (loadingRef.current) return
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)

@@ -2,7 +2,7 @@
 
 ## Overview
 
-AiDoc is an AI-powered documentation platform: users record their screen (or upload a video) and Gemini turns it into a structured product guide with screenshots and voice-over. The same content is then served back to end-users via an embeddable AI chat widget. A Try Doc agent (Stagehand on Browserbase) re-runs the documented flows to flag stale steps.
+Doclee is an AI-powered documentation platform: users record their screen (or upload a video) and Gemini turns it into a structured product guide with screenshots and voice-over. The same content is then served back to end-users via an embeddable AI chat widget. A Try Doc agent (Stagehand on Browserbase) re-runs the documented flows to flag stale steps.
 
 A SaaS layer sits on top: per-user profile, plan + subscription, monthly token budget, and an admin dashboard for operators.
 
