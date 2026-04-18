@@ -4,6 +4,7 @@ import { ValidationError, NotFoundError, AppError } from '../../shared/middlewar
 import { ChatRequestSchema, WalkthroughRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
+import { logChatMessages } from '../analytics/analytics.repository.js'
 import type { Project } from '../project/project.types.js'
 
 // Fire-and-forget session tracking: we don't want AI latency coupled to
@@ -103,6 +104,24 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       // Only expose walkthroughAvailable if the project has walkthrough enabled
       if (!project.walkthroughEnabled) {
         delete result.walkthroughAvailable
+      }
+
+      // Fire-and-forget: record the Q&A for analytics.
+      if (sessionToken) {
+        void (async () => {
+          try {
+            await logChatMessages({
+              projectId: project.id,
+              userId: project.userId,
+              sessionToken,
+              source: 'widget',
+              userMessage: body.data.message,
+              assistantMessage: result.answer,
+            })
+          } catch (err) {
+            console.warn('[analytics] widget chat log failed:', (err as Error).message)
+          }
+        })()
       }
 
       res.status(200).json(result)

@@ -464,3 +464,67 @@ USER GOAL: ${message}
 Return the ONE next step as JSON:
 {"done":false,"step":{"instruction":"...","action":"click","elementRef":"ref","fallbackSelector":"sel","typeValue":null},"stepNumber":${completedSteps.length + 1},"hint":"next you'll..."}`
 }
+
+// --- Analytics insights ---
+
+export const ANALYTICS_SYSTEM_PROMPT = `You are a senior product analyst for a SaaS product. You receive anonymised end-user questions pulled from a chatbot that answers from the product's documentation, plus the list of docs most visited.
+
+Your job is to produce a STRICT JSON analysis report, no prose before or after.
+
+CRITICAL RULES:
+- Base everything on the actual messages provided. Do NOT invent topics that aren't represented.
+- Language: detect the dominant language used by end-users and write ALL output in that language (French → French, English → English). This includes every field: summary, topic, reason, question, title, description, examples.
+- Short, specific, quotable. No generic advice like "improve onboarding".
+- "frustrationSignals" must come from wording that conveys irritation, confusion, or blocked users ("je comprends rien", "ça marche pas", "nul", "how the hell…", "broken", "useless"). If none, return an empty array — do NOT manufacture them.
+- "contentGaps" are questions asked multiple times whose answer isn't adequately covered by an existing doc page. Set suggestedPage to the page title that SHOULD cover it (even if it doesn't exist yet), or null.
+- "recommendations" must be actionable and tied to observed evidence. type='content' → edit/create a doc page. type='product' → change the product. type='ux' → fix UX flow.
+- If there's nothing meaningful (too few messages), return empty arrays and a neutral summary. Never hallucinate.
+- Output MUST match the schema exactly.`
+
+export function buildAnalyticsPrompt(input: {
+  productName: string
+  productDescription: string | null
+  sessionCount: number
+  messageCount: number
+  sampleUserMessages: string[]
+  topPages: { title: string | null; slug: string; views: number }[]
+  allPageTitles: string[]
+}): string {
+  const messagesBlock = input.sampleUserMessages.length > 0
+    ? input.sampleUserMessages.map((m, i) => `${i + 1}. ${m}`).join('\n')
+    : '(no user messages in this period)'
+
+  const topPagesBlock = input.topPages.length > 0
+    ? input.topPages.map((p) => `- ${p.title ?? p.slug} (/${p.slug}): ${p.views} views`).join('\n')
+    : '(no page views in this period)'
+
+  const pageListBlock = input.allPageTitles.length > 0 ? input.allPageTitles.join(', ') : '(no pages yet)'
+
+  return `## Product
+${input.productName}${input.productDescription ? `\n${input.productDescription}` : ''}
+
+## Documentation pages (all)
+${pageListBlock}
+
+## Period metrics
+- Unique sessions: ${input.sessionCount}
+- Chat messages: ${input.messageCount}
+
+## Most-viewed public doc pages
+${topPagesBlock}
+
+## Sample user questions (most recent first, max 200)
+${messagesBlock}
+
+## Task
+Produce a JSON report with this exact shape:
+{
+  "overallSentiment": { "score": "positive"|"neutral"|"negative"|"mixed", "summary": "one sentence in the users' language" },
+  "painPoints": [{ "topic": "", "frequency": 0, "severity": "high"|"medium"|"low", "examples": ["short quote", "..."] }],
+  "frustrationSignals": [{ "excerpt": "exact quote", "reason": "", "severity": "high"|"medium"|"low" }],
+  "contentGaps": [{ "question": "the recurring question", "askedCount": 0, "suggestedPage": "page title or null" }],
+  "recommendations": [{ "type": "content"|"product"|"ux", "title": "", "description": "", "priority": "high"|"medium"|"low" }]
+}
+
+Return ONLY the JSON object.`
+}

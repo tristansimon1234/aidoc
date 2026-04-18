@@ -392,6 +392,40 @@ export const api = {
     suggestions: (projectId: string): Promise<{ suggestions: string[] }> =>
       request(`/projects/${projectId}/chat/suggestions`),
   },
+  analytics: {
+    report: (projectId: string, period: AnalyticsPeriodDTO): Promise<AnalyticsReportDTO> =>
+      request(`/projects/${projectId}/analytics?period=${period}`),
+  },
+}
+
+export type AnalyticsPeriodDTO = '7d' | '30d' | '90d'
+export type AnalyticsChatSourceDTO = 'widget' | 'public' | 'app'
+
+export interface AnalyticsReportDTO {
+  periodStart: string
+  periodEnd: string
+  period: AnalyticsPeriodDTO
+  chatStats: {
+    totalSessions: number
+    totalMessages: number
+    userMessages: number
+    assistantMessages: number
+    avgMessagesPerSession: number
+    bySource: Record<AnalyticsChatSourceDTO, { sessions: number; messages: number }>
+  }
+  viewStats: {
+    totalViews: number
+    uniqueSessions: number
+    topPages: { slug: string; title: string | null; views: number }[]
+  }
+  insights: {
+    overallSentiment: { score: 'positive' | 'neutral' | 'negative' | 'mixed'; summary: string }
+    painPoints: { topic: string; frequency: number; severity: 'high' | 'medium' | 'low'; examples: string[] }[]
+    frustrationSignals: { excerpt: string; reason: string; severity: 'high' | 'medium' | 'low' }[]
+    contentGaps: { question: string; askedCount: number; suggestedPage: string | null }[]
+    recommendations: { type: 'content' | 'product' | 'ux'; title: string; description: string; priority: 'high' | 'medium' | 'low' }[]
+  } | null
+  recentSamples: { role: 'user' | 'assistant'; content: string; source: AnalyticsChatSourceDTO; createdAt: string }[]
 }
 
 export interface ChatResponseDTO {

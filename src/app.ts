@@ -14,6 +14,7 @@ import { chatRouter } from './features/chat/chat.routes.js'
 import { widgetRouter } from './features/chat/widget.routes.js'
 import { mcpRouter } from './features/chat/mcp.routes.js'
 import { publicDocsRouter } from './features/page/public-docs.routes.js'
+import { analyticsRouter } from './features/analytics/analytics.routes.js'
 import { errorHandler } from './shared/middleware/error.middleware.js'
 
 export const app = express()
@@ -37,6 +38,7 @@ app.use('/admin', requireAdmin, adminRouter)
 app.use('/projects', projectRouter)
 app.use('/projects/:projectId/pages', pageRouter)
 app.use('/projects/:projectId/chat', chatRouter)
+app.use('/projects/:projectId/analytics', analyticsRouter)
 
 // Legacy run routes (still functional)
 app.use('/runs', runRouter)

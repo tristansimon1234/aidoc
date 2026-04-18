@@ -5,6 +5,7 @@ import { ChatRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { UuidParamSchema } from '../../shared/validation/schemas.js'
 import { registerChatSession, incrementUsage, findOwnerUserIdByProjectId } from '../../shared/usage/usage.repository.js'
+import { logChatMessages } from '../analytics/analytics.repository.js'
 
 export const chatRouter = Router({ mergeParams: true })
 
@@ -43,6 +44,26 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
         body.data.history,
         body.data.userContext,
       )
+
+      // Fire-and-forget: record the Q&A for analytics.
+      if (sessionToken) {
+        void (async () => {
+          try {
+            const ownerId = await findOwnerUserIdByProjectId(params.data.id)
+            if (!ownerId) return
+            await logChatMessages({
+              projectId: params.data.id,
+              userId: ownerId,
+              sessionToken,
+              source: 'app',
+              userMessage: body.data.message,
+              assistantMessage: result.answer,
+            })
+          } catch (err) {
+            console.warn('[analytics] app chat log failed:', (err as Error).message)
+          }
+        })()
+      }
 
       res.status(200).json(result)
     } catch (err) {

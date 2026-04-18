@@ -254,6 +254,28 @@ export function PublicDocs(): React.ReactElement {
     if (match && match.id !== activePage?.id) setActivePage(match)
   }, [slug, pages, activePage?.id])
 
+  // Fire-and-forget: ping the view endpoint so the owner sees page-view
+  // analytics. Dedupe per slug so strict-mode / re-renders don't double-count.
+  const viewedSlugsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!projectId || !activePage) return
+    if (viewedSlugsRef.current.has(activePage.slug)) return
+    viewedSlugsRef.current.add(activePage.slug)
+    void (async () => {
+      try {
+        const { getChatSessionToken } = await import('../../../shared/hooks/useChatSessionToken.js')
+        await fetch(`/api/docs/${projectId}/view`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pageSlug: activePage.slug,
+            sessionToken: getChatSessionToken(projectId),
+          }),
+        })
+      } catch { /* analytics is best-effort */ }
+    })()
+  }, [projectId, activePage])
+
   const selectPage = useCallback((page: PublicPage) => {
     setActivePage(page)
     if (projectId) navigate(`/docs/${projectId}/${page.slug}`, { replace: true })

@@ -9,6 +9,9 @@ import * as chatService from '../chat/chat.service.js'
 import { ChatRequestSchema } from '../chat/chat.schema.js'
 import { hasEmbeddings } from '../chat/chat.repository.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
+import { logChatMessages, logPageView } from '../analytics/analytics.repository.js'
+import { PageViewPingSchema } from '../analytics/analytics.schema.js'
+import { findPagesByProjectId } from './page.repository.js'
 import type { Project } from '../project/project.types.js'
 
 export const publicDocsRouter = Router()
@@ -154,6 +157,24 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       // Anonymous visitors don't get walkthrough hints (no DOM context)
       delete result.walkthroughAvailable
 
+      // Fire-and-forget: record the Q&A for analytics.
+      if (sessionToken) {
+        void (async () => {
+          try {
+            await logChatMessages({
+              projectId: project.id,
+              userId: project.userId,
+              sessionToken,
+              source: 'public',
+              userMessage: body.data.message,
+              assistantMessage: result.answer,
+            })
+          } catch (err) {
+            console.warn('[analytics] public chat log failed:', (err as Error).message)
+          }
+        })()
+      }
+
       res.status(200).json(result)
     } catch (err) {
       next(err)
@@ -188,6 +209,69 @@ publicDocsRouter.get('/:projectId/chat/suggestions', (req: Request, res: Respons
         publicSuggestionsCache.set(project.id, { suggestions, expiresAt: Date.now() + PUBLIC_SUGGESTIONS_TTL_MS })
       }
       res.status(200).json({ suggestions })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// --- Public page view ping (fire-and-forget from the docs SPA) ---
+
+const VIEW_LIMIT = 120 // per minute per (projectId:ip)
+const viewRateMap = new Map<string, { count: number; resetAt: number }>()
+
+function checkViewLimit(projectId: string, ip: string): boolean {
+  const key = `${projectId}:${ip}`
+  const now = Date.now()
+  let entry = viewRateMap.get(key)
+  if (!entry || now > entry.resetAt) {
+    entry = { count: 0, resetAt: now + 60_000 }
+    viewRateMap.set(key, entry)
+  }
+  entry.count++
+  return entry.count <= VIEW_LIMIT
+}
+
+setInterval(() => {
+  const now = Date.now()
+  for (const [k, v] of viewRateMap) if (now > v.resetAt) viewRateMap.delete(k)
+}, 300_000).unref?.()
+
+publicDocsRouter.post('/:projectId/view', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const projectId = req.params.projectId as string
+      if (!checkViewLimit(projectId, clientIp(req))) {
+        res.status(204).end()
+        return
+      }
+
+      const body = PageViewPingSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const project = await findProjectById(projectId)
+      if (!project) throw new NotFoundError('Project')
+
+      // Resolve page by slug (soft: store view even if page lookup misses)
+      const pages = await findPagesByProjectId(projectId)
+      const page = pages.find((p) => p.slug === body.data.pageSlug) ?? null
+
+      void (async () => {
+        try {
+          await logPageView({
+            projectId,
+            userId: project.userId,
+            pageId: page?.id ?? null,
+            pageSlug: body.data.pageSlug,
+            sessionToken: body.data.sessionToken,
+            source: 'public',
+          })
+        } catch (err) {
+          console.warn('[analytics] page view log failed:', (err as Error).message)
+        }
+      })()
+
+      res.status(204).end()
     } catch (err) {
       next(err)
     }
