@@ -4,11 +4,16 @@ import { ValidationError, AppError } from '../../shared/middleware/error.middlew
 import { CreateRunSchema, RunIdParamSchema } from './run.schema.js'
 import * as runService from './run.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
+import { findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
 
 export const runRouter = Router()
 
-function getUserId(req: Request): string {
-  return (req as Request & { userId: string }).userId
+/** Resolve the team a run belongs to, throws if unknown. Used as the single
+ *  quota-enforcement anchor on run-scoped routes. */
+async function teamForRun(runId: string): Promise<string> {
+  const teamId = await findTeamIdByRunId(runId)
+  if (!teamId) throw new AppError('Run has no team context', 'NO_TEAM', 400)
+  return teamId
 }
 
 runRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
@@ -44,7 +49,7 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
 
       // Exploration is the single most expensive op we run (Claude + Browserbase
       // + Gemini). Refuse hard-cap plans at 100% before spinning up a browser.
-      await enforceQuotaOrThrow(getUserId(req))
+      await enforceQuotaOrThrow(await teamForRun(params.data.id))
 
       const body = req.body as { context?: string }
       const context = typeof body.context === 'string' ? body.context : undefined
@@ -140,7 +145,7 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
 
-      await enforceQuotaOrThrow(getUserId(req))
+      await enforceQuotaOrThrow(await teamForRun(params.data.id))
 
       const body = req.body as { videoPath?: string; generateDoc?: boolean }
       if (!body.videoPath || typeof body.videoPath !== 'string') {
@@ -208,7 +213,7 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
 
       // Refuse hard-cap plans (Free / Startup) at 100% budget — doc gen is the
       // most expensive op we run.
-      await enforceQuotaOrThrow(getUserId(req))
+      await enforceQuotaOrThrow(await teamForRun(params.data.id))
 
       // Verify run has steps before generating
       const steps = await runService.getRunSteps(params.data.id)
@@ -261,7 +266,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
 
-      await enforceQuotaOrThrow(getUserId(req))
+      await enforceQuotaOrThrow(await teamForRun(params.data.id))
 
       const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
 
@@ -537,9 +542,9 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
 
       // Metered: bump monthly voiceover counter for the project owner
       try {
-        const { findOwnerUserIdByRunId, incrementUsage } = await import('../../shared/usage/usage.repository.js')
-        const ownerId = await findOwnerUserIdByRunId(params.data.id)
-        if (ownerId) await incrementUsage(ownerId, 'voiceover')
+        const { findTeamIdByRunId, incrementUsage } = await import('../../shared/usage/usage.repository.js')
+        const teamId = await findTeamIdByRunId(params.data.id)
+        if (teamId) await incrementUsage(teamId, 'voiceover')
       } catch (err) {
         console.warn('[usage] increment voiceover failed:', (err as Error).message)
       }
@@ -573,7 +578,7 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
 
-      await enforceQuotaOrThrow(getUserId(req))
+      await enforceQuotaOrThrow(await teamForRun(params.data.id))
 
       const body = req.body as { stepIndex: number; text?: string; voiceId?: string }
       if (body.stepIndex == null) throw new ValidationError('stepIndex is required')
@@ -732,7 +737,7 @@ runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunct
       const params = RunIdParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
 
-      await enforceQuotaOrThrow(getUserId(req))
+      await enforceQuotaOrThrow(await teamForRun(params.data.id))
 
       const body = req.body as { pageContent: string; pageTitle: string; pageId: string }
       if (!body.pageContent) throw new ValidationError('pageContent is required')

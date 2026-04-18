@@ -13,6 +13,11 @@ const EnvSchema = z.object({
   VIDEO_SERVICE_URL: z.string().url().optional(),
   // Comma-separated list of emails allowed on admin-only routes.
   ADMIN_EMAILS: z.string().optional(),
+  // Transactional email (team invites, future quota alerts, etc.)
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),  // e.g. "aidoc <hello@aidoc.dev>"
+  // Public site URL used for links in outgoing emails
+  PUBLIC_APP_URL: z.string().url().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>

@@ -20,12 +20,31 @@ export function isQuotaError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.code === 'QUOTA_EXCEEDED'
 }
 
+/** Read the active team id from localStorage. The AppRail switcher writes it;
+ *  the request() helper below attaches it to every API call so team-scoped
+ *  routes (billing, teams, projects list) know which team the user is on. */
+const ACTIVE_TEAM_KEY = 'aidoc_active_team_id'
+
+export function getActiveTeamId(): string | null {
+  try { return localStorage.getItem(ACTIVE_TEAM_KEY) }
+  catch { return null }
+}
+
+export function setActiveTeamId(teamId: string | null): void {
+  try {
+    if (teamId) localStorage.setItem(ACTIVE_TEAM_KEY, teamId)
+    else localStorage.removeItem(ACTIVE_TEAM_KEY)
+  } catch { /* no-op */ }
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
+  const teamId = getActiveTeamId()
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(teamId ? { 'X-Team-Id': teamId } : {}),
   }
 }
 
@@ -422,6 +441,50 @@ export const api = {
     recommendations: (projectId: string, period: AnalyticsPeriodDTO): Promise<AnalyticsRecommendationsDTO> =>
       request(`/projects/${projectId}/analytics/recommendations?period=${period}`, { method: 'POST' }),
   },
+  teams: {
+    list: (): Promise<{ team: TeamDTO; role: TeamRoleDTO }[]> => request('/teams'),
+    create: (name: string): Promise<TeamDTO> =>
+      request('/teams', { method: 'POST', body: JSON.stringify({ name }) }),
+    get: (teamId: string): Promise<{ team: TeamDTO; members: TeamMemberDTO[]; role: TeamRoleDTO }> =>
+      request(`/teams/${teamId}`),
+    rename: (teamId: string, name: string): Promise<TeamDTO> =>
+      request(`/teams/${teamId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+    delete: (teamId: string): Promise<void> =>
+      request(`/teams/${teamId}`, { method: 'DELETE' }),
+    invite: (teamId: string, email: string, role: TeamRoleDTO = 'member'): Promise<{ inviteId: string; acceptUrl: string; emailSent: boolean }> =>
+      request(`/teams/${teamId}/members/invite`, { method: 'POST', body: JSON.stringify({ email, role }) }),
+    removeMember: (teamId: string, userId: string): Promise<void> =>
+      request(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' }),
+    changeRole: (teamId: string, userId: string, role: TeamRoleDTO): Promise<void> =>
+      request(`/teams/${teamId}/members/${userId}/role`, { method: 'PATCH', body: JSON.stringify({ role }) }),
+    acceptInvite: (token: string): Promise<{ teamId: string }> =>
+      request(`/teams/invites/${token}/accept`, { method: 'POST' }),
+  },
+  invites: {
+    peek: (token: string): Promise<{ teamName: string; email: string; inviterName: string | null; expiresAt: string; accepted: boolean }> =>
+      request(`/invites/${token}`),
+  },
+}
+
+export type TeamRoleDTO = 'owner' | 'member'
+
+export interface TeamDTO {
+  id: string
+  name: string
+  slug: string
+  personal: boolean
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TeamMemberDTO {
+  teamId: string
+  userId: string
+  email: string | null
+  fullName: string | null
+  role: TeamRoleDTO
+  joinedAt: string
 }
 
 export type AnalyticsPeriodDTO = '7d' | '30d' | '90d'

@@ -14,8 +14,8 @@ import type { Project } from '../project/project.types.js'
 async function trackWidgetSession(project: Project, sessionToken: string | undefined): Promise<void> {
   if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
   try {
-    const isNew = await registerChatSession(project.id, project.userId, sessionToken, 'widget')
-    if (isNew) await incrementUsage(project.userId, 'chat_sessions')
+    const isNew = await registerChatSession(project.id, project.teamId, sessionToken, 'widget')
+    if (isNew) await incrementUsage(project.teamId, 'chat_sessions')
   } catch (err) {
     console.warn('[usage] widget session track failed:', (err as Error).message)
   }
@@ -87,8 +87,8 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       const project = await findProjectByWidgetKey(widgetKey)
       if (!project) throw new NotFoundError('Widget not found or disabled')
 
-      // Block the widget owner when their monthly quota is exhausted.
-      await enforceQuotaOrThrow(project.userId)
+      // Block the widget owner's team when its monthly quota is exhausted.
+      await enforceQuotaOrThrow(project.teamId)
 
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())

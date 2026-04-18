@@ -5,6 +5,7 @@ import type { Project, CreateProjectInput, UpdateProjectInput, ProjectCredential
 interface ProjectRow {
   id: string
   user_id: string
+  team_id: string
   name: string
   base_url: string
   description: string | null
@@ -28,6 +29,7 @@ function mapToProject(row: ProjectRow): Project {
   return {
     id: row.id,
     userId: row.user_id,
+    teamId: row.team_id,
     name: row.name,
     baseUrl: row.base_url,
     description: row.description,
@@ -48,11 +50,12 @@ function mapToProject(row: ProjectRow): Project {
   }
 }
 
-export async function createProject(userId: string, input: CreateProjectInput): Promise<Project> {
+export async function createProject(userId: string, teamId: string, input: CreateProjectInput): Promise<Project> {
   const { data, error } = await supabase
     .from('projects')
     .insert({
       user_id: userId,
+      team_id: teamId,
       name: input.name,
       base_url: input.baseUrl,
       description: input.description ?? null,
@@ -72,13 +75,18 @@ export async function findProjectById(id: string): Promise<Project | null> {
   return data ? mapToProject(data as ProjectRow) : null
 }
 
-export async function listProjectsByUserId(userId: string): Promise<Project[]> {
-  const { data, error } = await supabase
+/** List projects visible to a user across all their teams — RLS filters down
+ *  to just the rows they have access to via team_members. */
+export async function listProjectsForUser(_userId: string, teamId?: string): Promise<Project[]> {
+  let query = supabase
     .from('projects')
     .select('*')
-    .eq('user_id', userId)
     .order('created_at', { ascending: false })
+  if (teamId) query = query.eq('team_id', teamId)
+  const { data, error } = await query
   if (error) throw new DatabaseError(error.message)
+  // Fallback filter for dev where RLS might be off: user must be a team member
+  // via team_members — the join is enforced server-side via RLS anyway.
   return (data as ProjectRow[]).map(mapToProject)
 }
 

@@ -16,6 +16,7 @@ import { widgetRouter } from '../src/features/chat/widget.routes.js'
 import { mcpRouter } from '../src/features/chat/mcp.routes.js'
 import { publicDocsRouter } from '../src/features/page/public-docs.routes.js'
 import { analyticsRouter } from '../src/features/analytics/analytics.routes.js'
+import { teamRouter, invitePublicRouter } from '../src/features/team/team.routes.js'
 import { errorHandler } from '../src/shared/middleware/error.middleware.js'
 
 const app = express()
@@ -32,11 +33,13 @@ app.get('/api/health', (_req: Request, res: Response) => {
 app.use('/api/widget', widgetRouter)
 app.use('/api/mcp', mcpRouter)
 app.use('/api/docs', publicDocsRouter)
+app.use('/api/invites', invitePublicRouter)
 
 // Protected routes
 app.use('/api/profile', authMiddleware, profileRouter)
 app.use('/api/billing', authMiddleware, billingRouter)
 app.use('/api/admin', authMiddleware, requireAdmin, adminRouter)
+app.use('/api/teams', authMiddleware, teamRouter)
 app.use('/api/projects', authMiddleware, projectRouter)
 app.use('/api/projects/:projectId/pages', authMiddleware, pageRouter)
 app.use('/api/projects/:projectId/chat', authMiddleware, chatRouter)

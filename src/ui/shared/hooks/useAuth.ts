@@ -9,6 +9,12 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<string | null>
   signUp: (email: string, password: string) => Promise<string | null>
   signOut: () => Promise<void>
+  /** Send the Supabase password-reset email. Supabase handles the email
+   *  delivery via the SMTP configured in the dashboard (Resend in prod). */
+  requestPasswordReset: (email: string) => Promise<string | null>
+  /** Update the password on the recovery session set by Supabase when the
+   *  user clicks the email link. */
+  updatePassword: (password: string) => Promise<string | null>
 }
 
 export function useAuth(): AuthState {
@@ -47,5 +53,16 @@ export function useAuth(): AuthState {
     await supabase.auth.signOut()
   }, [])
 
-  return { user, session, loading, signIn, signUp, signOut }
+  const requestPasswordReset = useCallback(async (email: string): Promise<string | null> => {
+    const redirectTo = `${window.location.origin}/auth/reset`
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo })
+    return error ? error.message : null
+  }, [])
+
+  const updatePassword = useCallback(async (password: string): Promise<string | null> => {
+    const { error } = await supabase.auth.updateUser({ password })
+    return error ? error.message : null
+  }, [])
+
+  return { user, session, loading, signIn, signUp, signOut, requestPasswordReset, updatePassword }
 }

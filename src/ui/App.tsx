@@ -16,6 +16,10 @@ import { PublicDocs } from './features/docs/pages/PublicDocs.js'
 import { AnalyticsPage } from './features/analytics/pages/AnalyticsPage.js'
 import { AccountSettings } from './features/account/pages/AccountSettings.js'
 import { AdminUsage } from './features/admin/pages/AdminUsage.js'
+import { ForgotPassword } from './features/auth/pages/ForgotPassword.js'
+import { ResetPassword } from './features/auth/pages/ResetPassword.js'
+import { AcceptInvite } from './features/team/pages/AcceptInvite.js'
+import { TeamSettings } from './features/team/pages/TeamSettings.js'
 
 export function App(): React.ReactElement {
   const { user, loading, signIn, signUp, signOut } = useAuth()
@@ -35,6 +39,9 @@ export function App(): React.ReactElement {
         {/* Public — no auth */}
         <Route path="/docs/:projectId" element={<PublicDocs />} />
         <Route path="/docs/:projectId/:slug" element={<PublicDocs />} />
+        <Route path="/auth/forgot" element={<ForgotPassword />} />
+        <Route path="/auth/reset" element={<ResetPassword />} />
+        <Route path="/invite/:token" element={<AcceptInvite />} />
 
         {/* Auth gate */}
         {!user ? (
@@ -47,6 +54,7 @@ export function App(): React.ReactElement {
             <Route path="/" element={<ProjectList onSignOut={signOut} />} />
             <Route path="/account" element={<AccountSettings />} />
             <Route path="/admin/usage" element={<AdminUsage />} />
+            <Route path="/teams/:teamId" element={<TeamSettings />} />
             <Route path="/projects/new" element={<NewProject />} />
             <Route path="/projects/:projectId" element={<ProjectDetail />}>
               <Route path="pages/new" element={<NewPage />} />

@@ -15,6 +15,7 @@ import { widgetRouter } from './features/chat/widget.routes.js'
 import { mcpRouter } from './features/chat/mcp.routes.js'
 import { publicDocsRouter } from './features/page/public-docs.routes.js'
 import { analyticsRouter } from './features/analytics/analytics.routes.js'
+import { teamRouter, invitePublicRouter } from './features/team/team.routes.js'
 import { errorHandler } from './shared/middleware/error.middleware.js'
 
 export const app = express()
@@ -26,6 +27,7 @@ app.use(express.json())
 app.use('/widget', widgetRouter)
 app.use('/mcp', mcpRouter)
 app.use('/docs', publicDocsRouter)
+app.use('/invites', invitePublicRouter)
 
 app.use(authMiddleware)
 
@@ -33,6 +35,7 @@ app.use(authMiddleware)
 app.use('/profile', profileRouter)
 app.use('/billing', billingRouter)
 app.use('/admin', requireAdmin, adminRouter)
+app.use('/teams', teamRouter)
 
 // Project routes
 app.use('/projects', projectRouter)

@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import { useTheme } from '../hooks/useTheme.js'
 import { AvatarMenu } from './AvatarMenu.js'
+import { TeamSwitcher } from './TeamSwitcher.js'
 import styles from './AppRail.module.css'
 
 export function AppRail(): React.ReactElement {
@@ -31,6 +32,8 @@ export function AppRail(): React.ReactElement {
             <polyline points="9 22 9 12 15 12 15 22" />
           </svg>
         </Link>
+
+        <TeamSwitcher />
       </div>
 
       <div className={styles.bottom}>

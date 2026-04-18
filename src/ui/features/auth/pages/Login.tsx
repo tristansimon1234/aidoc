@@ -1,4 +1,5 @@
 import { type ChangeEvent, type FormEvent, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Button, Field } from '../../../design-system/components/index.js'
 import styles from './Login.module.css'
 
@@ -87,6 +88,12 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
             </Button>
           </div>
         </form>
+
+        {!isSignUp && (
+          <p className={styles.toggle}>
+            <Link to="/auth/forgot" className={styles.toggleLink}>Forgot your password?</Link>
+          </p>
+        )}
 
         <p className={styles.toggle}>
           {isSignUp ? 'Already have an account?' : "Don't have an account?"}{' '}

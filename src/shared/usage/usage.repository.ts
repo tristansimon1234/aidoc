@@ -9,21 +9,24 @@ function currentPeriodMonth(): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
 }
 
-export async function incrementUsage(userId: string, feature: UsageFeature, delta = 1): Promise<void> {
+/** Bump the team's monthly counter for a given feature. The RPC is
+ *  SECURITY DEFINER, takes the team_id, and derives the audit user_id
+ *  from the team's primary owner. */
+export async function incrementUsage(teamId: string, feature: UsageFeature, delta = 1): Promise<void> {
   const { error } = await supabase.rpc('increment_usage', {
-    p_user_id: userId,
+    p_team_id: teamId,
     p_feature: feature,
     p_delta: delta,
   })
   if (error) throw new DatabaseError(error.message)
 }
 
-export async function listUsageForCurrentMonth(userId: string): Promise<Record<UsageFeature, number>> {
+export async function listUsageForCurrentMonth(teamId: string): Promise<Record<UsageFeature, number>> {
   const period = currentPeriodMonth()
   const { data, error } = await supabase
     .from('usage_counters')
     .select('feature, count')
-    .eq('user_id', userId)
+    .eq('team_id', teamId)
     .eq('period_month', period)
   if (error) throw new DatabaseError(error.message)
   const result: Record<UsageFeature, number> = {
@@ -38,12 +41,13 @@ export async function listUsageForCurrentMonth(userId: string): Promise<Record<U
   return result
 }
 
-// Register a chat session hit (widget embed or in-app ChatPanel). Returns
-// true if this is a new session for the current month so the caller can
-// bump the usage counter.
+// Register a chat session hit. Returns true if this is a NEW session for the
+// current month — the caller bumps the team's chat_sessions counter only on
+// new-session inserts, so the billing unit is the session regardless of how
+// many messages the visitor sends.
 export async function registerChatSession(
   projectId: string,
-  ownerUserId: string,
+  teamId: string,
   sessionToken: string,
   source: ChatSessionSource,
 ): Promise<boolean> {
@@ -69,51 +73,69 @@ export async function registerChatSession(
     return false
   }
 
+  // user_id is the audit column on chat_sessions — keep pointing at the
+  // team's primary owner until we drop it in a cleanup migration.
+  const ownerUserId = await findOwnerUserIdByTeamId(teamId)
   const { error: insertError } = await supabase.from('chat_sessions').insert({
     project_id: projectId,
     session_token: sessionToken,
     period_month: period,
-    user_id: ownerUserId,
+    user_id: ownerUserId ?? teamId,   // FK-safe fallback, shouldn't happen
     source,
   })
   if (insertError) throw new DatabaseError(insertError.message)
   return true
 }
 
-// Resolve the project owner from a run id, so services that only have a runId
-// can still increment the right user's usage counter.
-export async function findOwnerUserIdByRunId(runId: string): Promise<string | null> {
+export async function findOwnerUserIdByTeamId(teamId: string): Promise<string | null> {
   const { data, error } = await supabase
-    .from('runs')
-    .select('project_id, doc_pages(project_id, projects(user_id))')
-    .eq('id', runId)
-    .maybeSingle()
-  if (error) throw new DatabaseError(error.message)
-  if (!data) return null
-
-  const projectId = (data as { project_id: string | null }).project_id
-  if (projectId) {
-    const { data: proj, error: projErr } = await supabase
-      .from('projects')
-      .select('user_id')
-      .eq('id', projectId)
-      .maybeSingle()
-    if (projErr) throw new DatabaseError(projErr.message)
-    return (proj as { user_id: string } | null)?.user_id ?? null
-  }
-
-  const joined = data as unknown as {
-    doc_pages: { project_id: string; projects: { user_id: string } | null } | null
-  }
-  return joined.doc_pages?.projects?.user_id ?? null
-}
-
-export async function findOwnerUserIdByProjectId(projectId: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('projects')
+    .from('team_members')
     .select('user_id')
-    .eq('id', projectId)
+    .eq('team_id', teamId)
+    .eq('role', 'owner')
+    .order('joined_at', { ascending: true })
+    .limit(1)
     .maybeSingle()
   if (error) throw new DatabaseError(error.message)
   return (data as { user_id: string } | null)?.user_id ?? null
+}
+
+/** Resolve the team from a run id — used by billing / analytics / chat log */
+export async function findTeamIdByRunId(runId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('project_id')
+    .eq('id', runId)
+    .maybeSingle()
+  if (error) throw new DatabaseError(error.message)
+  const projectId = (data as { project_id: string | null } | null)?.project_id
+  if (!projectId) return null
+  return findTeamIdByProjectId(projectId)
+}
+
+/** Resolve the team that owns a project. Used by every route that needs to
+ *  bump usage / enforce quota / log analytics on a team's account. */
+export async function findTeamIdByProjectId(projectId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('projects')
+    .select('team_id')
+    .eq('id', projectId)
+    .maybeSingle()
+  if (error) throw new DatabaseError(error.message)
+  return (data as { team_id: string } | null)?.team_id ?? null
+}
+
+/** @deprecated — use findTeamIdByProjectId; kept temporarily so old call
+ *  sites compile while we migrate them. Returns the team's primary owner. */
+export async function findOwnerUserIdByProjectId(projectId: string): Promise<string | null> {
+  const teamId = await findTeamIdByProjectId(projectId)
+  if (!teamId) return null
+  return findOwnerUserIdByTeamId(teamId)
+}
+
+/** @deprecated — use findTeamIdByRunId. */
+export async function findOwnerUserIdByRunId(runId: string): Promise<string | null> {
+  const teamId = await findTeamIdByRunId(runId)
+  if (!teamId) return null
+  return findOwnerUserIdByTeamId(teamId)
 }

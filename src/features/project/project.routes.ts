@@ -4,6 +4,7 @@ import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { CreateProjectSchema, UpdateProjectSchema, ProjectIdParamSchema, AnalyzeUrlSchema } from './project.schema.js'
 import * as projectService from './project.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
+import { resolveActiveTeam } from '../../shared/middleware/team-context.middleware.js'
 
 export const projectRouter = Router()
 
@@ -14,7 +15,12 @@ function getUserId(req: Request): string {
 projectRouter.get('/', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const projects = await projectService.listProjects(getUserId(req))
+      const userId = getUserId(req)
+      // Optional X-Team-Id scopes the list to one team; otherwise returns all
+      // projects across all the user's teams (via RLS).
+      const headerTeam = req.header('x-team-id')
+      const teamId = headerTeam && /^[0-9a-f-]{36}$/i.test(headerTeam) ? headerTeam : undefined
+      const projects = await projectService.listProjects(userId, teamId)
       res.status(200).json(projects)
     } catch (err) {
       next(err)
@@ -27,7 +33,9 @@ projectRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsed = CreateProjectSchema.safeParse(req.body)
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
-      const project = await projectService.createProject(getUserId(req), parsed.data)
+      const userId = getUserId(req)
+      const teamId = await resolveActiveTeam(req, userId)
+      const project = await projectService.createProject(userId, teamId, parsed.data)
       res.status(201).json(project)
     } catch (err) {
       next(err)
@@ -42,7 +50,9 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       const parsed = AnalyzeUrlSchema.safeParse(req.body)
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
 
-      await enforceQuotaOrThrow(getUserId(req))
+      const userId = getUserId(req)
+      const teamId = await resolveActiveTeam(req, userId)
+      await enforceQuotaOrThrow(teamId)
 
       const url = parsed.data.url
       console.log(`[analyze-url] ${url}`)

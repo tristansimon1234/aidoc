@@ -15,7 +15,8 @@ export type SubscriptionStatus = 'active' | 'canceled' | 'past_due' | 'trialing'
 
 export interface Subscription {
   id: string
-  userId: string
+  userId: string       // audit / creator — billing happens on teamId
+  teamId: string | null
   planId: PlanId
   status: SubscriptionStatus
   currentPeriodStart: Date | null

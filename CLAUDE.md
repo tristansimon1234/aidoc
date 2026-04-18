@@ -111,6 +111,12 @@ src/
       admin.service.ts        # getUsageReport(periodMonth) — joins counters + profiles + subs + plans
       admin.routes.ts         # GET /admin/usage?month=YYYY-MM
     analytics/            # Per-project chat + doc-view analytics with AI insights
+    team/                 # Multi-tenant: teams, members, invites; auto-created personal workspace
+      team.types.ts          # Team, TeamMember, TeamInvite, TeamRole
+      team.schema.ts         # Zod for create/rename/invite/accept
+      team.repository.ts     # CRUD + listMembers + createInvite/acceptInvite
+      team.service.ts        # role checks, invite token gen, email sending
+      team.routes.ts         # /api/teams/* (authed) + /api/invites/:token (public peek)
       analytics.types.ts      # AnalyticsReport, ChatStats, ViewStats, AiInsights
       analytics.schema.ts     # AnalyticsQuerySchema (7d|30d|90d), AiInsightsSchema, PageViewPingSchema
       analytics.repository.ts # logChatMessages, logPageView + aggregations + sampleUserMessages
@@ -349,6 +355,15 @@ Tunable in code, no migration needed:
 # Admin (authenticated + ADMIN_EMAILS allowlist)
 /api/admin/usage                           # GET ?month=YYYY-MM: per-user usage report
 
+# Teams (authenticated — multi-tenant layer above projects)
+/api/teams                                 # GET list; POST create
+/api/teams/:id                             # GET (team + members) / PATCH rename / DELETE
+/api/teams/:id/members                     # GET list
+/api/teams/:id/members/invite              # POST { email, role } → creates invite + emails it
+/api/teams/:id/members/:userId             # DELETE remove / PATCH :/role change
+/api/teams/invites/:token/accept           # POST (auth) → join team, mark invite accepted
+/api/invites/:token                        # GET (public) → peek team name for the accept page
+
 # Analytics (authenticated — project owner only)
 /api/projects/:pid/analytics               # GET ?period=7d|30d|90d: chat + doc-view stats + AI insights
 
@@ -460,6 +475,11 @@ ELEVENLABS_API_KEY   # Optional — voice-over narration
 VIDEO_SERVICE_URL    # Optional — external video processing service
 ADMIN_EMAILS         # Comma-separated allowlist for /api/admin/* routes
                      # e.g. ADMIN_EMAILS=you@example.com,partner@example.com
+RESEND_API_KEY       # Optional — transactional email (team invites) via Resend
+EMAIL_FROM           # e.g. "aidoc <hello@aidoc.dev>" — sender used with Resend
+PUBLIC_APP_URL       # e.g. https://app.aidoc.dev — used to build invite accept links
+                     # Auth emails (signup/reset/magic link) go through Supabase SMTP
+                     # configured in the Supabase dashboard; see docs/EMAIL_TEMPLATES.md.
 ```
 
 **Frontend** (Vite prefix):

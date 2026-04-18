@@ -51,11 +51,11 @@ function pctOf(tokens: number, budget: number): number {
   return Math.round((tokens / budget) * 1000) / 10  // one decimal
 }
 
-export async function getSummary(userId: string): Promise<BillingSummary> {
+export async function getSummary(ownerUserId: string, teamId: string): Promise<BillingSummary> {
   const [plans, subscription, counters] = await Promise.all([
     billingRepo.listPlans(),
-    billingRepo.ensureFreeSubscription(userId),
-    listUsageForCurrentMonth(userId),
+    billingRepo.ensureFreeSubscription(ownerUserId, teamId),
+    listUsageForCurrentMonth(teamId),
   ])
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
@@ -91,13 +91,22 @@ export interface QuotaCheck {
  * (Free / Startup) has hit 100% of its monthly token budget. Overage-enabled
  * plans (Growth / Business) always pass through; they'll be billed the overage
  * via `OVERAGE_EUR` when Stripe is wired.
+ *
+ * Accepts a teamId since subscriptions are team-scoped post-teams migration.
  */
-export async function checkQuota(userId: string): Promise<QuotaCheck> {
+export async function checkQuota(teamId: string): Promise<QuotaCheck> {
   const [plans, subscription, counters] = await Promise.all([
     billingRepo.listPlans(),
-    billingRepo.ensureFreeSubscription(userId),
-    listUsageForCurrentMonth(userId),
+    billingRepo.findActiveSubscriptionByTeam(teamId),
+    listUsageForCurrentMonth(teamId),
   ])
+
+  // Every team should have an active subscription (created by the signup
+  // trigger or createTeam). If not, treat as blocked to be safe.
+  if (!subscription) {
+    return { allowed: false, percent: 100, planId: 'free', monthlyTokens: 0, tokensUsed: 0, overageEnabled: false }
+  }
+
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
 
@@ -125,7 +134,7 @@ export async function checkQuota(userId: string): Promise<QuotaCheck> {
 // When Stripe is wired in, this function will redirect paid plans to a
 // Checkout Session and only paid webhooks will mutate the subscription;
 // the 'free' branch (downgrade) stays as-is.
-export async function selectPlan(userId: string, planId: PlanId): Promise<BillingSummary> {
-  await billingRepo.updateActiveSubscriptionPlan(userId, planId)
-  return getSummary(userId)
+export async function selectPlan(ownerUserId: string, teamId: string, planId: PlanId): Promise<BillingSummary> {
+  await billingRepo.updateActiveSubscriptionPlan(ownerUserId, teamId, planId)
+  return getSummary(ownerUserId, teamId)
 }

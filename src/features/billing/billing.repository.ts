@@ -29,6 +29,7 @@ function mapToPlan(row: PlanRow): Plan {
 interface SubscriptionRow {
   id: string
   user_id: string
+  team_id: string | null
   plan_id: string
   status: string
   current_period_start: string | null
@@ -43,6 +44,7 @@ function mapToSubscription(row: SubscriptionRow): Subscription {
   return {
     id: row.id,
     userId: row.user_id,
+    teamId: row.team_id,
     planId: row.plan_id as PlanId,
     status: row.status as SubscriptionStatus,
     currentPeriodStart: row.current_period_start ? new Date(row.current_period_start) : null,
@@ -63,33 +65,36 @@ export async function listPlans(): Promise<Plan[]> {
   return (data as PlanRow[]).map(mapToPlan)
 }
 
-export async function findActiveSubscription(userId: string): Promise<Subscription | null> {
+/** Look up the active subscription for a team (teams are the billing entity
+ *  since 20260418000005_add_teams.sql). */
+export async function findActiveSubscriptionByTeam(teamId: string): Promise<Subscription | null> {
   const { data, error } = await supabase
     .from('subscriptions')
     .select('*')
-    .eq('user_id', userId)
-    .neq('status', 'canceled')
+    .eq('team_id', teamId)
+    .eq('status', 'active')
     .maybeSingle()
   if (error) throw new DatabaseError(error.message)
   return data ? mapToSubscription(data as SubscriptionRow) : null
 }
 
-// Ensure every authenticated user has an active subscription. Acts as a
-// safety net in case the auth trigger didn't fire (e.g. legacy users).
-export async function ensureFreeSubscription(userId: string): Promise<Subscription> {
-  const existing = await findActiveSubscription(userId)
+/** Ensure the team has an active subscription. Acts as a safety net in case
+ *  the signup trigger didn't fire or the team was created before the trigger
+ *  extension. `ownerUserId` is written to the user_id audit column. */
+export async function ensureFreeSubscription(ownerUserId: string, teamId: string): Promise<Subscription> {
+  const existing = await findActiveSubscriptionByTeam(teamId)
   if (existing) return existing
   const { data, error } = await supabase
     .from('subscriptions')
-    .insert({ user_id: userId, plan_id: 'free', status: 'active' })
+    .insert({ user_id: ownerUserId, team_id: teamId, plan_id: 'free', status: 'active' })
     .select('*')
     .single()
   if (error) throw new DatabaseError(error.message)
   return mapToSubscription(data as SubscriptionRow)
 }
 
-export async function updateActiveSubscriptionPlan(userId: string, planId: PlanId): Promise<Subscription> {
-  const active = await ensureFreeSubscription(userId)
+export async function updateActiveSubscriptionPlan(ownerUserId: string, teamId: string, planId: PlanId): Promise<Subscription> {
+  const active = await ensureFreeSubscription(ownerUserId, teamId)
   const { data, error } = await supabase
     .from('subscriptions')
     .update({ plan_id: planId, updated_at: new Date().toISOString() })
