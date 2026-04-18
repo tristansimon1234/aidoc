@@ -66,9 +66,12 @@ export async function getSummary(userId: string): Promise<BillingSummary> {
     counters.try_doc * TOKEN_COSTS.try_doc +
     counters.chat_sessions * TOKEN_COSTS.chat_sessions
 
+  const overageEnabled = OVERAGE_ENABLED_PLANS.has(plan.id)
   const snapshot: UsageSnapshot = {
     percent: pctOf(tokensUsed, plan.monthlyTokens),
     periodMonth: currentPeriodMonth(),
+    allowed: overageEnabled || tokensUsed < plan.monthlyTokens,
+    overageEnabled,
   }
   return { plan, subscription, usage: snapshot }
 }

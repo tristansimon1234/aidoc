@@ -32,6 +32,15 @@ export interface UsageSnapshot {
   // breakdown via `/admin/usage`, regular users never see it.
   percent: number
   periodMonth: string  // e.g. '2026-04-01'
+  // False when the plan hard-caps (Free / Startup) AND the user has hit 100%.
+  // Consumed by the UI to disable expensive buttons (record, upload, generate
+  // voiceover, try doc) BEFORE the user starts, so we refuse fast instead of
+  // failing mid-upload.
+  allowed: boolean
+  // Whether the plan lets the user keep going past 100% (Growth / Business).
+  // The UI uses this to show a softer "overage in progress" hint instead of
+  // a hard block.
+  overageEnabled: boolean
 }
 
 export interface BillingSummary {

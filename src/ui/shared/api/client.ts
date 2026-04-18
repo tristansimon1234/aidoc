@@ -202,6 +202,8 @@ export interface SubscriptionDTO {
 export interface UsageSnapshotDTO {
   percent: number
   periodMonth: string
+  allowed: boolean
+  overageEnabled: boolean
 }
 
 export interface BillingSummaryDTO {
