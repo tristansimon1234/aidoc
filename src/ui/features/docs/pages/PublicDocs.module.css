@@ -7,7 +7,11 @@
 }
 
 .shell {
-  min-height: 100vh;
+  /* Bounded height (not min-height) so the sidebar + content each scroll
+     internally via their own overflow-y:auto. With min-height:100vh the
+     whole window grew with tall content and the sidebar scrolled out of
+     view instead of staying pinned. */
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -327,4 +331,30 @@
   .searchWrapper {
     display: none;
   }
+}
+
+.chatLauncher {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  z-index: 50;
+}
+
+.chatLauncher:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
 }

@@ -55,6 +55,7 @@ export const UpdateProjectSchema = z.object({
   discoveredContext: DiscoveredContextSchema.optional(),
   design: DesignSchema.optional(),
   walkthroughEnabled: z.boolean().optional(),
+  publicDocsChatEnabled: z.boolean().optional(),
 })
 
 export const ProjectIdParamSchema = UuidParamSchema

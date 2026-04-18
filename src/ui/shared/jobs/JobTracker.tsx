@@ -54,10 +54,25 @@ function JobCard({ job, onDismiss, onNavigate }: { job: Job; onDismiss: () => vo
       <div className={styles.body}>
         <div className={styles.title}>{job.pageTitle}</div>
         <div className={styles.subtitle}>
-          {job.status === 'running' ? `${TYPE_LABELS[job.type]} — ${elapsed(job.startedAt)}` : ''}
-          {job.status === 'completed' ? COMPLETED_LABELS[job.type] : ''}
-          {job.status === 'failed' ? `${TYPE_LABELS[job.type]} failed` : ''}
+          {job.status === 'running' && `${TYPE_LABELS[job.type]} — ${elapsed(job.startedAt)}`}
+          {job.status === 'completed' && COMPLETED_LABELS[job.type]}
+          {job.status === 'failed' && (
+            job.errorCode === 'QUOTA_EXCEEDED'
+              ? 'Monthly quota exhausted — upgrade to continue.'
+              : (job.error && job.error.length > 0)
+                ? job.error
+                : `${TYPE_LABELS[job.type]} failed`
+          )}
         </div>
+        {job.status === 'failed' && job.errorCode === 'QUOTA_EXCEEDED' && (
+          <a
+            href="/account?tab=billing"
+            className={styles.upgradeLink}
+            onClick={(e) => e.stopPropagation()}
+          >
+            Upgrade plan →
+          </a>
+        )}
       </div>
       <button className={styles.dismiss} onClick={(e) => { e.stopPropagation(); onDismiss() }}>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>

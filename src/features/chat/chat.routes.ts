@@ -5,23 +5,26 @@ import { ChatRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { UuidParamSchema } from '../../shared/validation/schemas.js'
 import { registerChatSession, incrementUsage, findOwnerUserIdByProjectId } from '../../shared/usage/usage.repository.js'
+import { logChatMessages } from '../analytics/analytics.repository.js'
+import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
+import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 
 export const chatRouter = Router({ mergeParams: true })
 
-// Fire-and-forget: count the in-app ChatPanel the same way as widget sessions
-// (dedup per (project, token, month)). Never blocks the chat response.
-function trackAppChatSession(projectId: string, sessionToken: string | undefined): void {
+// Count the in-app ChatPanel the same way as widget sessions (dedup per
+// (project, token, month)). Awaited so the usage counter actually moves —
+// serverless tears the function down after res.send() and would kill a
+// fire-and-forget call.
+async function trackAppChatSession(projectId: string, sessionToken: string | undefined): Promise<void> {
   if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
-  void (async () => {
-    try {
-      const ownerId = await findOwnerUserIdByProjectId(projectId)
-      if (!ownerId) return
-      const isNew = await registerChatSession(projectId, ownerId, sessionToken, 'app')
-      if (isNew) await incrementUsage(ownerId, 'chat_sessions')
-    } catch (err) {
-      console.warn('[usage] app chat session track failed:', (err as Error).message)
-    }
-  })()
+  try {
+    const ownerId = await findOwnerUserIdByProjectId(projectId)
+    if (!ownerId) return
+    const isNew = await registerChatSession(projectId, ownerId, sessionToken, 'app')
+    if (isNew) await incrementUsage(ownerId, 'chat_sessions')
+  } catch (err) {
+    console.warn('[usage] app chat session track failed:', (err as Error).message)
+  }
 }
 
 // Chat with project documentation
@@ -34,8 +37,20 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
+      // Block hard-cap plans (Free / Startup) before spending on Gemini.
+      const ownerForQuota = await findOwnerUserIdByProjectId(params.data.id)
+      if (ownerForQuota) await enforceQuotaOrThrow(ownerForQuota)
+
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
-      trackAppChatSession(params.data.id, sessionToken)
+      // Kick off the session counter + classifier IN PARALLEL with the chat
+      // reply. They're both faster than the chat Gemini call, so they cost us
+      // nothing on user-facing latency — and running them awaited avoids the
+      // serverless fire-and-forget pitfall (functions get torn down after
+      // res.send, leaving background work unfinished).
+      const sessionTrackPromise = trackAppChatSession(params.data.id, sessionToken)
+      const classifyPromise = sessionToken
+        ? classifyMessageContent(body.data.message)
+        : Promise.resolve(null)
 
       const result = await chatService.chat(
         params.data.id,
@@ -43,6 +58,32 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
         body.data.history,
         body.data.userContext,
       )
+
+      if (sessionToken) {
+        try {
+          const ownerId = await findOwnerUserIdByProjectId(params.data.id)
+          if (ownerId) {
+            const { userMessageId } = await logChatMessages({
+              projectId: params.data.id,
+              userId: ownerId,
+              sessionToken,
+              source: 'app',
+              userMessage: body.data.message,
+              assistantMessage: result.answer,
+            })
+            const classified = await classifyPromise
+            if (userMessageId && classified) {
+              await applyClassificationToMessage(userMessageId, classified)
+            }
+          }
+        } catch (err) {
+          console.warn('[analytics] app chat log failed:', (err as Error).message)
+        }
+      }
+
+      // Ensure the session counter INSERT/increment is flushed before we end
+      // the request — otherwise Vercel can kill it mid-flight.
+      await sessionTrackPromise
 
       res.status(200).json(result)
     } catch (err) {

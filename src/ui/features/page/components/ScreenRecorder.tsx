@@ -1,7 +1,9 @@
 import { type ChangeEvent, useState, useRef, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { Button, ProgressLoader, useConfirmDialog } from '../../../design-system/components/index.js'
 import { api, type DocPageDTO } from '../../../shared/api/client.js'
 import { useJobs } from '../../../shared/jobs/JobContext.js'
+import { useQuotaStatus } from '../../../shared/hooks/useQuotaStatus.js'
 import styles from '../pages/PageView.module.css'
 
 type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 'generating'
@@ -62,8 +64,10 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
-  const { addJob, getJobForPage } = useJobs()
+  const { addJob, failJob, getJobForPage } = useJobs()
   const activeDocJob = getJobForPage(pageId, 'doc-gen')
+  const quota = useQuotaStatus()
+  const quotaBlocked = !quota.loading && !quota.allowed
   const [elapsed, setElapsed] = useState(0)
   const [hasExtension, setHasExtension] = useState(false)
   const [micEnabled, setMicEnabled] = useState(true)
@@ -141,13 +145,18 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
       setStatus('analyzing')
       addJob({ runId: run.id, pageId, pageTitle: page.title, type: 'doc-gen', status: 'running' })
 
-      // Fire-and-forget: the fetch runs in background even if component unmounts
+      // Fire-and-forget: the fetch runs in background even if component unmounts.
+      // If the HTTP request itself fails before a backend job can be created
+      // (e.g. 402 QUOTA_EXCEEDED), surface it in the job tracker so the user
+      // sees a reason rather than a silent failure.
       api.runs.analyzeVideo(run.id, videoPath, { generateDoc: true })
         .then(() => {
           // Polling will detect the generated_docs row and mark job complete
         })
         .catch((err) => {
-          console.error('[process-video] Pipeline failed:', err)
+          const e = err as Error & { code?: string | null }
+          console.error('[process-video] Pipeline failed:', e)
+          failJob(run.id, e.message, e.code ?? null)
         })
     } catch (err) {
       setError((err as Error).message)
@@ -359,19 +368,38 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)', height: '100%' }}>
       {confirmDialog}
+      {quotaBlocked && (
+        <div style={{
+          padding: 'var(--space-md)',
+          background: 'var(--color-status-failed-bg, #fee)',
+          border: '1px solid var(--color-destructive)',
+          borderRadius: 'var(--radius-lg)',
+          color: 'var(--color-destructive)',
+          fontSize: 'var(--text-sm)',
+          lineHeight: 1.5,
+        }}>
+          <strong>Monthly quota exhausted</strong> — your {quota.planName} plan is at {Math.round(quota.percent)}%. Upgrade to record or upload new videos.{' '}
+          <Link to="/account?tab=billing" style={{ color: 'inherit', textDecoration: 'underline', fontWeight: 600 }}>
+            Upgrade plan →
+          </Link>
+        </div>
+      )}
       {/* Record button */}
       <button
         type="button"
         onClick={() => void startRecording()}
+        disabled={quotaBlocked}
         style={{
           flex: 1,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           gap: 'var(--space-sm)', padding: 'var(--space-xl)',
           background: 'var(--color-card)', border: '2px dashed var(--color-border)',
-          borderRadius: 'var(--radius-xl)', cursor: 'pointer',
+          borderRadius: 'var(--radius-xl)',
+          cursor: quotaBlocked ? 'not-allowed' : 'pointer',
+          opacity: quotaBlocked ? 0.5 : 1,
           transition: 'all 0.2s',
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-destructive)'; e.currentTarget.style.transform = 'translateY(-1px)' }}
+        onMouseEnter={(e) => { if (!quotaBlocked) { e.currentTarget.style.borderColor = 'var(--color-destructive)'; e.currentTarget.style.transform = 'translateY(-1px)' } }}
         onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--color-border)'; e.currentTarget.style.transform = 'none' }}
       >
         <svg width="32" height="32" viewBox="0 0 24 24" fill="var(--color-destructive)" stroke="none">
@@ -401,14 +429,16 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
       {/* Upload */}
       <label
         className={styles.dropZone}
-        style={{ flex: 1 }}
+        style={{ flex: 1, opacity: quotaBlocked ? 0.5 : 1, cursor: quotaBlocked ? 'not-allowed' : 'pointer' }}
       >
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--color-fg)', marginBottom: 'var(--space-xs)' }}>
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" />
         </svg>
         <span className={styles.dropZoneTitle}>Upload a video</span>
         <span className={styles.dropZoneHint}>.mp4, .webm, .mov — up to 200MB</span>
-        <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(e) => void handleFileUpload(e)}
+        <input type="file" accept="video/mp4,video/webm,video/quicktime"
+          disabled={quotaBlocked}
+          onChange={(e) => void handleFileUpload(e)}
           style={{ display: 'none' }} />
       </label>
 

@@ -59,6 +59,7 @@ src/features/
   profile/          # 1:1 with auth.users — full_name, stripe_customer_id, isAdmin flag
   billing/          # Plans + subscriptions + monthly token budget + overage rates
   admin/            # /admin/usage dashboard, gated by ADMIN_EMAILS
+  analytics/        # Per-project chat + doc-view analytics + Gemini insights
 
 src/shared/
   ai/               # Gemini, Anthropic, ElevenLabs clients + prompt builder
@@ -120,8 +121,28 @@ Smart RAG: greetings/small talk skip embedding search (`needsDocSearch` heuristi
 ### Token-based Billing
 Every metered op (`doc_run`, `voiceover`, `try_doc`, `chat_sessions`) is incremented in `usage_counters` after success. Token weight, real € COGS, and overage rates live in `src/features/billing/billing.service.ts` as constants (`TOKEN_COSTS`, `EURO_COSTS`, `OVERAGE_EUR`, `OVERAGE_ENABLED_PLANS`) — tunable in code, no migration. Users see one percent (single bar in `/account?tab=billing`); admins see real € COGS and billable overage in `/admin/usage`.
 
+### Quota Enforcement
+`enforceQuotaOrThrow(userId)` in `src/shared/middleware/quota.middleware.ts` runs before every metered op (3 chat routes + doc-gen / voiceover / try-doc). It calls `checkQuota()` (`billing.service.ts`) which sums `counters × TOKEN_COSTS` against the plan's `monthlyTokens`. Hard-cap plans (Free / Startup) that hit 100 % get a 402 `QUOTA_EXCEEDED`; overage-enabled plans (Growth / Business) always pass through — they'll be billed via `OVERAGE_EUR` once Stripe is live. The frontend shows a clear upgrade CTA on 402.
+
 ### Chat Session Dedup
 `widget` and `app` chat traffic share the same `chat_sessions` quota. Each request carries a `sessionToken` (per-tab UUID stored in `sessionStorage`). The `chat_sessions` table's PK `(project_id, session_token, period_month)` ensures `incrementUsage('chat_sessions')` only fires once per token per calendar month. The `source` column splits widget vs in-app for analytics without affecting billing.
+
+### Analytics (write-time classify, SQL-only dashboard, on-demand recommendations)
+Every chat turn (user + assistant, across widget / public docs / in-app) is persisted in `chat_messages`. Public doc page views ping `POST /api/docs/:projectId/view`, which inserts into `doc_page_views`. Both tables are service-role write, owner-only read via RLS (`auth.uid() = user_id` on a denormalised `user_id` column).
+
+**Write-time classification** — right after each user chat turn is persisted, `classifyAndStoreUserMessage()` makes a tiny Gemini call (~150 in / 80 out tokens) that writes `sentiment` / `frustration_flag` / `language` / `category` back onto the user-role row. `category` is one of `onboarding | pricing | how-to | error | integration | account | other`. Fire-and-forget: a classification hiccup never slows or breaks the chat reply. These columns are what the dashboard aggregates over.
+
+**Read-time dashboard = pure SQL** — `GET /api/projects/:id/analytics?period=7d|30d|90d` does zero LLM calls. It computes:
+- KPIs + source breakdown + sentiment counts via `computeChatStats()`
+- Pain points via `computePainPoints()` — `GROUP BY category` on user messages, sorted by `frustrated + negative` volume, with up to 3 example quotes per bucket (frustrated > negative > neutral preference)
+- Frustration signals = the 10 most recent user messages where `frustration_flag = true`
+- Top viewed public-doc pages, recent-samples list, etc.
+
+Result: dashboard loads in <50ms from a single DB round-trip, no cold-start cache issues, cost scales with message volume (per-classifier call) instead of dashboard opens.
+
+**On-demand recommendations** — `POST /api/projects/:id/analytics/recommendations?period=...` is an explicit owner-initiated action that runs the Gemini synthesis pass on the last 200 user messages (`ANALYTICS_SYSTEM_PROMPT` in `prompt.builder.ts`). 5-minute cooldown per `(project, period)` to avoid accidental double-spend. Returns `{ summary, items[] }` — prioritised actionable fixes (`type: content | product | ux`).
+
+All tracking + classification writes are fire-and-forget so analytics never blocks a chat reply or a page view.
 
 ### Admin Allowlist
 `/api/admin/*` is gated by the `requireAdmin` middleware which reads `req.userId` (set by auth middleware), looks up the email via `profile.repository.findAuthUserEmail`, and compares against `isAdminEmail(email)` (env-driven, see `ADMIN_EMAILS`). The frontend hides the "Admin · Usage" menu entry unless `profile.isAdmin = true` — the admin email list never leaks to the bundle.
@@ -143,7 +164,8 @@ See `CLAUDE.md` § "API Design > Route structure" for the full annotated list. H
 - `/api/projects/*` `/api/projects/:pid/pages/*` `/api/projects/:pid/chat*` — workspace + content
 - `/api/runs/*` — long-running ops: explore, video analyze, doc gen, voice-over, Try Doc
 - `/api/widget/:key/*` — public, API-key auth, rate-limited
-- `/api/docs/:projectId*` — public docs (per-page `is_public`)
+- `/api/docs/:projectId*` — public docs (per-page `is_public`) + anonymous chat + page-view pings
+- `/api/projects/:pid/analytics` — per-project chat + doc-view analytics with AI insights (owner-gated)
 - `/api/mcp/*` — Model Context Protocol server for IDE integrations
 
 The same set is mounted twice: in `src/app.ts` for local dev (`npm run dev:server`) and in `api/index.ts` for the Vercel serverless function (with `/api` prefix). Adding a route requires touching both.

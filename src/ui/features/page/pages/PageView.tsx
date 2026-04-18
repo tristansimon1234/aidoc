@@ -13,6 +13,7 @@ import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocRe
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { useJobs } from '../../../shared/jobs/JobContext.js'
+import { useQuotaStatus } from '../../../shared/hooks/useQuotaStatus.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { VideoTimeline } from '../components/VideoTimeline.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
@@ -55,7 +56,9 @@ export function PageView(): React.ReactElement {
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
-  const { addJob, updateJob, getJobForPage } = useJobs()
+  const { addJob, updateJob, failJob, getJobForPage } = useJobs()
+  const quota = useQuotaStatus()
+  const quotaBlocked = !quota.loading && !quota.allowed
   const [generatingVoiceover, setGeneratingVoiceover] = useState(() => getJobForPage(pageId ?? '', 'voiceover')?.status === 'running')
   const activeDocGenJob = getJobForPage(pageId ?? '', 'doc-gen')
   const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
@@ -324,10 +327,11 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         setStatusMessage(null)
         if (runId) updateJob(runId, { status: 'completed' })
       } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          setError((err as Error).message)
+        const e = err as Error & { code?: string | null }
+        if (e.name !== 'AbortError') {
+          setError(e.message)
         }
-        if (runId) updateJob(runId, { status: 'failed' })
+        if (runId) failJob(runId, e.message, e.code ?? null)
       } finally {
         abortRef.current = null
         setTryRunning(false)
@@ -556,8 +560,18 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                 </label>
 
                 {latestRunId && page.content && (
-                  <Button size="sm" disabled={generatingVoiceover || activeVoiceoverJob?.status === 'running'} onClick={() => {
+                  <Button size="sm" disabled={generatingVoiceover || activeVoiceoverJob?.status === 'running' || quotaBlocked} onClick={() => {
                     void (async () => {
+                      if (quotaBlocked) {
+                        await confirm({
+                          title: 'Monthly quota exhausted',
+                          message: `Your ${quota.planName ?? 'current'} plan is at ${Math.round(quota.percent)}%. Upgrade in Account → Billing to continue generating voice-overs.`,
+                          confirmLabel: 'OK',
+                          cancelLabel: 'Dismiss',
+                          variant: 'primary',
+                        })
+                        return
+                      }
                       if (voiceoverUrl) {
                         const ok = await confirm({ title: 'Replace voice-over?', message: 'The existing voice-over will be permanently replaced by the new generation.', confirmLabel: 'Replace', variant: 'danger' })
                         if (!ok) return
@@ -584,6 +598,9 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                           }
                           setVoiceoverSegments(result.segments ?? [])
                           await fetchData()
+                        } catch (err) {
+                          const e = err as Error & { code?: string | null }
+                          failJob(latestRunId, e.message, e.code ?? null)
                         } finally {
                           setGeneratingVoiceover(false)
                         }
@@ -787,7 +804,22 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                       </div>
                     )}
                     {!preflightResult && !preflightLoading && (
-                      <Button onClick={() => void handlePreflight()} disabled={!page.content}>
+                      <Button
+                        onClick={() => void (async () => {
+                          if (quotaBlocked) {
+                            await confirm({
+                              title: 'Monthly quota exhausted',
+                              message: `Your ${quota.planName ?? 'current'} plan is at ${Math.round(quota.percent)}%. Upgrade in Account → Billing to run more tests.`,
+                              confirmLabel: 'OK',
+                              cancelLabel: 'Dismiss',
+                              variant: 'primary',
+                            })
+                            return
+                          }
+                          await handlePreflight()
+                        })()}
+                        disabled={!page.content || quotaBlocked}
+                      >
                         {tryReport ? 'Re-test documentation' : 'Run test'}
                       </Button>
                     )}

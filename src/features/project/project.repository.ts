@@ -18,6 +18,8 @@ interface ProjectRow {
   mcp_api_key: string | null
   mcp_enabled: boolean
   walkthrough_enabled: boolean
+  public_docs_chat_enabled: boolean
+  archived_at: string | null
   created_at: string
   updated_at: string
 }
@@ -39,6 +41,8 @@ function mapToProject(row: ProjectRow): Project {
     mcpApiKey: row.mcp_api_key,
     mcpEnabled: row.mcp_enabled,
     walkthroughEnabled: row.walkthrough_enabled,
+    publicDocsChatEnabled: row.public_docs_chat_enabled ?? false,
+    archivedAt: row.archived_at ? new Date(row.archived_at) : null,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
   }
@@ -89,6 +93,8 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   if (input.discoveredContext !== undefined) updates.discovered_context = input.discoveredContext
   if (input.design !== undefined) updates.design = input.design
   if (input.walkthroughEnabled !== undefined) updates.walkthrough_enabled = input.walkthroughEnabled
+  if (input.publicDocsChatEnabled !== undefined) updates.public_docs_chat_enabled = input.publicDocsChatEnabled
+  if (input.archivedAt !== undefined) updates.archived_at = input.archivedAt ? input.archivedAt.toISOString() : null
 
   const { data, error } = await supabase
     .from('projects')

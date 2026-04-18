@@ -14,7 +14,9 @@ AiDoc is a **project-based documentation platform** that generates user-facing p
 
 **Try Doc**: An AI agent (Stagehand) follows the doc steps as a naive user on the live product and generates a structured quality report.
 
-**Chat & Widget**: Users chat with their documentation (RAG-powered). The same chat can be embedded as a widget on client apps via a single `<script>` tag. Chat sessions (widget + in-app) are deduplicated per cookie/month and metered against the user's monthly token budget.
+**Chat & Widget**: Users chat with their documentation (RAG-powered). The same chat can be embedded as a widget on client apps via a single `<script>` tag. Chat sessions (widget + in-app) are deduplicated per cookie/month and metered against the user's monthly token budget. The public docs page also has a native "Chat with docs" launcher (no widget key required).
+
+**Analytics**: Per-project **Analytics** tab captures every chat turn (widget / public docs / in-app) and every public-doc page view, then shows KPIs + a Gemini-generated read on sentiment, pain points, content gaps, frustration signals, and actionable recommendations — in the users' own language. Stats come from SQL; insights come from Gemini on the last 200 user messages (10-min cache).
 
 **SaaS billing**: Token-based monthly budget per plan (Free / Startup 49€ / Growth 149€ / Business 449€). Each metered operation consumes a configurable number of tokens. Users see a single usage percent; admins see real € COGS per user and overage billable. Stripe wiring is scaffolded but not yet live.
 
@@ -108,6 +110,12 @@ src/
       admin.repository.ts     # listUsageCountersForMonth, listProfiles, listActiveSubscriptions
       admin.service.ts        # getUsageReport(periodMonth) — joins counters + profiles + subs + plans
       admin.routes.ts         # GET /admin/usage?month=YYYY-MM
+    analytics/            # Per-project chat + doc-view analytics with AI insights
+      analytics.types.ts      # AnalyticsReport, ChatStats, ViewStats, AiInsights
+      analytics.schema.ts     # AnalyticsQuerySchema (7d|30d|90d), AiInsightsSchema, PageViewPingSchema
+      analytics.repository.ts # logChatMessages, logPageView + aggregations + sampleUserMessages
+      analytics.service.ts    # getReport: SQL stats + 200-msg Gemini pass, 10-min in-memory cache
+      analytics.routes.ts     # GET /api/projects/:pid/analytics?period=...
   shared/
     ai/
       gemini.client.ts      # Gemini SDK: generateText(), embedTexts(), analyzeVideoWithGemini()
@@ -164,6 +172,10 @@ src/
         pages/               # AccountSettings (tabs: Profile, Plan & Billing)
       admin/
         pages/               # AdminUsage (per-user table: counts + AI cost + overage € + quota %)
+      analytics/
+        pages/               # AnalyticsPage — KPI cards, source breakdown bar, top pages,
+                             #   AI insights panel (sentiment, pain points, content gaps,
+                             #   frustration signals, recommendations), recent messages log
       docs/
         pages/                # PublicDocs (rendered via MarkdownRenderer)
     shared/
@@ -337,6 +349,9 @@ Tunable in code, no migration needed:
 # Admin (authenticated + ADMIN_EMAILS allowlist)
 /api/admin/usage                           # GET ?month=YYYY-MM: per-user usage report
 
+# Analytics (authenticated — project owner only)
+/api/projects/:pid/analytics               # GET ?period=7d|30d|90d: chat + doc-view stats + AI insights
+
 # Projects
 /api/projects                              # Project CRUD
 /api/projects/:pid/pages                   # Page hierarchy
@@ -376,8 +391,12 @@ Tunable in code, no migration needed:
 /api/projects/:pid/analyze-url             # POST: auto-fill project from URL
 
 # Public docs (no auth — per-page is_public flag)
-/api/docs/:projectId                       # GET: public pages list
+/api/docs/:projectId                       # GET: public pages list + chatEnabled flag
 /api/docs/:projectId/:slug                 # GET: public page content
+/api/docs/:projectId/chat                  # POST: anonymous chat (rate-limited per IP, logs chat_messages)
+/api/docs/:projectId/chat/status           # GET: hasEmbeddings check (for the ChatPanel empty-state)
+/api/docs/:projectId/chat/suggestions      # GET: cached chat suggestions
+/api/docs/:projectId/view                  # POST: page view ping {pageSlug, sessionToken} (rate-limited 120/min)
 
 # Widget (public — API key auth, no JWT)
 /api/widget/:key/chat                      # POST: Public chat (rate limited 30/min, bumps chat_sessions)
@@ -474,7 +493,7 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [x] ~~No usage analytics/logging for widget chat messages~~ — `chat_sessions` counter tracks widget + in-app sessions per month
 - [ ] Try Doc report could include screenshots from Stagehand steps
 - [x] ~~Widget config slow~~ — edge caching + inline data-cfg attribute
-- [ ] **Quota enforcement not active** — usage is tracked but Free / Startup don't yet hard-block at 100 % (`requireQuota` middleware not written). Ship before opening paid signups.
+- [x] ~~Quota enforcement not active~~ — `enforceQuotaOrThrow` + `requireQuota` in `src/shared/middleware/quota.middleware.ts`. Free / Startup return 402 `QUOTA_EXCEEDED` at 100 %; Growth / Business pass through (overage billed). Wired on all 3 chat routes + doc-gen / voiceover / try-doc.
 - [ ] **Stripe wiring missing** — `plans.stripe_price_id`, `subscriptions.stripe_subscription_id`, `profiles.stripe_customer_id` columns are in place but plan switching mutates DB directly. Need Checkout Session + webhook handler.
 - [ ] Code blocks have no syntax highlighting (Shiki = ~2 MB to bundle, deferred). Language picker also not yet exposed.
 - [ ] `src/app.ts` and `api/index.ts` duplicate router mounts — easy to forget one when adding routes (already happened for billing/profile/admin). Should factor into a shared `mountRouters(app)` helper.

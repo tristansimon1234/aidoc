@@ -140,6 +140,54 @@ After Stagehand exploration, Gemini analyzes the raw step data against the origi
 6. Recommendations (fix-doc, fix-product, improve-ux with priority)
 7. Global scores (doc quality, test pass rate, UX clarity — each 1-10)
 
+## Message Classifier Prompt (write-time, per message)
+
+Tiny Gemini call made fire-and-forget right after each user chat message is stored. Fills `sentiment` / `frustration_flag` / `language` / `category` on `chat_messages` so the Analytics dashboard can aggregate pain points, filter messages, and trend sentiment entirely in SQL — no LLM call when the owner opens the tab.
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `MESSAGE_CLASSIFIER_SYSTEM_PROMPT` + `buildMessageClassifierPrompt()`
+
+**Inputs**: single message content (trimmed to 500 chars).
+
+**System prompt enforces**:
+- Return minified JSON with exactly 4 fields (`sentiment`, `frustrated`, `language`, `category`) — no prose, no markdown.
+- Neutral is the default. Don't over-flag negativity on plain questions.
+- `frustrated=true` requires real signals (complaints, repeated tries, explicit anger). "How do I X?" is NEUTRAL.
+- `category` is one of 7 fixed values: `onboarding | pricing | how-to | error | integration | account | other` — rules embedded in the prompt pick the right bucket.
+
+**Output**: `{"sentiment":"positive"|"neutral"|"negative","frustrated":boolean,"language":"fr"|"en"|...,"category":"how-to"|...}`
+
+**Cost** (Gemini 2.5 Flash, ~180 in / ~25 out tokens per call): ≈ €0.00017 / message. A 10 k-message month runs under €2; can switch to Flash-Lite or batch 10-20 msgs/call to divide by 5-10× if volume grows.
+
+## Analytics Recommendations Prompt (on-demand)
+
+Triggered explicitly by the owner clicking **Generate recommendations** on the Analytics tab — NOT automatic. Feeds Gemini the last 200 user-role chat messages + top viewed public-doc pages, returns prioritised actionable fixes.
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `ANALYTICS_SYSTEM_PROMPT` + `buildAnalyticsPrompt()`
+
+**System prompt** enforces:
+- Base everything on the actual messages provided — no invented themes.
+- Detect the dominant language in the sample and write EVERY field in that language.
+- Recommendations must be specific and tied to observed evidence — no generic "improve onboarding". Reference the concrete pattern observed.
+- `type='content'` → edit/create doc page · `'product'` → change the product · `'ux'` → fix UX flow.
+- If the sample is too small or generic, return empty `items` + neutral `summary`. Never hallucinate.
+
+**Inputs** (from `analytics.service.ts` → `getRecommendations`):
+- `productName`, `productDescription`
+- `sessionCount`, `messageCount` (period aggregates)
+- `sampleUserMessages[]` — last 200 user messages, trimmed to 400 chars
+- `topPages[]` — top 10 viewed public-doc pages
+- `allPageTitles[]` — full doc table of contents
+
+**Output**: JSON validated by `AiRecommendationsSchema`:
+```ts
+{
+  summary: string,                        // 1-2 sentences, dominant themes + priorities
+  items: [{ type: 'content'|'product'|'ux', title, description, priority: 'high'|'medium'|'low' }]
+}
+```
+
+5-min cooldown per `(projectId, period)` (the owner can click Regenerate again, but identical data is served from memory until the cooldown expires). Returns 409 `NOT_ENOUGH_DATA` if fewer than 20 user messages are available in the period.
+
 ## Prompt Improvement Guidelines
 
 When modifying prompts:

@@ -13,6 +13,7 @@ import { ProjectDesign } from './features/project/pages/ProjectDesign.js'
 import { ChatPage } from './features/chat/pages/ChatPage.js'
 import { SharePage } from './features/page/pages/SharePage.js'
 import { PublicDocs } from './features/docs/pages/PublicDocs.js'
+import { AnalyticsPage } from './features/analytics/pages/AnalyticsPage.js'
 import { AccountSettings } from './features/account/pages/AccountSettings.js'
 import { AdminUsage } from './features/admin/pages/AdminUsage.js'
 
@@ -33,6 +34,7 @@ export function App(): React.ReactElement {
       <Routes>
         {/* Public — no auth */}
         <Route path="/docs/:projectId" element={<PublicDocs />} />
+        <Route path="/docs/:projectId/:slug" element={<PublicDocs />} />
 
         {/* Auth gate */}
         {!user ? (
@@ -52,6 +54,7 @@ export function App(): React.ReactElement {
               <Route path="chat" element={<ChatPage />} />
               <Route path="share" element={<SharePage />} />
               <Route path="design" element={<ProjectDesign />} />
+              <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="settings" element={<ProjectSettings />} />
             </Route>
             <Route path="/login" element={<Navigate to="/" replace />} />

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import Markdown from 'react-markdown'
+import { useNavigate } from 'react-router-dom'
 import { useImageLightbox } from './ImageLightbox.js'
 import styles from './MarkdownRenderer.module.css'
 
@@ -72,6 +73,7 @@ function stripLeadingMarker(node: ReactNode, remaining: number): ReactNode {
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps): React.ReactElement {
   const { lightbox, openLightbox } = useImageLightbox()
+  const navigate = useNavigate()
 
   return (
     <div className={styles.article}>
@@ -89,6 +91,25 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.Reac
               onClick={() => { if (src) openLightbox(src) }}
             />
           ),
+          a: ({ href, children, ...props }) => {
+            // Intercept internal /docs/:projectId/:slug links so navigation stays in the SPA
+            if (href && href.startsWith('/docs/')) {
+              return (
+                <a
+                  {...props}
+                  href={href}
+                  onClick={(e) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+                    e.preventDefault()
+                    navigate(href)
+                  }}
+                >
+                  {children}
+                </a>
+              )
+            }
+            return <a {...props} href={href} target="_blank" rel="noreferrer">{children}</a>
+          },
           blockquote: ({ children, ...props }) => {
             const callout = detectCallout(children)
             if (!callout) return <blockquote {...props}>{children}</blockquote>

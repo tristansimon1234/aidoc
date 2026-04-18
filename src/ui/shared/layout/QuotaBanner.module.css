@@ -1,0 +1,45 @@
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 8px var(--space-lg);
+  background: var(--color-status-failed-bg, #fee);
+  color: var(--color-destructive);
+  border-bottom: 1px solid var(--color-destructive);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  flex-wrap: wrap;
+  /* Not sticky on purpose — the topbar below is already sticky at top:0,
+     and two overlapping sticky elements fight each other. Banner sits in
+     flow above the topbar and scrolls away with content. */
+  flex-shrink: 0;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.link {
+  flex-shrink: 0;
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:hover {
+  text-decoration: none;
+}
+
+@media (max-width: 600px) {
+  .banner {
+    padding: 8px var(--space-md);
+  }
+}

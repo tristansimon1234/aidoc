@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { CreateProjectSchema, UpdateProjectSchema, ProjectIdParamSchema, AnalyzeUrlSchema } from './project.schema.js'
 import * as projectService from './project.service.js'
+import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 
 export const projectRouter = Router()
 
@@ -40,6 +41,8 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
     try {
       const parsed = AnalyzeUrlSchema.safeParse(req.body)
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+
+      await enforceQuotaOrThrow(getUserId(req))
 
       const url = parsed.data.url
       console.log(`[analyze-url] ${url}`)

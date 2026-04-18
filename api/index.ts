@@ -15,6 +15,7 @@ import { chatRouter } from '../src/features/chat/chat.routes.js'
 import { widgetRouter } from '../src/features/chat/widget.routes.js'
 import { mcpRouter } from '../src/features/chat/mcp.routes.js'
 import { publicDocsRouter } from '../src/features/page/public-docs.routes.js'
+import { analyticsRouter } from '../src/features/analytics/analytics.routes.js'
 import { errorHandler } from '../src/shared/middleware/error.middleware.js'
 
 const app = express()
@@ -39,6 +40,7 @@ app.use('/api/admin', authMiddleware, requireAdmin, adminRouter)
 app.use('/api/projects', authMiddleware, projectRouter)
 app.use('/api/projects/:projectId/pages', authMiddleware, pageRouter)
 app.use('/api/projects/:projectId/chat', authMiddleware, chatRouter)
+app.use('/api/projects/:projectId/analytics', authMiddleware, analyticsRouter)
 app.use('/api/runs', authMiddleware, runRouter)
 app.use('/api/runs', authMiddleware, questionsRouter)
 app.use('/api/runs', authMiddleware, documentationRouter)

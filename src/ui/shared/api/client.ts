@@ -2,6 +2,24 @@ import { supabase } from './supabase.js'
 
 const API_BASE = '/api'
 
+/** Error thrown by `request()` that preserves the backend's machine-readable
+ *  `code` (e.g. "QUOTA_EXCEEDED") and the HTTP `status`, so UI code can
+ *  branch on them without fragile string matching. */
+export class ApiError extends Error {
+  readonly code: string | null
+  readonly status: number
+  constructor(message: string, code: string | null, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.code = code
+    this.status = status
+  }
+}
+
+export function isQuotaError(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.code === 'QUOTA_EXCEEDED'
+}
+
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
@@ -30,8 +48,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `Request failed: ${res.status}`)
+    const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null
+    throw new ApiError(
+      body?.error ?? `Request failed: ${res.status}`,
+      body?.code ?? null,
+      res.status,
+    )
   }
 
   return res.json() as Promise<T>
@@ -135,6 +157,8 @@ export interface ProjectDTO {
   mcpApiKey: string | null
   mcpEnabled: boolean
   walkthroughEnabled: boolean
+  publicDocsChatEnabled: boolean
+  archivedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -178,6 +202,8 @@ export interface SubscriptionDTO {
 export interface UsageSnapshotDTO {
   percent: number
   periodMonth: string
+  allowed: boolean
+  overageEnabled: boolean
 }
 
 export interface BillingSummaryDTO {
@@ -390,6 +416,75 @@ export const api = {
     suggestions: (projectId: string): Promise<{ suggestions: string[] }> =>
       request(`/projects/${projectId}/chat/suggestions`),
   },
+  analytics: {
+    report: (projectId: string, period: AnalyticsPeriodDTO): Promise<AnalyticsReportDTO> =>
+      request(`/projects/${projectId}/analytics?period=${period}`),
+    recommendations: (projectId: string, period: AnalyticsPeriodDTO): Promise<AnalyticsRecommendationsDTO> =>
+      request(`/projects/${projectId}/analytics/recommendations?period=${period}`, { method: 'POST' }),
+  },
+}
+
+export type AnalyticsPeriodDTO = '7d' | '30d' | '90d'
+export type AnalyticsChatSourceDTO = 'widget' | 'public' | 'app'
+export type AnalyticsMessageCategoryDTO = 'onboarding' | 'pricing' | 'how-to' | 'error' | 'integration' | 'account' | 'other'
+
+export interface AnalyticsReportDTO {
+  periodStart: string
+  periodEnd: string
+  period: AnalyticsPeriodDTO
+  chatStats: {
+    totalSessions: number
+    totalMessages: number
+    userMessages: number
+    assistantMessages: number
+    avgMessagesPerSession: number
+    bySource: Record<AnalyticsChatSourceDTO, { sessions: number; messages: number }>
+    sentimentCounts: {
+      positive: number
+      negative: number
+      frustrated: number
+      classified: number
+    }
+  }
+  viewStats: {
+    totalViews: number
+    uniqueSessions: number
+    topPages: { slug: string; title: string | null; views: number }[]
+  }
+  painPoints: {
+    category: AnalyticsMessageCategoryDTO
+    total: number
+    negative: number
+    frustrated: number
+    examples: string[]
+  }[]
+  frustrationSignals: {
+    content: string
+    source: AnalyticsChatSourceDTO
+    createdAt: string
+    category: AnalyticsMessageCategoryDTO | null
+  }[]
+  recentSamples: {
+    role: 'user' | 'assistant'
+    content: string
+    source: AnalyticsChatSourceDTO
+    createdAt: string
+    sentiment: 'positive' | 'neutral' | 'negative' | null
+    frustrationFlag: boolean
+    language: string | null
+    category: AnalyticsMessageCategoryDTO | null
+  }[]
+}
+
+export interface AnalyticsRecommendationsDTO {
+  generatedAt: string
+  summary: string
+  items: {
+    type: 'content' | 'product' | 'ux'
+    title: string
+    description: string
+    priority: 'high' | 'medium' | 'low'
+  }[]
 }
 
 export interface ChatResponseDTO {

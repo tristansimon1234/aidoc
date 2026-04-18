@@ -209,7 +209,7 @@ export async function chat(
 - For "how do I..." questions: give the FIRST 2-3 steps only, then say something like "Want me to continue with the next steps?" or "Should I walk you through the rest?"
 - NEVER dump a full 10-step tutorial in one message. Break it into chunks of 2-3 steps and wait for the user to ask for more.
 - If the user says "yes", "continue", "go on" → give the next 2-3 steps
-- Include ONE relevant screenshot per message if available — not more
+- If a relevant screenshot URL appears in the Documentation Context, embed ONE per message using markdown image syntax: \`![short caption](https://exact-url-from-context)\`. Put the image on its own line. Never paste a raw URL — it must always be wrapped in \`![...](...)\`. Never truncate or abbreviate the URL (no \`...\`).
 - Match the user's language (French → French, English → English)
 
 ## Follow-up suggestions
@@ -255,6 +255,11 @@ ${message}`
   let answer = response.text
   let followUps: string[] = []
   let walkthroughAvailable = false
+
+  // Safety net: Gemini occasionally pastes raw image URLs instead of markdown
+  // image syntax. Wrap any bare image URL we find on its own line (or after
+  // whitespace) in `![screenshot](url)` so the renderer picks it up.
+  answer = wrapBareImageUrls(answer)
 
   // Check for ---WALKTHROUGH--- flag (AI signals this answer is guidable)
   if (/---?\s*WALKTHROUGH\s*---?/i.test(answer)) {
@@ -413,6 +418,22 @@ export async function generateWalkthrough(
     console.error('[walkthrough] Zod validation failed:', (zodErr as Error).message, '| parsed:', JSON.stringify(parsed).slice(0, 300))
     return { done: true, step: null, stepNumber: 0, hint: null }
   }
+}
+
+// Match http(s) URLs that end in a recognizable image extension (with an
+// optional query string). Skip URLs that are already inside markdown image or
+// link syntax — we only want to catch raw URLs.
+const BARE_IMAGE_URL_RE = /(^|[\s(])(https?:\/\/[^\s)]+?\.(?:png|jpe?g|gif|webp|svg|bmp)(?:\?[^\s)]*)?)(?=$|[\s)])/gi
+
+function wrapBareImageUrls(text: string): string {
+  return text.replace(BARE_IMAGE_URL_RE, (match, prefix: string, url: string, offset: number, full: string) => {
+    // Don't wrap if the char immediately before `prefix` is `(` or `]` — that
+    // means we're already inside `](...)` or `)(...)` markdown markup.
+    const priorIdx = offset - 1
+    const prior = priorIdx >= 0 ? full[priorIdx] : ''
+    if (prior === ']' || prior === '(') return match
+    return `${prefix}![screenshot](${url})`
+  })
 }
 
 function buildContextFromChunks(chunks: DocChunk[]): string {

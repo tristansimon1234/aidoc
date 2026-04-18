@@ -47,21 +47,23 @@ function formatProjectContext(ctx: ProjectContext | null): string {
 
 // Fetch project context + page siblings for cross-page awareness
 async function getProjectAwareness(docPageId: string): Promise<{
+  projectId: string | undefined
   projectContext: string | undefined
   tableOfContents: string | undefined
   credentials: { label: string; username: string; password: string }[] | undefined
   customPrompt: string | undefined
   briefing: PageBriefingWithContent | undefined
   existingPageSummaries: { title: string; slug: string; contentPreview: string }[] | undefined
+  knownSlugs: string[] | undefined
 }> {
   const { findPageById, findPagesByProjectId } = await import('../page/page.repository.js')
   const { findProjectById } = await import('../project/project.repository.js')
 
   const page = await findPageById(docPageId)
-  if (!page) return { projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: undefined, briefing: undefined, existingPageSummaries: undefined }
+  if (!page) return { projectId: undefined, projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: undefined, briefing: undefined, existingPageSummaries: undefined, knownSlugs: undefined }
 
   const project = await findProjectById(page.projectId)
-  if (!project) return { projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: page.customPrompt ?? undefined, briefing: page.briefing ?? undefined, existingPageSummaries: undefined }
+  if (!project) return { projectId: page.projectId, projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: page.customPrompt ?? undefined, briefing: page.briefing ?? undefined, existingPageSummaries: undefined, knownSlugs: undefined }
 
   // Build table of contents from sibling pages
   const allPages = await findPagesByProjectId(page.projectId)
@@ -111,13 +113,17 @@ async function getProjectAwareness(docPageId: string): Promise<{
     ? allProjectResources.filter((_, i) => selectedIndices.includes(i))
     : []
 
+  const knownSlugs = allPages.filter((p) => p.id !== docPageId).map((p) => p.slug)
+
   return {
+    projectId: page.projectId,
     projectContext: fullProjectContext.trim() || undefined,
     tableOfContents: toc || undefined,
     credentials: project.credentials ?? undefined,
     customPrompt: page.customPrompt ?? undefined,
     briefing: await enrichBriefingWithFileContents(page.briefing, selectedProjectResources.length > 0 ? selectedProjectResources : undefined),
     existingPageSummaries: summaries.length > 0 ? summaries : undefined,
+    knownSlugs: knownSlugs.length > 0 ? knownSlugs : undefined,
   }
 }
 
@@ -177,12 +183,14 @@ export async function exploreWithEvents(
 
   // Fetch full project awareness if linked to a page
   let awareness: Awaited<ReturnType<typeof getProjectAwareness>> = {
+    projectId: undefined,
     projectContext: undefined,
     tableOfContents: undefined,
     credentials: undefined,
     customPrompt: undefined,
     briefing: undefined,
     existingPageSummaries: undefined,
+    knownSlugs: undefined,
   }
   if (run.docPageId) {
     awareness = await getProjectAwareness(run.docPageId)
@@ -241,7 +249,7 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
   }
 
   // Fetch project awareness for cross-page context in doc generation
-  let docOptions: { projectContext?: string; tableOfContents?: string; existingPageSummaries?: { title: string; slug: string; contentPreview: string }[] } | undefined
+  let docOptions: { projectContext?: string; tableOfContents?: string; existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]; projectId?: string; knownSlugs?: string[] } | undefined
   if (run.docPageId) {
     const awareness = await getProjectAwareness(run.docPageId)
     const briefingContext = awareness.briefing
@@ -254,6 +262,8 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
       projectContext: [awareness.projectContext, briefingContext].filter(Boolean).join('\n\n') || undefined,
       tableOfContents: awareness.tableOfContents,
       existingPageSummaries: awareness.existingPageSummaries,
+      projectId: awareness.projectId,
+      knownSlugs: awareness.knownSlugs,
     }
   }
 

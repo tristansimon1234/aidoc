@@ -258,6 +258,29 @@ Frontend renders:
 2. Page content accessible at `GET /api/docs/:projectId/:slug` (no auth required)
 3. Project page list at `GET /api/docs/:projectId`
 
+## 12b. Project Analytics (chat + doc views + on-demand recommendations)
+
+**Trigger**: Owner opens Project → **Analytics** tab (period: 7d / 30d / 90d)
+
+**Tracking (continuous, fire-and-forget)**:
+1. Every user chat message is persisted and then immediately classified by a tiny Gemini call (`classifyAndStoreUserMessage`). It writes back `sentiment` / `frustration_flag` / `language` / `category` onto the row. All three chat routes (`chat.routes.ts`, `widget.routes.ts`, `public-docs.routes.ts`) use the same helper.
+2. Every public-doc page switch — `PublicDocs.tsx` activePage effect — fires `POST /api/docs/:projectId/view` (rate-limited 120/min per IP+project) which inserts into `doc_page_views`. Deduped per tab via a ref.
+
+**Dashboard read (`GET /api/projects/:id/analytics?period=30d`) — zero LLM calls**:
+- SQL aggregates: sessions, messages, source breakdown, sentiment counts, top viewed pages (up to 5000 msg rows / 10k view rows).
+- Pain points = `GROUP BY category` on user messages, sorted by frustrated+negative volume, with up to 3 example quotes per bucket.
+- Frustration signals = 10 most recent user messages where `frustration_flag = true`.
+- All under 50ms, no cold-start cache issues, no cost on dashboard open.
+
+**On-demand recommendations (`POST /api/projects/:id/analytics/recommendations`) — explicit owner action**:
+- Runs Gemini synthesis pass on the last 200 user messages with `ANALYTICS_SYSTEM_PROMPT` to produce `{ summary, items[] }`.
+- 5-minute cooldown per `(project, period)` to prevent accidental re-spend.
+- Returns 409 `NOT_ENOUGH_DATA` if fewer than 20 user messages in the period.
+
+**Why this split**: the things SQL can compute (counts, categories, examples, sentiment aggregates) belong in SQL — they're always fresh and free. The thing Gemini is needed for — synthesising prioritised product-improvement recommendations across a sample — happens explicitly, when the owner asks.
+
+**Cold-start**: until a message is classified (or in the 10s window before the fire-and-forget completes), it shows as uncategorised and doesn't appear in pain points. That's OK — it'll land on the next dashboard refresh.
+
 ## 13. Project URL Analysis
 
 **Trigger**: User enters a URL when creating a project

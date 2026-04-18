@@ -48,7 +48,37 @@ export async function updatePage(id: string, input: UpdatePageInput): Promise<Do
 export async function deletePage(id: string): Promise<void> {
   const page = await pageRepo.findPageById(id)
   if (!page) throw new NotFoundError('Page')
-  return pageRepo.deletePage(id)
+
+  await pageRepo.deletePage(id)
+
+  // Clean up links to the deleted page from sibling pages — both their stored
+  // markdown and the chat knowledge base would otherwise keep stale references.
+  // Embeddings for the deleted page itself are removed via FK ON DELETE CASCADE.
+  const escapedSlug = page.slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const linkRegex = new RegExp(
+    `\\[([^\\]]+)\\]\\(\\/(?:docs\\/[a-f0-9-]+\\/)?${escapedSlug}(?:#[^)]*)?\\)`,
+    'g',
+  )
+
+  const siblings = await pageRepo.findPagesByProjectId(page.projectId)
+  const indexer = import('../chat/chat.service.js')
+  for (const sibling of siblings) {
+    if (!sibling.content || !linkRegex.test(sibling.content)) continue
+    linkRegex.lastIndex = 0
+    const cleaned = sibling.content.replace(linkRegex, '$1')
+    const updated = await pageRepo.updatePage(sibling.id, { content: cleaned })
+    indexer
+      .then(({ indexPage }) =>
+        indexPage({
+          id: updated.id,
+          projectId: updated.projectId,
+          title: updated.title,
+          slug: updated.slug,
+          content: updated.content,
+        }),
+      )
+      .catch((err) => console.error('[chat] Re-index after page delete failed:', err))
+  }
 }
 
 export async function reorderPages(items: ReorderItem[]): Promise<void> {

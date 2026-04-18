@@ -464,3 +464,94 @@ USER GOAL: ${message}
 Return the ONE next step as JSON:
 {"done":false,"step":{"instruction":"...","action":"click","elementRef":"ref","fallbackSelector":"sel","typeValue":null},"stepNumber":${completedSteps.length + 1},"hint":"next you'll..."}`
 }
+
+// --- Per-message classifier (write-time) ---
+
+export const MESSAGE_CLASSIFIER_SYSTEM_PROMPT = `You classify a single chat message from an end-user talking to a product's help chatbot.
+
+Return ONLY a minified JSON object with these four fields:
+- sentiment: "positive" | "neutral" | "negative"
+- frustrated: boolean — true if the user sounds irritated, stuck, blocked, or resigned (not just asking a question)
+- language: 2-letter ISO 639-1 code (e.g. "fr", "en", "es")
+- category: one of "onboarding" | "pricing" | "how-to" | "error" | "integration" | "account" | "other"
+
+Category rules (pick exactly one):
+- "onboarding" — first steps, getting started, what is this product, quickstart
+- "pricing" — plans, price, upgrade, billing, trial
+- "how-to" — "how do I X", feature usage questions, workflow steps
+- "error" — something broken, bug, doesn't work, "ça marche pas"
+- "integration" — API, webhooks, SDK, third-party connection
+- "account" — login, signup, password, profile, settings, permissions
+- "other" — greetings, thanks, meta questions, or anything that doesn't fit above
+
+Sentiment rules:
+- Neutral is the default. Don't over-flag negativity on plain questions.
+- "frustrated" requires real signals: complaints ("nul", "broken", "useless", "ça marche pas"), repeated tries ("encore", "again"), giving-up tone, or explicit anger. Asking "how do I X?" is NEUTRAL, not frustrated.
+- If the message is a greeting or acknowledgement, return neutral + frustrated:false + category:"other".
+- No explanation, no markdown, just the JSON.`
+
+export function buildMessageClassifierPrompt(content: string): string {
+  // Hard cap to keep the prompt tiny — frustration signals are at the surface.
+  const trimmed = content.length > 500 ? `${content.slice(0, 500)}…` : content
+  return `Classify this message:\n"""${trimmed}"""`
+}
+
+// --- On-demand recommendations (triggered by the owner, not automatic) ---
+
+export const ANALYTICS_SYSTEM_PROMPT = `You are a senior product analyst. You receive anonymised end-user questions pulled from a chatbot that answers from a product's documentation, plus the list of docs most visited.
+
+Produce actionable recommendations as STRICT JSON — no prose before or after.
+
+Rules:
+- Base everything on the actual messages provided. No invented themes.
+- Write EVERY field in the dominant language of the user messages (French → French, English → English).
+- Recommendations must be specific and tied to observed evidence — no generic "improve onboarding". Reference the concrete pattern you saw.
+- type='content' → edit/create a doc page. type='product' → change the product. type='ux' → fix UX flow.
+- If the sample is too small or too generic, return an empty \`items\` array and a neutral \`summary\`. Never hallucinate.`
+
+export function buildAnalyticsPrompt(input: {
+  productName: string
+  productDescription: string | null
+  sessionCount: number
+  messageCount: number
+  sampleUserMessages: string[]
+  topPages: { title: string | null; slug: string; views: number }[]
+  allPageTitles: string[]
+}): string {
+  const messagesBlock = input.sampleUserMessages.length > 0
+    ? input.sampleUserMessages.map((m, i) => `${i + 1}. ${m}`).join('\n')
+    : '(no user messages in this period)'
+
+  const topPagesBlock = input.topPages.length > 0
+    ? input.topPages.map((p) => `- ${p.title ?? p.slug} (/${p.slug}): ${p.views} views`).join('\n')
+    : '(no page views in this period)'
+
+  const pageListBlock = input.allPageTitles.length > 0 ? input.allPageTitles.join(', ') : '(no pages yet)'
+
+  return `## Product
+${input.productName}${input.productDescription ? `\n${input.productDescription}` : ''}
+
+## Documentation pages (all)
+${pageListBlock}
+
+## Period metrics
+- Unique sessions: ${input.sessionCount}
+- Chat messages: ${input.messageCount}
+
+## Most-viewed public doc pages
+${topPagesBlock}
+
+## Sample user questions (most recent first, max 200)
+${messagesBlock}
+
+## Task
+Produce a JSON object with this exact shape:
+{
+  "summary": "one or two sentences naming the dominant themes and what to prioritise, in the users' language",
+  "items": [
+    { "type": "content"|"product"|"ux", "title": "", "description": "", "priority": "high"|"medium"|"low" }
+  ]
+}
+
+Return ONLY the JSON object.`
+}

@@ -28,6 +28,8 @@ export interface DocGenerationOptions {
   projectContext?: string
   tableOfContents?: string
   existingPageSummaries?: { title: string; slug: string; contentPreview: string }[]
+  projectId?: string
+  knownSlugs?: string[]
 }
 
 export async function getDocByRunId(runId: string): Promise<GeneratedDoc> {
@@ -81,6 +83,8 @@ export async function generateAndSaveDoc(
     existingPageSummaries: options?.existingPageSummaries,
     runStatus: run.status,
     isVideoRun: !run.browserbaseSessionId,
+    projectId: options?.projectId,
+    knownSlugs: options?.knownSlugs,
   })
 
   await deps.incrementTokenUsage(runId, result.usage.inputTokens + result.usage.outputTokens)

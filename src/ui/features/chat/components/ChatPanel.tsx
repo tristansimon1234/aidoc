@@ -17,18 +17,29 @@ const FALLBACK_SUGGESTIONS = [
   'What are the main features?',
 ]
 
+export interface ChatApi {
+  index: (projectId: string) => Promise<{ indexed: number }>
+  send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string) => Promise<ChatResponseDTO>
+  suggestions: (projectId: string) => Promise<{ suggestions: string[] }>
+}
+
 export function ChatPanel({
   projectId,
   projectName,
   onClose,
   inline = false,
+  apiOverride,
+  onSourceClick,
 }: {
   projectId: string
   projectName: string
   onClose: () => void
   inline?: boolean
+  apiOverride?: ChatApi
+  onSourceClick?: (source: { pageId: string; pageTitle: string; pageSlug: string }) => void
 }): React.ReactElement {
   const navigate = useNavigate()
+  const chatApi: ChatApi = apiOverride ?? api.chat
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -50,10 +61,10 @@ export function ChatPanel({
   const checkAndIndex = async (): Promise<void> => {
     try {
       setIndexing(true)
-      const result = await api.chat.index(projectId)
+      const result = await chatApi.index(projectId)
       setIndexed(result.indexed > 0)
       if (result.indexed > 0) {
-        api.chat.suggestions(projectId)
+        chatApi.suggestions(projectId)
           .then((r) => { if (r.suggestions.length > 0) setSuggestions(r.suggestions) })
           .catch(() => {})
       }
@@ -83,16 +94,20 @@ export function ChatPanel({
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }))
       const { getChatSessionToken } = await import('../../../shared/hooks/useChatSessionToken.js')
-      const response: ChatResponseDTO = await api.chat.send(projectId, msg, history, getChatSessionToken(projectId))
+      const response: ChatResponseDTO = await chatApi.send(projectId, msg, history, getChatSessionToken(projectId))
 
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: response.answer, sources: response.sources, followUps: response.followUps },
       ])
     } catch (err) {
+      const e = err as Error & { code?: string | null }
+      const friendly = e.code === 'QUOTA_EXCEEDED'
+        ? "This project's chat quota is exhausted for the month. Please try again later."
+        : `Sorry, something went wrong: ${e.message}`
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: `Sorry, something went wrong. Please try again.` },
+        { role: 'assistant', content: friendly },
       ])
     } finally {
       setSending(false)
@@ -198,6 +213,10 @@ export function ChatPanel({
                               key={s.pageSlug}
                               className={styles.sourceTag}
                               onClick={() => {
+                                if (onSourceClick) {
+                                  onSourceClick(s)
+                                  return
+                                }
                                 onClose()
                                 navigate(`/projects/${projectId}/pages/${s.pageId}`)
                               }}

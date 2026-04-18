@@ -299,7 +299,11 @@
 .content > * {
   width: 100%;
   max-width: 1100px;
-  padding: var(--space-xl) var(--space-lg);
+  /* Bigger bottom padding on the DIRECT CHILD (not the scroll container):
+     Chromium doesn't include the scroll container's own padding-bottom in
+     the scrollable extent, but it does include the child's. Puts the
+     breathing room inside each outlet page. */
+  padding: var(--space-xl) var(--space-lg) var(--space-2xl);
 }
 
 .emptyContent {

@@ -183,6 +183,40 @@ updated_at         timestamptz DEFAULT now()
 **Index**: `idx_profiles_stripe_customer_id`
 **Trigger**: `on_auth_user_created` (AFTER INSERT on `auth.users`) → auto-creates a profile row via `handle_new_user()`.
 
+### chat_messages
+```sql
+id                uuid PK DEFAULT gen_random_uuid()
+project_id        uuid NOT NULL FK → projects(id) CASCADE
+user_id           uuid NOT NULL FK → auth.users(id) CASCADE     -- denormalized project owner
+session_token     text NOT NULL                                  -- same sessionStorage token as chat_sessions
+role              text NOT NULL CHECK (role IN ('user','assistant'))
+content           text NOT NULL
+source            text NOT NULL CHECK (source IN ('widget','public','app'))
+sentiment         text CHECK (sentiment IN ('positive','neutral','negative'))  -- user rows only, NULL until classified
+frustration_flag  boolean NOT NULL DEFAULT false                                -- user rows only
+language          text                                                          -- 2-letter ISO code, user rows only
+category          text CHECK (category IN ('onboarding','pricing','how-to','error','integration','account','other'))  -- intent bucket, user rows only
+created_at        timestamptz NOT NULL DEFAULT now()
+```
+**Indexes**: `idx_chat_messages_project_time` (project_id, created_at DESC), `idx_chat_messages_project_sentiment` (partial, user+classified), `idx_chat_messages_project_frustrated` (partial, user+frustrated)
+**RLS**: SELECT `auth.uid() = user_id`. Inserts via service_role (fire-and-forget from the 3 chat routes).
+**Purpose**: persists every chat turn (both roles) for the per-project Analytics dashboard. Same `session_token` as `chat_sessions` so joins are cheap. User messages are classified at write time (sentiment / frustration / language) to power UI filters and trend signals — pain-point clustering and recommendations still happen read-time across the whole sample.
+
+### doc_page_views
+```sql
+id             uuid PK DEFAULT gen_random_uuid()
+project_id     uuid NOT NULL FK → projects(id) CASCADE
+user_id        uuid NOT NULL FK → auth.users(id) CASCADE     -- denormalized project owner
+page_id        uuid FK → doc_pages(id) ON DELETE SET NULL
+page_slug      text NOT NULL
+session_token  text NOT NULL
+source         text NOT NULL CHECK (source IN ('public','app'))
+viewed_at      timestamptz NOT NULL DEFAULT now()
+```
+**Index**: `idx_doc_page_views_project_time` (project_id, viewed_at DESC)
+**RLS**: SELECT `auth.uid() = user_id`. Inserts via service_role (fire-and-forget from `POST /api/docs/:projectId/view`, rate-limited 120/min per IP+project).
+**Purpose**: anonymous public-doc page views for the Analytics top-pages breakdown.
+
 ### doc_embeddings
 ```sql
 id                uuid PK DEFAULT gen_random_uuid()
@@ -250,6 +284,11 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 28 | `20260417000005_switch_to_token_usage.sql` | Replace per-feature quotas with a single `monthly_tokens` budget + opaque features |
 | 29 | `20260417000006_restore_approx_features.sql` | Restore approximate per-feature quota bullets (with `~` prefix) in plan features |
 | 30 | `20260417000007_growth_quota_tune.sql` | Reduce Growth budget 180k → 124k tokens (margin safety) + "Pay-as-you-go beyond quota" bullet |
+| 31 | `20260418000000_add_public_docs_chat.sql` | Add `public_docs_chat_enabled` to projects — enables the floating "Chat with docs" launcher on `/docs/:projectId` |
+| 32 | `20260418000001_add_projects_archived_at.sql` | Add nullable `archived_at` to projects for the Archive / Restore toggle on the project list |
+| 33 | `20260418000002_add_analytics_tables.sql` | `chat_messages` + `doc_page_views` — powers the per-project Analytics tab with AI sentiment insights |
+| 34 | `20260418000003_add_chat_messages_classification.sql` | Add `sentiment` / `frustration_flag` / `language` to `chat_messages` — write-time classification enables filters + trend signals |
+| 35 | `20260418000004_add_chat_messages_category.sql` | Add `category` to `chat_messages` — enables SQL-only pain-point aggregation on the Analytics tab |
 
 ## Relationships
 
@@ -260,6 +299,8 @@ auth.users 1:N usage_counters (CASCADE)
 projects 1:N doc_pages (CASCADE)
 projects 1:N doc_embeddings (CASCADE)
 projects 1:N chat_sessions (CASCADE)
+projects 1:N chat_messages (CASCADE)
+projects 1:N doc_page_views (CASCADE)
 projects 1:N jobs (CASCADE)
 doc_pages 1:N doc_pages (self-ref via parent_id, SET NULL)
 doc_pages 1:N doc_embeddings (CASCADE)
@@ -282,6 +323,8 @@ All tables have RLS enabled. Policies chain through project ownership or direct 
 | `subscriptions` | Users read own subscription | `auth.uid() = user_id` (SELECT only; writes via service role) |
 | `usage_counters` | Users read own usage | `auth.uid() = user_id` (SELECT only; writes via RPC) |
 | `chat_sessions` | Users read own sessions | `auth.uid() = user_id` (SELECT only; writes via service role) |
+| `chat_messages` | Owners read own projects' messages | `auth.uid() = user_id` (SELECT only; writes via service role) |
+| `doc_page_views` | Owners read own projects' views | `auth.uid() = user_id` (SELECT only; writes via service role) |
 | `plans` | Public pricing | SELECT allowed to all (no RLS filter) |
 | `projects` | Users see own projects | `auth.uid() = user_id` |
 | `doc_pages` | Users access own project pages | `project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())` |

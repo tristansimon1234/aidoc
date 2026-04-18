@@ -105,6 +105,8 @@ export async function updateProject(id: string, body: Record<string, unknown>): 
   if (body.discoveredContext !== undefined) updates.discovered_context = body.discoveredContext
   if (body.design !== undefined) updates.design = body.design
   if (body.walkthroughEnabled !== undefined) updates.walkthrough_enabled = body.walkthroughEnabled
+  if (body.publicDocsChatEnabled !== undefined) updates.public_docs_chat_enabled = body.publicDocsChatEnabled
+  if (body.archivedAt !== undefined) updates.archived_at = body.archivedAt
 
   const { data, error } = await supabase.from('projects').update(updates).eq('id', id).select('*').single()
   if (error) throw new Error(error.message)
@@ -238,6 +240,8 @@ function mapProject(row: Record<string, unknown>): ProjectDTO {
     mcpApiKey: (row.mcp_api_key as string) ?? null,
     mcpEnabled: (row.mcp_enabled as boolean) ?? false,
     walkthroughEnabled: (row.walkthrough_enabled as boolean) ?? false,
+    publicDocsChatEnabled: (row.public_docs_chat_enabled as boolean) ?? false,
+    archivedAt: (row.archived_at as string) ?? null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   }

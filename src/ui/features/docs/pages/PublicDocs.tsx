@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
-import type { ProjectDesignDTO } from '../../../shared/api/client.js'
+import type { ProjectDesignDTO, ChatResponseDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
+import { ChatPanel, type ChatApi } from '../../chat/components/ChatPanel.js'
 import styles from './PublicDocs.module.css'
 
 /** Lightweight narrated video player for public docs — syncs video + voiceover audio */
@@ -69,6 +70,37 @@ interface PublicProject {
   name: string
   description: string | null
   design: ProjectDesignDTO | null
+}
+
+// API client for the public, anonymous chat endpoints. Mirrors the shape
+// expected by ChatPanel but skips JWT auth — the routes are gated server-side
+// by `publicDocsChatEnabled` and rate-limited per IP.
+function buildPublicChatApi(): ChatApi {
+  return {
+    index: async (projectId: string) => {
+      const res = await fetch(`/api/docs/${projectId}/chat/status`)
+      if (!res.ok) return { indexed: 0 }
+      const body = await res.json() as { ready: boolean }
+      return { indexed: body.ready ? 1 : 0 }
+    },
+    suggestions: async (projectId: string) => {
+      const res = await fetch(`/api/docs/${projectId}/chat/suggestions`)
+      if (!res.ok) return { suggestions: [] }
+      return res.json() as Promise<{ suggestions: string[] }>
+    },
+    send: async (projectId, message, history, sessionToken) => {
+      const res = await fetch(`/api/docs/${projectId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history, sessionToken }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(err?.error ?? `Chat failed: ${res.status}`)
+      }
+      return res.json() as Promise<ChatResponseDTO>
+    },
+  }
 }
 
 // --- Search helper: search titles + content (same as admin) ---
@@ -167,8 +199,12 @@ function NavTree({ items, activePage, onSelect, depth = 0 }: {
 }
 
 export function PublicDocs(): React.ReactElement {
-  const { projectId } = useParams<{ projectId: string }>()
+  const { projectId, slug } = useParams<{ projectId: string; slug?: string }>()
+  const navigate = useNavigate()
   const [project, setProject] = useState<PublicProject | null>(null)
+  const [chatEnabled, setChatEnabled] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const chatApiRef = useRef<ChatApi>(buildPublicChatApi())
   const [pages, setPages] = useState<PublicPage[]>([])
   const [activePage, setActivePage] = useState<PublicPage | null>(null)
   const [loading, setLoading] = useState(true)
@@ -194,17 +230,56 @@ export function PublicDocs(): React.ReactElement {
       try {
         const res = await fetch(`/api/docs/${projectId}`)
         if (!res.ok) throw new Error('Not found')
-        const data = await res.json() as { project: PublicProject; pages: PublicPage[] }
+        const data = await res.json() as { project: PublicProject; chatEnabled?: boolean; pages: PublicPage[] }
         setProject(data.project)
+        setChatEnabled(Boolean(data.chatEnabled))
         setPages(data.pages)
-        if (data.pages.length > 0) setActivePage(data.pages[0] ?? null)
+        if (data.pages.length > 0) {
+          const initial = (slug ? data.pages.find((p) => p.slug === slug) : null) ?? data.pages[0] ?? null
+          setActivePage(initial)
+        }
       } catch {
         setError('Documentation not found')
       } finally {
         setLoading(false)
       }
     })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
+
+  // Sync active page when the URL slug changes (back/forward, deep link)
+  useEffect(() => {
+    if (!slug || pages.length === 0) return
+    const match = pages.find((p) => p.slug === slug)
+    if (match && match.id !== activePage?.id) setActivePage(match)
+  }, [slug, pages, activePage?.id])
+
+  // Fire-and-forget: ping the view endpoint so the owner sees page-view
+  // analytics. Dedupe per slug so strict-mode / re-renders don't double-count.
+  const viewedSlugsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (!projectId || !activePage) return
+    if (viewedSlugsRef.current.has(activePage.slug)) return
+    viewedSlugsRef.current.add(activePage.slug)
+    void (async () => {
+      try {
+        const { getChatSessionToken } = await import('../../../shared/hooks/useChatSessionToken.js')
+        await fetch(`/api/docs/${projectId}/view`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            pageSlug: activePage.slug,
+            sessionToken: getChatSessionToken(projectId),
+          }),
+        })
+      } catch { /* analytics is best-effort */ }
+    })()
+  }, [projectId, activePage])
+
+  const selectPage = useCallback((page: PublicPage) => {
+    setActivePage(page)
+    if (projectId) navigate(`/docs/${projectId}/${page.slug}`, { replace: true })
+  }, [navigate, projectId])
 
   // Load Google Font if the design uses a custom font
   const designFont = project?.design?.font
@@ -262,7 +337,7 @@ export function PublicDocs(): React.ReactElement {
                 {results.length === 0 ? (
                   <div className={styles.searchEmpty}>No results</div>
                 ) : results.map((r) => (
-                  <button key={r.page.id} className={styles.searchResult} onClick={() => { setActivePage(r.page); setSearch(''); setSearchFocused(false) }}>
+                  <button key={r.page.id} className={styles.searchResult} onClick={() => { selectPage(r.page); setSearch(''); setSearchFocused(false) }}>
                     <span className={styles.searchResultTitle}>{r.page.title}</span>
                     <span className={styles.searchResultSnippet}>{r.snippet}</span>
                   </button>
@@ -276,7 +351,7 @@ export function PublicDocs(): React.ReactElement {
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
           <nav className={styles.nav}>
-            <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={setActivePage} />
+            <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={selectPage} />
           </nav>
         </aside>
 
@@ -300,7 +375,7 @@ export function PublicDocs(): React.ReactElement {
                   return (
                     <div className={styles.childPages}>
                       {children.map((child) => (
-                        <button key={child.id} className={styles.childPageLink} onClick={() => setActivePage(child)}>
+                        <button key={child.id} className={styles.childPageLink} onClick={() => selectPage(child)}>
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
                           {child.title}
                         </button>
@@ -316,6 +391,33 @@ export function PublicDocs(): React.ReactElement {
           )}
         </div>
       </div>
+
+      {chatEnabled && !chatOpen && (
+        <button
+          className={styles.chatLauncher}
+          onClick={() => setChatOpen(true)}
+          aria-label="Chat with the documentation"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          Chat with docs
+        </button>
+      )}
+
+      {chatEnabled && chatOpen && (
+        <ChatPanel
+          projectId={project.id}
+          projectName={project.name}
+          onClose={() => setChatOpen(false)}
+          apiOverride={chatApiRef.current}
+          onSourceClick={(s) => {
+            const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
+            if (target) selectPage(target)
+            setChatOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }

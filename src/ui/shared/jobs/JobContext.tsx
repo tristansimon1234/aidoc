@@ -12,14 +12,21 @@ export interface Job {
   startedAt: number
   liveUrl?: string
   phaseStartedAt?: number
+  /** Human-readable failure reason — surfaced in the tracker card when status='failed'. */
+  error?: string | null
+  /** Machine-readable code (e.g. "QUOTA_EXCEEDED") so the UI can branch: upgrade CTA vs. generic retry. */
+  errorCode?: string | null
 }
 
 interface JobContextValue {
   jobs: Job[]
   addJob: (job: Omit<Job, 'startedAt'>) => void
-  updateJob: (runId: string, updates: Partial<Pick<Job, 'status' | 'liveUrl' | 'phaseStartedAt'>>) => void
+  updateJob: (runId: string, updates: Partial<Pick<Job, 'status' | 'liveUrl' | 'phaseStartedAt' | 'error' | 'errorCode'>>) => void
   removeJob: (runId: string) => void
   getJobForPage: (pageId: string, type: JobType) => Job | undefined
+  /** Convenience: mark a job failed with a human error + optional code. Also used
+   *  when the sync HTTP request itself fails (before any backend job was created). */
+  failJob: (runId: string, error: string, code?: string | null) => void
 }
 
 const JobContext = createContext<JobContextValue | null>(null)
@@ -35,7 +42,7 @@ export function JobProvider({ children }: { children: ReactNode }): React.ReactE
     })
   }, [])
 
-  const updateJob = useCallback((runId: string, updates: Partial<Pick<Job, 'status'>>) => {
+  const updateJob = useCallback((runId: string, updates: Partial<Pick<Job, 'status' | 'liveUrl' | 'phaseStartedAt' | 'error' | 'errorCode'>>) => {
     setJobs((prev) => prev.map((j) => j.runId === runId ? { ...j, ...updates } : j))
   }, [])
 
@@ -47,8 +54,12 @@ export function JobProvider({ children }: { children: ReactNode }): React.ReactE
     return jobs.find((j) => j.pageId === pageId && j.type === type)
   }, [jobs])
 
+  const failJob = useCallback((runId: string, error: string, code: string | null = null) => {
+    setJobs((prev) => prev.map((j) => j.runId === runId ? { ...j, status: 'failed' as const, error, errorCode: code } : j))
+  }, [])
+
   return (
-    <JobContext.Provider value={{ jobs, addJob, updateJob, removeJob, getJobForPage }}>
+    <JobContext.Provider value={{ jobs, addJob, updateJob, removeJob, getJobForPage, failJob }}>
       {children}
     </JobContext.Provider>
   )
