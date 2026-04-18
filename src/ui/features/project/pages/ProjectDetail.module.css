@@ -294,6 +294,9 @@
   overflow-y: auto;
   display: flex;
   justify-content: center;
+  /* Flex + overflow-y clips child padding-bottom in Chromium — compensate
+     on the scroll container itself so the last section has breathing room. */
+  padding-bottom: var(--space-2xl);
 }
 
 .content > * {
