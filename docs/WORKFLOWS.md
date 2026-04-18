@@ -258,6 +258,23 @@ Frontend renders:
 2. Page content accessible at `GET /api/docs/:projectId/:slug` (no auth required)
 3. Project page list at `GET /api/docs/:projectId`
 
+## 12b. Project Analytics (chat + doc views + AI insights)
+
+**Trigger**: Owner opens Project → **Analytics** tab (period: 7d / 30d / 90d)
+**Tracking (continuous)**:
+1. Every chat reply — in the 3 chat routes (`chat.routes.ts`, `widget.routes.ts`, `public-docs.routes.ts`) — fire-and-forget `logChatMessages({ role, source })` inserts both user + assistant turns into `chat_messages`.
+2. Every public-doc page switch — `PublicDocs.tsx` activePage effect — fires `POST /api/docs/:projectId/view` (rate-limited 120/min per IP+project) which inserts into `doc_page_views`. Deduped per tab via a ref so strict-mode / re-renders don't double-count.
+
+**Read (`GET /api/projects/:id/analytics?period=30d`)**:
+1. SQL aggregates: sessions, messages, source breakdown (widget / public / app), top viewed pages, unique visitors — over the whole period (up to 5000 msg rows / 10k view rows).
+2. Sample the **last 200 user-role messages** (trimmed to 400 chars each) and feed them to Gemini alongside the product name + top pages, with `ANALYTICS_SYSTEM_PROMPT`.
+3. Gemini returns structured JSON (sentiment, pain points, content gaps, frustration signals, recommendations) in the users' dominant language. Zod-validated with the same repair fallback as Try Doc.
+4. Cache the LLM output in memory for 10 min per `(project, period)` — dashboard reloads are free.
+
+**Why two passes**: SQL handles counts (always current, cheap). Gemini handles patterns that only emerge across many messages — sentiment, clustering recurring questions into pain points, synthesising recommendations. Per-message classification at write time would miss the cross-message signal.
+
+**Cold-start**: below ~50 messages in the period, `insights` is `null` and the panel shows an empty-state.
+
 ## 13. Project URL Analysis
 
 **Trigger**: User enters a URL when creating a project

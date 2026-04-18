@@ -59,6 +59,7 @@ src/features/
   profile/          # 1:1 with auth.users — full_name, stripe_customer_id, isAdmin flag
   billing/          # Plans + subscriptions + monthly token budget + overage rates
   admin/            # /admin/usage dashboard, gated by ADMIN_EMAILS
+  analytics/        # Per-project chat + doc-view analytics + Gemini insights
 
 src/shared/
   ai/               # Gemini, Anthropic, ElevenLabs clients + prompt builder
@@ -123,6 +124,13 @@ Every metered op (`doc_run`, `voiceover`, `try_doc`, `chat_sessions`) is increme
 ### Chat Session Dedup
 `widget` and `app` chat traffic share the same `chat_sessions` quota. Each request carries a `sessionToken` (per-tab UUID stored in `sessionStorage`). The `chat_sessions` table's PK `(project_id, session_token, period_month)` ensures `incrementUsage('chat_sessions')` only fires once per token per calendar month. The `source` column splits widget vs in-app for analytics without affecting billing.
 
+### Analytics (read-time aggregation + cached LLM pass)
+Every chat turn (user + assistant, across widget / public docs / in-app) is persisted in `chat_messages`. Public doc page views ping `POST /api/docs/:projectId/view`, which inserts into `doc_page_views`. Both tables are service-role write, owner-only read via RLS (`auth.uid() = user_id` on a denormalised `user_id` column).
+
+`GET /api/projects/:id/analytics?period=7d|30d|90d` does two things: (1) aggregates counts / source breakdown / top pages from SQL over the whole period, (2) passes the last 200 **user-role** messages to Gemini (`ANALYTICS_SYSTEM_PROMPT` / `buildAnalyticsPrompt`) for sentiment, pain-point clustering, content gaps, frustration signals, and recommendations. The LLM output is Zod-validated with the same JSON-repair fallback used by Try Doc (`analytics.service.ts` → `parseGeminiJson`), and cached in memory for 10 min per `(project, period)` so reloads don't re-hit Gemini. Gemini writes the insights in the users' dominant language.
+
+All tracking writes are fire-and-forget (wrapped in try/catch) so analytics never blocks a chat reply or a page view.
+
 ### Admin Allowlist
 `/api/admin/*` is gated by the `requireAdmin` middleware which reads `req.userId` (set by auth middleware), looks up the email via `profile.repository.findAuthUserEmail`, and compares against `isAdminEmail(email)` (env-driven, see `ADMIN_EMAILS`). The frontend hides the "Admin · Usage" menu entry unless `profile.isAdmin = true` — the admin email list never leaks to the bundle.
 
@@ -143,7 +151,8 @@ See `CLAUDE.md` § "API Design > Route structure" for the full annotated list. H
 - `/api/projects/*` `/api/projects/:pid/pages/*` `/api/projects/:pid/chat*` — workspace + content
 - `/api/runs/*` — long-running ops: explore, video analyze, doc gen, voice-over, Try Doc
 - `/api/widget/:key/*` — public, API-key auth, rate-limited
-- `/api/docs/:projectId*` — public docs (per-page `is_public`)
+- `/api/docs/:projectId*` — public docs (per-page `is_public`) + anonymous chat + page-view pings
+- `/api/projects/:pid/analytics` — per-project chat + doc-view analytics with AI insights (owner-gated)
 - `/api/mcp/*` — Model Context Protocol server for IDE integrations
 
 The same set is mounted twice: in `src/app.ts` for local dev (`npm run dev:server`) and in `api/index.ts` for the Vercel serverless function (with `/api` prefix). Adding a route requires touching both.

@@ -140,6 +140,39 @@ After Stagehand exploration, Gemini analyzes the raw step data against the origi
 6. Recommendations (fix-doc, fix-product, improve-ux with priority)
 7. Global scores (doc quality, test pass rate, UX clarity — each 1-10)
 
+## Analytics Insights Prompt
+
+Feeds Gemini the last 200 user-role chat messages + top viewed public-doc pages for a project, returns a structured insights report shown on the Analytics tab.
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `ANALYTICS_SYSTEM_PROMPT` + `buildAnalyticsPrompt()`
+
+**System prompt** enforces:
+- Base everything on the actual messages provided — no invented topics.
+- Detect the dominant language in the sample and write EVERY field in that language (French → French, English → English).
+- `frustrationSignals` only when wording actually conveys irritation ("je comprends rien", "nul", "broken") — empty array otherwise, no hallucinated signals.
+- `contentGaps` = questions asked multiple times not adequately covered. Set `suggestedPage` to the page title that *should* cover it (may not exist yet).
+- `recommendations` must tie to observed evidence. `type='content'` (edit/create doc page) · `'product'` (change the product) · `'ux'` (fix flow).
+
+**Inputs** (from `analytics.service.ts` → `generateInsights`):
+- `productName`, `productDescription`
+- `sessionCount`, `messageCount` (period aggregates)
+- `sampleUserMessages[]` — last 200 user messages, trimmed to 400 chars
+- `topPages[]` — top 10 viewed public-doc pages
+- `allPageTitles[]` — full doc table of contents
+
+**Output**: JSON validated by `AiInsightsSchema`:
+```ts
+{
+  overallSentiment: { score: 'positive'|'neutral'|'negative'|'mixed', summary: string }
+  painPoints: [{ topic, frequency, severity: 'high'|'medium'|'low', examples: string[] }]
+  frustrationSignals: [{ excerpt, reason, severity }]
+  contentGaps: [{ question, askedCount, suggestedPage: string | null }]
+  recommendations: [{ type, title, description, priority }]
+}
+```
+
+Cached 10 min per `(projectId, period)` in memory. JSON-repair fallback on parse failure (strip fences → brace-slice → close open braces/quotes).
+
 ## Prompt Improvement Guidelines
 
 When modifying prompts:
