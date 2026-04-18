@@ -230,10 +230,13 @@ export async function classifyMessageContent(content: string): Promise<ClassifyR
   const preview = content.slice(0, 80)
   try {
     console.log(`[classifier] start "${preview}"`)
+    // Gemini 2.5 Flash spends tokens on "thinking" before emitting output, and
+    // both are counted against maxOutputTokens. Under ~400 the thinking eats
+    // the whole budget and the JSON comes back truncated like `{"sentiment": "`.
     const result = await generateText({
       systemPrompt: MESSAGE_CLASSIFIER_SYSTEM_PROMPT,
       userPrompt: buildMessageClassifierPrompt(content),
-      maxTokens: 120,
+      maxTokens: 512,
     })
     console.log(`[classifier] raw response: ${result.text.slice(0, 300)}`)
     const parsed = parseClassifierResponse(result.text)
