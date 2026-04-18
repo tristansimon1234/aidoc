@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { JobTracker, JobBadge } from '../jobs/JobTracker.js'
 import { AppRail } from './AppRail.js'
+import { QuotaBanner } from './QuotaBanner.js'
 import styles from './Shell.module.css'
 
 interface ShellProps {
@@ -16,6 +17,7 @@ export function Shell({ children, actions, navBar, fullWidth = false }: ShellPro
     <div className={styles.shell}>
       <AppRail />
       <div className={styles.body}>
+        <QuotaBanner />
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
             <Link to="/" className={styles.logo}>
