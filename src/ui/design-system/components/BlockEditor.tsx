@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useCreateBlockNote } from '@blocknote/react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import type { BlockNoteEditor } from '@blocknote/core'
+import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
+import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
+import type { DefaultReactSuggestionItem } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
 import { useImageLightbox } from './ImageLightbox.js'
@@ -9,6 +12,69 @@ function findFirstTextNode(root: Node): Text | null {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
   const node = walker.nextNode()
   return node instanceof Text ? node : null
+}
+
+// Supported code-block languages. Without this the code block renders as a
+// plain <pre>; with it BlockNote shows the language dropdown in the block's
+// handle menu. No syntax highlighting yet — that would require shipping
+// Shiki (~2 MB). Good enough for now, users can still pick their language.
+const SUPPORTED_LANGUAGES = {
+  text: { name: 'Plain text' },
+  javascript: { name: 'JavaScript', aliases: ['js'] },
+  typescript: { name: 'TypeScript', aliases: ['ts'] },
+  tsx: { name: 'TSX' },
+  jsx: { name: 'JSX' },
+  python: { name: 'Python', aliases: ['py'] },
+  bash: { name: 'Bash', aliases: ['sh', 'shell'] },
+  json: { name: 'JSON' },
+  yaml: { name: 'YAML', aliases: ['yml'] },
+  html: { name: 'HTML' },
+  css: { name: 'CSS' },
+  sql: { name: 'SQL' },
+  markdown: { name: 'Markdown', aliases: ['md'] },
+  go: { name: 'Go' },
+  rust: { name: 'Rust', aliases: ['rs'] },
+} as const
+
+type CalloutType = 'INFO' | 'TIP' | 'WARNING' | 'DANGER'
+
+function getCalloutItems(editor: BlockNoteEditor<never, never, never>): DefaultReactSuggestionItem[] {
+  const insertCallout = (type: CalloutType): void => {
+    insertOrUpdateBlockForSlashMenu(editor as unknown as BlockNoteEditor, {
+      type: 'quote',
+      content: `[!${type}]\n`,
+    })
+  }
+  return [
+    {
+      title: 'Info callout',
+      subtext: 'Blue info box for general notes',
+      group: 'Callouts',
+      aliases: ['info', 'note', 'callout'],
+      onItemClick: () => insertCallout('INFO'),
+    },
+    {
+      title: 'Tip callout',
+      subtext: 'Green tip box for helpful hints',
+      group: 'Callouts',
+      aliases: ['tip', 'hint', 'callout'],
+      onItemClick: () => insertCallout('TIP'),
+    },
+    {
+      title: 'Warning callout',
+      subtext: 'Orange warning box for caveats',
+      group: 'Callouts',
+      aliases: ['warning', 'warn', 'callout'],
+      onItemClick: () => insertCallout('WARNING'),
+    },
+    {
+      title: 'Danger callout',
+      subtext: 'Red danger box for destructive actions',
+      group: 'Callouts',
+      aliases: ['danger', 'caution', 'error', 'callout'],
+      onItemClick: () => insertCallout('DANGER'),
+    },
+  ]
 }
 
 interface BlockEditorProps {
@@ -39,12 +105,29 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   }, [])
 
   const editor = useCreateBlockNote({
+    codeBlock: {
+      defaultLanguage: 'text',
+      supportedLanguages: SUPPORTED_LANGUAGES,
+    },
     domAttributes: {
       editor: {
         class: styles.editor ?? '',
       },
     },
   })
+
+  // Slash menu: default items + our four callout entries, memo-stable per editor
+  const getSlashItems = useMemo(
+    () => async (query: string) =>
+      filterSuggestionItems(
+        [
+          ...getDefaultReactSlashMenuItems(editor),
+          ...getCalloutItems(editor as unknown as BlockNoteEditor<never, never, never>),
+        ],
+        query,
+      ),
+    [editor],
+  )
 
   // Parse markdown into blocks — on mount and when content changes
   useEffect(() => {
@@ -177,7 +260,13 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
         editable={!readOnly}
         onChange={handleChange}
         theme={theme}
-      />
+        slashMenu={false}
+      >
+        <SuggestionMenuController
+          triggerCharacter="/"
+          getItems={getSlashItems}
+        />
+      </BlockNoteView>
       {lightbox}
     </div>
   )
