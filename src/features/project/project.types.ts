@@ -43,6 +43,7 @@ export interface Project {
   mcpEnabled: boolean
   walkthroughEnabled: boolean
   publicDocsChatEnabled: boolean
+  archivedAt: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -75,4 +76,5 @@ export interface UpdateProjectInput {
   design?: ProjectDesign
   walkthroughEnabled?: boolean
   publicDocsChatEnabled?: boolean
+  archivedAt?: Date | null
 }
