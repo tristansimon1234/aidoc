@@ -7,7 +7,11 @@
 }
 
 .shell {
-  min-height: 100vh;
+  /* Bounded height (not min-height) so the sidebar + content each scroll
+     internally via their own overflow-y:auto. With min-height:100vh the
+     whole window grew with tall content and the sidebar scrolled out of
+     view instead of staying pinned. */
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
