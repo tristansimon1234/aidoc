@@ -94,31 +94,9 @@
   border: 1px solid var(--color-border) !important;
 }
 
-/* Code blocks (fenced) — BlockNote wraps its own border, so we only style
-   the inner pre background + text to be readable. No extra border here. */
-.editor pre,
-.editor [data-content-type="codeBlock"] pre {
-  background-color: var(--color-card) !important;
-  color: var(--color-fg) !important;
-  border: none !important;
-  border-radius: var(--radius-lg) !important;
-  padding: var(--space-md) !important;
-  font-family: var(--font-mono) !important;
-  font-size: var(--text-sm) !important;
-  overflow-x: auto !important;
-  line-height: 1.6 !important;
-  margin: 0 !important;
-}
-
-.editor pre code,
-.editor [data-content-type="codeBlock"] code {
-  background-color: transparent !important;
-  padding: 0 !important;
-  border-radius: 0 !important;
-  border: none !important;
-  color: inherit !important;
-  font-family: var(--font-mono) !important;
-}
+/* Code blocks: intentionally not styled here — we rely on BlockNote's built-in
+   theme (grey background, rounded border). Overriding it caused double borders
+   and tight coupling with internal class names. */
 
 /* Links — use primary color, underlined */
 .editor a,
@@ -155,11 +133,6 @@
   letter-spacing: 0.05em !important;
   color: var(--callout-accent, var(--color-primary)) !important;
   margin-bottom: var(--space-xs) !important;
-}
-
-/* Hide the `[!TYPE]` marker in the rendered output — we add the badge via ::before */
-.editor [data-content-type="quote"][data-callout-type] [data-callout-marker] {
-  display: none !important;
 }
 
 .editor [data-content-type="quote"][data-callout-type="NOTE"],

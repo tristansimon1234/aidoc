@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
-import type { BlockNoteEditor } from '@blocknote/core'
 import { filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
 import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
 import type { DefaultReactSuggestionItem } from '@blocknote/react'
@@ -7,12 +6,6 @@ import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
 import { useImageLightbox } from './ImageLightbox.js'
 import styles from './BlockEditor.module.css'
-
-function findFirstTextNode(root: Node): Text | null {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  const node = walker.nextNode()
-  return node instanceof Text ? node : null
-}
 
 // Supported code-block languages. Without this the code block renders as a
 // plain <pre>; with it BlockNote shows the language dropdown in the block's
@@ -38,12 +31,14 @@ const SUPPORTED_LANGUAGES = {
 
 type CalloutType = 'INFO' | 'TIP' | 'WARNING' | 'DANGER'
 
-function getCalloutItems(editor: BlockNoteEditor<never, never, never>): DefaultReactSuggestionItem[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getCalloutItems(editor: any): DefaultReactSuggestionItem[] {
   const insertCallout = (type: CalloutType): void => {
-    insertOrUpdateBlockForSlashMenu(editor as unknown as BlockNoteEditor, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    insertOrUpdateBlockForSlashMenu(editor, {
       type: 'quote',
-      content: `[!${type}]\n`,
-    })
+      content: [{ type: 'text', text: `[!${type}] `, styles: {} }],
+    } as any)
   }
   return [
     {
@@ -122,7 +117,7 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
       filterSuggestionItems(
         [
           ...getDefaultReactSlashMenuItems(editor),
-          ...getCalloutItems(editor as unknown as BlockNoteEditor<never, never, never>),
+          ...getCalloutItems(editor),
         ],
         query,
       ),
@@ -175,37 +170,27 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
     return () => el.removeEventListener('click', handler, true)
   }, [openLightbox])
 
-  // Annotate quote blocks that follow the GitHub-style alert syntax
+  // Annotate quote blocks that start with the GitHub-style alert marker
   // ([!NOTE] / [!TIP] / [!WARNING] / [!DANGER] / [!INFO]) with a
   // `data-callout-type` attribute so the CSS can render them as callouts.
-  // Keeps markdown clean + round-trippable — the [!TYPE] stays in the text,
-  // we just hide it visually via a `data-callout-marker` span.
+  //
+  // We ONLY toggle an attribute — never mutate the DOM itself. Rewriting the
+  // text nodes fights ProseMirror's reconciliation and crashes the editor.
+  // The `[!TYPE]` marker stays visible as the user's markdown source, which
+  // is fine in edit mode; the read-only `MarkdownRenderer` hides it.
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const CALLOUT_RE = /^\[!(NOTE|INFO|TIP|WARNING|DANGER|CAUTION)\]\s*$/i
+    const CALLOUT_RE = /^\s*\[!(NOTE|INFO|TIP|WARNING|DANGER|CAUTION)\]/i
 
     const scan = (): void => {
       const quotes = el.querySelectorAll<HTMLElement>('[data-content-type="quote"]')
       quotes.forEach((q) => {
-        const firstText = q.textContent?.split('\n')[0]?.trim() ?? ''
+        const firstText = q.textContent?.split('\n')[0] ?? ''
         const match = CALLOUT_RE.exec(firstText)
         if (match) {
-          const type = match[1]!.toUpperCase()
-          q.setAttribute('data-callout-type', type)
-          // Wrap the `[!TYPE]` text so we can hide it via CSS without losing markdown
-          const firstTextNode = findFirstTextNode(q)
-          if (firstTextNode?.parentElement && !firstTextNode.parentElement.hasAttribute('data-callout-marker')) {
-            const span = document.createElement('span')
-            span.setAttribute('data-callout-marker', '')
-            span.textContent = firstTextNode.nodeValue?.match(/\[![A-Z]+\]\s*/i)?.[0] ?? ''
-            if (span.textContent) {
-              const remaining = firstTextNode.nodeValue?.slice(span.textContent.length) ?? ''
-              firstTextNode.nodeValue = remaining
-              firstTextNode.parentElement.insertBefore(span, firstTextNode)
-            }
-          }
-        } else {
+          q.setAttribute('data-callout-type', match[1]!.toUpperCase())
+        } else if (q.hasAttribute('data-callout-type')) {
           q.removeAttribute('data-callout-type')
         }
       })
