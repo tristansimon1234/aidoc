@@ -1,9 +1,76 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import { useCreateBlockNote } from '@blocknote/react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
+import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
+import type { DefaultReactSuggestionItem } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
 import { useImageLightbox } from './ImageLightbox.js'
+import { Callout, type CalloutType } from './CalloutBlock.js'
 import styles from './BlockEditor.module.css'
+
+const schema = BlockNoteSchema.create({
+  blockSpecs: {
+    ...defaultBlockSpecs,
+    callout: Callout(),
+  },
+})
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Editor = any
+
+function getCalloutItems(editor: Editor): DefaultReactSuggestionItem[] {
+  const insert = (type: CalloutType) => () => {
+    insertOrUpdateBlockForSlashMenu(editor, {
+      type: 'callout',
+      props: { calloutType: type },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)
+  }
+  return [
+    { title: 'Info callout', subtext: 'Blue info box', group: 'Callouts', aliases: ['info', 'note', 'callout'], onItemClick: insert('info') },
+    { title: 'Tip callout', subtext: 'Green tip box', group: 'Callouts', aliases: ['tip', 'hint', 'callout'], onItemClick: insert('tip') },
+    { title: 'Warning callout', subtext: 'Orange warning box', group: 'Callouts', aliases: ['warning', 'warn', 'callout'], onItemClick: insert('warning') },
+    { title: 'Danger callout', subtext: 'Red danger box', group: 'Callouts', aliases: ['danger', 'caution', 'error', 'callout'], onItemClick: insert('danger') },
+  ]
+}
+
+// After parsing markdown, BlockNote returns plain `quote` blocks even for our
+// GFM-alert syntax (`> [!TIP]\n> content`). Walk the tree and promote those
+// to `callout` blocks so reload preserves the styling round-trip.
+const ALERT_RE = /^\s*\[!(INFO|NOTE|TIP|WARNING|DANGER|CAUTION)\]\s*\n?/i
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function promoteCallouts(blocks: any[]): any[] {
+  return blocks.map((b) => {
+    const withChildren = b.children && Array.isArray(b.children) && b.children.length > 0
+      ? { ...b, children: promoteCallouts(b.children) }
+      : b
+    if (withChildren.type !== 'quote' || !Array.isArray(withChildren.content)) return withChildren
+    // Only support inline content arrays here (BlockNote's default for quotes)
+    const first = withChildren.content[0]
+    if (!first || first.type !== 'text' || typeof first.text !== 'string') return withChildren
+    const match = ALERT_RE.exec(first.text)
+    if (!match) return withChildren
+    const raw = match[1]!.toUpperCase()
+    const calloutType: CalloutType =
+      raw === 'NOTE' ? 'info' :
+      raw === 'CAUTION' ? 'danger' :
+      raw === 'INFO' ? 'info' :
+      raw === 'TIP' ? 'tip' :
+      raw === 'WARNING' ? 'warning' :
+      'danger'
+    const stripped = first.text.slice(match[0].length)
+    const newContent = stripped.length > 0
+      ? [{ ...first, text: stripped }, ...withChildren.content.slice(1)]
+      : withChildren.content.slice(1)
+    return {
+      ...withChildren,
+      type: 'callout',
+      props: { ...withChildren.props, calloutType },
+      content: newContent,
+    }
+  })
+}
 
 interface BlockEditorProps {
   content: string
@@ -33,12 +100,22 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   }, [])
 
   const editor = useCreateBlockNote({
+    schema,
     domAttributes: {
       editor: {
         class: styles.editor ?? '',
       },
     },
   })
+
+  const getSlashItems = useMemo(
+    () => async (query: string) =>
+      filterSuggestionItems(
+        [...getDefaultReactSlashMenuItems(editor), ...getCalloutItems(editor)],
+        query,
+      ),
+    [editor],
+  )
 
   // Parse markdown into blocks — on mount and when content changes
   useEffect(() => {
@@ -60,7 +137,8 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
 
         suppressNextChangeRef.current = true
         const blocks = await editor.tryParseMarkdownToBlocks(prepared)
-        editor.replaceBlocks(editor.document, blocks)
+        const promoted = promoteCallouts(blocks)
+        editor.replaceBlocks(editor.document, promoted)
       } catch {
         // markdown parsing failed
       }
@@ -129,7 +207,10 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
         editable={!readOnly}
         onChange={handleChange}
         theme={theme}
-      />
+        slashMenu={false}
+      >
+        <SuggestionMenuController triggerCharacter="/" getItems={getSlashItems} />
+      </BlockNoteView>
       {lightbox}
     </div>
   )
