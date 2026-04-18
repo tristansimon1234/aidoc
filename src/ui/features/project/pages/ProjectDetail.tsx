@@ -28,23 +28,26 @@ const NAV_ICONS: Record<NavTab, React.ReactNode> = {
   ),
   share: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" /><polyline points="16 6 12 2 8 6" /><line x1="12" y1="2" x2="12" y2="15" />
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
     </svg>
   ),
   design: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="12" cy="8" r="1.5" fill="currentColor" stroke="none" />
-      <circle cx="8.5" cy="11.5" r="1.5" fill="currentColor" stroke="none" />
-      <circle cx="15.5" cy="11.5" r="1.5" fill="currentColor" stroke="none" />
-      <circle cx="10" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
-      <circle cx="14" cy="15.5" r="1.5" fill="currentColor" stroke="none" />
+      <circle cx="13.5" cy="6.5" r="0.5" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r="0.5" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r="0.5" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r="0.5" fill="currentColor" />
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10a1.5 1.5 0 0 0 0-3h-.5a1 1 0 0 1-.7-1.7 2 2 0 0 0-1.4-3.4A2.5 2.5 0 0 1 11 9h3a5 5 0 0 0 0-7H12z" />
     </svg>
   ),
   settings: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 21v-1a4 4 0 0 1 4-4h4" /><circle cx="9" cy="8" r="4" />
-      <circle cx="18" cy="18" r="3" /><path d="M18 15v6" /><path d="M15 18h6" />
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   ),
 }
