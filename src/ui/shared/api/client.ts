@@ -75,6 +75,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     )
   }
 
+  // 204 No Content (or empty body) — callers that type T as void just ignore
+  // the returned null. Prevents "Unexpected end of JSON input" on DELETE.
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return null as unknown as T
+  }
+
   return res.json() as Promise<T>
 }
 
