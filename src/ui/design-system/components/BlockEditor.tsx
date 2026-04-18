@@ -160,12 +160,12 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const initializedRef = useRef(false)
   const lastContentRef = useRef('')
-  // Signature of the last `editor.document` we programmatically loaded. We
-  // compare against it on every onChange: if the blocks haven't actually
-  // moved, it's a spurious event from replaceBlocks (or BlockNote's own
-  // normalization) and we skip the save. This prevents the load path from
-  // writing back a lossy round-trip of the loaded content.
-  const loadedSignatureRef = useRef<string>('')
+  // Only save after the user has actually interacted with the editor. Without
+  // this gate, BlockNote's replaceBlocks + its async normalization fire
+  // multiple onChange events during the initial load, each of which would
+  // otherwise persist a lossy markdown round-trip of the just-loaded content
+  // (e.g. images between numbered list items vanish).
+  const userInteractedRef = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const { lightbox, openLightbox } = useImageLightbox()
 
@@ -209,6 +209,10 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
     initializedRef.current = true
     lastContentRef.current = content
 
+    // Reset the user-interaction gate so load-time onChange events are ignored
+    // until the user actually types/pastes/etc.
+    userInteractedRef.current = false
+
     void (async () => {
       try {
         // BlockNote's markdown parser (per the official docs) is explicitly
@@ -224,9 +228,6 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
         const blocks = await editor.tryParseMarkdownToBlocks(prepared)
         const promoted = promoteCallouts(blocks)
         editor.replaceBlocks(editor.document, promoted)
-        // Snapshot the document AFTER replacement — any onChange whose blocks
-        // still match this snapshot is spurious and must not trigger a save.
-        loadedSignatureRef.current = JSON.stringify(editor.document)
       } catch {
         // markdown parsing failed
       }
@@ -252,18 +253,37 @@ export function BlockEditor({ content, onSave, readOnly = false }: BlockEditorPr
     return () => el.removeEventListener('click', handler, true)
   }, [openLightbox])
 
+  // Flip the user-interaction gate on real input events so subsequent
+  // onChange events are allowed to persist. Captured at the container so
+  // we see events from anywhere in BlockNote's DOM.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const mark = (): void => { userInteractedRef.current = true }
+    el.addEventListener('keydown', mark, true)
+    el.addEventListener('paste', mark, true)
+    el.addEventListener('cut', mark, true)
+    el.addEventListener('drop', mark, true)
+    el.addEventListener('beforeinput', mark, true)
+    return () => {
+      el.removeEventListener('keydown', mark, true)
+      el.removeEventListener('paste', mark, true)
+      el.removeEventListener('cut', mark, true)
+      el.removeEventListener('drop', mark, true)
+      el.removeEventListener('beforeinput', mark, true)
+    }
+  }, [])
+
   const handleChange = useCallback(() => {
     if (readOnly) return
 
-    // Skip saves whose blocks haven't actually moved since the load. Without
-    // this, BlockNote's own post-replace normalization passes can fire
-    // onChange events that would otherwise persist a lossy round-trip of
-    // the just-loaded content — e.g. images inside numbered lists get
-    // dropped because tryParseMarkdownToBlocks / blocksToMarkdownLossy
-    // don't round-trip them cleanly.
-    const currentSignature = JSON.stringify(editor.document)
-    if (currentSignature === loadedSignatureRef.current) return
-    loadedSignatureRef.current = currentSignature
+    // Only persist real user edits. Without this gate, replaceBlocks and
+    // BlockNote's async normalization fire onChange events that would
+    // overwrite page.content with a lossy markdown round-trip of what
+    // was just loaded (e.g. images inside numbered lists get dropped
+    // because tryParseMarkdownToBlocks / blocksToMarkdownLossy don't
+    // round-trip them cleanly).
+    if (!userInteractedRef.current) return
 
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current)
