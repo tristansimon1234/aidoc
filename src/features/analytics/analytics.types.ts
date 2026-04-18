@@ -9,6 +9,12 @@ export interface ChatStats {
   assistantMessages: number
   avgMessagesPerSession: number
   bySource: Record<ChatSource, { sessions: number; messages: number }>
+  sentimentCounts: {
+    positive: number
+    negative: number
+    frustrated: number
+    classified: number
+  }
 }
 
 export interface ViewStats {
@@ -53,5 +59,13 @@ export interface AnalyticsReport {
   chatStats: ChatStats
   viewStats: ViewStats
   insights: AiInsights | null
-  recentSamples: { role: 'user' | 'assistant'; content: string; source: ChatSource; createdAt: string }[]
+  recentSamples: {
+    role: 'user' | 'assistant'
+    content: string
+    source: ChatSource
+    createdAt: string
+    sentiment: 'positive' | 'neutral' | 'negative' | null
+    frustrationFlag: boolean
+    language: string | null
+  }[]
 }

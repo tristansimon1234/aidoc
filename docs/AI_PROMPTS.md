@@ -140,6 +140,23 @@ After Stagehand exploration, Gemini analyzes the raw step data against the origi
 6. Recommendations (fix-doc, fix-product, improve-ux with priority)
 7. Global scores (doc quality, test pass rate, UX clarity — each 1-10)
 
+## Message Classifier Prompt (write-time, per message)
+
+Tiny Gemini call made fire-and-forget right after each user chat message is stored. Fills the `sentiment` / `frustration_flag` / `language` columns on `chat_messages` so the Analytics UI can filter and the backend can aggregate trendlines without re-running the heavy insights pass.
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `MESSAGE_CLASSIFIER_SYSTEM_PROMPT` + `buildMessageClassifierPrompt()`
+
+**Inputs**: single message content (trimmed to 500 chars).
+
+**System prompt enforces**:
+- Return minified JSON with exactly 3 fields (`sentiment`, `frustrated`, `language`) — no prose, no markdown.
+- Neutral is the default. Don't over-flag negativity on plain questions.
+- `frustrated=true` requires real signals (complaints, repeated tries, explicit anger). "How do I X?" is NEUTRAL.
+
+**Output**: `{"sentiment": "positive"|"neutral"|"negative", "frustrated": boolean, "language": "fr"|"en"|...}`
+
+**Cost** (Gemini 2.5 Flash, ~150 in / ~20 out tokens per call): ≈ €0.00015 / message. A 10 k-message month runs under €2; can switch to Flash-Lite or batch 10-20 msgs/call to divide by 5-10× if volume grows.
+
 ## Analytics Insights Prompt
 
 Feeds Gemini the last 200 user-role chat messages + top viewed public-doc pages for a project, returns a structured insights report shown on the Analytics tab.

@@ -2,7 +2,12 @@ import { NotFoundError, AppError } from '../../shared/middleware/error.middlewar
 import { findProjectById } from '../project/project.repository.js'
 import { findPagesByProjectId } from '../page/page.repository.js'
 import { generateText } from '../../shared/ai/gemini.client.js'
-import { ANALYTICS_SYSTEM_PROMPT, buildAnalyticsPrompt } from '../../shared/ai/prompt.builder.js'
+import {
+  ANALYTICS_SYSTEM_PROMPT,
+  buildAnalyticsPrompt,
+  MESSAGE_CLASSIFIER_SYSTEM_PROMPT,
+  buildMessageClassifierPrompt,
+} from '../../shared/ai/prompt.builder.js'
 import { AiInsightsSchema } from './analytics.schema.js'
 import {
   fetchChatRowsSince,
@@ -10,6 +15,7 @@ import {
   computeChatStats,
   computeViewStats,
   sampleUserMessages,
+  updateMessageClassification,
 } from './analytics.repository.js'
 import type { AiInsights, AnalyticsPeriod, AnalyticsReport, ChatSource } from './analytics.types.js'
 
@@ -84,11 +90,14 @@ export async function getReport(
       }))
     : null
 
-  const recentSamples = chatRows.slice(0, 20).map((r) => ({
+  const recentSamples = chatRows.slice(0, 40).map((r) => ({
     role: r.role,
     content: r.content.length > 300 ? `${r.content.slice(0, 300)}…` : r.content,
     source: r.source as ChatSource,
     createdAt: r.created_at,
+    sentiment: r.sentiment ?? null,
+    frustrationFlag: Boolean(r.frustration_flag),
+    language: r.language ?? null,
   }))
 
   return {
@@ -117,6 +126,52 @@ async function getCachedInsights(
   } catch (err) {
     console.warn('[analytics] insights generation failed:', (err as Error).message)
     return null
+  }
+}
+
+// --- Per-message classifier (write-time, fire-and-forget) ---
+
+interface ClassifyResult {
+  sentiment: 'positive' | 'neutral' | 'negative'
+  frustrated: boolean
+  language: string | null
+}
+
+function parseClassifierResponse(raw: string): ClassifyResult | null {
+  let jsonStr = raw.trim()
+  if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+  const braceStart = jsonStr.indexOf('{')
+  const braceEnd = jsonStr.lastIndexOf('}')
+  if (braceStart === -1 || braceEnd <= braceStart) return null
+  jsonStr = jsonStr.slice(braceStart, braceEnd + 1)
+  try {
+    const parsed = JSON.parse(jsonStr) as Record<string, unknown>
+    const sentiment = parsed.sentiment
+    if (sentiment !== 'positive' && sentiment !== 'neutral' && sentiment !== 'negative') return null
+    return {
+      sentiment,
+      frustrated: Boolean(parsed.frustrated),
+      language: typeof parsed.language === 'string' ? parsed.language.slice(0, 8) : null,
+    }
+  } catch { return null }
+}
+
+export async function classifyAndStoreUserMessage(messageId: string, content: string): Promise<void> {
+  try {
+    const result = await generateText({
+      systemPrompt: MESSAGE_CLASSIFIER_SYSTEM_PROMPT,
+      userPrompt: buildMessageClassifierPrompt(content),
+      maxTokens: 80,
+    })
+    const parsed = parseClassifierResponse(result.text)
+    if (!parsed) return
+    await updateMessageClassification(messageId, {
+      sentiment: parsed.sentiment,
+      frustration_flag: parsed.frustrated,
+      language: parsed.language,
+    })
+  } catch (err) {
+    console.warn('[analytics] classifier failed:', (err as Error).message)
   }
 }
 

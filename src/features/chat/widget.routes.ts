@@ -5,6 +5,7 @@ import { ChatRequestSchema, WalkthroughRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
+import { classifyAndStoreUserMessage } from '../analytics/analytics.service.js'
 import type { Project } from '../project/project.types.js'
 
 // Fire-and-forget session tracking: we don't want AI latency coupled to
@@ -106,11 +107,11 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
         delete result.walkthroughAvailable
       }
 
-      // Fire-and-forget: record the Q&A for analytics.
+      // Fire-and-forget: record the Q&A for analytics + classify the user message.
       if (sessionToken) {
         void (async () => {
           try {
-            await logChatMessages({
+            const { userMessageId } = await logChatMessages({
               projectId: project.id,
               userId: project.userId,
               sessionToken,
@@ -118,6 +119,7 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
               userMessage: body.data.message,
               assistantMessage: result.answer,
             })
+            if (userMessageId) await classifyAndStoreUserMessage(userMessageId, body.data.message)
           } catch (err) {
             console.warn('[analytics] widget chat log failed:', (err as Error).message)
           }

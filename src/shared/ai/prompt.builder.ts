@@ -465,6 +465,27 @@ Return the ONE next step as JSON:
 {"done":false,"step":{"instruction":"...","action":"click","elementRef":"ref","fallbackSelector":"sel","typeValue":null},"stepNumber":${completedSteps.length + 1},"hint":"next you'll..."}`
 }
 
+// --- Per-message classifier (write-time) ---
+
+export const MESSAGE_CLASSIFIER_SYSTEM_PROMPT = `You classify a single chat message from an end-user talking to a product's help chatbot.
+
+Return ONLY a minified JSON object with these three fields:
+- sentiment: "positive" | "neutral" | "negative"
+- frustrated: boolean — true if the user sounds irritated, stuck, blocked, or resigned (not just asking a question)
+- language: 2-letter ISO 639-1 code (e.g. "fr", "en", "es")
+
+Rules:
+- Neutral is the default. Don't over-flag negativity on plain questions.
+- "frustrated" requires real signals: complaints ("nul", "broken", "useless", "ça marche pas"), repeated tries ("encore", "again"), giving-up tone, or explicit anger. Asking "how do I X?" is NEUTRAL, not frustrated.
+- If the message is a greeting or acknowledgement, return neutral + frustrated:false.
+- No explanation, no markdown, just the JSON.`
+
+export function buildMessageClassifierPrompt(content: string): string {
+  // Hard cap to keep the prompt tiny — frustration signals are at the surface.
+  const trimmed = content.length > 500 ? `${content.slice(0, 500)}…` : content
+  return `Classify this message:\n"""${trimmed}"""`
+}
+
 // --- Analytics insights ---
 
 export const ANALYTICS_SYSTEM_PROMPT = `You are a senior product analyst for a SaaS product. You receive anonymised end-user questions pulled from a chatbot that answers from the product's documentation, plus the list of docs most visited.

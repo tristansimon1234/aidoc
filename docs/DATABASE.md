@@ -185,18 +185,21 @@ updated_at         timestamptz DEFAULT now()
 
 ### chat_messages
 ```sql
-id             uuid PK DEFAULT gen_random_uuid()
-project_id     uuid NOT NULL FK → projects(id) CASCADE
-user_id        uuid NOT NULL FK → auth.users(id) CASCADE     -- denormalized project owner
-session_token  text NOT NULL                                  -- same sessionStorage token as chat_sessions
-role           text NOT NULL CHECK (role IN ('user','assistant'))
-content        text NOT NULL
-source         text NOT NULL CHECK (source IN ('widget','public','app'))
-created_at     timestamptz NOT NULL DEFAULT now()
+id                uuid PK DEFAULT gen_random_uuid()
+project_id        uuid NOT NULL FK → projects(id) CASCADE
+user_id           uuid NOT NULL FK → auth.users(id) CASCADE     -- denormalized project owner
+session_token     text NOT NULL                                  -- same sessionStorage token as chat_sessions
+role              text NOT NULL CHECK (role IN ('user','assistant'))
+content           text NOT NULL
+source            text NOT NULL CHECK (source IN ('widget','public','app'))
+sentiment         text CHECK (sentiment IN ('positive','neutral','negative'))  -- user rows only, NULL until classified
+frustration_flag  boolean NOT NULL DEFAULT false                                -- user rows only
+language          text                                                          -- 2-letter ISO code, user rows only
+created_at        timestamptz NOT NULL DEFAULT now()
 ```
-**Index**: `idx_chat_messages_project_time` (project_id, created_at DESC)
+**Indexes**: `idx_chat_messages_project_time` (project_id, created_at DESC), `idx_chat_messages_project_sentiment` (partial, user+classified), `idx_chat_messages_project_frustrated` (partial, user+frustrated)
 **RLS**: SELECT `auth.uid() = user_id`. Inserts via service_role (fire-and-forget from the 3 chat routes).
-**Purpose**: persists every chat turn (both roles) for the per-project Analytics dashboard. Same `session_token` as `chat_sessions` so joins are cheap.
+**Purpose**: persists every chat turn (both roles) for the per-project Analytics dashboard. Same `session_token` as `chat_sessions` so joins are cheap. User messages are classified at write time (sentiment / frustration / language) to power UI filters and trend signals — pain-point clustering and recommendations still happen read-time across the whole sample.
 
 ### doc_page_views
 ```sql
@@ -283,6 +286,7 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 31 | `20260418000000_add_public_docs_chat.sql` | Add `public_docs_chat_enabled` to projects — enables the floating "Chat with docs" launcher on `/docs/:projectId` |
 | 32 | `20260418000001_add_projects_archived_at.sql` | Add nullable `archived_at` to projects for the Archive / Restore toggle on the project list |
 | 33 | `20260418000002_add_analytics_tables.sql` | `chat_messages` + `doc_page_views` — powers the per-project Analytics tab with AI sentiment insights |
+| 34 | `20260418000003_add_chat_messages_classification.sql` | Add `sentiment` / `frustration_flag` / `language` to `chat_messages` — write-time classification enables filters + trend signals |
 
 ## Relationships
 

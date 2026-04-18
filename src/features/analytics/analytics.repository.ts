@@ -11,7 +11,7 @@ export async function logChatMessages(input: {
   source: ChatSource
   userMessage: string
   assistantMessage: string
-}): Promise<void> {
+}): Promise<{ userMessageId: string | null }> {
   const now = new Date()
   // Insert assistant a few ms later so ORDER BY created_at puts user first
   const rows = [
@@ -34,7 +34,24 @@ export async function logChatMessages(input: {
       created_at: new Date(now.getTime() + 1).toISOString(),
     },
   ]
-  const { error } = await supabase.from('chat_messages').insert(rows)
+  const { data, error } = await supabase.from('chat_messages').insert(rows).select('id, role')
+  if (error) throw new DatabaseError(error.message)
+  const userRow = (data ?? []).find((r) => (r as { role: string }).role === 'user') as { id: string } | undefined
+  return { userMessageId: userRow?.id ?? null }
+}
+
+export async function updateMessageClassification(
+  messageId: string,
+  fields: { sentiment: 'positive' | 'neutral' | 'negative'; frustration_flag: boolean; language: string | null },
+): Promise<void> {
+  const { error } = await supabase
+    .from('chat_messages')
+    .update({
+      sentiment: fields.sentiment,
+      frustration_flag: fields.frustration_flag,
+      language: fields.language,
+    })
+    .eq('id', messageId)
   if (error) throw new DatabaseError(error.message)
 }
 
@@ -59,12 +76,21 @@ export async function logPageView(input: {
 
 // --- Reads (used by analytics.service) ---
 
-interface ChatRow { role: 'user' | 'assistant'; content: string; source: ChatSource; session_token: string; created_at: string }
+interface ChatRow {
+  role: 'user' | 'assistant'
+  content: string
+  source: ChatSource
+  session_token: string
+  created_at: string
+  sentiment: 'positive' | 'neutral' | 'negative' | null
+  frustration_flag: boolean | null
+  language: string | null
+}
 
 export async function fetchChatRowsSince(projectId: string, sinceIso: string): Promise<ChatRow[]> {
   const { data, error } = await supabase
     .from('chat_messages')
-    .select('role, content, source, session_token, created_at')
+    .select('role, content, source, session_token, created_at, sentiment, frustration_flag, language')
     .eq('project_id', projectId)
     .gte('created_at', sinceIso)
     .order('created_at', { ascending: false })
@@ -98,6 +124,10 @@ export function computeChatStats(rows: ChatRow[]): ChatStats {
   }
   let userMessages = 0
   let assistantMessages = 0
+  let userPositive = 0
+  let userNegative = 0
+  let userFrustrated = 0
+  let userClassified = 0
 
   for (const r of rows) {
     sessionsSet.add(r.session_token)
@@ -106,8 +136,17 @@ export function computeChatStats(rows: ChatRow[]): ChatStats {
       bucket.sessions.add(r.session_token)
       bucket.messages += 1
     }
-    if (r.role === 'user') userMessages += 1
-    else assistantMessages += 1
+    if (r.role === 'user') {
+      userMessages += 1
+      if (r.sentiment) {
+        userClassified += 1
+        if (r.sentiment === 'positive') userPositive += 1
+        else if (r.sentiment === 'negative') userNegative += 1
+      }
+      if (r.frustration_flag) userFrustrated += 1
+    } else {
+      assistantMessages += 1
+    }
   }
 
   const totalSessions = sessionsSet.size
@@ -122,6 +161,12 @@ export function computeChatStats(rows: ChatRow[]): ChatStats {
       widget: { sessions: bySource.widget.sessions.size, messages: bySource.widget.messages },
       public: { sessions: bySource.public.sessions.size, messages: bySource.public.messages },
       app: { sessions: bySource.app.sessions.size, messages: bySource.app.messages },
+    },
+    sentimentCounts: {
+      positive: userPositive,
+      negative: userNegative,
+      frustrated: userFrustrated,
+      classified: userClassified,
     },
   }
 }

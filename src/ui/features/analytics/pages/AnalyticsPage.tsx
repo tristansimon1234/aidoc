@@ -70,14 +70,30 @@ export function AnalyticsPage(): React.ReactElement {
 
   const kpis = useMemo(() => {
     if (!data) return null
+    const { userMessages, sentimentCounts } = data.chatStats
+    const negativePct = userMessages > 0 ? Math.round((sentimentCounts.negative / userMessages) * 100) : 0
     return [
       { label: 'Sessions', value: formatNumber(data.chatStats.totalSessions) },
       { label: 'Messages', value: formatNumber(data.chatStats.totalMessages) },
       { label: 'Avg / session', value: data.chatStats.avgMessagesPerSession.toFixed(1) },
+      {
+        label: '% negative',
+        value: sentimentCounts.classified === 0 ? '—' : `${negativePct}%`,
+        hint: `${formatNumber(sentimentCounts.negative)} negative · ${formatNumber(sentimentCounts.frustrated)} frustrated`,
+      },
       { label: 'Page views', value: formatNumber(data.viewStats.totalViews) },
       { label: 'Unique visitors', value: formatNumber(data.viewStats.uniqueSessions) },
     ]
   }, [data])
+
+  const [sampleFilter, setSampleFilter] = useState<'all' | 'negative' | 'frustrated'>('all')
+  const filteredSamples = useMemo(() => {
+    if (!data) return []
+    const users = data.recentSamples.filter((s) => s.role === 'user')
+    if (sampleFilter === 'negative') return users.filter((s) => s.sentiment === 'negative')
+    if (sampleFilter === 'frustrated') return users.filter((s) => s.frustrationFlag)
+    return users
+  }, [data, sampleFilter])
 
   return (
     <div className={styles.page}>
@@ -107,9 +123,12 @@ export function AnalyticsPage(): React.ReactElement {
           {kpis && (
             <div className={styles.kpis}>
               {kpis.map((k) => (
-                <div key={k.label} className={styles.kpiCard}>
+                <div key={k.label} className={styles.kpiCard} title={'hint' in k ? (k as { hint?: string }).hint : undefined}>
                   <span className={styles.kpiLabel}>{k.label}</span>
                   <span className={styles.kpiValue}>{k.value}</span>
+                  {'hint' in k && (k as { hint?: string }).hint && (
+                    <span className={styles.kpiHint}>{(k as { hint: string }).hint}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -195,15 +214,34 @@ export function AnalyticsPage(): React.ReactElement {
           </div>
 
           <div className={styles.section}>
-            <h2 className={styles.sectionTitle}>Recent user messages</h2>
-            {data.recentSamples.length === 0 ? (
-              <p className={styles.empty}>No recent messages.</p>
+            <div className={styles.samplesHeader}>
+              <h2 className={styles.sectionTitle}>Recent user messages</h2>
+              <div className={styles.filterGroup}>
+                {(['all', 'negative', 'frustrated'] as const).map((f) => (
+                  <button
+                    key={f}
+                    className={`${styles.filterBtn} ${sampleFilter === f ? styles.filterBtnActive : ''}`}
+                    onClick={() => setSampleFilter(f)}
+                  >
+                    {f === 'all' ? 'All' : f === 'negative' ? `Negative (${data.chatStats.sentimentCounts.negative})` : `Frustrated (${data.chatStats.sentimentCounts.frustrated})`}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {filteredSamples.length === 0 ? (
+              <p className={styles.empty}>
+                {sampleFilter === 'all' ? 'No recent messages.' : 'No messages match this filter in the recent window.'}
+              </p>
             ) : (
               <ul className={styles.samplesList}>
-                {data.recentSamples.filter((s) => s.role === 'user').map((s, i) => (
+                {filteredSamples.map((s, i) => (
                   <li key={i} className={styles.sampleRow}>
                     <span className={styles.sampleSource} style={{ color: SOURCE_COLORS[s.source] }}>{s.source}</span>
-                    <span className={styles.sampleText}>{s.content}</span>
+                    <span className={styles.sampleText}>
+                      {s.content}
+                      {s.frustrationFlag && <span className={styles.frustrationChip}>frustrated</span>}
+                      {s.sentiment === 'negative' && !s.frustrationFlag && <span className={styles.negativeChip}>negative</span>}
+                    </span>
                     <span className={styles.sampleDate}>{new Date(s.createdAt).toLocaleDateString()}</span>
                   </li>
                 ))}

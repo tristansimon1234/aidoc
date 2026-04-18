@@ -412,6 +412,12 @@ export interface AnalyticsReportDTO {
     assistantMessages: number
     avgMessagesPerSession: number
     bySource: Record<AnalyticsChatSourceDTO, { sessions: number; messages: number }>
+    sentimentCounts: {
+      positive: number
+      negative: number
+      frustrated: number
+      classified: number
+    }
   }
   viewStats: {
     totalViews: number
@@ -425,7 +431,15 @@ export interface AnalyticsReportDTO {
     contentGaps: { question: string; askedCount: number; suggestedPage: string | null }[]
     recommendations: { type: 'content' | 'product' | 'ux'; title: string; description: string; priority: 'high' | 'medium' | 'low' }[]
   } | null
-  recentSamples: { role: 'user' | 'assistant'; content: string; source: AnalyticsChatSourceDTO; createdAt: string }[]
+  recentSamples: {
+    role: 'user' | 'assistant'
+    content: string
+    source: AnalyticsChatSourceDTO
+    createdAt: string
+    sentiment: 'positive' | 'neutral' | 'negative' | null
+    frustrationFlag: boolean
+    language: string | null
+  }[]
 }
 
 export interface ChatResponseDTO {
