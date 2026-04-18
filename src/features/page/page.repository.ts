@@ -11,6 +11,7 @@ interface PageRow {
   start_url: string | null
   goal: string | null
   content: string | null
+  content_blocks: unknown
   custom_prompt: string | null
   briefing: PageBriefing | null
   status: string
@@ -30,6 +31,7 @@ function mapToPage(row: PageRow): DocPage {
     startUrl: row.start_url,
     goal: row.goal,
     content: row.content,
+    contentBlocks: row.content_blocks ?? null,
     customPrompt: row.custom_prompt,
     briefing: row.briefing ?? null,
     status: row.status as DocPage['status'],
@@ -110,6 +112,7 @@ export async function updatePage(id: string, input: UpdatePageInput): Promise<Do
   if (input.sortOrder !== undefined) updates.sort_order = input.sortOrder
   if (input.status !== undefined) updates.status = input.status
   if (input.content !== undefined) updates.content = input.content
+  if (input.contentBlocks !== undefined) updates.content_blocks = input.contentBlocks
   if (input.customPrompt !== undefined) updates.custom_prompt = input.customPrompt
   if (input.briefing !== undefined) updates.briefing = input.briefing
   if (input.isPublic !== undefined) updates.is_public = input.isPublic
@@ -144,9 +147,12 @@ export async function reorderPages(items: ReorderItem[]): Promise<void> {
 }
 
 export async function updatePageContent(id: string, content: string): Promise<void> {
+  // Wipe content_blocks on fresh generation: the editor parses the new
+  // markdown on next open and persists JSON from that. Without the wipe,
+  // stale blocks from a previous generation would override the new content.
   const { error } = await supabase
     .from('doc_pages')
-    .update({ content, updated_at: new Date().toISOString() })
+    .update({ content, content_blocks: null, updated_at: new Date().toISOString() })
     .eq('id', id)
   if (error) throw new DatabaseError(error.message)
 }

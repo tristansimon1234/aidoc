@@ -43,6 +43,11 @@ export function errorHandler(
   _next: NextFunction,
 ): void {
   if (err instanceof AppError) {
+    // 5xx responses still need a stack trace in the server log so we can
+    // diagnose them after the fact — AppError used to swallow those silently.
+    if (err.statusCode >= 500) {
+      console.error(`[${err.code}] ${err.message}\n${err.stack ?? ''}`)
+    }
     const body: ApiError = {
       error: err.message,
       code: err.code,

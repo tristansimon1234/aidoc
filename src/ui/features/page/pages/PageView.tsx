@@ -367,11 +367,13 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
     }
   }, [projectId, pageId])
 
-  const handleSaveContent = async (markdown: string): Promise<void> => {
+  const handleSaveContent = async (markdown: string, blocks: unknown): Promise<void> => {
     if (!projectId || !pageId) return
-    await dbUpdatePage(projectId, pageId, { content: markdown })
+    // Persist both: JSON (lossless source of truth) + markdown (projection
+    // for public-docs rendering, RAG, Try Doc, voice-over, etc.).
+    await dbUpdatePage(projectId, pageId, { content: markdown, contentBlocks: blocks })
     // Update local + sidebar cache so navigation doesn't show stale content
-    setPage((prev) => prev ? { ...prev, content: markdown } : prev)
+    setPage((prev) => prev ? { ...prev, content: markdown, contentBlocks: blocks } : prev)
     void context.refetchPages()
   }
 
@@ -436,6 +438,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
           <BlockEditor
             key={pageId}
             content={page.content ?? ''}
+            contentBlocks={page.contentBlocks}
             onSave={handleSaveContent}
           />
           {/* Notion-style child page links */}

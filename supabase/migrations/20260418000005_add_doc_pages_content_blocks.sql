@@ -1,0 +1,17 @@
+-- Store the BlockNote document as JSON on doc_pages — lossless round-trip.
+--
+-- Background: `doc_pages.content` is markdown. BlockEditor loads markdown
+-- and parses it to BlockNote blocks, and saves by serializing blocks back
+-- to markdown. That round-trip is officially documented as "lossy" and
+-- drops, among other things, images sitting between numbered list items.
+--
+-- From now on, `content_blocks` is the source of truth when present; the
+-- editor reads/writes it as JSON (which BlockNote guarantees is lossless).
+-- `content` stays populated with a best-effort markdown projection for
+-- existing consumers (public docs renderer, chat RAG indexing, previews,
+-- auto-copy from generated_docs).
+--
+-- Nullable on purpose: legacy rows and newly-generated docs have it null
+-- and fall back to parsing `content`. The editor persists JSON on the
+-- first real user edit.
+ALTER TABLE doc_pages ADD COLUMN content_blocks jsonb;

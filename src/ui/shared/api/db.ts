@@ -153,6 +153,7 @@ export async function updatePage(
   if (body.sortOrder !== undefined) updates.sort_order = body.sortOrder
   if (body.status !== undefined) updates.status = body.status
   if (body.content !== undefined) updates.content = body.content
+  if (body.contentBlocks !== undefined) updates.content_blocks = body.contentBlocks
   if (body.customPrompt !== undefined) updates.custom_prompt = body.customPrompt
   if (body.briefing !== undefined) updates.briefing = body.briefing
   if (body.isPublic !== undefined) updates.is_public = body.isPublic
@@ -258,6 +259,7 @@ function mapPage(row: Record<string, unknown>): DocPageDTO {
     startUrl: (row.start_url as string) ?? null,
     goal: (row.goal as string) ?? null,
     content: (row.content as string) ?? null,
+    contentBlocks: parseJsonbField(row.content_blocks),
     customPrompt: (row.custom_prompt as string) ?? null,
     briefing: (row.briefing as DocPageDTO['briefing']) ?? null,
     status: row.status as DocPageDTO['status'],
