@@ -147,6 +147,17 @@ export async function countOwners(teamId: string): Promise<number> {
   return count ?? 0
 }
 
+/** Members + pending invites — the seat count the plan cap is applied to. */
+export async function countTeamSeats(teamId: string): Promise<{ members: number; pendingInvites: number }> {
+  const [m, i] = await Promise.all([
+    supabase.from('team_members').select('user_id', { count: 'exact', head: true }).eq('team_id', teamId),
+    supabase.from('team_invites').select('id', { count: 'exact', head: true }).eq('team_id', teamId).is('accepted_at', null),
+  ])
+  if (m.error) throw new DatabaseError(m.error.message)
+  if (i.error) throw new DatabaseError(i.error.message)
+  return { members: m.count ?? 0, pendingInvites: i.count ?? 0 }
+}
+
 export async function deleteTeam(teamId: string): Promise<void> {
   const { error } = await supabase.from('teams').delete().eq('id', teamId)
   if (error) throw new DatabaseError(error.message)

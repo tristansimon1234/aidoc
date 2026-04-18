@@ -446,7 +446,7 @@ export const api = {
     list: (): Promise<{ team: TeamDTO; role: TeamRoleDTO }[]> => request('/teams'),
     create: (name: string): Promise<TeamDTO> =>
       request('/teams', { method: 'POST', body: JSON.stringify({ name }) }),
-    get: (teamId: string): Promise<{ team: TeamDTO; members: TeamMemberDTO[]; role: TeamRoleDTO }> =>
+    get: (teamId: string): Promise<{ team: TeamDTO; members: TeamMemberDTO[]; role: TeamRoleDTO; seats: TeamSeatInfoDTO }> =>
       request(`/teams/${teamId}`),
     rename: (teamId: string, name: string): Promise<TeamDTO> =>
       request(`/teams/${teamId}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
@@ -486,6 +486,13 @@ export interface TeamMemberDTO {
   fullName: string | null
   role: TeamRoleDTO
   joinedAt: string
+}
+
+export interface TeamSeatInfoDTO {
+  used: number       // active members + pending invites
+  max: number        // from the team's plan
+  planName: string
+  allowed: boolean   // false when used >= max — UI disables the invite form
 }
 
 export type AnalyticsPeriodDTO = '7d' | '30d' | '90d'

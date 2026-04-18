@@ -35,13 +35,27 @@ export async function listTeams(userId: string): Promise<{ team: Team; role: Tea
   return teamRepo.findTeamsByUserId(userId)
 }
 
-export async function getTeam(teamId: string, userId: string): Promise<{ team: Team; members: TeamMember[]; role: TeamRole }> {
+export async function getTeam(teamId: string, userId: string): Promise<{ team: Team; members: TeamMember[]; role: TeamRole; seats: { used: number; max: number; planName: string; allowed: boolean } }> {
   const member = await teamRepo.findMember(teamId, userId)
   if (!member) throw new AppError('Not a team member', 'FORBIDDEN', 403)
   const team = await teamRepo.findTeamById(teamId)
   if (!team) throw new NotFoundError('Team')
-  const members = await teamRepo.listMembers(teamId)
-  return { team, members, role: member.role }
+  const [members, { checkTeamSeats }] = await Promise.all([
+    teamRepo.listMembers(teamId),
+    import('../billing/billing.service.js'),
+  ])
+  const seatStatus = await checkTeamSeats(teamId)
+  return {
+    team,
+    members,
+    role: member.role,
+    seats: {
+      used: seatStatus.seatsUsed,
+      max: seatStatus.seatsMax,
+      planName: seatStatus.planName,
+      allowed: seatStatus.allowed,
+    },
+  }
 }
 
 export async function createTeam(userId: string, input: CreateTeamInput): Promise<Team> {
@@ -98,6 +112,18 @@ export async function inviteMember(teamId: string, callerId: string, email: stri
   await requireRole(teamId, callerId)
   const team = await teamRepo.findTeamById(teamId)
   if (!team) throw new NotFoundError('Team')
+
+  // Seat cap: refuse if the team is already at the plan's max (members +
+  // pending invites combined, so blasting a pile of invites can't bypass).
+  const { checkTeamSeats } = await import('../billing/billing.service.js')
+  const seats = await checkTeamSeats(teamId)
+  if (!seats.allowed) {
+    throw new AppError(
+      `Your ${seats.planName} plan allows ${seats.seatsMax} seat${seats.seatsMax === 1 ? '' : 's'}. Upgrade to invite more members.`,
+      'SEAT_LIMIT',
+      402,
+    )
+  }
 
   const token = randomToken()
   const invite = await teamRepo.createInvite({

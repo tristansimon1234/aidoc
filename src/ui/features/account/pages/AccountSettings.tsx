@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Spinner, Badge, Field, useConfirmDialog } from '../../../design-system/components/index.js'
-import { api, type BillingSummaryDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO } from '../../../shared/api/client.js'
+import { api, type BillingSummaryDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO } from '../../../shared/api/client.js'
+import { Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import styles from './AccountSettings.module.css'
 
@@ -290,6 +291,7 @@ function TeamTab(): React.ReactElement {
   const [team, setTeam] = useState<TeamDTO | null>(null)
   const [members, setMembers] = useState<TeamMemberDTO[]>([])
   const [myRole, setMyRole] = useState<TeamRoleDTO>('member')
+  const [seats, setSeats] = useState<TeamSeatInfoDTO | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -309,6 +311,7 @@ function TeamTab(): React.ReactElement {
       setTeam(data.team)
       setMembers(data.members)
       setMyRole(data.role)
+      setSeats(data.seats)
     } catch (err) {
       setError((err as Error).message)
     } finally { setLoading(false) }
@@ -363,6 +366,14 @@ function TeamTab(): React.ReactElement {
         <p className={styles.sectionDesc}>
           Invite collaborators to <strong>{team.name}</strong>. Members share all your projects and usage quota.
         </p>
+        {seats && (
+          <p className={styles.sectionDesc} style={{ fontSize: 'var(--text-xs)', marginTop: 4 }}>
+            <strong>{seats.used}</strong> of <strong>{seats.max}</strong> seat{seats.max === 1 ? '' : 's'} used on the {seats.planName} plan
+            {seats.used >= seats.max && (
+              <> — <Link to="/account?tab=billing" style={{ color: 'var(--color-primary)', fontWeight: 600 }}>Upgrade →</Link></>
+            )}
+          </p>
+        )}
       </div>
 
       {isOwner && (
@@ -372,12 +383,19 @@ function TeamTab(): React.ReactElement {
             <div style={{ flex: 1 }}>
               <Field label="" type="email" placeholder="colleague@company.com"
                 value={inviteEmail}
+                disabled={seats ? !seats.allowed : false}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInviteEmail(e.target.value)} />
             </div>
-            <Button size="sm" onClick={() => void handleInvite()} disabled={inviting || !inviteEmail.trim()}>
+            <Button size="sm" onClick={() => void handleInvite()}
+              disabled={inviting || !inviteEmail.trim() || (seats ? !seats.allowed : false)}>
               {inviting ? 'Sending…' : 'Send invite'}
             </Button>
           </div>
+          {seats && !seats.allowed && (
+            <span className={styles.sectionDesc} style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+              Seat limit reached on the {seats.planName} plan. Upgrade to invite more members.
+            </span>
+          )}
           {inviteError && <span className={`${styles.saveMsg} ${styles.error}`}>{inviteError}</span>}
           {inviteResult && (
             <div style={{

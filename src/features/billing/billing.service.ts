@@ -41,6 +41,16 @@ export const OVERAGE_EUR = {
 
 export const OVERAGE_ENABLED_PLANS: ReadonlySet<PlanId> = new Set(['growth', 'business'])
 
+// Maximum total team size (owner + members) per plan. Pending invites count
+// toward the cap to prevent "blast a pile of invites, bypass check at accept".
+// Free = owner-only (can't invite); paid tiers scale up. Tunable in code.
+export const MAX_TEAM_MEMBERS: Record<PlanId, number> = {
+  free: 1,
+  startup: 6,      // owner + 5
+  growth: 26,      // owner + 25
+  business: 100,
+} as const
+
 function currentPeriodMonth(): string {
   const now = new Date()
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
@@ -127,6 +137,38 @@ export async function checkQuota(teamId: string): Promise<QuotaCheck> {
     monthlyTokens: plan.monthlyTokens,
     tokensUsed,
     overageEnabled,
+  }
+}
+
+export interface SeatStatus {
+  planId: PlanId
+  planName: string
+  seatsUsed: number      // active members + pending invites
+  seatsMax: number
+  allowed: boolean       // false when seatsUsed >= seatsMax
+}
+
+/**
+ * How many seats this team has consumed vs its plan's cap. The seat count is
+ * `active members + pending invites` so an owner can't blast 100 invites on
+ * a 5-seat plan and bypass the cap at acceptance time.
+ */
+export async function checkTeamSeats(teamId: string): Promise<SeatStatus> {
+  const [plans, subscription, seats] = await Promise.all([
+    billingRepo.listPlans(),
+    billingRepo.findActiveSubscriptionByTeam(teamId),
+    (await import('../team/team.repository.js')).countTeamSeats(teamId),
+  ])
+  const planId: PlanId = subscription?.planId ?? 'free'
+  const plan = plans.find((p) => p.id === planId)
+  const seatsUsed = seats.members + seats.pendingInvites
+  const seatsMax = MAX_TEAM_MEMBERS[planId]
+  return {
+    planId,
+    planName: plan?.name ?? planId,
+    seatsUsed,
+    seatsMax,
+    allowed: seatsUsed < seatsMax,
   }
 }
 
