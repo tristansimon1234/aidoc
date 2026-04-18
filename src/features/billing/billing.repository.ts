@@ -64,11 +64,19 @@ export async function listPlans(): Promise<Plan[]> {
 }
 
 export async function findActiveSubscription(userId: string): Promise<Subscription | null> {
+  // The unique index `subscriptions_active_user_idx` is meant to guarantee at
+  // most one active subscription per user, but some environments ended up
+  // with duplicates (e.g. migration applied out of order). Order + limit(1)
+  // keeps us resilient: we return the most recent one even if duplicates
+  // slipped through, instead of crashing every metered route with a
+  // "multiple rows" DATABASE_ERROR.
   const { data, error } = await supabase
     .from('subscriptions')
     .select('*')
     .eq('user_id', userId)
     .neq('status', 'canceled')
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
   if (error) throw new DatabaseError(error.message)
   return data ? mapToSubscription(data as SubscriptionRow) : null

@@ -105,6 +105,9 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
       if (!ok) return
     }
     setError(null)
+    // Track the runId across the try/catch so a failed upload can still
+    // flag the job as failed in the tracker.
+    let runId: string | null = null
     try {
       // Show loader immediately — don't wait for API calls
       setStatus('uploading')
@@ -116,6 +119,12 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
         goal: page.goal || 'Document from screen recording',
         docPageId: pageId,
       })
+      runId = run.id
+
+      // Register the async job BEFORE the upload so the tracker shows
+      // progress from the moment the user hits generate — uploads can take
+      // minutes and the user otherwise sees nothing global happening.
+      addJob({ runId: run.id, pageId, pageTitle: page.title, type: 'doc-gen', status: 'running' })
 
       // 2. Upload video
       const ext = fileName.includes('.') ? fileName.substring(fileName.lastIndexOf('.')) : '.webm'
@@ -141,9 +150,7 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
 
       // 3. Analyze + generate doc — server keeps the HTTP connection open.
       // The fetch() continues even if the user navigates (client-side routing).
-      // Register job in tracker so user sees progress globally.
       setStatus('analyzing')
-      addJob({ runId: run.id, pageId, pageTitle: page.title, type: 'doc-gen', status: 'running' })
 
       // Fire-and-forget: the fetch runs in background even if component unmounts.
       // If the HTTP request itself fails before a backend job can be created
@@ -159,7 +166,11 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
           failJob(run.id, e.message, e.code ?? null)
         })
     } catch (err) {
-      setError((err as Error).message)
+      const message = (err as Error).message
+      setError(message)
+      // The job was already registered before upload — mirror the failure
+      // into the tracker so it doesn't stay stuck on "running".
+      if (runId) failJob(runId, message)
     } finally {
       setStatus('idle')
     }

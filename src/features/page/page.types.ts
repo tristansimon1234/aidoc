@@ -35,6 +35,13 @@ export interface DocPage {
   startUrl: string | null
   goal: string | null
   content: string | null
+  /**
+   * BlockNote document as JSON — lossless source of truth when present.
+   * Null for legacy pages and freshly-generated pages until the editor
+   * persists it on the first real user edit. `content` (markdown) stays
+   * populated for public-docs rendering and RAG indexing.
+   */
+  contentBlocks: unknown
   customPrompt: string | null
   briefing: PageBriefing | null
   status: PageStatus
@@ -67,6 +74,7 @@ export interface UpdatePageInput {
   sortOrder?: number
   status?: PageStatus
   content?: string
+  contentBlocks?: unknown
   customPrompt?: string
   briefing?: PageBriefing
   isPublic?: boolean
