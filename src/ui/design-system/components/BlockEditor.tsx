@@ -4,9 +4,19 @@ import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuI
 import type { DefaultReactSuggestionItem } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import '@blocknote/mantine/style.css'
+import { marked } from 'marked'
 import { useImageLightbox } from './ImageLightbox.js'
 import { Callout, type CalloutType } from './CalloutBlock.js'
 import styles from './BlockEditor.module.css'
+
+// BlockNote's markdown importer (tryParseMarkdownToBlocks) is documented as
+// lossy: it drops images between numbered list items, mis-handles 4-space
+// indented continuation content, and generally struggles with non-trivial
+// markdown. Per the official BlockNote docs, HTML is the recommended
+// intermediate for robust imports. We run `marked` (battle-tested CommonMark/
+// GFM parser) to produce HTML, then let BlockNote consume that via
+// tryParseHTMLToBlocks — which preserves the DOM structure unambiguously.
+marked.setOptions({ gfm: true, breaks: false })
 
 const schema = BlockNoteSchema.create({
   blockSpecs: {
@@ -32,83 +42,6 @@ function getCalloutItems(editor: Editor): DefaultReactSuggestionItem[] {
     { title: 'Warning callout', subtext: 'Orange warning box', group: 'Callouts', aliases: ['warning', 'warn', 'callout'], onItemClick: insert('warning') },
     { title: 'Danger callout', subtext: 'Red danger box', group: 'Callouts', aliases: ['danger', 'caution', 'error', 'callout'], onItemClick: insert('danger') },
   ]
-}
-
-// Flatten list-item continuation paragraphs so they don't collide with
-// BlockNote's indented-code-block rule. Given:
-//
-//   3.  **Title**
-//       First paragraph of the item.
-//
-//       ![Image](url)
-//
-//       Second paragraph.
-//
-// we emit:
-//
-//   3. **Title** First paragraph of the item.
-//
-//   ![Image](url)
-//
-//   Second paragraph.
-//
-// Nested bullets stay indented (BlockNote handles those fine), and fenced
-// code blocks are passed through untouched.
-function normalizeListContinuation(markdown: string): string {
-  const lines = markdown.split('\n')
-  const out: string[] = []
-  let inFenced = false
-  let i = 0
-
-  const isIndented = (s: string): boolean => /^ {4,}\S/.test(s)
-  const isIndentedBullet = (s: string): boolean => /^ {4,}(?:[*\-+]|\d+\.)\s/.test(s)
-
-  while (i < lines.length) {
-    const line = lines[i]!
-
-    if (/^\s*```/.test(line)) {
-      inFenced = !inFenced
-      out.push(line)
-      i++
-      continue
-    }
-    if (inFenced) {
-      out.push(line)
-      i++
-      continue
-    }
-
-    const listMatch = /^(\s*)(\d+\.)\s+(.*)$/.exec(line)
-    if (listMatch) {
-      const prefix = listMatch[1] ?? ''
-      const marker = listMatch[2]!
-      const rest = listMatch[3]!
-      const next = lines[i + 1]
-      // If the very next line is indented non-bullet continuation, merge it
-      // into the list item so the marker isn't left alone with the image.
-      if (next !== undefined && isIndented(next) && !isIndentedBullet(next)) {
-        out.push(`${prefix}${marker} ${rest} ${next.trimStart()}`)
-        i += 2
-        continue
-      }
-      out.push(`${prefix}${marker} ${rest}`)
-      i++
-      continue
-    }
-
-    // Dedent indented continuation paragraphs/images to root level. Keep
-    // sub-bullets indented — BlockNote handles nested lists correctly.
-    if (line.startsWith('    ') && !isIndentedBullet(line)) {
-      out.push(line.slice(4))
-      i++
-      continue
-    }
-
-    out.push(line)
-    i++
-  }
-
-  return out.join('\n')
 }
 
 // After parsing markdown, BlockNote returns plain `quote` blocks even for our
@@ -147,6 +80,26 @@ function promoteCallouts(blocks: any[]): any[] {
       content: newContent,
     }
   })
+}
+
+// Markdown → HTML → blocks, with a safety fallback on the legacy markdown
+// parser if HTML import ever throws. Kept module-level so the load effect
+// reads linearly; any failure is logged so silent blank editors don't
+// happen unnoticed.
+async function loadFromMarkdown(editor: Editor, markdown: string): Promise<void> {
+  try {
+    const html = await marked.parse(markdown)
+    const blocks = await editor.tryParseHTMLToBlocks(html)
+    editor.replaceBlocks(editor.document, promoteCallouts(blocks))
+  } catch (err) {
+    console.warn('[BlockEditor] HTML-first import failed, falling back to markdown parser', err)
+    try {
+      const blocks = await editor.tryParseMarkdownToBlocks(markdown)
+      editor.replaceBlocks(editor.document, promoteCallouts(blocks))
+    } catch (fallbackErr) {
+      console.error('[BlockEditor] both HTML and markdown parsers failed', fallbackErr)
+    }
+  }
 }
 
 interface BlockEditorProps {
@@ -205,18 +158,16 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
     [editor],
   )
 
-  // Load the document. Prefer contentBlocks (lossless JSON) when present;
-  // fall back to parsing the markdown projection for legacy pages and for
-  // pages whose content has just been regenerated by the AI (auto-copy from
-  // generated_docs clears content_blocks on purpose).
+  // Load the document. Prefer contentBlocks (lossless BlockNote JSON) when
+  // present; fall back to the markdown projection for legacy pages and for
+  // pages just regenerated by the AI (auto-copy from generated_docs clears
+  // content_blocks so the fresh markdown gets re-imported here).
   useEffect(() => {
     if (!editor) return
-    // Use a cache key that captures both shapes; changing either triggers a reload.
+    // Cache key captures both shapes so changing either triggers a reload.
     const key = contentBlocks ? `blocks:${JSON.stringify(contentBlocks)}` : `md:${content}`
-    if (!key || key === 'md:') return
-
+    if (key === 'md:') return
     if (initializedRef.current && key === lastContentRef.current) return
-
     initializedRef.current = true
     lastContentRef.current = key
 
@@ -225,32 +176,14 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
     userInteractedRef.current = false
 
     void (async () => {
-      try {
-        if (contentBlocks && Array.isArray(contentBlocks) && contentBlocks.length > 0) {
-          // Lossless path: just hydrate the JSON into the editor.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          editor.replaceBlocks(editor.document, contentBlocks as any[])
-          return
-        }
-        if (!content) return
-
-        // Fallback: parse markdown. BlockNote's markdown parser (per the
-        // official docs) is explicitly lossy: a paragraph/image indented
-        // 4 spaces under a numbered list item gets treated as an indented
-        // code block, not as list-item continuation. Flatten those into
-        // root-level blocks so the image and following text round-trip as
-        // real image + paragraph blocks.
-        const prepared = normalizeListContinuation(content)
-          .replace(/^(\s*\d+\.\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
-          .replace(/^(\s*[-*]\s+.+)\n\s*(!\[.*?\]\(.*?\))\s*$/gm, '$1\n\n$2')
-          .replace(/(!\[.*?\]\(.*?\))(?=\S)/g, '$1\n')
-
-        const blocks = await editor.tryParseMarkdownToBlocks(prepared)
-        const promoted = promoteCallouts(blocks)
-        editor.replaceBlocks(editor.document, promoted)
-      } catch {
-        // load failed
+      if (contentBlocks && Array.isArray(contentBlocks) && contentBlocks.length > 0) {
+        // Lossless path: hydrate the JSON directly.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        editor.replaceBlocks(editor.document, contentBlocks as any[])
+        return
       }
+      if (!content) return
+      await loadFromMarkdown(editor, content)
     })()
   }, [editor, content, contentBlocks])
 
