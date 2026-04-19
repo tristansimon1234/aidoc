@@ -53,13 +53,16 @@ export interface GenerationResult {
 }
 
 function rewriteInternalLinks(markdown: string, projectId?: string, knownSlugs?: string[]): string {
-  if (!projectId || !knownSlugs || knownSlugs.length === 0) return markdown
-  const slugSet = new Set(knownSlugs)
+  if (!projectId) return markdown
+  const slugSet = new Set(knownSlugs ?? [])
+  // `knownSlugs` is the list of published public pages in the project. Anything
+  // else (draft/private page, hallucinated slug, deleted page) gets stripped to
+  // plain text so we never ship a 404 link in generated docs.
   return markdown.replace(
-    /\]\(\/([a-z0-9][a-z0-9-]*)(#[^)]*)?\)/gi,
-    (match, slug: string, hash: string | undefined) => {
-      if (!slugSet.has(slug)) return match
-      return `](/docs/${projectId}/${slug}${hash ?? ''})`
+    /\[([^\]]+)\]\(\/(?:docs\/[a-f0-9-]+\/)?([a-z0-9][a-z0-9-]*)(#[^)]*)?\)/gi,
+    (_match, label: string, slug: string, hash: string | undefined) => {
+      if (!slugSet.has(slug)) return label
+      return `[${label}](/docs/${projectId}/${slug}${hash ?? ''})`
     },
   )
 }
