@@ -9,6 +9,9 @@ interface ChatMessage {
   sources?: { pageId: string; pageTitle: string; pageSlug: string }[]
   followUps?: string[]
   walkthroughAvailable?: boolean
+  /** Whether the user clicked "watch walkthrough" — expands the inline
+   *  narrated player only when they opt in, not automatically. */
+  videoExpanded?: boolean
 }
 
 /**
@@ -318,24 +321,38 @@ export function ChatSurface({
                     )}
 
                     {msg.role === 'assistant' && msg.sources?.[0] && resolveSourceMedia && (() => {
-                      // Only surface the video from the TOP-RANKED source
-                      // (after rerank). This is the page the answer is most
-                      // directly based on — if it has a walkthrough video,
-                      // it's almost always relevant. Skipping tangential
-                      // sources avoids the \"random video from source #3\"
-                      // problem we saw with the broader match.
+                      // Opt-in surface for the top-source video: show a small
+                      // button the user can click to expand an inline narrated
+                      // player. Passive by default — avoids the \"random video
+                      // surprise\" we kept hitting when auto-embedding. Still
+                      // restricted to the top-reranked source so we only
+                      // suggest videos that are plausibly relevant.
                       const primary = msg.sources[0]
                       const media = resolveSourceMedia(primary)
                       if (!media?.videoUrl) return null
+                      const expand = (): void => {
+                        setMessages((prev) => prev.map((m, idx) => idx === i ? { ...m, videoExpanded: true } : m))
+                      }
                       return (
                         <div className={styles.sourceVideo}>
-                          <ChatNarratedVideo
-                            videoUrl={media.videoUrl}
-                            audioUrl={media.audioUrl ?? undefined}
-                          />
-                          <p className={styles.sourceVideoHint}>
-                            Clip from <strong>{primary.pageTitle}</strong>
-                          </p>
+                          {msg.videoExpanded ? (
+                            <>
+                              <ChatNarratedVideo
+                                videoUrl={media.videoUrl}
+                                audioUrl={media.audioUrl ?? undefined}
+                              />
+                              <p className={styles.sourceVideoHint}>
+                                Clip from <strong>{primary.pageTitle}</strong>
+                              </p>
+                            </>
+                          ) : (
+                            <button className={styles.videoButton} onClick={expand}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="6 3 20 12 6 21 6 3" />
+                              </svg>
+                              Watch the <strong>{primary.pageTitle}</strong> walkthrough
+                            </button>
+                          )}
                         </div>
                       )
                     })()}
