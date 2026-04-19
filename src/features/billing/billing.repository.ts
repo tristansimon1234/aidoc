@@ -67,7 +67,7 @@ export async function listPlans(maxMembersByPlan: Record<string, number>): Promi
 }
 
 /** Look up the active subscription for a team (teams are the billing entity
- *  since 20260418000006_add_teams.sql). Defensive order+limit so that even
+ *  since 20260418000005_add_teams.sql). Defensive order+limit so that even
  *  if a duplicate active row slipped in (e.g. backfill race), we return the
  *  most recent one instead of crashing the whole metered path. */
 export async function findActiveSubscriptionByTeam(teamId: string): Promise<Subscription | null> {
