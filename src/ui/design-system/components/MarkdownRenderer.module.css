@@ -2,7 +2,7 @@
   font-family: var(--font-sans);
   font-size: var(--text-base);
   color: var(--color-fg);
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 
@@ -56,12 +56,19 @@
 }
 
 .article li {
-  margin-bottom: var(--space-xs);
+  margin-bottom: 2px;
+}
+
+/* react-markdown wraps li content in <p> for loose lists, which pulls in
+   the `.article p` bottom margin and balloons list spacing. Reset it so
+   list items match the compact admin BlockEditor rendering. */
+.article li > p {
+  margin: 0;
 }
 
 .article li > ul,
 .article li > ol {
-  margin-top: var(--space-xs);
+  margin-top: 2px;
   margin-bottom: 0;
 }
 
