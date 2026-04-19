@@ -129,11 +129,21 @@ export async function chat(
   history: ChatMessage[],
   userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
 ): Promise<ChatResponse> {
-  // 1. Embed the user query and search — skip for greetings/small talk
+  // 1. Embed the user query and search — skip for greetings/small talk.
+  //    Rewrite the query to be self-contained when there's history: "and
+  //    the other one?" embeds nothing useful on its own but rewrites to
+  //    e.g. "What's the second plan option?" given the prior exchange.
   let chunks: DocChunk[] = []
-  if (needsDocSearch(message, history)) {
-    const queryEmbedding = await embedText(message)
-    chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
+  const didSearch = needsDocSearch(message, history)
+  if (didSearch) {
+    const effectiveQuery = history.length >= 2
+      ? await rewriteQueryWithHistory(message, history).catch(() => message)
+      : message
+    const queryEmbedding = await embedText(effectiveQuery)
+    // Retrieve generously (top-20) at a low threshold (0.15) to maximise
+    // recall; the answer-generation prompt tolerates extra context and
+    // Gemini's 1M context window means top-20 costs nothing.
+    chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
   }
 
   // 2. Fetch project context (name, description, knowledge base)
@@ -159,8 +169,6 @@ export async function chat(
     }
   }
 
-  const didSearch = needsDocSearch(message, history)
-
   if (didSearch && chunks.length === 0) {
     return {
       answer: productContext.length > 0
@@ -171,8 +179,10 @@ export async function chat(
     }
   }
 
-  // 3. Build context from chunks
-  const context = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
+  // 3. Build context from chunks — enriched with each page's location
+  //    in the sidebar hierarchy so Gemini understands how sections relate.
+  const pageIndex = chunks.length > 0 ? await buildPageIndex(projectId) : new Map()
+  const context = chunks.length > 0 ? buildContextFromChunks(chunks, pageIndex) : ''
 
   // 4. Build conversation with history
   const conversationHistory = history
@@ -241,6 +251,9 @@ ${message}`
     systemPrompt,
     userPrompt,
     maxTokens: 2048,
+    // Lower temperature = tighter, more factual answers. 0.3 is the
+    // sweet spot for support-style Q&A: still natural, rarely invents.
+    temperature: 0.3,
   })
 
   // Deduplicate sources
@@ -351,7 +364,8 @@ async function getWalkthroughDocContext(projectId: string, message: string): Pro
 
   const queryEmbedding = await embedText(message)
   const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
-  const docContext = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
+  const pageIndex = chunks.length > 0 ? await buildPageIndex(projectId) : new Map()
+  const docContext = chunks.length > 0 ? buildContextFromChunks(chunks, pageIndex) : ''
 
   walkthroughContextCache.set(cacheKey, { docContext, expiresAt: Date.now() + WT_CONTEXT_TTL_MS })
   return docContext
@@ -436,7 +450,39 @@ function wrapBareImageUrls(text: string): string {
   })
 }
 
-function buildContextFromChunks(chunks: DocChunk[]): string {
+interface PageIndexEntry {
+  id: string
+  title: string
+  slug: string
+  parentId: string | null
+}
+
+/** Load the project's pages once so buildContextFromChunks can render
+ *  hierarchical breadcrumbs ("Getting Started > Create your first project")
+ *  without a DB call per chunk. */
+async function buildPageIndex(projectId: string): Promise<Map<string, PageIndexEntry>> {
+  const { findPagesByProjectId } = await import('../page/page.repository.js')
+  const pages = await findPagesByProjectId(projectId)
+  const map = new Map<string, PageIndexEntry>()
+  for (const p of pages) {
+    map.set(p.id, { id: p.id, title: p.title, slug: p.slug, parentId: p.parentId })
+  }
+  return map
+}
+
+function breadcrumbFor(pageId: string, index: Map<string, PageIndexEntry>): string {
+  const trail: string[] = []
+  let current = index.get(pageId)
+  const seen = new Set<string>()
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id)
+    trail.unshift(current.title)
+    current = current.parentId ? index.get(current.parentId) : undefined
+  }
+  return trail.join(' > ')
+}
+
+function buildContextFromChunks(chunks: DocChunk[], pageIndex: Map<string, PageIndexEntry>): string {
   // Group chunks by page for coherent context
   const byPage = new Map<string, DocChunk[]>()
   for (const chunk of chunks) {
@@ -447,12 +493,40 @@ function buildContextFromChunks(chunks: DocChunk[]): string {
 
   const sections: string[] = []
   for (const [slug, pageChunks] of byPage) {
-    const title = pageChunks[0]!.pageTitle
+    const first = pageChunks[0]!
+    const breadcrumb = breadcrumbFor(first.pageId, pageIndex) || first.pageTitle
     // Sort by chunk index for reading order
     pageChunks.sort((a, b) => a.chunkIndex - b.chunkIndex)
     const text = pageChunks.map((c) => c.chunkText).join('\n\n')
-    sections.push(`### From "${title}" (/${slug})\n\n${text}`)
+    sections.push(`### From "${breadcrumb}" (/${slug})\n\n${text}`)
   }
 
   return sections.join('\n\n---\n\n')
+}
+
+/**
+ * Rewrite a conversational query into a self-contained question Gemini
+ * can embed productively. "et l'autre option?" returns context on its
+ * own; with history, we can turn it into "What's the second pricing plan?"
+ *
+ * Cheap: one Gemini call with small output. Falls back to the original
+ * message on any error — never blocks the chat.
+ */
+async function rewriteQueryWithHistory(message: string, history: ChatMessage[]): Promise<string> {
+  const recent = history.slice(-4)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n')
+  const prompt = `Given this short conversation, rewrite the user's latest message into a fully self-contained question that doesn't depend on prior context. Keep the user's language (French → French, English → English). Return only the rewritten question, nothing else.
+
+${recent}
+User (latest): ${message}
+
+Rewritten:`
+  const { text } = await generateText({
+    userPrompt: prompt,
+    maxTokens: 128,
+    temperature: 0.1,
+  })
+  const cleaned = text.trim().replace(/^["']|["']$/g, '')
+  return cleaned.length > 0 && cleaned.length < 400 ? cleaned : message
 }

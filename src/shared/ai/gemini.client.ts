@@ -5,7 +5,10 @@ import { env } from '../config/env.js'
 
 // --- Shared Gemini client ---
 
+// Default model — Flash is fast and smart enough for 95% of queries.
+// chat.service routes complex questions to Pro via the `model` override.
 const GEMINI_MODEL = 'gemini-2.5-flash'
+export const GEMINI_PRO_MODEL = 'gemini-2.5-pro'
 
 function getGenAI(): GoogleGenerativeAI {
   if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured')
@@ -41,12 +44,16 @@ export async function generateText(opts: {
   systemPrompt?: string
   userPrompt: string
   maxTokens?: number
+  /** Sampling temperature, 0.0–1.0. Lower = more deterministic. */
+  temperature?: number
+  /** Override default model (e.g. switch to Pro for complex queries). */
+  model?: string
   /** Force Gemini to emit a valid JSON response (no prose, no code fences). */
   json?: boolean
 }): Promise<{ text: string; usage: GeminiUsage }> {
   const genAI = getGenAI()
   const model = genAI.getGenerativeModel({
-    model: GEMINI_MODEL,
+    model: opts.model ?? GEMINI_MODEL,
     ...(opts.systemPrompt ? { systemInstruction: opts.systemPrompt } : {}),
   })
 
@@ -55,6 +62,7 @@ export async function generateText(opts: {
       contents: [{ role: 'user', parts: [{ text: opts.userPrompt }] }],
       generationConfig: {
         maxOutputTokens: opts.maxTokens,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.json ? { responseMimeType: 'application/json' } : {}),
       },
     }),
