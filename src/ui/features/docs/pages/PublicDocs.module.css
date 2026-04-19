@@ -260,7 +260,10 @@
 .content {
   width: 100%;
   max-width: 820px;
-  padding: var(--space-xl) var(--space-lg);
+  /* Generous bottom padding so the last block breathes — readers
+     scanning long pages shouldn't feel the content crash into the
+     viewport edge. Matches the rhythm of Linear / Notion / Stripe docs. */
+  padding: var(--space-xl) var(--space-lg) 6rem;
 }
 
 .pageTitle {
