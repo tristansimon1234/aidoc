@@ -34,6 +34,19 @@ export function AppRail(): React.ReactElement {
       </div>
 
       <div className={styles.bottom}>
+        <a
+          className={styles.navBtn}
+          href="https://app.doclee.tech/docs/d8577a1d-b81b-4c0b-b009-25b351a6376a"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Doclee docs"
+          title="Doclee docs"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+          </svg>
+        </a>
         <button
           className={styles.navBtn}
           onClick={toggle}
