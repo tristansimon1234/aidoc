@@ -264,12 +264,39 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
           setSaving(false)
         }
       })()
-    }, 2000)
+    }, 600)
   }, [editor, onSave, readOnly])
+
+  // Keep refs pointing at the latest editor / onSave so the unmount
+  // flush below can reach them without stale-closure bugs.
+  const editorRef = useRef(editor)
+  const onSaveRef = useRef(onSave)
+  useEffect(() => {
+    editorRef.current = editor
+    onSaveRef.current = onSave
+  })
 
   useEffect(() => {
     return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+      // On unmount (incl. navigation between pages), if a save is still
+      // debouncing, flush it fire-and-forget instead of dropping the
+      // user's edits. Cleanup is sync so we can't await — but the save
+      // itself can finish in the background.
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current)
+        saveTimeoutRef.current = null
+        const ed = editorRef.current
+        const save = onSaveRef.current
+        if (ed && save) {
+          void (async () => {
+            try {
+              const blocks = ed.document
+              const markdown = await ed.blocksToMarkdownLossy(blocks)
+              await save(markdown, blocks)
+            } catch { /* swallowed — page is already unmounted */ }
+          })()
+        }
+      }
     }
   }, [])
 

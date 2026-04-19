@@ -380,6 +380,13 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
   if (loading) return <Spinner size="lg" />
   if (!page) return <EmptyState title="Page not found" />
+  // Defensive: the inline sync block above schedules setPage(cachedPage)
+  // when pageId changes, but React commits in two passes. On the first
+  // render after navigation the `page` state can still point at the
+  // previous pageId — rendering the BlockEditor at that point flashes
+  // the old page's content before the new one loads. Early-return a
+  // spinner until the state catches up.
+  if (page.id !== pageId) return <Spinner size="lg" />
 
 
 
