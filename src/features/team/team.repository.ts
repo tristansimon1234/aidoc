@@ -44,6 +44,17 @@ export async function findTeamById(teamId: string): Promise<Team | null> {
   return data ? mapTeam(data as TeamRow) : null
 }
 
+export async function findPersonalTeamId(userId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('teams')
+    .select('id')
+    .eq('created_by', userId)
+    .eq('personal', true)
+    .maybeSingle()
+  if (error) throw new DatabaseError(error.message)
+  return (data as { id: string } | null)?.id ?? null
+}
+
 export async function findMember(teamId: string, userId: string): Promise<{ role: TeamRole } | null> {
   const { data, error } = await supabase
     .from('team_members')
@@ -270,6 +281,30 @@ export async function markInviteAccepted(token: string): Promise<void> {
     .update({ accepted_at: new Date().toISOString() })
     .eq('token', token)
   if (error) throw new DatabaseError(error.message)
+}
+
+/**
+ * Atomically claim an invite: sets accepted_at on the row only if it hasn't
+ * been claimed yet, and returns the row only to the caller that won the race.
+ * Returns null if the invite was already accepted (by a concurrent caller).
+ */
+export async function claimInvite(token: string): Promise<{ teamId: string; email: string; role: TeamRole; expiresAt: Date } | null> {
+  const { data, error } = await supabase
+    .from('team_invites')
+    .update({ accepted_at: new Date().toISOString() })
+    .eq('token', token)
+    .is('accepted_at', null)
+    .select('team_id, email, role, expires_at')
+    .maybeSingle()
+  if (error) throw new DatabaseError(error.message)
+  if (!data) return null
+  const r = data as { team_id: string; email: string; role: TeamRole; expires_at: string }
+  return {
+    teamId: r.team_id,
+    email: r.email,
+    role: r.role,
+    expiresAt: new Date(r.expires_at),
+  }
 }
 
 export async function listPendingInvites(teamId: string): Promise<{ id: string; email: string; role: TeamRole; createdAt: Date; expiresAt: Date }[]> {

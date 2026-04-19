@@ -1,7 +1,6 @@
 import type { Request } from 'express'
 import { AppError } from './error.middleware.js'
-import { supabase } from '../db/supabase.client.js'
-import { DatabaseError } from './error.middleware.js'
+import { findMember, findPersonalTeamId } from '../../features/team/team.repository.js'
 
 /**
  * Resolve the team the authenticated request is operating on.
@@ -17,36 +16,14 @@ import { DatabaseError } from './error.middleware.js'
 export async function resolveActiveTeam(req: Request, userId: string): Promise<string> {
   const headerTeam = req.header('x-team-id')
   if (headerTeam && /^[0-9a-f-]{36}$/i.test(headerTeam)) {
-    const member = await checkMembership(headerTeam, userId)
+    const member = await findMember(headerTeam, userId)
     if (!member) throw new AppError('Not a member of this team', 'FORBIDDEN', 403)
     return headerTeam
   }
 
-  const personal = await findPersonalTeam(userId)
+  const personal = await findPersonalTeamId(userId)
   if (!personal) {
     throw new AppError('No team context for this user', 'NO_TEAM', 500)
   }
   return personal
-}
-
-async function checkMembership(teamId: string, userId: string): Promise<boolean> {
-  const { data, error } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('team_id', teamId)
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (error) throw new DatabaseError(error.message)
-  return Boolean(data)
-}
-
-async function findPersonalTeam(userId: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('teams')
-    .select('id')
-    .eq('created_by', userId)
-    .eq('personal', true)
-    .maybeSingle()
-  if (error) throw new DatabaseError(error.message)
-  return (data as { id: string } | null)?.id ?? null
 }
