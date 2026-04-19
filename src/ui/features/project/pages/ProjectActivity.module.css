@@ -1,0 +1,25 @@
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: var(--space-lg);
+}
+
+.header {
+  margin-bottom: var(--space-lg);
+}
+
+.title {
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: var(--heading-tracking);
+  color: var(--color-fg);
+  margin: 0 0 var(--space-xs);
+}
+
+.subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-muted-fg);
+  margin: 0;
+}

@@ -10,6 +10,7 @@ import { NewPage } from './features/page/pages/NewPage.js'
 import { PageView } from './features/page/pages/PageView.js'
 import { ProjectSettings } from './features/project/pages/ProjectSettings.js'
 import { ProjectDesign } from './features/project/pages/ProjectDesign.js'
+import { ProjectActivity } from './features/project/pages/ProjectActivity.js'
 import { ChatPage } from './features/chat/pages/ChatPage.js'
 import { SharePage } from './features/page/pages/SharePage.js'
 import { PublicDocs } from './features/docs/pages/PublicDocs.js'
@@ -61,6 +62,7 @@ export function App(): React.ReactElement {
               <Route path="share" element={<SharePage />} />
               <Route path="design" element={<ProjectDesign />} />
               <Route path="analytics" element={<AnalyticsPage />} />
+              <Route path="activity" element={<ProjectActivity />} />
               <Route path="settings" element={<ProjectSettings />} />
             </Route>
             <Route path="/login" element={<Navigate to="/" replace />} />

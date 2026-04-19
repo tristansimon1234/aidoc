@@ -6,12 +6,11 @@ import { Button, Spinner, EmptyState } from '../../../design-system/components/i
 import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
-import { ActivityFeed } from '../components/ActivityFeed.js'
 import styles from './ProjectDetail.module.css'
 
-type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'analytics' | 'settings'
+type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'analytics' | 'activity' | 'settings'
 
-const ROUTE_TABS: NavTab[] = ['chat', 'share', 'design', 'analytics', 'settings']
+const ROUTE_TABS: NavTab[] = ['chat', 'share', 'design', 'analytics', 'activity', 'settings']
 
 /* Modern nav icons — semi-filled style */
 const NAV_ICONS: Record<NavTab, React.ReactNode> = {
@@ -50,6 +49,11 @@ const NAV_ICONS: Record<NavTab, React.ReactNode> = {
       <rect x="16" y="13" width="3" height="5" rx="0.5" />
     </svg>
   ),
+  activity: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+    </svg>
+  ),
   settings: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
@@ -64,6 +68,7 @@ const NAV_ITEMS: { id: NavTab; label: string }[] = [
   { id: 'share', label: 'Share' },
   { id: 'design', label: 'Design' },
   { id: 'analytics', label: 'Analytics' },
+  { id: 'activity', label: 'Activity' },
   { id: 'settings', label: 'Settings' },
 ]
 
@@ -256,18 +261,15 @@ export function ProjectDetail(): React.ReactElement {
             {showOutlet ? (
               <Outlet context={{ project, setProject, pages, refetchPages: fetchData }} />
             ) : (
-              <>
-                <EmptyState
-                  title={pages.length === 0 ? 'No pages yet' : 'Select a page'}
-                  description={
-                    pages.length === 0
-                      ? 'Create your first documentation page to get started.'
-                      : 'Choose a page from the sidebar to view or edit its documentation.'
-                  }
-                  action={<Button onClick={() => navigate(`/projects/${projectId}/pages/new`)}>New Page</Button>}
-                />
-                <ActivityFeed projectId={projectId!} />
-              </>
+              <EmptyState
+                title={pages.length === 0 ? 'No pages yet' : 'Select a page'}
+                description={
+                  pages.length === 0
+                    ? 'Create your first documentation page to get started.'
+                    : 'Choose a page from the sidebar to view or edit its documentation.'
+                }
+                action={<Button onClick={() => navigate(`/projects/${projectId}/pages/new`)}>New Page</Button>}
+              />
             )}
           </div>
         </div>
