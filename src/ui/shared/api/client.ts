@@ -301,6 +301,16 @@ export interface DocPageDTO {
   children?: DocPageDTO[]
 }
 
+export type ActivityKindDTO = 'page_edited' | 'doc_generated' | 'member_joined' | 'page_published'
+
+export interface ActivityItemDTO {
+  kind: ActivityKindDTO
+  at: string
+  actorName: string | null
+  subject: string
+  href?: string
+}
+
 export const api = {
   profile: {
     get: (): Promise<ProfileDTO> => request('/profile'),
@@ -320,6 +330,7 @@ export const api = {
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),
     get: (id: string): Promise<ProjectDTO> => request(`/projects/${id}`),
+    activity: (id: string): Promise<{ items: ActivityItemDTO[] }> => request(`/projects/${id}/activity`),
     create: (body: { name: string; baseUrl: string; description?: string; context?: ProjectContextDTO; credentials?: { label: string; username: string; password: string }[] }): Promise<ProjectDTO> =>
       request('/projects', { method: 'POST', body: JSON.stringify(body) }),
     update: (id: string, body: Record<string, unknown>): Promise<ProjectDTO> =>

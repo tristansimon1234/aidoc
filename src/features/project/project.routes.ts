@@ -171,6 +171,20 @@ projectRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
+projectRouter.get('/:id/activity', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { getProjectActivity } = await import('./activity.service.js')
+      const items = await getProjectActivity(params.data.id, getUserId(req))
+      res.status(200).json({ items })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 projectRouter.put('/:id', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
