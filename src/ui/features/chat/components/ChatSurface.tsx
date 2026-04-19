@@ -61,6 +61,25 @@ const DEFAULT_SUGGESTIONS = [
   'Walk me through the setup process',
 ]
 
+/** Extract every doc-page slug Gemini cited via a resolved absolute
+ *  markdown link (https://…/docs/<projectId>/<slug>). Slugs ordered
+ *  by first appearance. Used to tie the video suggestion to what the
+ *  answer actually references — not just the top RAG source. */
+function extractCitedSlugs(markdown: string): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const re = /\[[^\]]+\]\(https?:\/\/[^)]+\/docs\/[^/]+\/([^)?#]+)[^)]*\)/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(markdown)) !== null) {
+    const slug = m[1]
+    if (slug && !seen.has(slug)) {
+      seen.add(slug)
+      out.push(slug)
+    }
+  }
+  return out
+}
+
 /**
  * Compact narrated video player for chat responses — same voice-over
  * semantics as PublicDocs.NarratedVideo: video forced muted so the
@@ -320,16 +339,31 @@ export function ChatSurface({
                       <span>{msg.content}</span>
                     )}
 
-                    {msg.role === 'assistant' && msg.sources?.[0] && resolveSourceMedia && (() => {
-                      // Opt-in surface for the top-source video: show a small
-                      // button the user can click to expand an inline narrated
-                      // player. Passive by default — avoids the \"random video
-                      // surprise\" we kept hitting when auto-embedding. Still
-                      // restricted to the top-reranked source so we only
-                      // suggest videos that are plausibly relevant.
-                      const primary = msg.sources[0]
-                      const media = resolveSourceMedia(primary)
-                      if (!media?.videoUrl) return null
+                    {msg.role === 'assistant' && resolveSourceMedia && (() => {
+                      // Suggest a walkthrough video ONLY when Gemini's answer
+                      // explicitly cites a page via a markdown link AND that
+                      // page has a video. Ties the suggestion to the answer's
+                      // own references instead of the RAG ranking, which was
+                      // pulling unrelated videos whenever the top-reranked
+                      // source happened to have one.
+                      const citedSlugs = extractCitedSlugs(msg.content)
+                      if (citedSlugs.length === 0) return null
+                      // Walk the cited slugs in order, find the first that
+                      // resolves to a page with a video.
+                      let match: { title: string; videoUrl: string; audioUrl?: string | null } | null = null
+                      for (const slug of citedSlugs) {
+                        const source = msg.sources?.find((s) => s.pageSlug === slug)
+                        const media = resolveSourceMedia(source ?? { pageId: '', pageSlug: slug })
+                        if (media?.videoUrl) {
+                          match = {
+                            title: source?.pageTitle ?? slug,
+                            videoUrl: media.videoUrl,
+                            audioUrl: media.audioUrl,
+                          }
+                          break
+                        }
+                      }
+                      if (!match) return null
                       const expand = (): void => {
                         setMessages((prev) => prev.map((m, idx) => idx === i ? { ...m, videoExpanded: true } : m))
                       }
@@ -338,11 +372,11 @@ export function ChatSurface({
                           {msg.videoExpanded ? (
                             <>
                               <ChatNarratedVideo
-                                videoUrl={media.videoUrl}
-                                audioUrl={media.audioUrl ?? undefined}
+                                videoUrl={match.videoUrl}
+                                audioUrl={match.audioUrl ?? undefined}
                               />
                               <p className={styles.sourceVideoHint}>
-                                Clip from <strong>{primary.pageTitle}</strong>
+                                Clip from <strong>{match.title}</strong>
                               </p>
                             </>
                           ) : (
@@ -350,7 +384,7 @@ export function ChatSurface({
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
                                 <polygon points="6 3 20 12 6 21 6 3" />
                               </svg>
-                              Watch the <strong>{primary.pageTitle}</strong> walkthrough
+                              Watch the <strong>{match.title}</strong> walkthrough
                             </button>
                           )}
                         </div>
