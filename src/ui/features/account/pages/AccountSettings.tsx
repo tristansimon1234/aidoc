@@ -321,14 +321,13 @@ function TeamTab(): React.ReactElement {
     setLoading(true); setError(null)
     try {
       const list = await api.teams.list()
-      // Pick order of preference:
-      // 1. The active team in localStorage (set when the user accepted an invite)
-      // 2. The first non-personal team (user was invited to a real workspace —
-      //    that's what they want to manage, not their empty solo workspace)
-      // 3. Their personal team
+      // Single-workspace model: default to the personal team unless the user
+      // explicitly opted into another one (invite accept flow sets activeId).
+      // This protects against leftover non-personal teams from earlier
+      // iterations accidentally winning the default selection.
       const activeId = getActiveTeamId()
       const pick = list.find((t) => t.team.id === activeId)
-        ?? list.find((t) => !t.team.personal)
+        ?? list.find((t) => t.team.personal)
         ?? list[0]
       if (!pick) { setError('No workspace found'); return }
       // Lock in the choice so sibling API calls (billing summary, etc.)

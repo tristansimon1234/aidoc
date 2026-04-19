@@ -20,9 +20,10 @@ export function isQuotaError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.code === 'QUOTA_EXCEEDED'
 }
 
-/** Read the active team id from localStorage. The AppRail switcher writes it;
- *  the request() helper below attaches it to every API call so team-scoped
- *  routes (billing, teams, projects list) know which team the user is on. */
+/** Active team id, persisted in localStorage. Set by AcceptInvite when the
+ *  user joins someone else's workspace; read by request() below to attach an
+ *  X-Team-Id header. In the single-workspace model there's usually only the
+ *  personal team, so this stays null for most users. */
 const ACTIVE_TEAM_KEY = 'aidoc_active_team_id'
 
 export function getActiveTeamId(): string | null {
@@ -454,8 +455,6 @@ export const api = {
   },
   teams: {
     list: (): Promise<{ team: TeamDTO; role: TeamRoleDTO }[]> => request('/teams'),
-    create: (name: string): Promise<TeamDTO> =>
-      request('/teams', { method: 'POST', body: JSON.stringify({ name }) }),
     get: (teamId: string): Promise<{ team: TeamDTO; members: TeamMemberDTO[]; role: TeamRoleDTO; seats: TeamSeatInfoDTO; pendingInvites: TeamInviteDTO[] }> =>
       request(`/teams/${teamId}`),
     cancelInvite: (teamId: string, inviteId: string): Promise<void> =>
