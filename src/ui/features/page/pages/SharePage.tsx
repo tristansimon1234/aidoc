@@ -254,9 +254,25 @@ function WidgetSection({ project, setProject }: { project: ProjectDTO; setProjec
         <label className={styles.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
           <input type="checkbox" checked={walkthroughEnabled} onChange={(e) => void toggleWalkthrough(e.target.checked)} />
           Enable interactive walkthrough
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '1px 6px',
+              fontSize: '10px',
+              fontWeight: 600,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: 'var(--color-primary)',
+              background: 'var(--color-accent)',
+              borderRadius: 'var(--radius-sm, 4px)',
+            }}
+          >
+            Beta
+          </span>
         </label>
         <span className={styles.hint}>
-          Lets the widget guide users step-by-step through your app by highlighting UI elements (buttons, links, form fields). When off, the widget only answers questions.
+          Lets the widget guide users step-by-step through your app by highlighting UI elements (buttons, links, form fields). When off, the widget only answers questions. <strong>Beta — expect some rough edges on complex layouts.</strong>
         </span>
       </div>
 
