@@ -18,6 +18,12 @@ const EnvSchema = z.object({
   EMAIL_FROM: z.string().optional(),  // e.g. "doclee <hello@doclee.tech>"
   // Public site URL used for links in outgoing emails
   PUBLIC_APP_URL: z.string().url().optional(),
+  // Upstash Redis — distributed rate limiting for public endpoints (widget
+  // chat, public-docs chat, page views). Optional: when missing we fall back
+  // to an in-memory limiter that's bypassable on serverless (each cold start
+  // resets the counter), fine for local dev but weak in prod.
+  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>

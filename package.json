@@ -35,6 +35,8 @@
     "@supabase/supabase-js": "^2.100.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.37.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "marked": "^15.0.0",

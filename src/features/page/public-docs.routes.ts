@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { NotFoundError, ValidationError, AppError } from '../../shared/middleware/error.middleware.js'
+import { NotFoundError, ValidationError } from '../../shared/middleware/error.middleware.js'
 import { findProjectById } from '../project/project.repository.js'
 import { findPublicPagesByProjectId } from './page.repository.js'
 import { findLatestRunByPageId } from '../run/run.repository.js'
@@ -13,40 +13,21 @@ import { logChatMessages, logPageView } from '../analytics/analytics.repository.
 import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { PageViewPingSchema } from '../analytics/analytics.schema.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
+import { createLimiter } from '../../shared/rate-limit/rate-limit.js'
 import { findPagesByProjectId } from './page.repository.js'
 import type { Project } from '../project/project.types.js'
 
 export const publicDocsRouter = Router()
 
-// --- Anonymous chat: in-memory rate limit per (projectId + best-effort IP) ---
-const PUBLIC_CHAT_LIMIT = 30
-const PUBLIC_CHAT_WINDOW_MS = 60_000
-const publicRateMap = new Map<string, { count: number; resetAt: number }>()
+// Distributed rate limiters (Upstash / in-memory fallback).
+const publicChatLimiter = createLimiter('public-docs:chat', { limit: 30, windowSec: 60 })
+const viewLimiter = createLimiter('public-docs:view', { limit: 120, windowSec: 60 })
 
 function clientIp(req: Request): string {
   const fwd = req.headers['x-forwarded-for']
   if (typeof fwd === 'string' && fwd.length > 0) return fwd.split(',')[0]!.trim()
   return req.ip ?? 'anon'
 }
-
-function checkPublicChatLimit(projectId: string, ip: string): void {
-  const key = `${projectId}:${ip}`
-  const now = Date.now()
-  let entry = publicRateMap.get(key)
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + PUBLIC_CHAT_WINDOW_MS }
-    publicRateMap.set(key, entry)
-  }
-  entry.count++
-  if (entry.count > PUBLIC_CHAT_LIMIT) {
-    throw new AppError('Rate limit exceeded. Try again in a minute.', 'RATE_LIMITED', 429)
-  }
-}
-
-setInterval(() => {
-  const now = Date.now()
-  for (const [k, v] of publicRateMap) if (now > v.resetAt) publicRateMap.delete(k)
-}, 300_000).unref?.()
 
 // Public-docs session tracking — awaited so `incrementUsage` actually fires
 // on Vercel (fire-and-forget gets killed when the function tears down).
@@ -138,7 +119,7 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
   void (async () => {
     try {
       const projectId = req.params.projectId as string
-      checkPublicChatLimit(projectId, clientIp(req))
+      await publicChatLimiter.checkOrThrow(`${projectId}:${clientIp(req)}`)
 
       const project = await loadChatEnabledProject(projectId)
 
@@ -228,31 +209,12 @@ publicDocsRouter.get('/:projectId/chat/suggestions', (req: Request, res: Respons
 
 // --- Public page view ping (fire-and-forget from the docs SPA) ---
 
-const VIEW_LIMIT = 120 // per minute per (projectId:ip)
-const viewRateMap = new Map<string, { count: number; resetAt: number }>()
-
-function checkViewLimit(projectId: string, ip: string): boolean {
-  const key = `${projectId}:${ip}`
-  const now = Date.now()
-  let entry = viewRateMap.get(key)
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + 60_000 }
-    viewRateMap.set(key, entry)
-  }
-  entry.count++
-  return entry.count <= VIEW_LIMIT
-}
-
-setInterval(() => {
-  const now = Date.now()
-  for (const [k, v] of viewRateMap) if (now > v.resetAt) viewRateMap.delete(k)
-}, 300_000).unref?.()
-
 publicDocsRouter.post('/:projectId/view', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
       const projectId = req.params.projectId as string
-      if (!checkViewLimit(projectId, clientIp(req))) {
+      const viewCheck = await viewLimiter.check(`${projectId}:${clientIp(req)}`)
+      if (!viewCheck.allowed) {
         res.status(204).end()
         return
       }
