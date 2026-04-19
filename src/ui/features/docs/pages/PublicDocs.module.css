@@ -272,6 +272,21 @@
   letter-spacing: -0.02em;
 }
 
+/* Match the admin BlockEditor visual rhythm: the editor reserves a left
+   gutter for block handles (+ and drag dots), so content reads as slightly
+   indented under the page title. Replicate the offset here — the public
+   docs have no handles but users associate the indent with "body content"
+   and it helps the page title breathe. */
+.articleIndent {
+  padding-left: 2rem;
+}
+
+@media (max-width: 768px) {
+  .articleIndent {
+    padding-left: 0;
+  }
+}
+
 .empty {
   font-size: var(--text-sm);
   color: var(--color-muted-fg);
