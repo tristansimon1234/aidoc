@@ -62,7 +62,7 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
             tools: [
               {
                 name: 'search_documentation',
-                description: `Search the documentation for "${project.name}". Returns relevant passages from the product documentation.`,
+                description: `Search the documentation for "${project.name}". Returns the most relevant passages with their location in the page hierarchy. Use a natural-language query describing what you're looking for — not just keywords.`,
                 inputSchema: {
                   type: 'object',
                   properties: {
@@ -73,8 +73,19 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
               },
               {
                 name: 'list_pages',
-                description: `List all documentation pages for "${project.name}".`,
+                description: `List all documentation pages for "${project.name}" with their slug and a short preview. Use this to discover what sections exist before calling get_page for any of them.`,
                 inputSchema: { type: 'object', properties: {} },
+              },
+              {
+                name: 'get_page',
+                description: `Fetch the full content of a single documentation page by its slug. Use this after search_documentation or list_pages when you need the entire page, not just the matched excerpt.`,
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    slug: { type: 'string', description: 'The page slug as returned by list_pages or search_documentation (e.g. "create-your-first-project")' },
+                  },
+                  required: ['slug'],
+                },
               },
             ],
           }))
@@ -98,9 +109,16 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
 
             const { embedText } = await import('../../shared/ai/gemini.client.js')
             const { searchChunks } = await import('./chat.repository.js')
+            const { findPagesByProjectId } = await import('../page/page.repository.js')
 
+            // Retrieve generously like the chat pipeline does (top-20 at a
+            // low threshold). Claude will filter down on its side — it's
+            // cheaper for Claude to see more context than to call back.
             const embedding = await embedText(query)
-            const chunks = await searchChunks(project.id, embedding, 8, 0.25)
+            const [chunks, pages] = await Promise.all([
+              searchChunks(project.id, embedding, 20, 0.15),
+              findPagesByProjectId(project.id),
+            ])
 
             if (chunks.length === 0) {
               res.json(jsonRpcResponse(body.id, {
@@ -109,8 +127,23 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
               return
             }
 
+            // Build breadcrumb ("Parent > Page") so Claude understands how
+            // a chunk relates to the overall sidebar structure.
+            const byId = new Map(pages.map((p) => [p.id, p]))
+            const breadcrumbOf = (pageId: string): string => {
+              const trail: string[] = []
+              let current = byId.get(pageId)
+              const seen = new Set<string>()
+              while (current && !seen.has(current.id)) {
+                seen.add(current.id)
+                trail.unshift(current.title)
+                current = current.parentId ? byId.get(current.parentId) : undefined
+              }
+              return trail.join(' > ')
+            }
+
             const text = chunks.map((c) =>
-              `## ${c.pageTitle} (/${c.pageSlug})\n${c.chunkText}`,
+              `## ${breadcrumbOf(c.pageId) || c.pageTitle} (/${c.pageSlug})\n${c.chunkText}`,
             ).join('\n\n---\n\n')
 
             res.json(jsonRpcResponse(body.id, {
@@ -130,6 +163,44 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
 
             res.json(jsonRpcResponse(body.id, {
               content: [{ type: 'text', text: text || 'No pages with content found.' }],
+            }))
+            return
+          }
+
+          if (toolName === 'get_page') {
+            const slug = (args.slug ?? '') as string
+            if (!slug.trim()) {
+              res.json(jsonRpcResponse(body.id, { content: [{ type: 'text', text: 'Please provide a page slug.' }] }))
+              return
+            }
+
+            const { findPagesByProjectId } = await import('../page/page.repository.js')
+            const pages = await findPagesByProjectId(project.id)
+            const page = pages.find((p) => p.slug === slug)
+
+            if (!page) {
+              res.json(jsonRpcResponse(body.id, {
+                content: [{ type: 'text', text: `No page found with slug "${slug}". Call list_pages to see available slugs.` }],
+              }))
+              return
+            }
+
+            const byId = new Map(pages.map((p) => [p.id, p]))
+            const trail: string[] = []
+            let cur = byId.get(page.id)
+            const seen = new Set<string>()
+            while (cur && !seen.has(cur.id)) {
+              seen.add(cur.id)
+              trail.unshift(cur.title)
+              cur = cur.parentId ? byId.get(cur.parentId) : undefined
+            }
+            const breadcrumb = trail.join(' > ')
+
+            const pageBody = page.content?.trim() || '_(This page has no content yet.)_'
+            const text = `# ${breadcrumb || page.title} (/${page.slug})\n\n${pageBody}`
+
+            res.json(jsonRpcResponse(body.id, {
+              content: [{ type: 'text', text }],
             }))
             return
           }
