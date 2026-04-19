@@ -2,6 +2,7 @@ import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import {
+  CreateTeamSchema,
   RenameTeamSchema,
   InviteMemberSchema,
   ChangeRoleSchema,
@@ -31,15 +32,15 @@ teamRouter.get('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
-// Team creation is disabled: the single-workspace model gives every user one
-// personal team at signup. Collaboration happens by inviting members into
-// that workspace, not by spawning extra teams. Kept as a 403 so any stale
-// client that still calls it gets a clean, human-readable error.
-teamRouter.post('/', (_req: Request, res: Response) => {
-  res.status(403).json({
-    error: 'Creating additional teams is not available.',
-    code: 'TEAM_CREATE_DISABLED',
-  })
+teamRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const parsed = CreateTeamSchema.safeParse(req.body)
+      if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+      const team = await teamService.createTeam(getUserId(req), parsed.data)
+      res.status(201).json(team)
+    } catch (err) { next(err) }
+  })()
 })
 
 teamRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {

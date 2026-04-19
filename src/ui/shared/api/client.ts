@@ -455,6 +455,8 @@ export const api = {
   },
   teams: {
     list: (): Promise<{ team: TeamDTO; role: TeamRoleDTO }[]> => request('/teams'),
+    create: (name: string): Promise<TeamDTO> =>
+      request('/teams', { method: 'POST', body: JSON.stringify({ name }) }),
     get: (teamId: string): Promise<{ team: TeamDTO; members: TeamMemberDTO[]; role: TeamRoleDTO; seats: TeamSeatInfoDTO; pendingInvites: TeamInviteDTO[] }> =>
       request(`/teams/${teamId}`),
     cancelInvite: (teamId: string, inviteId: string): Promise<void> =>

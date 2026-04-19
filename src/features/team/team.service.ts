@@ -119,6 +119,11 @@ export async function inviteMember(teamId: string, callerId: string, email: stri
   await requireRole(teamId, callerId)
   const team = await teamRepo.findTeamById(teamId)
   if (!team) throw new NotFoundError('Team')
+  // Personal workspaces are single-seat by design — collaboration belongs in
+  // a dedicated team so private side-projects don't spill over.
+  if (team.personal) {
+    throw new AppError('Create a team workspace to invite collaborators — your personal workspace is private.', 'PERSONAL_TEAM_INVITE', 400)
+  }
 
   // Seat cap: refuse if the team is already at the plan's max (members +
   // pending invites combined, so blasting a pile of invites can't bypass).
