@@ -317,12 +317,13 @@ export function ChatSurface({
                       <span>{msg.content}</span>
                     )}
 
-                    {msg.role === 'assistant' && msg.walkthroughAvailable && msg.sources?.[0] && resolveSourceMedia && (() => {
-                      // Only surface a video when Gemini flagged the answer as
-                      // containing concrete UI actions (walkthroughAvailable)
-                      // AND the top-ranked source page has a video. Avoids
-                      // pulling up random clips on conceptual Q&A or when the
-                      // video belongs to a tangential source.
+                    {msg.role === 'assistant' && msg.sources?.[0] && resolveSourceMedia && (() => {
+                      // Only surface the video from the TOP-RANKED source
+                      // (after rerank). This is the page the answer is most
+                      // directly based on — if it has a walkthrough video,
+                      // it's almost always relevant. Skipping tangential
+                      // sources avoids the \"random video from source #3\"
+                      // problem we saw with the broader match.
                       const primary = msg.sources[0]
                       const media = resolveSourceMedia(primary)
                       if (!media?.videoUrl) return null
