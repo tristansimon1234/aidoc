@@ -137,22 +137,40 @@ export async function chat(
   let chunks: DocChunk[] = []
   const didSearch = needsDocSearch(message, history)
   if (didSearch) {
-    const effectiveQuery = history.length >= 2
-      ? await rewriteQueryWithHistory(message, history).catch(() => message)
-      : message
-    const queryEmbedding = await embedText(effectiveQuery)
-    // Retrieve generously (top-20) at a low threshold (0.15) to maximise
-    // recall; the answer-generation prompt tolerates extra context and
-    // Gemini's 1M context window means top-20 costs nothing.
-    const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
-    // Rerank candidates with Gemini as a judge — top-5 by relevance, not
-    // just by cosine similarity. Gated: only fire when the extra
-    // ~800ms-1.5s buys us something (many candidates to triage AND a
-    // question complex enough that cosine rank may be misleading).
-    // Short simple questions keep the raw top-8 and stay snappy.
-    const shouldRerank = candidates.length >= 12 && effectiveQuery.length >= 40
+    // Always rewrite — standalone short queries ("publish?") benefit
+    // from being expanded into an embeddable question too, not only
+    // conversational follow-ups. Falls back to the raw message on any
+    // error so the chat never blocks on rewrite.
+    const effectiveQuery = await rewriteQuery(message, history).catch(() => message)
+
+    // Multi-query retrieval: ask Gemini for 2 additional phrasings,
+    // embed the 3 together, union results. Lifts recall on vague
+    // questions + domain-specific jargon that a single embedding misses.
+    // All three variants run in parallel; skip failures silently.
+    const variants = await generateQueryVariants(effectiveQuery).catch(() => [] as string[])
+    const queries = [effectiveQuery, ...variants.filter((v) => v && v !== effectiveQuery)].slice(0, 3)
+    const embeddings = await embedTexts(queries)
+    const perQuery = await Promise.all(
+      embeddings.map((emb) => chatRepo.searchChunks(projectId, emb, 15, 0.15).catch(() => [] as DocChunk[])),
+    )
+    // Union by chunk id, keep the best similarity seen.
+    const merged = new Map<string, DocChunk>()
+    for (const list of perQuery) {
+      for (const c of list) {
+        const existing = merged.get(c.id)
+        if (!existing || c.similarity > existing.similarity) merged.set(c.id, c)
+      }
+    }
+    const candidates = Array.from(merged.values())
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 25)
+
+    // Rerank is now always on when we have >=8 candidates — the extra
+    // ~1s trades directly for pertinence. User asked for quality over
+    // speed. Keep top-5 by Gemini's relevance judgment, drop low-signal
+    // chunks (score < 4/10) even if they're in top-5.
     chunks = candidates.length > 0
-      ? (shouldRerank
+      ? (candidates.length >= 8
           ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
           : candidates.slice(0, 8))
       : []
@@ -227,13 +245,18 @@ export async function chat(
 
 ## How to answer — THIS IS CRITICAL
 - Be concise. Short sentences. No walls of text.
-- For simple questions: answer in 2-3 sentences max
-- For "how do I..." questions: give the FIRST 2-3 steps only, then say something like "Want me to continue with the next steps?" or "Should I walk you through the rest?"
-- NEVER dump a full 10-step tutorial in one message. Break it into chunks of 2-3 steps and wait for the user to ask for more.
-- If the user says "yes", "continue", "go on" → give the next 2-3 steps
+- For simple questions: answer in 2-3 sentences max.
+- For short "how do I..." tasks (≤4 steps total): give all steps in one go.
+- For long tutorials (≥5 steps): give the FIRST 2-3 steps only, then offer to continue ("Want me to continue with the rest?"). If the user replies "yes", "continue", "ok", "go on" → give the next 2-3 steps.
+- Use the EXACT labels from the documentation — button names, menu items, field titles — never paraphrase them. If the docs say "Publish toggle", don't write "publish button" or "switch to enable publishing".
 - If a relevant screenshot URL appears in the Documentation Context, embed ONE per message using markdown image syntax: \`![short caption](https://exact-url-from-context)\`. Put the image on its own line. Never paste a raw URL — it must always be wrapped in \`![...](...)\`. Never truncate or abbreviate the URL (no \`...\`).
-- Match the user's language (French → French, English → English)
+- Match the user's language (French → French, English → English).
 - When drawing from a specific page in the Documentation Context, cite it inline using Markdown link syntax where the href is the page's slug (the part after the last \`/\` in its path). Example: "Toggle the Published switch on [Publish your documentation](publish-your-documentation) at the top of the page." One citation per distinct page you reference. Never write raw brackets like \`[Page Title]\` without parentheses — it renders as non-clickable text; use \`[Page Title](slug)\` instead. Don't cite if the answer is general.
+
+## Accuracy over confidence
+- If the Documentation Context doesn't clearly cover what was asked, say so explicitly: "I don't have specific documentation on that yet — here's what I can share based on related pages…" Better to admit a gap than to invent a feature that doesn't exist.
+- Never invent UI elements, menu names, settings, or plan features that aren't in the context. If you're tempted to say "there should be a …" — stop and say "I don't see that documented" instead.
+- When the docs only partially answer, answer the part you're sure about, then flag the unknown: "For the rest of the flow, I'd check …" with a link.
 
 ## Ambiguity handling
 - If the user's question could reasonably mean two or more different things AND the correct answer depends on which one, ask a one-line clarifying question instead of guessing. Example: "Do you mean publish a single page, or enable the public docs URL for the whole project?"
@@ -593,7 +616,7 @@ async function rerankChunks(query: string, candidates: DocChunk[], keepTop: numb
   const numbered = candidates
     .map((c, i) => `[${i}] (${c.pageTitle}) ${c.chunkText.slice(0, 400)}`)
     .join('\n\n')
-  const prompt = `Score each passage from 0-10 on how directly it answers the user's question. Return ONLY a JSON array of {"i": number, "score": number} — no prose, no code fence.
+  const prompt = `Score each passage from 0-10 on how directly it answers the user's question. A passage that mentions the topic but doesn't answer scores 3-5. A passage with the actual answer scores 8-10. An unrelated passage scores 0-2. Return ONLY a JSON array of {"i": number, "score": number} — no prose, no code fence.
 
 Question: ${query}
 
@@ -609,6 +632,10 @@ ${numbered}`
   if (!Array.isArray(parsed)) return candidates.slice(0, keepTop)
   const ranked = parsed
     .filter((r) => typeof r.i === 'number' && typeof r.score === 'number' && candidates[r.i])
+    // Drop clearly-irrelevant passages (< 4/10) even if they'd make the
+    // top cut — answer generation is better with 2 great chunks than
+    // 5 mediocre ones.
+    .filter((r) => r.score >= 4)
     .sort((a, b) => b.score - a.score)
     .slice(0, keepTop)
     .map((r) => candidates[r.i]!)
@@ -631,21 +658,22 @@ function isComplexQuery(message: string): boolean {
 }
 
 /**
- * Rewrite a conversational query into a self-contained question Gemini
- * can embed productively. "et l'autre option?" returns context on its
- * own; with history, we can turn it into "What's the second pricing plan?"
+ * Rewrite a (possibly ambiguous or conversational) query into a
+ * self-contained, embeddable question. Works with or without history:
+ *  - With history: resolves deixis ("this", "it", "the other one").
+ *  - Standalone: expands terse queries ("publish?" →
+ *    "How do I publish documentation in this product?").
  *
- * Cheap: one Gemini call with small output. Falls back to the original
- * message on any error — never blocks the chat.
+ * Short Gemini call, falls back to the original message on any error.
  */
-async function rewriteQueryWithHistory(message: string, history: ChatMessage[]): Promise<string> {
+async function rewriteQuery(message: string, history: ChatMessage[]): Promise<string> {
   const recent = history.slice(-4)
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
-  const prompt = `Given this short conversation, rewrite the user's latest message into a fully self-contained question that doesn't depend on prior context. Keep the user's language (French → French, English → English). Return only the rewritten question, nothing else.
+  const contextBlock = recent ? `Recent conversation:\n${recent}\n\n` : ''
+  const prompt = `${contextBlock}Rewrite the following user query into a complete, self-contained question that an embedding model can match against product documentation. Resolve pronouns and implicit references. Expand very short or ambiguous queries. Keep the user's language (French → French, English → English). Return only the rewritten question — no prefix, no quotes, no explanation.
 
-${recent}
-User (latest): ${message}
+User query: ${message}
 
 Rewritten:`
   const { text } = await generateText({
@@ -655,4 +683,30 @@ Rewritten:`
   })
   const cleaned = text.trim().replace(/^["']|["']$/g, '')
   return cleaned.length > 0 && cleaned.length < 400 ? cleaned : message
+}
+
+/**
+ * Generate 2 alternative phrasings of the question to widen recall.
+ * Embedding similarity is surprisingly brittle to phrasing — asking
+ * about "invite team member" vs "add collaborator" vs "share workspace"
+ * can match different chunks. Running all three and unioning catches
+ * what any single query would miss.
+ */
+async function generateQueryVariants(query: string): Promise<string[]> {
+  const prompt = `Generate 2 alternative phrasings of this question for documentation search. Use different vocabulary (synonyms, different levels of formality, technical vs casual terms) while preserving the same intent. Keep the user's language. Return ONLY a JSON array of strings, no prose.
+
+Original: ${query}
+
+Variants:`
+  const { text } = await generateText({
+    userPrompt: prompt,
+    maxTokens: 160,
+    temperature: 0.5,
+    json: true,
+  })
+  const parsed = JSON.parse(text) as unknown
+  if (!Array.isArray(parsed)) return []
+  return parsed
+    .filter((v): v is string => typeof v === 'string' && v.length > 0 && v.length < 400)
+    .slice(0, 2)
 }
