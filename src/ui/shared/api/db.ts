@@ -1,7 +1,37 @@
 import { supabase } from './supabase.js'
+import { getActiveTeamId, setActiveTeamId } from './client.js'
 import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO, ProjectContextDTO, TryDocReportDTO } from './client.js'
 
 // Direct Supabase queries — bypass Vercel serverless
+
+/**
+ * Resolve the team to scope project queries to. Prefers the explicitly
+ * selected team in localStorage (set by the AvatarMenu switcher or the
+ * AcceptInvite flow), otherwise falls back to the user's personal team
+ * and persists the choice so subsequent queries match.
+ *
+ * Returns null only when the user has no team membership at all — in
+ * that case the caller should treat it as "no projects" rather than
+ * unfiltered.
+ */
+async function resolveScopedTeamId(): Promise<string | null> {
+  const cached = getActiveTeamId()
+  if (cached) return cached
+  const { data } = await supabase
+    .from('team_members')
+    .select('team_id, teams!inner(personal, created_at)')
+    .order('created_at', { foreignTable: 'teams', ascending: true })
+  type Row = { team_id: string; teams: { personal: boolean } | { personal: boolean }[] }
+  const rows = (data ?? []) as Row[]
+  const personal = rows.find((r) => {
+    const t = Array.isArray(r.teams) ? r.teams[0] : r.teams
+    return t?.personal
+  })
+  const pick = personal ?? rows[0]
+  if (!pick) return null
+  setActiveTeamId(pick.team_id)
+  return pick.team_id
+}
 
 export async function fetchPageFull(pageId: string): Promise<{
   page: DocPageDTO
@@ -47,9 +77,15 @@ export async function fetchPageTree(projectId: string): Promise<DocPageDTO[]> {
 }
 
 export async function fetchProjects(): Promise<ProjectDTO[]> {
+  // Scope to the active workspace — without this filter the RLS lets
+  // members see projects from every team they belong to, so the same
+  // project shows up in both the personal and the team workspace.
+  const teamId = await resolveScopedTeamId()
+  if (!teamId) return []
   const { data, error } = await supabase
     .from('projects')
     .select('*')
+    .eq('team_id', teamId)
     .order('created_at', { ascending: false })
   if (error) throw new Error(error.message)
   return (data ?? []).map(mapProject)
