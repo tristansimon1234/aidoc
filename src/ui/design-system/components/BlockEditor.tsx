@@ -28,6 +28,22 @@ const schema = BlockNoteSchema.create({
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Editor = any
 
+/** Minimal structural contract for a BlockNote document block. BlockNote's
+ *  own `Block` type is generic over the schema and effectively `any` through
+ *  our `Editor` alias; this guard is the defensive line before we hand raw
+ *  JSONB from the DB to `replaceBlocks`. */
+type BlockLike = { type: string; [k: string]: unknown }
+
+function isBlockLike(value: unknown): value is BlockLike {
+  return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string'
+}
+
+function asBlockArray(value: unknown): BlockLike[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null
+  if (!value.every(isBlockLike)) return null
+  return value as BlockLike[]
+}
+
 function getCalloutItems(editor: Editor): DefaultReactSuggestionItem[] {
   const insert = (type: CalloutType) => () => {
     insertOrUpdateBlockForSlashMenu(editor, {
@@ -181,10 +197,15 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
 
     void (async () => {
       try {
-        if (contentBlocks && Array.isArray(contentBlocks) && contentBlocks.length > 0) {
-          // Lossless path: hydrate the JSON directly.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          editor.replaceBlocks(editor.document, contentBlocks as any[])
+        const validBlocks = asBlockArray(contentBlocks)
+        if (validBlocks) {
+          // Lossless path: hydrate the JSON directly. Validated shape only —
+          // malformed DB rows fall through to the markdown path below.
+          // Cast back to replaceBlocks' schema-generic PartialBlock[] — we've
+          // done the defensive runtime check; BlockNote will reject any
+          // structurally-invalid block types with its own normalizer.
+          type ReplaceArg = Parameters<typeof editor.replaceBlocks>[1]
+          editor.replaceBlocks(editor.document, validBlocks as unknown as ReplaceArg)
           return
         }
         if (!content) return

@@ -82,3 +82,87 @@
   background: var(--color-border);
   margin: 4px 0;
 }
+
+.sectionLabel {
+  padding: 8px 12px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted-fg);
+}
+
+.teamDot {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary);
+}
+
+.teamName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.teamTag {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-muted-fg);
+  background: var(--color-secondary);
+  border-radius: 4px;
+}
+
+.createRow {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.createInput {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  font-family: inherit;
+  color: var(--color-fg);
+  background: var(--color-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.createInput:focus {
+  border-color: var(--color-primary);
+}
+
+.createSubmit {
+  padding: 6px 10px;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-family: inherit;
+  color: white;
+  background: var(--color-primary);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.createSubmit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.createError {
+  padding: 4px 12px 6px;
+  font-size: var(--text-xs);
+  color: var(--color-danger, #d4183d);
+}

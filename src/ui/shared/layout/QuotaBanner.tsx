@@ -10,7 +10,7 @@ import styles from './QuotaBanner.module.css'
  * you-go and don't need the CTA.
  */
 export function QuotaBanner(): React.ReactElement | null {
-  const { loading, allowed, percent, planName } = useQuotaStatus()
+  const { loading, allowed, percent, planName, workspaceName } = useQuotaStatus()
   if (loading || allowed) return null
 
   return (
@@ -24,7 +24,8 @@ export function QuotaBanner(): React.ReactElement | null {
       </span>
       <span className={styles.text}>
         <strong>Monthly quota exhausted</strong>
-        {' '}— your {planName ?? 'current'} plan is at {Math.round(percent)}%.
+        {workspaceName && <> for <strong>{workspaceName}</strong></>}
+        {' '}— the {planName ?? 'current'} plan is at {Math.round(percent)}%.
         {' '}Upgrade to continue using AI.
       </span>
       <Link to="/account?tab=billing" className={styles.link}>Upgrade plan →</Link>

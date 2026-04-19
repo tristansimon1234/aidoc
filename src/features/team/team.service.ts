@@ -119,6 +119,11 @@ export async function inviteMember(teamId: string, callerId: string, email: stri
   await requireRole(teamId, callerId)
   const team = await teamRepo.findTeamById(teamId)
   if (!team) throw new NotFoundError('Team')
+  // Personal workspaces are single-seat by design — collaboration belongs in
+  // a dedicated team so private side-projects don't spill over.
+  if (team.personal) {
+    throw new AppError('Create a team workspace to invite collaborators — your personal workspace is private.', 'PERSONAL_TEAM_INVITE', 400)
+  }
 
   // Seat cap: refuse if the team is already at the plan's max (members +
   // pending invites combined, so blasting a pile of invites can't bypass).
@@ -165,15 +170,20 @@ export async function acceptInvite(token: string, userId: string, userEmail: str
   if (invite.acceptedAt) throw new AppError('Invite already accepted', 'ALREADY_ACCEPTED', 400)
   if (invite.expiresAt.getTime() < Date.now()) throw new AppError('Invite expired', 'EXPIRED', 400)
 
-  // Email must match to prevent token theft — unless the caller has no email
-  // resolvable (shouldn't happen post-auth, but don't hard-block).
-  if (userEmail && userEmail.toLowerCase() !== invite.email.toLowerCase()) {
+  // Hard-require email match to prevent token theft. If userEmail is null
+  // that's an auth integration bug (authed request with no resolvable email) —
+  // refuse rather than fail open.
+  if (!userEmail || userEmail.toLowerCase() !== invite.email.toLowerCase()) {
     throw new AppError('This invite was sent to a different email', 'EMAIL_MISMATCH', 403)
   }
 
-  await teamRepo.addMember(invite.teamId, userId, invite.role)
-  await teamRepo.markInviteAccepted(token)
-  return { teamId: invite.teamId }
+  // Atomic claim: only the caller whose UPDATE actually flipped accepted_at
+  // proceeds to add the membership. Concurrent callers see `claimed === null`
+  // and get a clean 400 instead of a PK collision on team_members.
+  const claimed = await teamRepo.claimInvite(token)
+  if (!claimed) throw new AppError('Invite already accepted', 'ALREADY_ACCEPTED', 400)
+  await teamRepo.addMember(claimed.teamId, userId, claimed.role)
+  return { teamId: claimed.teamId }
 }
 
 export async function peekInvite(token: string): Promise<NonNullable<Awaited<ReturnType<typeof teamRepo.findInviteByToken>>>> {

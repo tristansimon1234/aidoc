@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth.js'
-import { api, type ProfileDTO } from '../api/client.js'
+import { api, type ProfileDTO, type TeamDTO, type TeamRoleDTO, getActiveTeamId, setActiveTeamId } from '../api/client.js'
 import styles from './AvatarMenu.module.css'
 
 function initialsFromEmail(email: string | undefined | null): string {
@@ -17,6 +17,11 @@ export function AvatarMenu(): React.ReactElement {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [profile, setProfile] = useState<ProfileDTO | null>(null)
+  const [teams, setTeams] = useState<{ team: TeamDTO; role: TeamRoleDTO }[]>([])
+  const [creating, setCreating] = useState(false)
+  const [newTeamName, setNewTeamName] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const anchorRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -26,8 +31,36 @@ export function AvatarMenu(): React.ReactElement {
     if (!user) return
     let cancelled = false
     void api.profile.get().then((p) => { if (!cancelled) setProfile(p) }).catch(() => { /* ignore */ })
+    void api.teams.list().then((t) => { if (!cancelled) setTeams(t) }).catch(() => { /* ignore */ })
     return () => { cancelled = true }
   }, [user])
+
+  const activeTeamId = getActiveTeamId()
+  // Personal team is the implicit default when no X-Team-Id header is sent.
+  const personalTeamId = teams.find((t) => t.team.personal)?.team.id ?? null
+  const resolvedActiveId = activeTeamId ?? personalTeamId
+  const switchTeam = (teamId: string): void => {
+    if (teamId === resolvedActiveId) { setOpen(false); return }
+    setActiveTeamId(teamId)
+    // Full reload is the simplest way to re-hydrate every team-scoped query
+    // (projects list, billing summary, usage banner) with the new X-Team-Id
+    // header without threading invalidation through every hook.
+    window.location.assign('/')
+  }
+
+  const submitNewTeam = async (): Promise<void> => {
+    const name = newTeamName.trim()
+    if (!name || submitting) return
+    setSubmitting(true); setCreateError(null)
+    try {
+      const team = await api.teams.create(name)
+      setActiveTeamId(team.id)
+      window.location.assign('/')
+    } catch (err) {
+      setCreateError((err as Error).message)
+      setSubmitting(false)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -76,6 +109,70 @@ export function AvatarMenu(): React.ReactElement {
       {open && (
         <div ref={menuRef} className={styles.menu} role="menu">
           {email && <div className={styles.header}>{email}</div>}
+
+          <div className={styles.sectionLabel}>Workspace</div>
+          {teams.map((t) => {
+            const isActive = t.team.id === resolvedActiveId
+            return (
+              <button
+                key={t.team.id}
+                className={styles.item}
+                role="menuitemradio"
+                aria-checked={isActive}
+                onClick={() => switchTeam(t.team.id)}
+              >
+                <span className={styles.teamDot} aria-hidden="true">
+                  {isActive ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : null}
+                </span>
+                <span className={styles.teamName}>{t.team.name}</span>
+                {t.team.personal && <span className={styles.teamTag}>Personal</span>}
+              </button>
+            )
+          })}
+          {creating ? (
+            <div className={styles.createRow}>
+              <input
+                className={styles.createInput}
+                autoFocus
+                placeholder="Team name"
+                value={newTeamName}
+                onChange={(e) => setNewTeamName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); void submitNewTeam() }
+                  if (e.key === 'Escape') { setCreating(false); setNewTeamName(''); setCreateError(null) }
+                }}
+                disabled={submitting}
+              />
+              <button
+                className={styles.createSubmit}
+                onClick={() => void submitNewTeam()}
+                disabled={submitting || !newTeamName.trim()}
+              >
+                {submitting ? '…' : 'Create'}
+              </button>
+            </div>
+          ) : (
+            <button
+              className={styles.item}
+              role="menuitem"
+              onClick={() => setCreating(true)}
+            >
+              <span className={styles.teamDot} aria-hidden="true">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </span>
+              <span className={styles.teamName}>New team</span>
+            </button>
+          )}
+          {createError && <div className={styles.createError}>{createError}</div>}
+          <div className={styles.divider} />
+
 
           <button className={styles.item} role="menuitem" onClick={() => go('/account')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">

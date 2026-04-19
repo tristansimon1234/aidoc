@@ -148,7 +148,7 @@ export function ProjectList(_props: ProjectListProps): React.ReactElement {
                 </div>
                 <div>
                   <p className={styles.featureTitle}>Video → documentation</p>
-                  <p className={styles.featureDesc}>Upload a screen recording, get a structured guide with screenshots and an ElevenLabs voice-over</p>
+                  <p className={styles.featureDesc}>Upload a screen recording, get a structured guide with screenshots and a narrated voice-over</p>
                 </div>
               </div>
               <div className={styles.feature}>
