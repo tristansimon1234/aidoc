@@ -32,6 +32,19 @@ function NarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: st
   const handlePause = (): void => { audioRef.current?.pause() }
   const handleSeeked = (): void => { syncAudio() }
 
+  // When a voice-over is present, the video's original audio track must
+  // never play — otherwise users clicking the native unmute button hear
+  // the original audio layered on top of the narration. Force the video
+  // to stay muted, and pipe the video's volume slider to the audio element
+  // so the user still has a functional volume control.
+  const handleVolumeChange = (): void => {
+    const video = videoRef.current
+    const audio = audioRef.current
+    if (!video || !audioUrl) return
+    if (!video.muted) video.muted = true
+    if (audio) audio.volume = video.volume
+  }
+
   return (
     <div style={{
       marginBottom: 'var(--space-lg)', borderRadius: 'var(--radius-xl)',
@@ -47,6 +60,7 @@ function NarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: st
         onPause={handlePause}
         onSeeked={handleSeeked}
         onTimeUpdate={syncAudio}
+        onVolumeChange={handleVolumeChange}
         style={{ width: '100%', display: 'block', maxHeight: '420px' }}
       />
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
