@@ -255,15 +255,16 @@
   overflow-y: auto;
   display: flex;
   justify-content: center;
+  /* Generous bottom padding on the scroll container so the last block
+     breathes — readers scanning long pages shouldn't feel the content
+     crash into the viewport edge. Matches Linear / Notion / Stripe docs. */
+  padding-bottom: 6rem;
 }
 
 .content {
   width: 100%;
   max-width: 820px;
-  /* Generous bottom padding so the last block breathes — readers
-     scanning long pages shouldn't feel the content crash into the
-     viewport edge. Matches the rhythm of Linear / Notion / Stripe docs. */
-  padding: var(--space-xl) var(--space-lg) 6rem;
+  padding: var(--space-xl) var(--space-lg);
 }
 
 .pageTitle {
