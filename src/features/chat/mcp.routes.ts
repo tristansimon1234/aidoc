@@ -78,7 +78,7 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
               },
               {
                 name: 'get_page',
-                description: `Fetch the full content of a single documentation page by its slug. Use this after search_documentation or list_pages when you need the entire page, not just the matched excerpt.`,
+                description: `Fetch the full content of a single documentation page by its slug. Use this after search_documentation or list_pages when you need the entire page, not just the matched excerpt. When the page has a screen-recorded walkthrough, the response also includes the video URL + ElevenLabs voice-over URL — suggest them to the user when a visual walkthrough would help.`,
                 inputSchema: {
                   type: 'object',
                   properties: {
@@ -196,8 +196,33 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
             }
             const breadcrumb = trail.join(' > ')
 
+            // Resolve video + voice-over URLs for this page when a completed
+            // run produced them. Gives Claude a concrete \"watch the
+            // walkthrough\" link it can suggest to the user.
+            let mediaBlock = ''
+            try {
+              const { findLatestRunByPageId } = await import('../run/run.repository.js')
+              const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
+              const run = await findLatestRunByPageId(page.id)
+              const summary = run?.summaryJson as Record<string, unknown> | null
+              const videoPath = summary?.videoPath as string | undefined
+              const voiceover = summary?.voiceover as Record<string, unknown> | null
+              const videoUrl = videoPath ? getPublicUrl('artifacts', videoPath) : null
+              const audioUrl = (voiceover?.audioUrl as string | undefined)
+                ?? (voiceover?.audioPath ? getPublicUrl('artifacts', voiceover.audioPath as string) : null)
+              if (videoUrl || audioUrl) {
+                const lines = ['## Walkthrough media']
+                if (videoUrl) lines.push(`- Video: ${videoUrl}`)
+                if (audioUrl) lines.push(`- Voice-over (ElevenLabs narration): ${audioUrl}`)
+                lines.push('The video\'s original audio track is muted in the public docs; the voice-over is the intended audio. Play them in sync if the user wants the full experience.')
+                mediaBlock = '\n\n' + lines.join('\n')
+              }
+            } catch {
+              // Best-effort — never fail get_page on media lookup issues.
+            }
+
             const pageBody = page.content?.trim() || '_(This page has no content yet.)_'
-            const text = `# ${breadcrumb || page.title} (/${page.slug})\n\n${pageBody}`
+            const text = `# ${breadcrumb || page.title} (/${page.slug})\n\n${pageBody}${mediaBlock}`
 
             res.json(jsonRpcResponse(body.id, {
               content: [{ type: 'text', text }],

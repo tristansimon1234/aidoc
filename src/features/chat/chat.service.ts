@@ -1,5 +1,6 @@
-import { embedText, embedTexts, generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
+import { embedText, embedTexts, generateText } from '../../shared/ai/gemini.client.js'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
+import { env } from '../../shared/config/env.js'
 import { WalkthroughResponseSchema } from './chat.schema.js'
 import * as chatRepo from './chat.repository.js'
 import type { ChatMessage, ChatResponse, DocChunk } from './chat.types.js'
@@ -136,20 +137,25 @@ export async function chat(
   let chunks: DocChunk[] = []
   const didSearch = needsDocSearch(message, history)
   if (didSearch) {
-    const effectiveQuery = history.length >= 2
-      ? await rewriteQueryWithHistory(message, history).catch(() => message)
+    // Rewrite only when it buys us something — conversational follow-ups
+    // (need to resolve "it", "that") or very short queries ("publish?"
+    // = too vague for embedding). Otherwise use the raw message and
+    // save ~400ms on the round trip.
+    const needsRewrite = history.length >= 2 || message.trim().length < 20
+    const effectiveQuery = needsRewrite
+      ? await rewriteQuery(message, history).catch(() => message)
       : message
+
     const queryEmbedding = await embedText(effectiveQuery)
-    // Retrieve generously (top-20) at a low threshold (0.15) to maximise
-    // recall; the answer-generation prompt tolerates extra context and
-    // Gemini's 1M context window means top-20 costs nothing.
     const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
-    // Rerank candidates with Gemini as a judge — top-5 by relevance, not
-    // just by cosine similarity. Huge quality bump on ambiguous questions
-    // where the top vector matches are loosely related. Fails open: on
-    // any error we keep the vector-ranked top-8.
+
+    // Rerank when the candidate pool is large enough to triage. Drops
+    // only the clearest noise — users care about quality on vague hits,
+    // which is exactly when the pool is big.
     chunks = candidates.length > 0
-      ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
+      ? (candidates.length >= 10
+          ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
+          : candidates.slice(0, 8))
       : []
   }
 
@@ -222,13 +228,18 @@ export async function chat(
 
 ## How to answer — THIS IS CRITICAL
 - Be concise. Short sentences. No walls of text.
-- For simple questions: answer in 2-3 sentences max
-- For "how do I..." questions: give the FIRST 2-3 steps only, then say something like "Want me to continue with the next steps?" or "Should I walk you through the rest?"
-- NEVER dump a full 10-step tutorial in one message. Break it into chunks of 2-3 steps and wait for the user to ask for more.
-- If the user says "yes", "continue", "go on" → give the next 2-3 steps
+- For simple questions: answer in 2-3 sentences max.
+- For short "how do I..." tasks (≤4 steps total): give all steps in one go.
+- For long tutorials (≥5 steps): give the FIRST 2-3 steps only, then offer to continue ("Want me to continue with the rest?"). If the user replies "yes", "continue", "ok", "go on" → give the next 2-3 steps.
+- Use the EXACT labels from the documentation — button names, menu items, field titles — never paraphrase them. If the docs say "Publish toggle", don't write "publish button" or "switch to enable publishing".
 - If a relevant screenshot URL appears in the Documentation Context, embed ONE per message using markdown image syntax: \`![short caption](https://exact-url-from-context)\`. Put the image on its own line. Never paste a raw URL — it must always be wrapped in \`![...](...)\`. Never truncate or abbreviate the URL (no \`...\`).
-- Match the user's language (French → French, English → English)
-- When drawing from a specific page in the Documentation Context, name it once at the start of the relevant sentence or paragraph in square brackets — e.g. "[Publish your documentation] Toggle the Published switch at the top…". One citation per distinct page you reference. Don't cite if the answer is general.
+- Match the user's language (French → French, English → English).
+- When drawing from a specific page in the Documentation Context, cite it inline using Markdown link syntax where the href is the page's slug (the part after the last \`/\` in its path). Example: "Toggle the Published switch on [Publish your documentation](publish-your-documentation) at the top of the page." One citation per distinct page you reference. Never write raw brackets like \`[Page Title]\` without parentheses — it renders as non-clickable text; use \`[Page Title](slug)\` instead. Don't cite if the answer is general.
+
+## Accuracy over confidence
+- If the Documentation Context doesn't clearly cover what was asked, say so explicitly: "I don't have specific documentation on that yet — here's what I can share based on related pages…" Better to admit a gap than to invent a feature that doesn't exist.
+- Never invent UI elements, menu names, settings, or plan features that aren't in the context. If you're tempted to say "there should be a …" — stop and say "I don't see that documented" instead.
+- When the docs only partially answer, answer the part you're sure about, then flag the unknown: "For the rest of the flow, I'd check …" with a link.
 
 ## Ambiguity handling
 - If the user's question could reasonably mean two or more different things AND the correct answer depends on which one, ask a one-line clarifying question instead of guessing. Example: "Do you mean publish a single page, or enable the public docs URL for the whole project?"
@@ -259,11 +270,9 @@ export async function chat(
 
 ${message}`
 
-  // Route complex queries to Gemini 2.5 Pro for deeper reasoning. Flash
-  // handles 95% of questions fine; Pro shines on "why does X do Y?" and
-  // multi-step "how do I combine X with Y?" comparisons. ~3× slower/
-  // cost per call but only triggered on a minority.
-  const useProModel = isComplexQuery(message)
+  // Flash for everything — Pro routing doubled latency on complex
+  // queries for a marginal quality lift. Can reintroduce later per-
+  // query if benchmarks show a recurring failure mode.
   const response = await generateText({
     systemPrompt,
     userPrompt,
@@ -271,7 +280,6 @@ ${message}`
     // Lower temperature = tighter, more factual answers. 0.3 is the
     // sweet spot for support-style Q&A: still natural, rarely invents.
     temperature: 0.3,
-    ...(useProModel ? { model: GEMINI_PRO_MODEL } : {}),
   })
 
   // Deduplicate sources
@@ -291,6 +299,13 @@ ${message}`
   // image syntax. Wrap any bare image URL we find on its own line (or after
   // whitespace) in `![screenshot](url)` so the renderer picks it up.
   answer = wrapBareImageUrls(answer)
+
+  // Resolve relative links → absolute public-docs URLs so widget + MCP +
+  // public-docs chat all get clickable citations. Gemini often returns
+  // `[Title](./slug)` or `[Title](slug)` from source markdown or as a
+  // natural reference; those fail to click in the widget (strips non-http
+  // links) and in public-docs chat without a project prefix.
+  answer = resolvePublicDocsLinks(answer, projectId, pageIndex)
 
   // Check for ---WALKTHROUGH--- flag (AI signals this answer is guidable)
   if (/---?\s*WALKTHROUGH\s*---?/i.test(answer)) {
@@ -523,6 +538,51 @@ function buildContextFromChunks(chunks: DocChunk[], pageIndex: Map<string, PageI
 }
 
 /**
+ * Rewrite any relative markdown link in Gemini's answer to a full
+ * https://.../docs/<projectId>/<slug> URL whenever the link target
+ * looks like (or matches) a page slug we know about. Handles:
+ *   [text](./slug) / [text](../slug) / [text](/docs/slug) / [text](slug)
+ * Absolute `https?://` links are left untouched.
+ *
+ * The widget's simpleMarkdown only renders http(s) links — unresolved
+ * relative links get stripped to plain text. This function is the
+ * single place that makes citations clickable in the widget, public-
+ * docs chat, and MCP consumers.
+ */
+function resolvePublicDocsLinks(
+  markdown: string,
+  projectId: string,
+  pageIndex: Map<string, PageIndexEntry>,
+): string {
+  // Skip if the public base URL isn't configured — can't build absolute
+  // links without it, and half-rewriting would look worse than doing
+  // nothing.
+  const base = env.PUBLIC_APP_URL ?? ''
+  if (!base) return markdown
+  if (pageIndex.size === 0) return markdown
+
+  const slugSet = new Set(Array.from(pageIndex.values()).map((p) => p.slug))
+
+  return markdown.replace(/(!?)\[([^\]]+)\]\(([^)]+)\)/g, (match, bang: string, text: string, href: string) => {
+    // Keep images + already-absolute links untouched
+    if (bang === '!') return match
+    if (/^https?:\/\//i.test(href) || href.startsWith('mailto:')) return match
+
+    // Strip relative path prefixes + leading /docs/<projectId>?
+    let candidate = href.trim()
+    candidate = candidate.replace(/^\.?\.?\//, '')
+    candidate = candidate.replace(/^\/docs\/[^/]+\//, '')
+    candidate = candidate.replace(/^\/docs\//, '')
+    candidate = candidate.replace(/^\//, '')
+    // Drop anchor / query to match against slugSet cleanly
+    const pure = candidate.split(/[?#]/)[0] ?? ''
+
+    if (!slugSet.has(pure)) return match
+    return `[${text}](${base}/docs/${projectId}/${pure})`
+  })
+}
+
+/**
  * Rerank top-K candidates with Gemini as a relevance judge. Vector
  * similarity captures "similar meaning" but not "answers the question" —
  * rerank picks the chunks that actually address what was asked.
@@ -536,7 +596,7 @@ async function rerankChunks(query: string, candidates: DocChunk[], keepTop: numb
   const numbered = candidates
     .map((c, i) => `[${i}] (${c.pageTitle}) ${c.chunkText.slice(0, 400)}`)
     .join('\n\n')
-  const prompt = `Score each passage from 0-10 on how directly it answers the user's question. Return ONLY a JSON array of {"i": number, "score": number} — no prose, no code fence.
+  const prompt = `Score each passage from 0-10 on how directly it answers the user's question. A passage that mentions the topic but doesn't answer scores 3-5. A passage with the actual answer scores 8-10. An unrelated passage scores 0-2. Return ONLY a JSON array of {"i": number, "score": number} — no prose, no code fence.
 
 Question: ${query}
 
@@ -552,43 +612,33 @@ ${numbered}`
   if (!Array.isArray(parsed)) return candidates.slice(0, keepTop)
   const ranked = parsed
     .filter((r) => typeof r.i === 'number' && typeof r.score === 'number' && candidates[r.i])
+    // Drop clearly-irrelevant passages (< 4/10) even if they'd make the
+    // top cut — answer generation is better with 2 great chunks than
+    // 5 mediocre ones.
+    .filter((r) => r.score >= 4)
     .sort((a, b) => b.score - a.score)
     .slice(0, keepTop)
     .map((r) => candidates[r.i]!)
   return ranked.length > 0 ? ranked : candidates.slice(0, keepTop)
 }
 
-/** Heuristic: route to Gemini 2.5 Pro when the query looks like it
- *  needs multi-hop reasoning, comparison, or deep explanation. Cheap
- *  keyword check — good enough as a first-pass router. */
-function isComplexQuery(message: string): boolean {
-  const lower = message.toLowerCase()
-  if (message.length > 180) return true
-  const signals = [
-    'why', 'pourquoi', 'how does', 'comment est-ce que',
-    'difference between', 'diff\u00e9rence entre', 'vs ', 'versus ',
-    'compare', 'comparer', 'trade-off', 'tradeoff',
-    'explain how', 'expliquer comment', 'under the hood',
-  ]
-  return signals.some((s) => lower.includes(s))
-}
-
 /**
- * Rewrite a conversational query into a self-contained question Gemini
- * can embed productively. "et l'autre option?" returns context on its
- * own; with history, we can turn it into "What's the second pricing plan?"
+ * Rewrite a (possibly ambiguous or conversational) query into a
+ * self-contained, embeddable question. Works with or without history:
+ *  - With history: resolves deixis ("this", "it", "the other one").
+ *  - Standalone: expands terse queries ("publish?" →
+ *    "How do I publish documentation in this product?").
  *
- * Cheap: one Gemini call with small output. Falls back to the original
- * message on any error — never blocks the chat.
+ * Short Gemini call, falls back to the original message on any error.
  */
-async function rewriteQueryWithHistory(message: string, history: ChatMessage[]): Promise<string> {
+async function rewriteQuery(message: string, history: ChatMessage[]): Promise<string> {
   const recent = history.slice(-4)
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n')
-  const prompt = `Given this short conversation, rewrite the user's latest message into a fully self-contained question that doesn't depend on prior context. Keep the user's language (French → French, English → English). Return only the rewritten question, nothing else.
+  const contextBlock = recent ? `Recent conversation:\n${recent}\n\n` : ''
+  const prompt = `${contextBlock}Rewrite the following user query into a complete, self-contained question that an embedding model can match against product documentation. Resolve pronouns and implicit references. Expand very short or ambiguous queries. Keep the user's language (French → French, English → English). Return only the rewritten question — no prefix, no quotes, no explanation.
 
-${recent}
-User (latest): ${message}
+User query: ${message}
 
 Rewritten:`
   const { text } = await generateText({
@@ -599,3 +649,4 @@ Rewritten:`
   const cleaned = text.trim().replace(/^["']|["']$/g, '')
   return cleaned.length > 0 && cleaned.length < 400 ? cleaned : message
 }
+

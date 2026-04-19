@@ -601,6 +601,10 @@ export interface ChatResponseDTO {
   answer: string
   sources: { pageId: string; pageTitle: string; pageSlug: string }[]
   followUps: string[]
+  /** Set when the answer describes concrete UI actions (click / type /
+   *  navigate). UI can use it to show a "Guide me" button or embed a
+   *  matching video clip. */
+  walkthroughAvailable?: boolean
 }
 
 export interface PreflightCheckDTO {
