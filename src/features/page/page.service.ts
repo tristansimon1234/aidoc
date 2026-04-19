@@ -1,6 +1,7 @@
 import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import type { DocPage, DocPageTreeNode, CreatePageInput, UpdatePageInput, ReorderItem, PreflightCheck, PreflightResult } from './page.types.js'
 import * as pageRepo from './page.repository.js'
+import { findProfileById } from '../profile/profile.repository.js'
 
 export async function createPage(input: CreatePageInput): Promise<DocPage> {
   return pageRepo.createPage(input)
@@ -9,6 +10,12 @@ export async function createPage(input: CreatePageInput): Promise<DocPage> {
 export async function getPage(id: string): Promise<DocPage> {
   const page = await pageRepo.findPageById(id)
   if (!page) throw new NotFoundError('Page')
+  // Resolve the editor's display name for the page header. One extra query
+  // per single-page GET; skipped on list/tree to avoid N+1.
+  if (page.lastEditedBy) {
+    const profile = await findProfileById(page.lastEditedBy).catch(() => null)
+    page.lastEditedByName = profile?.fullName ?? profile?.email ?? null
+  }
   return page
 }
 
@@ -22,10 +29,10 @@ export async function getPageSiblings(projectId: string, excludePageId?: string)
   return excludePageId ? pages.filter((p) => p.id !== excludePageId) : pages
 }
 
-export async function updatePage(id: string, input: UpdatePageInput): Promise<DocPage> {
+export async function updatePage(id: string, input: UpdatePageInput, editorUserId?: string | null): Promise<DocPage> {
   const page = await pageRepo.findPageById(id)
   if (!page) throw new NotFoundError('Page')
-  const updated = await pageRepo.updatePage(id, input)
+  const updated = await pageRepo.updatePage(id, input, editorUserId)
 
   // Re-index embeddings when content changes (fire-and-forget)
   if (input.content !== undefined && input.content !== page.content) {

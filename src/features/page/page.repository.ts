@@ -19,6 +19,8 @@ interface PageRow {
   sort_order: number
   created_at: string
   updated_at: string
+  last_edited_by: string | null
+  last_edited_at: string | null
 }
 
 function mapToPage(row: PageRow): DocPage {
@@ -39,6 +41,8 @@ function mapToPage(row: PageRow): DocPage {
     sortOrder: row.sort_order,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
+    lastEditedBy: row.last_edited_by,
+    lastEditedAt: row.last_edited_at ? new Date(row.last_edited_at) : null,
   }
 }
 
@@ -102,7 +106,7 @@ export async function findPublicPagesByProjectId(projectId: string): Promise<Doc
   return (data as PageRow[]).map(mapToPage)
 }
 
-export async function updatePage(id: string, input: UpdatePageInput): Promise<DocPage> {
+export async function updatePage(id: string, input: UpdatePageInput, editorUserId?: string | null): Promise<DocPage> {
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (input.title !== undefined) updates.title = input.title
   if (input.slug !== undefined) updates.slug = input.slug
@@ -116,6 +120,19 @@ export async function updatePage(id: string, input: UpdatePageInput): Promise<Do
   if (input.customPrompt !== undefined) updates.custom_prompt = input.customPrompt
   if (input.briefing !== undefined) updates.briefing = input.briefing
   if (input.isPublic !== undefined) updates.is_public = input.isPublic
+
+  // Only stamp last_edited_* when the caller actually provides an editor id
+  // AND the update touches user-facing content — pure metadata updates
+  // (reorder, status toggle) shouldn't overwrite "edited by Alice, 2h ago".
+  const touchesContent =
+    input.content !== undefined ||
+    input.contentBlocks !== undefined ||
+    input.title !== undefined ||
+    input.briefing !== undefined
+  if (editorUserId && touchesContent) {
+    updates.last_edited_by = editorUserId
+    updates.last_edited_at = new Date().toISOString()
+  }
 
   const { data, error } = await supabase
     .from('doc_pages')

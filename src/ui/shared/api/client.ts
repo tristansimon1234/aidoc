@@ -294,6 +294,10 @@ export interface DocPageDTO {
   sortOrder: number
   createdAt: string
   updatedAt: string
+  lastEditedBy: string | null
+  lastEditedAt: string | null
+  /** Set on single-page GET only; list/tree skip the profile lookup. */
+  lastEditedByName?: string | null
   children?: DocPageDTO[]
 }
 

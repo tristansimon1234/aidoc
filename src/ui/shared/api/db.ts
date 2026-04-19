@@ -281,6 +281,8 @@ function mapPage(row: Record<string, unknown>): DocPageDTO {
     sortOrder: row.sort_order as number,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+    lastEditedBy: (row.last_edited_by as string) ?? null,
+    lastEditedAt: (row.last_edited_at as string) ?? null,
   }
 }
 

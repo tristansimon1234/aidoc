@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useOutletContext, Link } from 'react-router-dom'
+import { formatRelativeTime } from '../../../shared/util/relativeTime.js'
 import {
   Button,
   Spinner,
@@ -435,6 +436,11 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               void debouncedPageUpdate({ title: e.target.value })
             }}
           />
+          {page.lastEditedAt && (
+            <p className={styles.pageMeta}>
+              Edited by {page.lastEditedByName ?? 'a teammate'} · {formatRelativeTime(page.lastEditedAt)}
+            </p>
+          )}
           <BlockEditor
             key={pageId}
             content={page.content ?? ''}
