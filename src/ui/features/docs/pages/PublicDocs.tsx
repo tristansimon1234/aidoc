@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO, ChatResponseDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
@@ -217,9 +217,13 @@ function NavTree({ items, activePage, onSelect, depth = 0 }: {
 export function PublicDocs(): React.ReactElement {
   const { projectId, slug } = useParams<{ projectId: string; slug?: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  // The /docs/:projectId/chat route renders the chat as a full page in
+  // the content area instead of as a drawer — still wrapped by the same
+  // sidebar + topbar so users can navigate back to a page in one click.
+  const inChatMode = location.pathname.endsWith('/chat')
   const [project, setProject] = useState<PublicProject | null>(null)
   const [chatEnabled, setChatEnabled] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
   const chatApiRef = useRef<ChatApi>(buildPublicChatApi())
   const [pages, setPages] = useState<PublicPage[]>([])
   const [activePage, setActivePage] = useState<PublicPage | null>(null)
@@ -381,6 +385,21 @@ export function PublicDocs(): React.ReactElement {
         </aside>
 
         <div className={styles.contentWrapper} ref={contentRef}>
+          {inChatMode ? (
+            <div className={styles.chatContainer}>
+              <ChatPanel
+                projectId={project.id}
+                projectName={project.name}
+                inline
+                apiOverride={chatApiRef.current}
+                onClose={() => navigate(`/docs/${project.id}`)}
+                onSourceClick={(s) => {
+                  const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
+                  if (target) navigate(`/docs/${project.id}/${target.slug}`)
+                }}
+              />
+            </div>
+          ) : (
           <div className={styles.content}>
             {activePage && (
               <>
@@ -413,16 +432,17 @@ export function PublicDocs(): React.ReactElement {
               </>
             )}
           </div>
-          {activePage?.content && (
+          )}
+          {!inChatMode && activePage?.content && (
             <TableOfContents content={activePage.content} scrollContainer={contentRef.current} />
           )}
         </div>
       </div>
 
-      {chatEnabled && !chatOpen && (
+      {chatEnabled && !inChatMode && (
         <button
           className={styles.chatLauncher}
-          onClick={() => setChatOpen(true)}
+          onClick={() => navigate(`/docs/${project.id}/chat`)}
           aria-label="Chat with the documentation"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -430,20 +450,6 @@ export function PublicDocs(): React.ReactElement {
           </svg>
           Chat with docs
         </button>
-      )}
-
-      {chatEnabled && chatOpen && (
-        <ChatPanel
-          projectId={project.id}
-          projectName={project.name}
-          onClose={() => setChatOpen(false)}
-          apiOverride={chatApiRef.current}
-          onSourceClick={(s) => {
-            const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
-            if (target) selectPage(target)
-            setChatOpen(false)
-          }}
-        />
       )}
     </div>
   )
