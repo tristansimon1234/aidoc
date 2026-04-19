@@ -35,6 +35,11 @@ function findHeadingElements(container: Element): Element[] {
   return Array.from(container.querySelectorAll('h1, h2, h3')).filter((el) => {
     // Skip the page title input (if it exists)
     if (el.tagName === 'INPUT') return false
+    // Skip the page title <h1> — it lives outside the markdown/editor
+    // content and would shift every TOC index by one, breaking clicks.
+    // CSS Modules keep the original class name in the hashed form, so we
+    // can match by substring reliably.
+    if (typeof el.className === 'string' && el.className.includes('pageTitle')) return false
     // Only include headings with actual text content
     const text = el.textContent?.trim()
     return text && text.length > 0
