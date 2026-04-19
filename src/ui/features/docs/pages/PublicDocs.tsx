@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO, ChatResponseDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
-import { ChatPanel, type ChatApi } from '../../chat/components/ChatPanel.js'
+import { ChatSurface, type ChatSurfaceApi } from '../../chat/components/ChatSurface.js'
 import styles from './PublicDocs.module.css'
 
 /** Lightweight narrated video player for public docs — syncs video + voiceover audio */
@@ -87,16 +87,16 @@ interface PublicProject {
   design: ProjectDesignDTO | null
 }
 
-// API client for the public, anonymous chat endpoints. Mirrors the shape
-// expected by ChatPanel but skips JWT auth — the routes are gated server-side
+// API client for the public, anonymous chat endpoints. Same shape as the
+// admin api.chat but skips JWT auth — the routes are gated server-side
 // by `publicDocsChatEnabled` and rate-limited per IP.
-function buildPublicChatApi(): ChatApi {
+function buildPublicChatApi(): ChatSurfaceApi {
   return {
-    index: async (projectId: string) => {
+    status: async (projectId: string) => {
       const res = await fetch(`/api/docs/${projectId}/chat/status`)
-      if (!res.ok) return { indexed: 0 }
+      if (!res.ok) return { hasEmbeddings: false }
       const body = await res.json() as { ready: boolean }
-      return { indexed: body.ready ? 1 : 0 }
+      return { hasEmbeddings: body.ready }
     },
     suggestions: async (projectId: string) => {
       const res = await fetch(`/api/docs/${projectId}/chat/suggestions`)
@@ -224,7 +224,7 @@ export function PublicDocs(): React.ReactElement {
   const inChatMode = location.pathname.endsWith('/chat')
   const [project, setProject] = useState<PublicProject | null>(null)
   const [chatEnabled, setChatEnabled] = useState(false)
-  const chatApiRef = useRef<ChatApi>(buildPublicChatApi())
+  const chatApiRef = useRef<ChatSurfaceApi>(buildPublicChatApi())
   const [pages, setPages] = useState<PublicPage[]>([])
   const [activePage, setActivePage] = useState<PublicPage | null>(null)
   const [loading, setLoading] = useState(true)
@@ -387,12 +387,10 @@ export function PublicDocs(): React.ReactElement {
         <div className={styles.contentWrapper} ref={contentRef}>
           {inChatMode ? (
             <div className={styles.chatContainer}>
-              <ChatPanel
+              <ChatSurface
                 projectId={project.id}
                 projectName={project.name}
-                inline
-                apiOverride={chatApiRef.current}
-                onClose={() => navigate(`/docs/${project.id}`)}
+                api={chatApiRef.current}
                 onSourceClick={(s) => {
                   const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
                   if (target) navigate(`/docs/${project.id}/${target.slug}`)
