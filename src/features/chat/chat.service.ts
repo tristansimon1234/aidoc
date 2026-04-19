@@ -1,4 +1,4 @@
-import { embedText, embedTexts, generateText } from '../../shared/ai/gemini.client.js'
+import { embedText, embedTexts, generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
 import { WalkthroughResponseSchema } from './chat.schema.js'
 import * as chatRepo from './chat.repository.js'
@@ -143,7 +143,14 @@ export async function chat(
     // Retrieve generously (top-20) at a low threshold (0.15) to maximise
     // recall; the answer-generation prompt tolerates extra context and
     // Gemini's 1M context window means top-20 costs nothing.
-    chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
+    const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
+    // Rerank candidates with Gemini as a judge — top-5 by relevance, not
+    // just by cosine similarity. Huge quality bump on ambiguous questions
+    // where the top vector matches are loosely related. Fails open: on
+    // any error we keep the vector-ranked top-8.
+    chunks = candidates.length > 0
+      ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
+      : []
   }
 
   // 2. Fetch project context (name, description, knowledge base)
@@ -247,6 +254,11 @@ export async function chat(
 
 ${message}`
 
+  // Route complex queries to Gemini 2.5 Pro for deeper reasoning. Flash
+  // handles 95% of questions fine; Pro shines on "why does X do Y?" and
+  // multi-step "how do I combine X with Y?" comparisons. ~3× slower/
+  // cost per call but only triggered on a minority.
+  const useProModel = isComplexQuery(message)
   const response = await generateText({
     systemPrompt,
     userPrompt,
@@ -254,6 +266,7 @@ ${message}`
     // Lower temperature = tighter, more factual answers. 0.3 is the
     // sweet spot for support-style Q&A: still natural, rarely invents.
     temperature: 0.3,
+    ...(useProModel ? { model: GEMINI_PRO_MODEL } : {}),
   })
 
   // Deduplicate sources
@@ -502,6 +515,57 @@ function buildContextFromChunks(chunks: DocChunk[], pageIndex: Map<string, PageI
   }
 
   return sections.join('\n\n---\n\n')
+}
+
+/**
+ * Rerank top-K candidates with Gemini as a relevance judge. Vector
+ * similarity captures "similar meaning" but not "answers the question" —
+ * rerank picks the chunks that actually address what was asked.
+ *
+ * Input: the rewritten query + up to 20 candidates.
+ * Output: top-N candidates ordered by Gemini's relevance score.
+ * Cost: one Flash call, ~500 tokens each way.
+ */
+async function rerankChunks(query: string, candidates: DocChunk[], keepTop: number): Promise<DocChunk[]> {
+  if (candidates.length <= keepTop) return candidates
+  const numbered = candidates
+    .map((c, i) => `[${i}] (${c.pageTitle}) ${c.chunkText.slice(0, 400)}`)
+    .join('\n\n')
+  const prompt = `Score each passage from 0-10 on how directly it answers the user's question. Return ONLY a JSON array of {"i": number, "score": number} — no prose, no code fence.
+
+Question: ${query}
+
+Passages:
+${numbered}`
+  const { text } = await generateText({
+    userPrompt: prompt,
+    maxTokens: 512,
+    temperature: 0,
+    json: true,
+  })
+  const parsed = JSON.parse(text) as { i: number; score: number }[]
+  if (!Array.isArray(parsed)) return candidates.slice(0, keepTop)
+  const ranked = parsed
+    .filter((r) => typeof r.i === 'number' && typeof r.score === 'number' && candidates[r.i])
+    .sort((a, b) => b.score - a.score)
+    .slice(0, keepTop)
+    .map((r) => candidates[r.i]!)
+  return ranked.length > 0 ? ranked : candidates.slice(0, keepTop)
+}
+
+/** Heuristic: route to Gemini 2.5 Pro when the query looks like it
+ *  needs multi-hop reasoning, comparison, or deep explanation. Cheap
+ *  keyword check — good enough as a first-pass router. */
+function isComplexQuery(message: string): boolean {
+  const lower = message.toLowerCase()
+  if (message.length > 180) return true
+  const signals = [
+    'why', 'pourquoi', 'how does', 'comment est-ce que',
+    'difference between', 'diff\u00e9rence entre', 'vs ', 'versus ',
+    'compare', 'comparer', 'trade-off', 'tradeoff',
+    'explain how', 'expliquer comment', 'under the hood',
+  ]
+  return signals.some((s) => lower.includes(s))
 }
 
 /**
