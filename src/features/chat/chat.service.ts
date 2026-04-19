@@ -233,7 +233,7 @@ export async function chat(
 - If the user says "yes", "continue", "go on" → give the next 2-3 steps
 - If a relevant screenshot URL appears in the Documentation Context, embed ONE per message using markdown image syntax: \`![short caption](https://exact-url-from-context)\`. Put the image on its own line. Never paste a raw URL — it must always be wrapped in \`![...](...)\`. Never truncate or abbreviate the URL (no \`...\`).
 - Match the user's language (French → French, English → English)
-- When drawing from a specific page in the Documentation Context, name it once at the start of the relevant sentence or paragraph in square brackets — e.g. "[Publish your documentation] Toggle the Published switch at the top…". One citation per distinct page you reference. Don't cite if the answer is general.
+- When drawing from a specific page in the Documentation Context, cite it inline using Markdown link syntax where the href is the page's slug (the part after the last \`/\` in its path). Example: "Toggle the Published switch on [Publish your documentation](publish-your-documentation) at the top of the page." One citation per distinct page you reference. Never write raw brackets like \`[Page Title]\` without parentheses — it renders as non-clickable text; use \`[Page Title](slug)\` instead. Don't cite if the answer is general.
 
 ## Ambiguity handling
 - If the user's question could reasonably mean two or more different things AND the correct answer depends on which one, ask a one-line clarifying question instead of guessing. Example: "Do you mean publish a single page, or enable the public docs URL for the whole project?"

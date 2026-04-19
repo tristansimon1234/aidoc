@@ -8,6 +8,7 @@ interface ChatMessage {
   content: string
   sources?: { pageId: string; pageTitle: string; pageSlug: string }[]
   followUps?: string[]
+  walkthroughAvailable?: boolean
 }
 
 /**
@@ -201,7 +202,13 @@ export function ChatSurface({
       const response = await api.send(projectId, msg, history, sessionToken)
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: response.answer, sources: response.sources, followUps: response.followUps },
+        {
+          role: 'assistant',
+          content: response.answer,
+          sources: response.sources,
+          followUps: response.followUps,
+          walkthroughAvailable: response.walkthroughAvailable,
+        },
       ])
     } catch {
       setMessages((prev) => [
@@ -310,22 +317,23 @@ export function ChatSurface({
                       <span>{msg.content}</span>
                     )}
 
-                    {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && resolveSourceMedia && (() => {
-                      // Pick the first source that actually has a video — users
-                      // care about "here's the walkthrough", not "the 3rd source
-                      // was also cited".
-                      const withMedia = msg.sources
-                        .map((s) => ({ source: s, media: resolveSourceMedia(s) }))
-                        .find((x) => x.media?.videoUrl)
-                      if (!withMedia?.media?.videoUrl) return null
+                    {msg.role === 'assistant' && msg.walkthroughAvailable && msg.sources?.[0] && resolveSourceMedia && (() => {
+                      // Only surface a video when Gemini flagged the answer as
+                      // containing concrete UI actions (walkthroughAvailable)
+                      // AND the top-ranked source page has a video. Avoids
+                      // pulling up random clips on conceptual Q&A or when the
+                      // video belongs to a tangential source.
+                      const primary = msg.sources[0]
+                      const media = resolveSourceMedia(primary)
+                      if (!media?.videoUrl) return null
                       return (
                         <div className={styles.sourceVideo}>
                           <ChatNarratedVideo
-                            videoUrl={withMedia.media.videoUrl}
-                            audioUrl={withMedia.media.audioUrl ?? undefined}
+                            videoUrl={media.videoUrl}
+                            audioUrl={media.audioUrl ?? undefined}
                           />
                           <p className={styles.sourceVideoHint}>
-                            Clip from <strong>{withMedia.source.pageTitle}</strong>
+                            Clip from <strong>{primary.pageTitle}</strong>
                           </p>
                         </div>
                       )
