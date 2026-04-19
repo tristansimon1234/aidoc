@@ -239,6 +239,7 @@ export interface BillingSummaryDTO {
   plan: PlanDTO
   subscription: SubscriptionDTO
   usage: UsageSnapshotDTO
+  team: { id: string; name: string; personal: boolean }
 }
 
 export type UsageFeatureKey = 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions'

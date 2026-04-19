@@ -7,6 +7,8 @@ export interface QuotaStatus {
   percent: number
   overageEnabled: boolean
   planName: string | null
+  workspaceName: string | null
+  workspacePersonal: boolean
 }
 
 /**
@@ -22,7 +24,7 @@ export function useQuotaStatus(): QuotaStatus {
   const { data, loading } = useAsync<BillingSummaryDTO>(() => api.billing.summary())
   if (!data) {
     // Optimistic default while loading — don't block the UI on billing latency.
-    return { loading, allowed: true, percent: 0, overageEnabled: false, planName: null }
+    return { loading, allowed: true, percent: 0, overageEnabled: false, planName: null, workspaceName: null, workspacePersonal: false }
   }
   return {
     loading,
@@ -30,5 +32,7 @@ export function useQuotaStatus(): QuotaStatus {
     percent: data.usage.percent,
     overageEnabled: data.usage.overageEnabled,
     planName: data.plan.name,
+    workspaceName: data.team.name,
+    workspacePersonal: data.team.personal,
   }
 }

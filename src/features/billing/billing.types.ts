@@ -52,4 +52,8 @@ export interface BillingSummary {
   plan: Plan
   subscription: Subscription
   usage: UsageSnapshot
+  /** Which workspace this summary describes — the active team for the
+   *  caller. Surfaced in the UI so users with multiple workspaces know
+   *  which one the plan / quota / overage message applies to. */
+  team: { id: string; name: string; personal: boolean }
 }

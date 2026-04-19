@@ -211,10 +211,10 @@ function BillingTab(): React.ReactElement {
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Current plan</h2>
           <p className={styles.sectionDesc}>
-            You're on the <strong>{summary?.plan.name}</strong> plan.
+            {summary && <><strong>{summary.team.name}</strong>{summary.team.personal ? ' (personal workspace)' : ''} is on the <strong>{summary.plan.name}</strong> plan.</>}
             {summary?.plan.priceCents === 0
-              ? ' Upgrade anytime to increase your monthly quotas.'
-              : ' Usage is metered per calendar month.'}
+              ? ' Upgrade anytime to increase this workspace\'s monthly quota.'
+              : ' Usage is metered per calendar month, per workspace.'}
           </p>
         </div>
 

@@ -1,5 +1,6 @@
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 import * as billingRepo from './billing.repository.js'
+import { findTeamById } from '../team/team.repository.js'
 import { listUsageForCurrentMonth } from '../../shared/usage/usage.repository.js'
 import type { BillingSummary, Plan, PlanId, UsageSnapshot } from './billing.types.js'
 
@@ -62,13 +63,15 @@ function pctOf(tokens: number, budget: number): number {
 }
 
 export async function getSummary(ownerUserId: string, teamId: string): Promise<BillingSummary> {
-  const [plans, subscription, counters] = await Promise.all([
+  const [plans, subscription, counters, team] = await Promise.all([
     billingRepo.listPlans(MAX_TEAM_MEMBERS),
     billingRepo.ensureFreeSubscription(ownerUserId, teamId),
     listUsageForCurrentMonth(teamId),
+    findTeamById(teamId),
   ])
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
+  if (!team) throw new NotFoundError('Team')
 
   const tokensUsed =
     counters.doc_run * TOKEN_COSTS.doc_run +
@@ -83,7 +86,12 @@ export async function getSummary(ownerUserId: string, teamId: string): Promise<B
     allowed: overageEnabled || tokensUsed < plan.monthlyTokens,
     overageEnabled,
   }
-  return { plan, subscription, usage: snapshot }
+  return {
+    plan,
+    subscription,
+    usage: snapshot,
+    team: { id: team.id, name: team.name, personal: team.personal },
+  }
 }
 
 export interface QuotaCheck {
