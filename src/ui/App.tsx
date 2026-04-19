@@ -38,6 +38,7 @@ export function App(): React.ReactElement {
       <Routes>
         {/* Public — no auth */}
         <Route path="/docs/:projectId" element={<PublicDocs />} />
+        <Route path="/docs/:projectId/chat" element={<PublicDocs />} />
         <Route path="/docs/:projectId/:slug" element={<PublicDocs />} />
         <Route path="/auth/forgot" element={<ForgotPassword />} />
         <Route path="/auth/reset" element={<ResetPassword />} />

@@ -519,6 +519,13 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [ ] **Stripe wiring missing** — `plans.stripe_price_id`, `subscriptions.stripe_subscription_id`, `profiles.stripe_customer_id` columns are in place but plan switching mutates DB directly. Need Checkout Session + webhook handler.
 - [ ] Code blocks have no syntax highlighting (Shiki = ~2 MB to bundle, deferred). Language picker also not yet exposed.
 - [ ] `src/app.ts` and `api/index.ts` duplicate router mounts — easy to forget one when adding routes (already happened for billing/profile/admin). Should factor into a shared `mountRouters(app)` helper.
+- [ ] **Chat RAG quality — deferred batches** (already landed: top-20 retrieval, conversational query rewriting, temperature 0.3, hierarchy breadcrumbs, Gemini-as-judge reranking, Pro model routing on complex queries). Still on the shelf:
+  - [ ] Hybrid BM25 + vector search (pgvector + `tsvector`). Helps on queries with exact terms / proper nouns that embed weakly.
+  - [ ] Multi-query retrieval — generate 3 query variants via Gemini, union results, dedup. Lifts recall on vague phrasing.
+  - [ ] Numbered `[1]` citations + clickable source footer. Prompts Gemini to tag claims; frontend renders as deep-links.
+  - [ ] Semantic chunking by heading (currently ~500-token fixed-size w/ heading boundaries). Would re-embed the whole corpus; wait until there's enough signal that recall is the bottleneck.
+  
+  Park until design-partner feedback shows which specific failure mode dominates — no point optimizing recall / reranking / citations blind.
 
 ---
 

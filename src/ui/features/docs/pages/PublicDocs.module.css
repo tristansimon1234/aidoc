@@ -390,6 +390,28 @@
   }
 }
 
+/* Full-page chat container inside the content area — replaces the
+   markdown view when the route is /docs/:projectId/chat. Overrides the
+   default ChatPanel inline max-height so it fills the available space. */
+.chatContainer {
+  height: 100%;
+  max-width: 820px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--space-md) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.chatContainer > * {
+  max-height: none !important;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+}
+
 .chatLauncher {
   position: fixed;
   bottom: 20px;

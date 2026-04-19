@@ -443,9 +443,15 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               void debouncedPageUpdate({ title: e.target.value })
             }}
           />
-          {page.lastEditedAt && (
+          {(page.createdBy || page.lastEditedAt) && (
             <p className={styles.pageMeta}>
-              Edited by {page.lastEditedByName ?? 'a teammate'} · {formatRelativeTime(page.lastEditedAt)}
+              {page.createdBy && (
+                <>Created by {page.createdByName ?? 'a teammate'}</>
+              )}
+              {page.createdBy && page.lastEditedAt && <> · </>}
+              {page.lastEditedAt && (
+                <>Edited by {page.lastEditedByName ?? 'a teammate'} · {formatRelativeTime(page.lastEditedAt)}</>
+              )}
             </p>
           )}
           <BlockEditor

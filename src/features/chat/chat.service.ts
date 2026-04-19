@@ -1,4 +1,4 @@
-import { embedText, embedTexts, generateText } from '../../shared/ai/gemini.client.js'
+import { embedText, embedTexts, generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
 import { WalkthroughResponseSchema } from './chat.schema.js'
 import * as chatRepo from './chat.repository.js'
@@ -129,11 +129,28 @@ export async function chat(
   history: ChatMessage[],
   userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
 ): Promise<ChatResponse> {
-  // 1. Embed the user query and search — skip for greetings/small talk
+  // 1. Embed the user query and search — skip for greetings/small talk.
+  //    Rewrite the query to be self-contained when there's history: "and
+  //    the other one?" embeds nothing useful on its own but rewrites to
+  //    e.g. "What's the second plan option?" given the prior exchange.
   let chunks: DocChunk[] = []
-  if (needsDocSearch(message, history)) {
-    const queryEmbedding = await embedText(message)
-    chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
+  const didSearch = needsDocSearch(message, history)
+  if (didSearch) {
+    const effectiveQuery = history.length >= 2
+      ? await rewriteQueryWithHistory(message, history).catch(() => message)
+      : message
+    const queryEmbedding = await embedText(effectiveQuery)
+    // Retrieve generously (top-20) at a low threshold (0.15) to maximise
+    // recall; the answer-generation prompt tolerates extra context and
+    // Gemini's 1M context window means top-20 costs nothing.
+    const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
+    // Rerank candidates with Gemini as a judge — top-5 by relevance, not
+    // just by cosine similarity. Huge quality bump on ambiguous questions
+    // where the top vector matches are loosely related. Fails open: on
+    // any error we keep the vector-ranked top-8.
+    chunks = candidates.length > 0
+      ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
+      : []
   }
 
   // 2. Fetch project context (name, description, knowledge base)
@@ -159,8 +176,6 @@ export async function chat(
     }
   }
 
-  const didSearch = needsDocSearch(message, history)
-
   if (didSearch && chunks.length === 0) {
     return {
       answer: productContext.length > 0
@@ -171,8 +186,10 @@ export async function chat(
     }
   }
 
-  // 3. Build context from chunks
-  const context = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
+  // 3. Build context from chunks — enriched with each page's location
+  //    in the sidebar hierarchy so Gemini understands how sections relate.
+  const pageIndex = chunks.length > 0 ? await buildPageIndex(projectId) : new Map()
+  const context = chunks.length > 0 ? buildContextFromChunks(chunks, pageIndex) : ''
 
   // 4. Build conversation with history
   const conversationHistory = history
@@ -189,7 +206,7 @@ export async function chat(
   if (userContext?.extra) userInfo.push(`Additional context: ${userContext.extra}`)
 
   const userContextBlock = userInfo.length > 0
-    ? `\n\n## About the user you're helping\n${userInfo.join('\n')}\nAddress them by first name if known. Tailor answers to their plan/context when relevant. If you know which page they're currently viewing, prioritize help related to that page and make your follow-up suggestions relevant to where they are in the app.`
+    ? `\n\n## About the user you're helping\n${userInfo.join('\n')}\nAddress them by first name if known. If you know which page they're currently viewing, prioritize help related to that page and make your follow-up suggestions relevant to where they are in the app.\n\n### Plan-aware behavior\nThe user's plan is listed above when known (Free / Startup / Growth / Business). If they ask about a capability that requires a higher plan (e.g. more seats, more monthly tokens, widget white-labeling, overage billing on Growth+), don't refuse or hide it. Instead: briefly explain how the feature works, state that it's included on higher plans, and invite them to upgrade from the Plans & usage section. Stay helpful, never pushy.`
     : ''
 
   const productBlock = productContext.length > 0
@@ -211,6 +228,11 @@ export async function chat(
 - If the user says "yes", "continue", "go on" → give the next 2-3 steps
 - If a relevant screenshot URL appears in the Documentation Context, embed ONE per message using markdown image syntax: \`![short caption](https://exact-url-from-context)\`. Put the image on its own line. Never paste a raw URL — it must always be wrapped in \`![...](...)\`. Never truncate or abbreviate the URL (no \`...\`).
 - Match the user's language (French → French, English → English)
+- When drawing from a specific page in the Documentation Context, name it once at the start of the relevant sentence or paragraph in square brackets — e.g. "[Publish your documentation] Toggle the Published switch at the top…". One citation per distinct page you reference. Don't cite if the answer is general.
+
+## Ambiguity handling
+- If the user's question could reasonably mean two or more different things AND the correct answer depends on which one, ask a one-line clarifying question instead of guessing. Example: "Do you mean publish a single page, or enable the public docs URL for the whole project?"
+- Don't over-clarify — only when the two interpretations would give materially different answers.
 
 ## Follow-up suggestions
 - After your answer, add a line "---FOLLOWUPS---" then a JSON array of 1-2 short follow-up questions
@@ -237,10 +259,19 @@ export async function chat(
 
 ${message}`
 
+  // Route complex queries to Gemini 2.5 Pro for deeper reasoning. Flash
+  // handles 95% of questions fine; Pro shines on "why does X do Y?" and
+  // multi-step "how do I combine X with Y?" comparisons. ~3× slower/
+  // cost per call but only triggered on a minority.
+  const useProModel = isComplexQuery(message)
   const response = await generateText({
     systemPrompt,
     userPrompt,
     maxTokens: 2048,
+    // Lower temperature = tighter, more factual answers. 0.3 is the
+    // sweet spot for support-style Q&A: still natural, rarely invents.
+    temperature: 0.3,
+    ...(useProModel ? { model: GEMINI_PRO_MODEL } : {}),
   })
 
   // Deduplicate sources
@@ -351,7 +382,8 @@ async function getWalkthroughDocContext(projectId: string, message: string): Pro
 
   const queryEmbedding = await embedText(message)
   const chunks = await chatRepo.searchChunks(projectId, queryEmbedding, 10, 0.25)
-  const docContext = chunks.length > 0 ? buildContextFromChunks(chunks) : ''
+  const pageIndex = chunks.length > 0 ? await buildPageIndex(projectId) : new Map()
+  const docContext = chunks.length > 0 ? buildContextFromChunks(chunks, pageIndex) : ''
 
   walkthroughContextCache.set(cacheKey, { docContext, expiresAt: Date.now() + WT_CONTEXT_TTL_MS })
   return docContext
@@ -436,7 +468,39 @@ function wrapBareImageUrls(text: string): string {
   })
 }
 
-function buildContextFromChunks(chunks: DocChunk[]): string {
+interface PageIndexEntry {
+  id: string
+  title: string
+  slug: string
+  parentId: string | null
+}
+
+/** Load the project's pages once so buildContextFromChunks can render
+ *  hierarchical breadcrumbs ("Getting Started > Create your first project")
+ *  without a DB call per chunk. */
+async function buildPageIndex(projectId: string): Promise<Map<string, PageIndexEntry>> {
+  const { findPagesByProjectId } = await import('../page/page.repository.js')
+  const pages = await findPagesByProjectId(projectId)
+  const map = new Map<string, PageIndexEntry>()
+  for (const p of pages) {
+    map.set(p.id, { id: p.id, title: p.title, slug: p.slug, parentId: p.parentId })
+  }
+  return map
+}
+
+function breadcrumbFor(pageId: string, index: Map<string, PageIndexEntry>): string {
+  const trail: string[] = []
+  let current = index.get(pageId)
+  const seen = new Set<string>()
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id)
+    trail.unshift(current.title)
+    current = current.parentId ? index.get(current.parentId) : undefined
+  }
+  return trail.join(' > ')
+}
+
+function buildContextFromChunks(chunks: DocChunk[], pageIndex: Map<string, PageIndexEntry>): string {
   // Group chunks by page for coherent context
   const byPage = new Map<string, DocChunk[]>()
   for (const chunk of chunks) {
@@ -447,12 +511,91 @@ function buildContextFromChunks(chunks: DocChunk[]): string {
 
   const sections: string[] = []
   for (const [slug, pageChunks] of byPage) {
-    const title = pageChunks[0]!.pageTitle
+    const first = pageChunks[0]!
+    const breadcrumb = breadcrumbFor(first.pageId, pageIndex) || first.pageTitle
     // Sort by chunk index for reading order
     pageChunks.sort((a, b) => a.chunkIndex - b.chunkIndex)
     const text = pageChunks.map((c) => c.chunkText).join('\n\n')
-    sections.push(`### From "${title}" (/${slug})\n\n${text}`)
+    sections.push(`### From "${breadcrumb}" (/${slug})\n\n${text}`)
   }
 
   return sections.join('\n\n---\n\n')
+}
+
+/**
+ * Rerank top-K candidates with Gemini as a relevance judge. Vector
+ * similarity captures "similar meaning" but not "answers the question" —
+ * rerank picks the chunks that actually address what was asked.
+ *
+ * Input: the rewritten query + up to 20 candidates.
+ * Output: top-N candidates ordered by Gemini's relevance score.
+ * Cost: one Flash call, ~500 tokens each way.
+ */
+async function rerankChunks(query: string, candidates: DocChunk[], keepTop: number): Promise<DocChunk[]> {
+  if (candidates.length <= keepTop) return candidates
+  const numbered = candidates
+    .map((c, i) => `[${i}] (${c.pageTitle}) ${c.chunkText.slice(0, 400)}`)
+    .join('\n\n')
+  const prompt = `Score each passage from 0-10 on how directly it answers the user's question. Return ONLY a JSON array of {"i": number, "score": number} — no prose, no code fence.
+
+Question: ${query}
+
+Passages:
+${numbered}`
+  const { text } = await generateText({
+    userPrompt: prompt,
+    maxTokens: 512,
+    temperature: 0,
+    json: true,
+  })
+  const parsed = JSON.parse(text) as { i: number; score: number }[]
+  if (!Array.isArray(parsed)) return candidates.slice(0, keepTop)
+  const ranked = parsed
+    .filter((r) => typeof r.i === 'number' && typeof r.score === 'number' && candidates[r.i])
+    .sort((a, b) => b.score - a.score)
+    .slice(0, keepTop)
+    .map((r) => candidates[r.i]!)
+  return ranked.length > 0 ? ranked : candidates.slice(0, keepTop)
+}
+
+/** Heuristic: route to Gemini 2.5 Pro when the query looks like it
+ *  needs multi-hop reasoning, comparison, or deep explanation. Cheap
+ *  keyword check — good enough as a first-pass router. */
+function isComplexQuery(message: string): boolean {
+  const lower = message.toLowerCase()
+  if (message.length > 180) return true
+  const signals = [
+    'why', 'pourquoi', 'how does', 'comment est-ce que',
+    'difference between', 'diff\u00e9rence entre', 'vs ', 'versus ',
+    'compare', 'comparer', 'trade-off', 'tradeoff',
+    'explain how', 'expliquer comment', 'under the hood',
+  ]
+  return signals.some((s) => lower.includes(s))
+}
+
+/**
+ * Rewrite a conversational query into a self-contained question Gemini
+ * can embed productively. "et l'autre option?" returns context on its
+ * own; with history, we can turn it into "What's the second pricing plan?"
+ *
+ * Cheap: one Gemini call with small output. Falls back to the original
+ * message on any error — never blocks the chat.
+ */
+async function rewriteQueryWithHistory(message: string, history: ChatMessage[]): Promise<string> {
+  const recent = history.slice(-4)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n')
+  const prompt = `Given this short conversation, rewrite the user's latest message into a fully self-contained question that doesn't depend on prior context. Keep the user's language (French → French, English → English). Return only the rewritten question, nothing else.
+
+${recent}
+User (latest): ${message}
+
+Rewritten:`
+  const { text } = await generateText({
+    userPrompt: prompt,
+    maxTokens: 128,
+    temperature: 0.1,
+  })
+  const cleaned = text.trim().replace(/^["']|["']$/g, '')
+  return cleaned.length > 0 && cleaned.length < 400 ? cleaned : message
 }

@@ -288,12 +288,19 @@ function SortablePageNode({
   // Only translate Y — prevent horizontal jumping
   const yOnly = transform ? { ...transform, x: 0 } : null
 
-  const style: React.CSSProperties = {
+  // IMPORTANT: the transform lives on the OUTER wrapper with no padding;
+  // the visual indent (paddingLeft from depth) lives on the inner row.
+  // Mixing them on the same element makes @dnd-kit compute drop zones
+  // on the padded rect, which shifts every drop by the indent width.
+  const outerStyle: React.CSSProperties = {
     transform: CSS.Transform.toString(yOnly),
-    // No transition — items snap instantly, zero delay
-    paddingLeft: `${depth * 20 + 4}px`,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10 : undefined,
+    position: 'relative',
+  }
+
+  const innerStyle: React.CSSProperties = {
+    paddingLeft: `${depth * 20 + 4}px`,
   }
 
   const handleDelete = async (): Promise<void> => {
@@ -322,13 +329,13 @@ function SortablePageNode({
   })
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`${styles.nodeRow} ${isActive ? styles.nodeRowActive : ''}`}
-      {...attributes}
-      {...listeners}
-    >
+    <div ref={setNodeRef} style={outerStyle}>
+      <div
+        className={`${styles.nodeRow} ${isActive ? styles.nodeRowActive : ''}`}
+        style={innerStyle}
+        {...attributes}
+        {...listeners}
+      >
       {/* Collapse toggle or spacer */}
       {hasChildren ? (
         <button className={styles.collapseBtn} onClick={onToggleCollapse} onPointerDown={(e) => e.stopPropagation()}>
@@ -421,6 +428,7 @@ function SortablePageNode({
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }

@@ -21,6 +21,7 @@ interface PageRow {
   updated_at: string
   last_edited_by: string | null
   last_edited_at: string | null
+  created_by: string | null
 }
 
 function mapToPage(row: PageRow): DocPage {
@@ -41,6 +42,7 @@ function mapToPage(row: PageRow): DocPage {
     sortOrder: row.sort_order,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
+    createdBy: row.created_by,
     lastEditedBy: row.last_edited_by,
     lastEditedAt: row.last_edited_at ? new Date(row.last_edited_at) : null,
   }
