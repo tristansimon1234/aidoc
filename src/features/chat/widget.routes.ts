@@ -1,12 +1,13 @@
 import { Router, json } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { ValidationError, NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
+import { ValidationError, NotFoundError } from '../../shared/middleware/error.middleware.js'
 import { ChatRequestSchema, WalkthroughRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
 import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
+import { createLimiter } from '../../shared/rate-limit/rate-limit.js'
 import type { Project } from '../project/project.types.js'
 
 // Widget session tracking — awaited so `incrementUsage` actually fires on
@@ -23,41 +24,15 @@ async function trackWidgetSession(project: Project, sessionToken: string | undef
 
 export const widgetRouter = Router()
 
-// --- In-memory rate limiter per API key (separate buckets for chat vs walkthrough) ---
-const rateLimitMap = new Map<string, { chatCount: number; walkthroughCount: number; resetAt: number }>()
-const CHAT_RATE_LIMIT = 30 // max chat requests per window
-const WALKTHROUGH_RATE_LIMIT = 10 // max walkthrough requests per window (more expensive)
-const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
-
-function checkRateLimit(key: string, type: 'chat' | 'walkthrough'): void {
-  const now = Date.now()
-  let entry = rateLimitMap.get(key)
-
-  if (!entry || now > entry.resetAt) {
-    entry = { chatCount: 0, walkthroughCount: 0, resetAt: now + RATE_LIMIT_WINDOW_MS }
-    rateLimitMap.set(key, entry)
-  }
-
-  if (type === 'chat') {
-    entry.chatCount++
-    if (entry.chatCount > CHAT_RATE_LIMIT) {
-      throw new AppError('Rate limit exceeded. Try again in a minute.', 'RATE_LIMITED', 429)
-    }
-  } else {
-    entry.walkthroughCount++
-    if (entry.walkthroughCount > WALKTHROUGH_RATE_LIMIT) {
-      throw new AppError('Walkthrough rate limit exceeded. Try again in a minute.', 'RATE_LIMITED', 429)
-    }
-  }
-}
-
-// Clean up stale entries every 5 minutes
-setInterval(() => {
-  const now = Date.now()
-  for (const [key, entry] of rateLimitMap) {
-    if (now > entry.resetAt) rateLimitMap.delete(key)
-  }
-}, 300_000)
+// Distributed rate limiters (Upstash when configured, in-memory fallback
+// for local dev). Keyed by widget API key so a noisy widget can't starve
+// another one.
+const chatLimiter = createLimiter('widget:chat', { limit: 30, windowSec: 60 })
+const walkthroughLimiter = createLimiter('widget:walkthrough', {
+  limit: 10,
+  windowSec: 60,
+  message: 'Walkthrough rate limit exceeded. Try again in a minute.',
+})
 
 // --- In-memory suggestions cache (1h TTL) ---
 const suggestionsCache = new Map<string, { suggestions: string[]; expiresAt: number }>()
@@ -80,7 +55,7 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       const widgetKey = req.params.widgetKey as string
       if (!widgetKey) throw new ValidationError('Widget key is required')
 
-      checkRateLimit(widgetKey, 'chat')
+      await chatLimiter.checkOrThrow(widgetKey)
 
       // Validate API key → find project
       const { findProjectByWidgetKey } = await import('../project/project.repository.js')
@@ -189,7 +164,7 @@ widgetRouter.post('/:widgetKey/walkthrough', largeJsonParser, (req: Request, res
       const widgetKey = req.params.widgetKey as string
       if (!widgetKey) throw new ValidationError('Widget key is required')
 
-      checkRateLimit(widgetKey, 'walkthrough')
+      await walkthroughLimiter.checkOrThrow(widgetKey)
 
       const { findProjectByWidgetKey } = await import('../project/project.repository.js')
       const project = await findProjectByWidgetKey(widgetKey)

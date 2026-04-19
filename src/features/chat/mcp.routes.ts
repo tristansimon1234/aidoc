@@ -1,26 +1,13 @@
 import { Router, json } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
+import { createLimiter } from '../../shared/rate-limit/rate-limit.js'
 
 export const mcpRouter = Router()
 mcpRouter.use(json())
 
-// Rate limiter: 30 requests per minute per API key
-const mcpRateMap = new Map<string, { count: number; resetAt: number }>()
-function checkMcpRateLimit(key: string): void {
-  const now = Date.now()
-  let entry = mcpRateMap.get(key)
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + 60_000 }
-    mcpRateMap.set(key, entry)
-  }
-  entry.count++
-  if (entry.count > 30) throw new NotFoundError('Rate limit exceeded')
-}
-setInterval(() => {
-  const now = Date.now()
-  for (const [k, v] of mcpRateMap) { if (now > v.resetAt) mcpRateMap.delete(k) }
-}, 300_000)
+// Rate limiter: 30 requests per minute per widget key (MCP shares the key).
+const mcpLimiter = createLimiter('mcp', { limit: 30, windowSec: 60 })
 
 interface JsonRpcRequest {
   jsonrpc: '2.0'
@@ -48,7 +35,7 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
         return
       }
 
-      checkMcpRateLimit(widgetKey)
+      await mcpLimiter.checkOrThrow(widgetKey)
 
       const { findProjectByMcpKey } = await import('../project/project.repository.js')
       const project = await findProjectByMcpKey(widgetKey)

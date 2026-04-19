@@ -162,7 +162,8 @@ pageRouter.put('/:pageId', (req: Request, res: Response, next: NextFunction) => 
       if (!params.success) throw new ValidationError(params.error.flatten())
       const body = UpdatePageSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
-      const page = await pageService.updatePage(params.data.pageId, body.data)
+      const userId = (req as Request & { userId?: string }).userId ?? null
+      const page = await pageService.updatePage(params.data.pageId, body.data, userId)
       res.status(200).json(page)
     } catch (err) {
       next(err)

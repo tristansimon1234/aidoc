@@ -132,7 +132,13 @@
   letter-spacing: var(--heading-tracking);
   color: var(--color-fg);
   width: 100%;
-  margin-bottom: var(--space-md);
+  margin-bottom: var(--space-xs);
+}
+
+.pageMeta {
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+  margin: 0 0 var(--space-md);
 }
 
 /* Dashboard sections */

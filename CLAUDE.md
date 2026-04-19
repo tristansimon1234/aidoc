@@ -475,11 +475,13 @@ ELEVENLABS_API_KEY   # Optional — voice-over narration
 VIDEO_SERVICE_URL    # Optional — external video processing service
 ADMIN_EMAILS         # Comma-separated allowlist for /api/admin/* routes
                      # e.g. ADMIN_EMAILS=you@example.com,partner@example.com
-RESEND_API_KEY       # Optional — transactional email (team invites) via Resend
+RESEND_API_KEY       # Optional — transactional email (team invites, doc-ready pings) via Resend
 EMAIL_FROM           # e.g. "doclee <hello@doclee.tech>" — sender used with Resend
-PUBLIC_APP_URL       # e.g. https://app.doclee.tech — used to build invite accept links
+PUBLIC_APP_URL       # e.g. https://app.doclee.tech — used to build invite + doc-ready review links
                      # Auth emails (signup/reset/magic link) go through Supabase SMTP
                      # configured in the Supabase dashboard; see docs/EMAIL_TEMPLATES.md.
+UPSTASH_REDIS_REST_URL     # Optional in dev, required in prod — distributed rate limiting
+UPSTASH_REDIS_REST_TOKEN   # Missing both → in-memory fallback (bypassable on serverless)
 ```
 
 **Frontend** (Vite prefix):
@@ -503,7 +505,7 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 
 - [ ] Exploration instruction built inline (should move to prompt.builder.ts)
 - [x] ~~Stagehand model hardcoded in 2 places~~ — now uses `STAGEHAND_MODEL` constant
-- [x] ~~No rate limiting~~ — widget endpoint has 30 req/min per API key
+- [x] ~~No rate limiting~~ — `src/shared/rate-limit/rate-limit.ts` wraps `@upstash/ratelimit` sliding-window limiters with an in-memory fallback for local dev. Wired on widget chat (30/min), widget walkthrough (10/min), public-docs chat (30/min), public-docs view (120/min), MCP (30/min). Prod needs `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`.
 - [ ] `run.service.ts` imports `questions.repository` directly (cross-feature)
 - [ ] No tests (Vitest configured but unused)
 - [ ] No pagination on list endpoints
@@ -520,5 +522,5 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 
 ---
 
-*Last updated: 2026-04-18*
+*Last updated: 2026-04-19*
 *Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19 / BlockNote 0.47*

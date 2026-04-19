@@ -6,6 +6,7 @@ import { Button, Spinner, EmptyState } from '../../../design-system/components/i
 import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
+import { ActivityFeed } from '../components/ActivityFeed.js'
 import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'analytics' | 'settings'
@@ -255,15 +256,18 @@ export function ProjectDetail(): React.ReactElement {
             {showOutlet ? (
               <Outlet context={{ project, setProject, pages, refetchPages: fetchData }} />
             ) : (
-              <EmptyState
-                title={pages.length === 0 ? 'No pages yet' : 'Select a page'}
-                description={
-                  pages.length === 0
-                    ? 'Create your first documentation page to get started.'
-                    : 'Choose a page from the sidebar to view or edit its documentation.'
-                }
-                action={<Button onClick={() => navigate(`/projects/${projectId}/pages/new`)}>New Page</Button>}
-              />
+              <>
+                <EmptyState
+                  title={pages.length === 0 ? 'No pages yet' : 'Select a page'}
+                  description={
+                    pages.length === 0
+                      ? 'Create your first documentation page to get started.'
+                      : 'Choose a page from the sidebar to view or edit its documentation.'
+                  }
+                  action={<Button onClick={() => navigate(`/projects/${projectId}/pages/new`)}>New Page</Button>}
+                />
+                <ActivityFeed projectId={projectId!} />
+              </>
             )}
           </div>
         </div>
