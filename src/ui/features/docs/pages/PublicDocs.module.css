@@ -179,12 +179,45 @@
   background: var(--color-bg);
   padding: var(--space-sm);
   overflow-y: auto;
+  /* Flex column so the Powered-by chip can pin to the bottom of the
+     sidebar regardless of how short or long the page tree is. */
+  display: flex;
+  flex-direction: column;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  flex: 1;
+}
+
+.poweredBy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-md);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--color-muted-fg);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.poweredBy:hover {
+  background: var(--color-secondary);
+  color: var(--color-fg);
+}
+
+.poweredByLabel {
+  letter-spacing: 0.01em;
+}
+
+.poweredByName {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-fg);
 }
 
 .navRow {

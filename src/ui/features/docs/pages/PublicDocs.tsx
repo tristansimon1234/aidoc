@@ -369,6 +369,15 @@ export function PublicDocs(): React.ReactElement {
           <nav className={styles.nav}>
             <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={selectPage} />
           </nav>
+          <a
+            className={styles.poweredBy}
+            href="https://doclee.tech?utm_source=public-docs&utm_medium=powered-by"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className={styles.poweredByLabel}>Powered by</span>
+            <span className={styles.poweredByName}>doclee</span>
+          </a>
         </aside>
 
         <div className={styles.contentWrapper} ref={contentRef}>
