@@ -1,4 +1,4 @@
-import { embedText, embedTexts, generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
+import { embedText, embedTexts, generateText } from '../../shared/ai/gemini.client.js'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
 import { env } from '../../shared/config/env.js'
 import { WalkthroughResponseSchema } from './chat.schema.js'
@@ -137,40 +137,23 @@ export async function chat(
   let chunks: DocChunk[] = []
   const didSearch = needsDocSearch(message, history)
   if (didSearch) {
-    // Always rewrite — standalone short queries ("publish?") benefit
-    // from being expanded into an embeddable question too, not only
-    // conversational follow-ups. Falls back to the raw message on any
-    // error so the chat never blocks on rewrite.
-    const effectiveQuery = await rewriteQuery(message, history).catch(() => message)
+    // Rewrite only when it buys us something — conversational follow-ups
+    // (need to resolve "it", "that") or very short queries ("publish?"
+    // = too vague for embedding). Otherwise use the raw message and
+    // save ~400ms on the round trip.
+    const needsRewrite = history.length >= 2 || message.trim().length < 20
+    const effectiveQuery = needsRewrite
+      ? await rewriteQuery(message, history).catch(() => message)
+      : message
 
-    // Multi-query retrieval: ask Gemini for 2 additional phrasings,
-    // embed the 3 together, union results. Lifts recall on vague
-    // questions + domain-specific jargon that a single embedding misses.
-    // All three variants run in parallel; skip failures silently.
-    const variants = await generateQueryVariants(effectiveQuery).catch(() => [] as string[])
-    const queries = [effectiveQuery, ...variants.filter((v) => v && v !== effectiveQuery)].slice(0, 3)
-    const embeddings = await embedTexts(queries)
-    const perQuery = await Promise.all(
-      embeddings.map((emb) => chatRepo.searchChunks(projectId, emb, 15, 0.15).catch(() => [] as DocChunk[])),
-    )
-    // Union by chunk id, keep the best similarity seen.
-    const merged = new Map<string, DocChunk>()
-    for (const list of perQuery) {
-      for (const c of list) {
-        const existing = merged.get(c.id)
-        if (!existing || c.similarity > existing.similarity) merged.set(c.id, c)
-      }
-    }
-    const candidates = Array.from(merged.values())
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 25)
+    const queryEmbedding = await embedText(effectiveQuery)
+    const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
 
-    // Rerank is now always on when we have >=8 candidates — the extra
-    // ~1s trades directly for pertinence. User asked for quality over
-    // speed. Keep top-5 by Gemini's relevance judgment, drop low-signal
-    // chunks (score < 4/10) even if they're in top-5.
+    // Rerank when the candidate pool is large enough to triage. Drops
+    // only the clearest noise — users care about quality on vague hits,
+    // which is exactly when the pool is big.
     chunks = candidates.length > 0
-      ? (candidates.length >= 8
+      ? (candidates.length >= 10
           ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
           : candidates.slice(0, 8))
       : []
@@ -287,11 +270,9 @@ export async function chat(
 
 ${message}`
 
-  // Route complex queries to Gemini 2.5 Pro for deeper reasoning. Flash
-  // handles 95% of questions fine; Pro shines on "why does X do Y?" and
-  // multi-step "how do I combine X with Y?" comparisons. ~3× slower/
-  // cost per call but only triggered on a minority.
-  const useProModel = isComplexQuery(message)
+  // Flash for everything — Pro routing doubled latency on complex
+  // queries for a marginal quality lift. Can reintroduce later per-
+  // query if benchmarks show a recurring failure mode.
   const response = await generateText({
     systemPrompt,
     userPrompt,
@@ -299,7 +280,6 @@ ${message}`
     // Lower temperature = tighter, more factual answers. 0.3 is the
     // sweet spot for support-style Q&A: still natural, rarely invents.
     temperature: 0.3,
-    ...(useProModel ? { model: GEMINI_PRO_MODEL } : {}),
   })
 
   // Deduplicate sources
@@ -642,21 +622,6 @@ ${numbered}`
   return ranked.length > 0 ? ranked : candidates.slice(0, keepTop)
 }
 
-/** Heuristic: route to Gemini 2.5 Pro when the query looks like it
- *  needs multi-hop reasoning, comparison, or deep explanation. Cheap
- *  keyword check — good enough as a first-pass router. */
-function isComplexQuery(message: string): boolean {
-  const lower = message.toLowerCase()
-  if (message.length > 180) return true
-  const signals = [
-    'why', 'pourquoi', 'how does', 'comment est-ce que',
-    'difference between', 'diff\u00e9rence entre', 'vs ', 'versus ',
-    'compare', 'comparer', 'trade-off', 'tradeoff',
-    'explain how', 'expliquer comment', 'under the hood',
-  ]
-  return signals.some((s) => lower.includes(s))
-}
-
 /**
  * Rewrite a (possibly ambiguous or conversational) query into a
  * self-contained, embeddable question. Works with or without history:
@@ -685,28 +650,3 @@ Rewritten:`
   return cleaned.length > 0 && cleaned.length < 400 ? cleaned : message
 }
 
-/**
- * Generate 2 alternative phrasings of the question to widen recall.
- * Embedding similarity is surprisingly brittle to phrasing — asking
- * about "invite team member" vs "add collaborator" vs "share workspace"
- * can match different chunks. Running all three and unioning catches
- * what any single query would miss.
- */
-async function generateQueryVariants(query: string): Promise<string[]> {
-  const prompt = `Generate 2 alternative phrasings of this question for documentation search. Use different vocabulary (synonyms, different levels of formality, technical vs casual terms) while preserving the same intent. Keep the user's language. Return ONLY a JSON array of strings, no prose.
-
-Original: ${query}
-
-Variants:`
-  const { text } = await generateText({
-    userPrompt: prompt,
-    maxTokens: 160,
-    temperature: 0.5,
-    json: true,
-  })
-  const parsed = JSON.parse(text) as unknown
-  if (!Array.isArray(parsed)) return []
-  return parsed
-    .filter((v): v is string => typeof v === 'string' && v.length > 0 && v.length < 400)
-    .slice(0, 2)
-}
