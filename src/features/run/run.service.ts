@@ -310,6 +310,7 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
           const response = await generateText({
             userPrompt: prompt,
             maxTokens: 4096,
+            json: true,
           })
           {
             let jsonStr = response.text.trim()

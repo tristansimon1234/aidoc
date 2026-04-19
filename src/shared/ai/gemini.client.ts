@@ -41,6 +41,8 @@ export async function generateText(opts: {
   systemPrompt?: string
   userPrompt: string
   maxTokens?: number
+  /** Force Gemini to emit a valid JSON response (no prose, no code fences). */
+  json?: boolean
 }): Promise<{ text: string; usage: GeminiUsage }> {
   const genAI = getGenAI()
   const model = genAI.getGenerativeModel({
@@ -51,7 +53,10 @@ export async function generateText(opts: {
   const result = await withRetry(() =>
     model.generateContent({
       contents: [{ role: 'user', parts: [{ text: opts.userPrompt }] }],
-      generationConfig: { maxOutputTokens: opts.maxTokens },
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens,
+        ...(opts.json ? { responseMimeType: 'application/json' } : {}),
+      },
     }),
   )
 
