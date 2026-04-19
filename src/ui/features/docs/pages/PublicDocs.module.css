@@ -373,3 +373,14 @@
   transform: translateY(-1px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
 }
+
+/* Hide the native mute/volume controls on narrated videos — the video's
+   original audio track must never surface, the ElevenLabs voice-over is
+   the only audio. Works on Chromium + WebKit; Firefox doesn't expose
+   these pseudo-elements but the JS `onVolumeChange` handler keeps the
+   video muted there as a fallback. */
+.narratedVideo::-webkit-media-controls-mute-button,
+.narratedVideo::-webkit-media-controls-volume-slider,
+.narratedVideo::-webkit-media-controls-volume-control-container {
+  display: none !important;
+}

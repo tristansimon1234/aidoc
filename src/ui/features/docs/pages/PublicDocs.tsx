@@ -61,6 +61,7 @@ function NarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: st
         onSeeked={handleSeeked}
         onTimeUpdate={syncAudio}
         onVolumeChange={handleVolumeChange}
+        className={audioUrl ? styles.narratedVideo : undefined}
         style={{ width: '100%', display: 'block', maxHeight: '420px' }}
       />
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
