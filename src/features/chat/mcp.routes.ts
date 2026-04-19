@@ -78,7 +78,7 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
               },
               {
                 name: 'get_page',
-                description: `Fetch the full content of a single documentation page by its slug. Use this after search_documentation or list_pages when you need the entire page, not just the matched excerpt. When the page has a screen-recorded walkthrough, the response also includes the video URL + ElevenLabs voice-over URL — suggest them to the user when a visual walkthrough would help.`,
+                description: `Fetch the full content of a single documentation page by its slug. Use this after search_documentation or list_pages when you need the entire page, not just the matched excerpt. When the page has a screen-recorded walkthrough, the response includes a single URL pointing to the public docs page where the video plays with the ElevenLabs voice-over synced (original audio track always muted). Suggest that URL to the user — never share raw video / audio files separately, they would play as a broken duplicate audio.`,
                 inputSchema: {
                   type: 'object',
                   properties: {
@@ -196,26 +196,23 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
             }
             const breadcrumb = trail.join(' > ')
 
-            // Resolve video + voice-over URLs for this page when a completed
-            // run produced them. Gives Claude a concrete \"watch the
-            // walkthrough\" link it can suggest to the user.
+            // Resolve the walkthrough URL — the public docs page embeds
+            // the video with the ElevenLabs voice-over synced and the
+            // video's original audio track locked muted. Exposing the
+            // raw video + audio URLs separately would let Claude suggest
+            // playing both in different tabs → users heard the original
+            // track over the narration. One clean URL to the player is
+            // the only safe way.
             let mediaBlock = ''
             try {
               const { findLatestRunByPageId } = await import('../run/run.repository.js')
-              const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
+              const { env } = await import('../../shared/config/env.js')
               const run = await findLatestRunByPageId(page.id)
               const summary = run?.summaryJson as Record<string, unknown> | null
-              const videoPath = summary?.videoPath as string | undefined
-              const voiceover = summary?.voiceover as Record<string, unknown> | null
-              const videoUrl = videoPath ? getPublicUrl('artifacts', videoPath) : null
-              const audioUrl = (voiceover?.audioUrl as string | undefined)
-                ?? (voiceover?.audioPath ? getPublicUrl('artifacts', voiceover.audioPath as string) : null)
-              if (videoUrl || audioUrl) {
-                const lines = ['## Walkthrough media']
-                if (videoUrl) lines.push(`- Video: ${videoUrl}`)
-                if (audioUrl) lines.push(`- Voice-over (ElevenLabs narration): ${audioUrl}`)
-                lines.push('The video\'s original audio track is muted in the public docs; the voice-over is the intended audio. Play them in sync if the user wants the full experience.')
-                mediaBlock = '\n\n' + lines.join('\n')
+              const hasVideo = Boolean(summary?.videoPath)
+              if (hasVideo && env.PUBLIC_APP_URL) {
+                const pageUrl = `${env.PUBLIC_APP_URL}/docs/${project.id}/${page.slug}`
+                mediaBlock = `\n\n## Walkthrough video\nA narrated screen-recording walkthrough is available for this page. Open it in the browser — the page embeds the video with the ElevenLabs voice-over properly synced (the video's original audio is always muted).\n\nURL: ${pageUrl}\n\nWhen suggesting this to the user, present it as "Watch the <page title> walkthrough" and link to the URL above. Do NOT share the raw video / audio files separately — they are meant to be played together through the linked page.`
               }
             } catch {
               // Best-effort — never fail get_page on media lookup issues.
