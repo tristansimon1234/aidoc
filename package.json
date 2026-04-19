@@ -1,7 +1,7 @@
 {
-  "name": "aidoc",
+  "name": "doclee",
   "version": "1.0.0",
-  "description": "AI Documentation Agent",
+  "description": "Doclee — AI documentation platform",
   "type": "module",
   "scripts": {
     "build": "tsc && vite build",

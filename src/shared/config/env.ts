@@ -15,7 +15,7 @@ const EnvSchema = z.object({
   ADMIN_EMAILS: z.string().optional(),
   // Transactional email (team invites, future quota alerts, etc.)
   RESEND_API_KEY: z.string().optional(),
-  EMAIL_FROM: z.string().optional(),  // e.g. "aidoc <hello@aidoc.dev>"
+  EMAIL_FROM: z.string().optional(),  // e.g. "doclee <hello@doclee.tech>"
   // Public site URL used for links in outgoing emails
   PUBLIC_APP_URL: z.string().url().optional(),
 })

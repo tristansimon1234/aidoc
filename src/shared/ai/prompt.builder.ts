@@ -251,8 +251,8 @@ export function buildDocumentationPrompt(context: {
     : ''
 
   const tocBlock = context.tableOfContents
-    ? `\n## Other Pages in This Documentation\n${context.tableOfContents}\nWhen referencing content covered by other pages, use markdown links like [Page Title](/slug). Do NOT duplicate content.\n`
-    : ''
+    ? `\n## Other Pages in This Documentation\n${context.tableOfContents}\nWhen referencing content covered by other pages, use markdown links like [Page Title](/slug). Do NOT duplicate content. ONLY link to slugs listed above — never invent or guess page URLs. If a topic isn't listed, write it inline instead of linking.\n`
+    : `\n## Other Pages in This Documentation\n(none yet)\nDo NOT create links to other doc pages — write everything inline.\n`
 
   const pageSummariesBlock = context.existingPageSummaries && context.existingPageSummaries.length > 0
     ? `\n## Existing Page Content (summaries)\n${context.existingPageSummaries.map((p) => `- **${p.title}** (/${p.slug}): ${p.contentPreview}`).join('\n')}\n`

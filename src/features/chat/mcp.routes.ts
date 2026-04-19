@@ -38,7 +38,7 @@ function jsonRpcError(id: string | number | undefined, code: number, message: st
 }
 
 // MCP endpoint — API key auth (same as widget)
-// Usage in Claude: add as MCP server with URL https://app.aidoc.com/api/mcp/:widgetKey
+// Usage in Claude: add as MCP server with URL https://app.doclee.tech/api/mcp/:widgetKey
 mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
@@ -65,7 +65,7 @@ mcpRouter.post('/:widgetKey', (req: Request, res: Response, next: NextFunction) 
           res.json(jsonRpcResponse(body.id, {
             protocolVersion: '2024-11-05',
             capabilities: { tools: {} },
-            serverInfo: { name: `aidoc-${project.name}`, version: '1.0.0' },
+            serverInfo: { name: `doclee-${project.name}`, version: '1.0.0' },
           }))
           return
         }

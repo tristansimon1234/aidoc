@@ -21,7 +21,7 @@ export function Shell({ children, actions, navBar, fullWidth = false }: ShellPro
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
             <Link to="/" className={styles.logo}>
-              <span>aidoc</span>
+              <span>doclee</span>
             </Link>
             <JobBadge />
             {actions}

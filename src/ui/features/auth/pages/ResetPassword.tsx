@@ -33,7 +33,7 @@ export function ResetPassword(): React.ReactElement {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <h1 className={styles.logo}>aidoc</h1>
+          <h1 className={styles.logo}>doclee</h1>
           <p className={styles.subtitle}>Password updated. You're signed in.</p>
           <Button onClick={() => navigate('/')}>Continue to app</Button>
         </div>
@@ -44,7 +44,7 @@ export function ResetPassword(): React.ReactElement {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <h1 className={styles.logo}>aidoc</h1>
+        <h1 className={styles.logo}>doclee</h1>
         <p className={styles.subtitle}>Choose a new password</p>
         <form className={styles.form} onSubmit={(e) => void handleSubmit(e)}>
           <Field

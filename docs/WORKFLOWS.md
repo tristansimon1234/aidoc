@@ -39,7 +39,7 @@ Edit Docs → Generate Voice-over → Chat with Docs → Enable Widget → Embed
 **Setup**: Project Settings → Embed Widget → Generate API Key → Copy snippet
 **Integration**:
 ```html
-<script src="https://app.aidoc.com/widget.js"
+<script src="https://app.doclee.tech/widget.js"
   data-key="aidoc_xxx"
   data-user-name="{{USER_NAME}}"
   data-user-email="{{USER_EMAIL}}"

@@ -53,7 +53,7 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <h1 className={styles.logo}>aidoc</h1>
+          <h1 className={styles.logo}>doclee</h1>
           <p className={styles.subtitle}>
             Check your email to confirm your account, then sign in.
           </p>
@@ -68,7 +68,7 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <h1 className={styles.logo}>aidoc</h1>
+        <h1 className={styles.logo}>doclee</h1>
         <p style={{ textAlign: 'center', color: 'var(--color-accent-blue)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', marginBottom: 'var(--space-xs)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
           AI-powered product documentation
         </p>

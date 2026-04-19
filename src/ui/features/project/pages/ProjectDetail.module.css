@@ -287,6 +287,7 @@
 .contentArea {
   flex: 1;
   overflow: hidden;
+  padding-bottom: var(--space-lg);
 }
 
 .content {

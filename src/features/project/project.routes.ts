@@ -61,7 +61,7 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       let html = ''
       try {
         const resp = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AiDoc/1.0)', Accept: 'text/html' },
+          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Doclee/1.0)', Accept: 'text/html' },
           signal: AbortSignal.timeout(10000),
           redirect: 'follow',
         })

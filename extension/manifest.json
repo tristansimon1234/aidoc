@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "AiDoc Recorder",
+  "name": "doclee Recorder",
   "version": "1.0.0",
   "description": "Capture DOM events during screen recordings for richer AI-generated documentation.",
   "permissions": ["activeTab", "scripting"],

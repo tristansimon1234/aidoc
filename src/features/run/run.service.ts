@@ -65,10 +65,12 @@ async function getProjectAwareness(docPageId: string): Promise<{
   const project = await findProjectById(page.projectId)
   if (!project) return { projectId: page.projectId, projectContext: undefined, tableOfContents: undefined, credentials: undefined, customPrompt: page.customPrompt ?? undefined, briefing: page.briefing ?? undefined, existingPageSummaries: undefined, knownSlugs: undefined }
 
-  // Build table of contents from sibling pages
+  // Build table of contents from sibling pages — only published public pages,
+  // so the AI can only produce cross-links to URLs that actually exist on the
+  // public docs site. Draft/private pages are hidden from the prompt.
   const allPages = await findPagesByProjectId(page.projectId)
-  const toc = allPages
-    .filter((p) => p.id !== docPageId)
+  const linkablePages = allPages.filter((p) => p.id !== docPageId && p.isPublic)
+  const toc = linkablePages
     .map((p) => {
       const indent = p.parentId ? '  ' : ''
       return `${indent}- ${p.title} [${p.status}] — /${p.slug}`
@@ -76,8 +78,8 @@ async function getProjectAwareness(docPageId: string): Promise<{
     .join('\n')
 
   // Build page content summaries
-  const summaries = allPages
-    .filter((p) => p.id !== docPageId && p.content)
+  const summaries = linkablePages
+    .filter((p) => p.content)
     .map((p) => ({
       title: p.title,
       slug: p.slug,
@@ -113,7 +115,7 @@ async function getProjectAwareness(docPageId: string): Promise<{
     ? allProjectResources.filter((_, i) => selectedIndices.includes(i))
     : []
 
-  const knownSlugs = allPages.filter((p) => p.id !== docPageId).map((p) => p.slug)
+  const knownSlugs = linkablePages.map((p) => p.slug)
 
   return {
     projectId: page.projectId,
@@ -308,6 +310,7 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
           const response = await generateText({
             userPrompt: prompt,
             maxTokens: 4096,
+            json: true,
           })
           {
             let jsonStr = response.text.trim()

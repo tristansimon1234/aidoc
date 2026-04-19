@@ -5,7 +5,7 @@
   if (!script) return;
 
   var API_KEY = script.getAttribute('data-key');
-  if (!API_KEY) { console.error('[AiDoc] Missing data-key attribute'); return; }
+  if (!API_KEY) { console.error('[Doclee] Missing data-key attribute'); return; }
 
   var USER_NAME = script.getAttribute('data-user-name') || '';
   var USER_EMAIL = script.getAttribute('data-user-email') || '';
@@ -209,7 +209,7 @@
     '<div id="aidoc-widget-header"><span>Ask about the docs</span><button id="aidoc-widget-close">&times;</button></div>',
     '<div id="aidoc-widget-messages"></div>',
     '<div id="aidoc-widget-input"><input placeholder="Ask a question..." /><button>Send</button></div>',
-    '<div id="aidoc-widget-powered">Powered by <a href="https://aidoc.dev" target="_blank">AiDoc</a></div>',
+    '<div id="aidoc-widget-powered">Powered by <a href="https://doclee.tech" target="_blank">doclee</a></div>',
   ].join('');
   document.body.appendChild(panel);
 
