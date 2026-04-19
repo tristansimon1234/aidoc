@@ -48,6 +48,25 @@ export async function fetchPageFull(pageId: string): Promise<{
 
   const page = mapPage(pageResult.data)
 
+  // Resolve creator + last-editor display names in one query so the page
+  // header can render "Created by Alice · Edited by Bob 2h ago".
+  const userIds = [page.createdBy, page.lastEditedBy].filter((id): id is string => typeof id === 'string')
+  if (userIds.length > 0) {
+    const uniqueIds = Array.from(new Set(userIds))
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, email, full_name')
+      .in('id', uniqueIds)
+    const byId = new Map(
+      (profiles ?? []).map((p) => {
+        const r = p as { id: string; email: string | null; full_name: string | null }
+        return [r.id, r.full_name ?? r.email ?? null] as const
+      }),
+    )
+    if (page.createdBy) page.createdByName = byId.get(page.createdBy) ?? null
+    if (page.lastEditedBy) page.lastEditedByName = byId.get(page.lastEditedBy) ?? null
+  }
+
   const latestRun = runResult.data && !runResult.error ? mapRun(runResult.data) : null
 
   // If no page-level doc, try run-level
@@ -172,6 +191,8 @@ export async function createPage(
   projectId: string,
   body: { title: string; slug: string; parentId?: string; startUrl?: string; goal?: string },
 ): Promise<DocPageDTO> {
+  const { data: authData } = await supabase.auth.getUser()
+  const createdBy = authData.user?.id ?? null
   const { data, error } = await supabase
     .from('doc_pages')
     .insert({
@@ -182,6 +203,7 @@ export async function createPage(
       start_url: body.startUrl ?? null,
       goal: body.goal ?? null,
       sort_order: 0,
+      created_by: createdBy,
     })
     .select('*')
     .single()
@@ -207,6 +229,22 @@ export async function updatePage(
   if (body.customPrompt !== undefined) updates.custom_prompt = body.customPrompt
   if (body.briefing !== undefined) updates.briefing = body.briefing
   if (body.isPublic !== undefined) updates.is_public = body.isPublic
+
+  // Stamp last_edited_* only when user-facing content actually changes.
+  // Reorder / publish toggle shouldn't overwrite the "Edited by Alice"
+  // indicator — it's about authorship, not metadata hygiene.
+  const touchesContent =
+    body.content !== undefined ||
+    body.contentBlocks !== undefined ||
+    body.title !== undefined ||
+    body.briefing !== undefined
+  if (touchesContent) {
+    const { data: authData } = await supabase.auth.getUser()
+    if (authData.user?.id) {
+      updates.last_edited_by = authData.user.id
+      updates.last_edited_at = new Date().toISOString()
+    }
+  }
 
   const { data, error } = await supabase.from('doc_pages').update(updates).eq('id', pageId).select('*').single()
 
@@ -317,6 +355,7 @@ function mapPage(row: Record<string, unknown>): DocPageDTO {
     sortOrder: row.sort_order as number,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+    createdBy: (row.created_by as string) ?? null,
     lastEditedBy: (row.last_edited_by as string) ?? null,
     lastEditedAt: (row.last_edited_at as string) ?? null,
   }

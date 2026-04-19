@@ -52,11 +52,13 @@ export interface DocPage {
   /** Authenticated user who last saved this page via the editor. Null for
    *  AI-authored pages that have never been touched by a human, and for
    *  rows that predate the last_edited_by migration. */
+  createdBy: string | null
   lastEditedBy: string | null
   lastEditedAt: Date | null
   /** Resolved on single-page GET (service layer). The list endpoint skips
    *  this enrichment to avoid an N+1 — tree views only need the timestamp. */
   lastEditedByName?: string | null
+  createdByName?: string | null
 }
 
 export interface DocPageTreeNode extends DocPage {
