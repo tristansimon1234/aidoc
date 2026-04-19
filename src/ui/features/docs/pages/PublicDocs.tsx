@@ -199,6 +199,7 @@ function NavTree({ items, activePage, onSelect, depth = 0 }: {
               <button
                 className={`${styles.navItem} ${activePage?.id === p.id ? styles.navItemActive : ''}`}
                 onClick={() => onSelect(p)}
+                title={p.title}
               >
                 {p.title}
               </button>

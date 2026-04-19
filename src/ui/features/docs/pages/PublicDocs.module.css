@@ -193,6 +193,9 @@
   height: 30px;
   border-radius: 6px;
   transition: background-color 0.1s;
+  /* min-width:0 lets the flex child (.navItem) shrink + truncate
+     instead of wrapping to two lines and overlapping the next item. */
+  min-width: 0;
 }
 
 .navRow:hover {
@@ -236,6 +239,12 @@
   font-family: inherit;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
+  /* Single-line truncation — long titles wrapped to two lines and
+     visually overlapped the next item. The full title surfaces via the
+     button's title attribute on hover. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .navItem:hover {
