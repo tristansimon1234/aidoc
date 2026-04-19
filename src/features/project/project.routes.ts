@@ -55,6 +55,30 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
       await enforceQuotaOrThrow(teamId)
 
       const url = parsed.data.url
+
+      // Demo shortcut — returns a hardcoded, believable analysis for the
+      // Doclee domain without hitting the network or Gemini. Used when
+      // showing the product to design partners before the marketing site
+      // is live. Safe to leave in prod: restricted to doclee.tech, takes
+      // 5s (matches real analysis latency), doesn't touch quota further.
+      if (/(^|\/\/|\.)doclee\.tech(\/|$|\?)/i.test(url)) {
+        console.log(`[analyze-url] Demo shortcut for ${url}`)
+        await new Promise((resolve) => setTimeout(resolve, 5000))
+        res.status(200).json({
+          name: 'Doclee',
+          description: 'Turn a 2-minute screen recording into a published product guide with AI narration and an embeddable chat widget.',
+          audience: 'B2B SaaS founders and product builders shipping fast.',
+          workflow: 'Record a screen walkthrough, AI generates the doc, publish and embed the chat widget.',
+          design: {
+            accentColor: '#635BFF',
+            bgColor: '#FFFFFF',
+            textColor: '#0C0C0E',
+            font: 'Inter',
+          },
+        })
+        return
+      }
+
       console.log(`[analyze-url] ${url}`)
 
       // Fetch HTML
