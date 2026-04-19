@@ -8,5 +8,12 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/ui/main.tsx"></script>
+    <!-- Doclee's own chat widget on the Doclee app. Users get RAG answers
+         over the Doclee docs right inside the admin. JobTracker is raised
+         above it so async job notifications stay visible. -->
+    <script src="https://app.doclee.tech/widget.js"
+      data-key="aidoc_0cec656e9890c2ffd68c2d2e04d8b986d2d1d224e55a49c7"
+      data-cfg='{"accentColor":"#9755ce","bgColor":"#FFFFFF","textColor":"#1A1A1A","font":"\"Geist\", sans-serif","widgetPosition":"right"}'
+    ></script>
   </body>
 </html>
