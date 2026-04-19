@@ -181,7 +181,7 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
 
         try {
           await runService.analyzeVideo(params.data.id, body.videoPath)
-          await runService.generateDoc(params.data.id)
+          await runService.generateDoc(params.data.id, (req as Request & { userId?: string }).userId ?? null)
           if (run.docPageId) {
             const { updatePage } = await import('../page/page.repository.js')
             await updatePage(run.docPageId, { status: 'published' })
@@ -221,16 +221,17 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
         throw new AppError('No steps found — the video analysis didn\'t detect any actions. Try re-uploading.', 'NO_STEPS', 400)
       }
 
+      const triggeredBy = (req as Request & { userId?: string }).userId ?? null
       const async = req.query.async === '1'
       if (async) {
         // Non-blocking: respond immediately, generate in background
         res.status(202).json({ runId: params.data.id, status: 'running' })
-        void runService.generateDoc(params.data.id).catch((err) =>
+        void runService.generateDoc(params.data.id, triggeredBy).catch((err) =>
           console.error(`[generate-doc] Background generation failed for ${params.data.id}:`, err),
         )
       } else {
         // Legacy blocking mode (for backwards compat)
-        const doc = await runService.generateDoc(params.data.id)
+        const doc = await runService.generateDoc(params.data.id, triggeredBy)
         res.status(200).json(doc)
       }
     } catch (err) {

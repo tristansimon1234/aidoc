@@ -238,7 +238,7 @@ export async function exploreWithEvents(
   })
 }
 
-export async function generateDoc(id: string): Promise<GeneratedDoc> {
+export async function generateDoc(id: string, triggeredByUserId: string | null = null): Promise<GeneratedDoc> {
   const run = await runRepo.findRunById(id)
   if (!run) throw new NotFoundError('Run')
   if (run.status === 'pending') {
@@ -369,7 +369,69 @@ export async function generateDoc(id: string): Promise<GeneratedDoc> {
   // Mark run completed so Realtime triggers frontend notification
   await runRepo.updateRunStatus(id, 'completed')
 
+  // Notify teammates that a new doc is ready to review. Best-effort: any
+  // failure here (Resend down, missing EMAIL_FROM, team_id lookup failure)
+  // must not fail the doc gen itself — the user already sees success.
+  try {
+    await notifyTeamDocReady(run, triggeredByUserId)
+  } catch (err) {
+    console.warn('[doc-ready-email] notify failed:', (err as Error).message)
+  }
+
   return doc
+}
+
+/**
+ * Fire "a new doc is ready" emails to every team member except the one who
+ * triggered the generation. Silently skips when EMAIL infra or PUBLIC_APP_URL
+ * isn't configured — no point emailing if the accept link would 404.
+ */
+async function notifyTeamDocReady(run: Awaited<ReturnType<typeof runRepo.findRunById>>, triggeredByUserId: string | null): Promise<void> {
+  if (!run || !run.docPageId) return
+  const { env } = await import('../../shared/config/env.js')
+  if (!env.PUBLIC_APP_URL || !env.RESEND_API_KEY || !env.EMAIL_FROM) return
+
+  const [{ findPageById }, { findProjectById }] = await Promise.all([
+    import('../page/page.repository.js'),
+    import('../project/project.repository.js'),
+  ])
+  const page = await findPageById(run.docPageId)
+  if (!page) return
+  const project = await findProjectById(page.projectId)
+  if (!project) return
+
+  const { listMembers, findTeamById } = await import('../team/team.repository.js')
+  const [members, team] = await Promise.all([
+    listMembers(project.teamId),
+    findTeamById(project.teamId),
+  ])
+  if (!team || members.length === 0) return
+
+  // Resolve the triggerer's display name — "Alice generated X" reads better
+  // than "a teammate generated X". Fall back gracefully when the lookup fails.
+  let triggeredByName = 'A teammate'
+  if (triggeredByUserId) {
+    const { findProfileById } = await import('../profile/profile.repository.js')
+    const profile = await findProfileById(triggeredByUserId).catch(() => null)
+    triggeredByName = profile?.fullName ?? profile?.email ?? 'A teammate'
+  }
+
+  const reviewUrl = `${env.PUBLIC_APP_URL}/projects/${project.id}/pages/${page.id}`
+  const { buildDocReadyEmail } = await import('../../shared/email/templates/doc-ready.js')
+  const { sendEmail } = await import('../../shared/email/resend.client.js')
+  const { subject, html } = buildDocReadyEmail({
+    teamName: team.name,
+    triggeredByName,
+    projectName: project.name,
+    pageTitle: page.title,
+    reviewUrl,
+  })
+
+  await Promise.all(
+    members
+      .filter((m) => m.email && m.userId !== triggeredByUserId)
+      .map((m) => sendEmail({ to: m.email as string, subject, html }).catch(() => ({ sent: false }))),
+  )
 }
 
 export async function cancelExploration(id: string): Promise<void> {
