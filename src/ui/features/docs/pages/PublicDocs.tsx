@@ -360,14 +360,16 @@ export function PublicDocs(): React.ReactElement {
             {activePage && (
               <>
                 <h1 className={styles.pageTitle}>{activePage.title}</h1>
-                {activePage.videoUrl && (
-                  <NarratedVideo videoUrl={activePage.videoUrl} audioUrl={activePage.audioUrl ?? undefined} />
-                )}
-                {activePage.content ? (
-                  <MarkdownRenderer content={activePage.content} />
-                ) : (
-                  <p className={styles.empty}>This page has no content yet.</p>
-                )}
+                <div className={styles.articleIndent}>
+                  {activePage.videoUrl && (
+                    <NarratedVideo videoUrl={activePage.videoUrl} audioUrl={activePage.audioUrl ?? undefined} />
+                  )}
+                  {activePage.content ? (
+                    <MarkdownRenderer content={activePage.content} />
+                  ) : (
+                    <p className={styles.empty}>This page has no content yet.</p>
+                  )}
+                </div>
                 {/* Notion-style child page links */}
                 {(() => {
                   const children = pages.filter((p) => p.parentId === activePage.id)

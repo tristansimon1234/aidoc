@@ -260,7 +260,10 @@
 .content {
   width: 100%;
   max-width: 820px;
-  padding: var(--space-xl) var(--space-lg);
+  /* Generous bottom padding so the last block breathes — readers
+     scanning long pages shouldn't feel the content crash into the
+     viewport edge. Matches the rhythm of Linear / Notion / Stripe docs. */
+  padding: var(--space-xl) var(--space-lg) 6rem;
 }
 
 .pageTitle {
@@ -270,6 +273,21 @@
   color: var(--color-fg);
   margin: 0 0 var(--space-md);
   letter-spacing: -0.02em;
+}
+
+/* Match the admin BlockEditor visual rhythm: the editor reserves a left
+   gutter for block handles (+ and drag dots), so content reads as slightly
+   indented under the page title. Replicate the offset here — the public
+   docs have no handles but users associate the indent with "body content"
+   and it helps the page title breathe. */
+.articleIndent {
+  padding-left: 2rem;
+}
+
+@media (max-width: 768px) {
+  .articleIndent {
+    padding-left: 0;
+  }
 }
 
 .empty {
