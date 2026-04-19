@@ -1,5 +1,6 @@
 import { embedText, embedTexts, generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
+import { env } from '../../shared/config/env.js'
 import { WalkthroughResponseSchema } from './chat.schema.js'
 import * as chatRepo from './chat.repository.js'
 import type { ChatMessage, ChatResponse, DocChunk } from './chat.types.js'
@@ -145,11 +146,15 @@ export async function chat(
     // Gemini's 1M context window means top-20 costs nothing.
     const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
     // Rerank candidates with Gemini as a judge — top-5 by relevance, not
-    // just by cosine similarity. Huge quality bump on ambiguous questions
-    // where the top vector matches are loosely related. Fails open: on
-    // any error we keep the vector-ranked top-8.
+    // just by cosine similarity. Gated: only fire when the extra
+    // ~800ms-1.5s buys us something (many candidates to triage AND a
+    // question complex enough that cosine rank may be misleading).
+    // Short simple questions keep the raw top-8 and stay snappy.
+    const shouldRerank = candidates.length >= 12 && effectiveQuery.length >= 40
     chunks = candidates.length > 0
-      ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
+      ? (shouldRerank
+          ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
+          : candidates.slice(0, 8))
       : []
   }
 
@@ -291,6 +296,13 @@ ${message}`
   // image syntax. Wrap any bare image URL we find on its own line (or after
   // whitespace) in `![screenshot](url)` so the renderer picks it up.
   answer = wrapBareImageUrls(answer)
+
+  // Resolve relative links → absolute public-docs URLs so widget + MCP +
+  // public-docs chat all get clickable citations. Gemini often returns
+  // `[Title](./slug)` or `[Title](slug)` from source markdown or as a
+  // natural reference; those fail to click in the widget (strips non-http
+  // links) and in public-docs chat without a project prefix.
+  answer = resolvePublicDocsLinks(answer, projectId, pageIndex)
 
   // Check for ---WALKTHROUGH--- flag (AI signals this answer is guidable)
   if (/---?\s*WALKTHROUGH\s*---?/i.test(answer)) {
@@ -520,6 +532,51 @@ function buildContextFromChunks(chunks: DocChunk[], pageIndex: Map<string, PageI
   }
 
   return sections.join('\n\n---\n\n')
+}
+
+/**
+ * Rewrite any relative markdown link in Gemini's answer to a full
+ * https://.../docs/<projectId>/<slug> URL whenever the link target
+ * looks like (or matches) a page slug we know about. Handles:
+ *   [text](./slug) / [text](../slug) / [text](/docs/slug) / [text](slug)
+ * Absolute `https?://` links are left untouched.
+ *
+ * The widget's simpleMarkdown only renders http(s) links — unresolved
+ * relative links get stripped to plain text. This function is the
+ * single place that makes citations clickable in the widget, public-
+ * docs chat, and MCP consumers.
+ */
+function resolvePublicDocsLinks(
+  markdown: string,
+  projectId: string,
+  pageIndex: Map<string, PageIndexEntry>,
+): string {
+  // Skip if the public base URL isn't configured — can't build absolute
+  // links without it, and half-rewriting would look worse than doing
+  // nothing.
+  const base = env.PUBLIC_APP_URL ?? ''
+  if (!base) return markdown
+  if (pageIndex.size === 0) return markdown
+
+  const slugSet = new Set(Array.from(pageIndex.values()).map((p) => p.slug))
+
+  return markdown.replace(/(!?)\[([^\]]+)\]\(([^)]+)\)/g, (match, bang: string, text: string, href: string) => {
+    // Keep images + already-absolute links untouched
+    if (bang === '!') return match
+    if (/^https?:\/\//i.test(href) || href.startsWith('mailto:')) return match
+
+    // Strip relative path prefixes + leading /docs/<projectId>?
+    let candidate = href.trim()
+    candidate = candidate.replace(/^\.?\.?\//, '')
+    candidate = candidate.replace(/^\/docs\/[^/]+\//, '')
+    candidate = candidate.replace(/^\/docs\//, '')
+    candidate = candidate.replace(/^\//, '')
+    // Drop anchor / query to match against slugSet cleanly
+    const pure = candidate.split(/[?#]/)[0] ?? ''
+
+    if (!slugSet.has(pure)) return match
+    return `[${text}](${base}/docs/${projectId}/${pure})`
+  })
 }
 
 /**
