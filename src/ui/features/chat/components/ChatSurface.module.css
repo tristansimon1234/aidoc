@@ -126,6 +126,42 @@
   border-radius: 16px 16px 16px 4px;
 }
 
+/* Narrated video clipped inside a chat response */
+.sourceVideo {
+  margin-top: var(--space-sm);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.narratedVideo {
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  max-height: 260px;
+}
+
+.narratedVideo video {
+  width: 100%;
+  max-height: 260px;
+  display: block;
+}
+
+/* Same pseudo-element trick as the public-docs narrated video — hide
+   the mute / volume control so users can't uncover the video's original
+   audio track playing over the ElevenLabs narration. */
+.narratedVideo video::-webkit-media-controls-mute-button,
+.narratedVideo video::-webkit-media-controls-volume-slider,
+.narratedVideo video::-webkit-media-controls-volume-control-container {
+  display: none !important;
+}
+
+.sourceVideoHint {
+  font-size: 10px;
+  color: var(--color-muted-fg);
+  margin: 6px 0 0;
+  text-align: center;
+}
+
 /* Sources */
 .sources {
   display: flex;

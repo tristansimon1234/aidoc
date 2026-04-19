@@ -395,6 +395,14 @@ export function PublicDocs(): React.ReactElement {
                   const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
                   if (target) navigate(`/docs/${project.id}/${target.slug}`)
                 }}
+                // Attach the narrated video player inline when the cited
+                // page has one — so answers like "check how to publish"
+                // actually include the screen recording with voice-over.
+                resolveSourceMedia={(s) => {
+                  const page = pages.find((p) => p.id === s.pageId || p.slug === s.pageSlug)
+                  if (!page?.videoUrl) return null
+                  return { videoUrl: page.videoUrl, audioUrl: page.audioUrl ?? null }
+                }}
               />
             </div>
           ) : (

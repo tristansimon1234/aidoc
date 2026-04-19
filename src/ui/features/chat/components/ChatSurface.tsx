@@ -31,6 +31,11 @@ export interface ChatSurfaceApi {
   suggestions: (projectId: string) => Promise<{ suggestions: string[] }>
 }
 
+export interface SourceMedia {
+  videoUrl?: string | null
+  audioUrl?: string | null
+}
+
 interface ChatSurfaceProps {
   projectId: string
   projectName: string
@@ -40,6 +45,10 @@ interface ChatSurfaceProps {
   /** Per-session token for anonymous usage analytics / dedup. */
   sessionToken?: string
   fallbackSuggestions?: string[]
+  /** If the first cited source has a narrated video, render it inline
+   *  under the answer. Called per assistant message; return undefined
+   *  or null when no media is available for that source. */
+  resolveSourceMedia?: (source: { pageId: string; pageSlug: string }) => SourceMedia | null | undefined
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -47,6 +56,56 @@ const DEFAULT_SUGGESTIONS = [
   'What are the main features?',
   'Walk me through the setup process',
 ]
+
+/**
+ * Compact narrated video player for chat responses — same voice-over
+ * semantics as PublicDocs.NarratedVideo: video forced muted so the
+ * original track never plays over the ElevenLabs narration, volume
+ * slider piped to the audio element. Tight height so it sits nicely
+ * inside an assistant bubble.
+ */
+function ChatNarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: string }): React.ReactElement {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  const syncAudio = (): void => {
+    const v = videoRef.current
+    const a = audioRef.current
+    if (!v || !a) return
+    if (Math.abs(v.currentTime - a.currentTime) > 0.3) a.currentTime = v.currentTime
+  }
+  const handlePlay = (): void => {
+    const a = audioRef.current
+    const v = videoRef.current
+    if (a && v) { a.currentTime = v.currentTime; void a.play() }
+  }
+  const handlePause = (): void => { audioRef.current?.pause() }
+  const handleVolumeChange = (): void => {
+    const v = videoRef.current
+    const a = audioRef.current
+    if (!v || !audioUrl) return
+    if (!v.muted) v.muted = true
+    if (a) a.volume = v.volume
+  }
+
+  return (
+    <div className={styles.narratedVideo}>
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        controls
+        preload="metadata"
+        muted={Boolean(audioUrl)}
+        onPlay={handlePlay}
+        onPause={handlePause}
+        onSeeked={syncAudio}
+        onTimeUpdate={syncAudio}
+        onVolumeChange={handleVolumeChange}
+      />
+      {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
+    </div>
+  )
+}
 
 /**
  * The polished chat UI surface — welcome state with suggestion chips,
@@ -61,6 +120,7 @@ export function ChatSurface({
   onSourceClick,
   sessionToken,
   fallbackSuggestions = DEFAULT_SUGGESTIONS,
+  resolveSourceMedia,
 }: ChatSurfaceProps): React.ReactElement {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -249,6 +309,27 @@ export function ChatSurface({
                     ) : (
                       <span>{msg.content}</span>
                     )}
+
+                    {msg.role === 'assistant' && msg.sources && msg.sources.length > 0 && resolveSourceMedia && (() => {
+                      // Pick the first source that actually has a video — users
+                      // care about "here's the walkthrough", not "the 3rd source
+                      // was also cited".
+                      const withMedia = msg.sources
+                        .map((s) => ({ source: s, media: resolveSourceMedia(s) }))
+                        .find((x) => x.media?.videoUrl)
+                      if (!withMedia?.media?.videoUrl) return null
+                      return (
+                        <div className={styles.sourceVideo}>
+                          <ChatNarratedVideo
+                            videoUrl={withMedia.media.videoUrl}
+                            audioUrl={withMedia.media.audioUrl ?? undefined}
+                          />
+                          <p className={styles.sourceVideoHint}>
+                            Clip from <strong>{withMedia.source.pageTitle}</strong>
+                          </p>
+                        </div>
+                      )
+                    })()}
 
                     {msg.sources && msg.sources.length > 0 && (
                       <div className={styles.sources}>
