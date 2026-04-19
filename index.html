@@ -8,5 +8,8 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/ui/main.tsx"></script>
+    <!-- Doclee's own widget is injected only inside the admin Shell
+         (see Shell.tsx) so it doesn't double up the public-docs page,
+         which already has its own chat launcher. -->
   </body>
 </html>

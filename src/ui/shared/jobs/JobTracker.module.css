@@ -1,9 +1,14 @@
-/* Floating job tracker — bottom-right, like Chrome downloads */
+/* Floating job tracker — bottom-right, like Chrome downloads.
+   Stacked ABOVE the embedded Doclee widget: the widget button sits at
+   bottom: 24px + 56px height = 80px footprint, with z-index 99999 and
+   the walkthrough tooltip up to 100001. We take 100020 so async job
+   notifications never get covered. Bottom offset pushes us clear of
+   the widget button itself. */
 .tracker {
   position: fixed;
-  bottom: var(--space-md);
+  bottom: 96px;
   right: var(--space-md);
-  z-index: 9000;
+  z-index: 100020;
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);

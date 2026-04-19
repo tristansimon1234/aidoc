@@ -179,12 +179,45 @@
   background: var(--color-bg);
   padding: var(--space-sm);
   overflow-y: auto;
+  /* Flex column so the Powered-by chip can pin to the bottom of the
+     sidebar regardless of how short or long the page tree is. */
+  display: flex;
+  flex-direction: column;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  flex: 1;
+}
+
+.poweredBy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--space-md);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--color-muted-fg);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.poweredBy:hover {
+  background: var(--color-secondary);
+  color: var(--color-fg);
+}
+
+.poweredByLabel {
+  letter-spacing: 0.01em;
+}
+
+.poweredByName {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-fg);
 }
 
 .navRow {
@@ -193,6 +226,9 @@
   height: 30px;
   border-radius: 6px;
   transition: background-color 0.1s;
+  /* min-width:0 lets the flex child (.navItem) shrink + truncate
+     instead of wrapping to two lines and overlapping the next item. */
+  min-width: 0;
 }
 
 .navRow:hover {
@@ -236,6 +272,12 @@
   font-family: inherit;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
+  /* Single-line truncation — long titles wrapped to two lines and
+     visually overlapped the next item. The full title surfaces via the
+     button's title attribute on hover. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .navItem:hover {
@@ -372,4 +414,15 @@
 .chatLauncher:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22);
+}
+
+/* Hide the native mute/volume controls on narrated videos — the video's
+   original audio track must never surface, the ElevenLabs voice-over is
+   the only audio. Works on Chromium + WebKit; Firefox doesn't expose
+   these pseudo-elements but the JS `onVolumeChange` handler keeps the
+   video muted there as a fallback. */
+.narratedVideo::-webkit-media-controls-mute-button,
+.narratedVideo::-webkit-media-controls-volume-slider,
+.narratedVideo::-webkit-media-controls-volume-control-container {
+  display: none !important;
 }

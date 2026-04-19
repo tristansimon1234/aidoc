@@ -32,6 +32,19 @@ function NarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: st
   const handlePause = (): void => { audioRef.current?.pause() }
   const handleSeeked = (): void => { syncAudio() }
 
+  // When a voice-over is present, the video's original audio track must
+  // never play — otherwise users clicking the native unmute button hear
+  // the original audio layered on top of the narration. Force the video
+  // to stay muted, and pipe the video's volume slider to the audio element
+  // so the user still has a functional volume control.
+  const handleVolumeChange = (): void => {
+    const video = videoRef.current
+    const audio = audioRef.current
+    if (!video || !audioUrl) return
+    if (!video.muted) video.muted = true
+    if (audio) audio.volume = video.volume
+  }
+
   return (
     <div style={{
       marginBottom: 'var(--space-lg)', borderRadius: 'var(--radius-xl)',
@@ -47,6 +60,8 @@ function NarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: st
         onPause={handlePause}
         onSeeked={handleSeeked}
         onTimeUpdate={syncAudio}
+        onVolumeChange={handleVolumeChange}
+        className={audioUrl ? styles.narratedVideo : undefined}
         style={{ width: '100%', display: 'block', maxHeight: '420px' }}
       />
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
@@ -184,6 +199,7 @@ function NavTree({ items, activePage, onSelect, depth = 0 }: {
               <button
                 className={`${styles.navItem} ${activePage?.id === p.id ? styles.navItemActive : ''}`}
                 onClick={() => onSelect(p)}
+                title={p.title}
               >
                 {p.title}
               </button>
@@ -353,6 +369,15 @@ export function PublicDocs(): React.ReactElement {
           <nav className={styles.nav}>
             <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={selectPage} />
           </nav>
+          <a
+            className={styles.poweredBy}
+            href="https://doclee.tech?utm_source=public-docs&utm_medium=powered-by"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className={styles.poweredByLabel}>Powered by</span>
+            <span className={styles.poweredByName}>doclee</span>
+          </a>
         </aside>
 
         <div className={styles.contentWrapper} ref={contentRef}>
