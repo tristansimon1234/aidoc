@@ -421,7 +421,16 @@ RULES:
 6. action: click | type | select | scroll | observe | navigate
 7. For type: set typeValue. For navigate: instruction says where to go
 8. hint: optional short note about what comes next (under 100 chars)
-9. Think about prerequisite actions (open dropdown before selecting an item)`
+9. Think about prerequisite actions (open dropdown before selecting an item)
+
+CONFIDENCE — WHEN NOT SURE, DESCRIBE INSTEAD OF POINTING:
+- If you can't confidently match the user's goal to a SPECIFIC element in the DOM list (no clear text/aria match, ambiguous between many candidates, element likely lives in a menu that isn't open, target might not be rendered yet), set elementRef=null and fallbackSelector=null.
+- In that case, phrase the instruction as a concrete search + action the user can perform themselves. Examples:
+   "Find the 'Publish' toggle in the top-right and click it."
+   "Open the sidebar and locate the Analytics tab."
+   "Scroll to the Team section at the bottom of the Settings page."
+- Better to tell the user what to look for than to ring an irrelevant element — a bad highlight breaks trust faster than a clear textual hint.
+- Still set action correctly so the widget knows what's being asked.`
 
 /** Server-side PII redaction — defense in depth (widget also redacts client-side) */
 function sanitizeForPrompt(text: string): string {

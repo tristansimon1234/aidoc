@@ -721,6 +721,16 @@
     if (!step) return;
     attempt = attempt || 0;
 
+    // Server-declared \"I'm not confident which element\" — skip the
+    // highlight engine entirely and show the instruction as a manual
+    // hint. Avoids pointing a ring at a random-looking element when
+    // Gemini has nulled out both refs on purpose.
+    var serverGaveUp = !step.elementRef && !step.fallbackSelector;
+    if (serverGaveUp) {
+      renderWalkthroughBarManual(step);
+      return;
+    }
+
     var el = matchElement(step);
     if (!el) {
       // Not found yet. SPAs often mount the target element a tick later
