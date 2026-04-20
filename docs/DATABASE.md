@@ -106,7 +106,7 @@ created_at        timestamptz DEFAULT now()
 
 ### plans
 ```sql
-id                   text PRIMARY KEY           -- 'free' | 'startup' | 'growth' | 'business'
+id                   text PRIMARY KEY           -- 'free' | 'founder' | 'team' | 'agency'
 name                 text NOT NULL
 price_cents          integer NOT NULL DEFAULT 0
 currency             text NOT NULL DEFAULT 'EUR'
@@ -118,12 +118,12 @@ features             jsonb NOT NULL DEFAULT '[]'  -- human-readable bullets for 
 created_at           timestamptz DEFAULT now()
 ```
 **RLS**: SELECT allowed to anyone (public pricing data).
-**Seeded** (after 20260417000007): free=3 000 tk · startup=40 000 tk (49€) · growth=124 000 tk (149€) · business=800 000 tk (449€).
+**Seeded** (after 20260420000000): free=3 000 tk · founder=40 000 tk (19€) · team=200 000 tk (59€) · agency=1 000 000 tk (149€).
 **Token costs** (app-side constants in `src/features/billing/billing.service.ts`, tunable without migration):
 `TOKEN_COSTS = { doc_run: 100, voiceover: 300, try_doc: 400, chat_sessions: 20 }`
 `EURO_COSTS = { doc_run: 0.10, voiceover: 0.30, try_doc: 0.40, chat_sessions: 0.02 }` (real COGS)
 `OVERAGE_EUR = { doc_run: 0.15, voiceover: 0.45, try_doc: 0.60, chat_sessions: 0.03 }` (~1.5× COGS, ~50% margin)
-`OVERAGE_ENABLED_PLANS = { 'growth', 'business' }` — Free + Startup hit a hard cap instead.
+`OVERAGE_ENABLED_PLANS = { 'team', 'agency' }` — Free + Founder hit a hard cap instead.
 
 ### subscriptions
 ```sql

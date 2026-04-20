@@ -200,7 +200,7 @@ export interface ProfileDTO {
   updatedAt: string
 }
 
-export type PlanId = 'free' | 'startup' | 'growth' | 'business'
+export type PlanId = 'free' | 'founder' | 'team' | 'agency'
 
 export interface PlanDTO {
   id: PlanId

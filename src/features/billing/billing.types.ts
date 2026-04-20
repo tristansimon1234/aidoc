@@ -1,4 +1,4 @@
-export type PlanId = 'free' | 'startup' | 'growth' | 'business'
+export type PlanId = 'free' | 'founder' | 'team' | 'agency'
 
 export interface Plan {
   id: PlanId

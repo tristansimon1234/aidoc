@@ -41,7 +41,7 @@ User (Supabase Auth)
                  ├─ RunQuestion (question, answer)
                  └─ GeneratedDoc (markdownContent, jsonContent)
 
-Plans (seeded: free / startup / growth / business)      ← public read; Stripe IDs nullable
+Plans (seeded: free / founder / team / agency)          ← public read; Stripe IDs nullable
 ```
 
 ## Feature Directory Structure
