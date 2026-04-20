@@ -69,7 +69,18 @@ function NarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: st
   )
 }
 
+/** Lightweight row used for the nav tree + search. Content is loaded lazily. */
 interface PublicPage {
+  id: string
+  title: string
+  slug: string
+  parentId: string | null
+  sortOrder: number
+  hasVideo?: boolean
+}
+
+/** Content loaded on demand for a single page. */
+interface PublicPageContent {
   id: string
   title: string
   slug: string
@@ -118,7 +129,11 @@ function buildPublicChatApi(): ChatSurfaceApi {
   }
 }
 
-// --- Search helper: search titles + content (same as admin) ---
+// --- Search helper: title search only.
+// Content is lazy-loaded per page, so scanning every doc's markdown
+// client-side would defeat the point. Titles still cover the majority
+// of "jump to page" queries — a server-side fulltext search can be
+// added later if needed.
 interface SearchResult { page: PublicPage; snippet: string }
 
 function searchPages(pages: PublicPage[], query: string): SearchResult[] {
@@ -128,12 +143,6 @@ function searchPages(pages: PublicPage[], query: string): SearchResult[] {
   for (const p of pages) {
     if (p.title.toLowerCase().includes(q)) {
       results.push({ page: p, snippet: p.title })
-    } else if (p.content?.toLowerCase().includes(q)) {
-      const idx = p.content.toLowerCase().indexOf(q)
-      const start = Math.max(0, idx - 40)
-      const end = Math.min(p.content.length, idx + query.length + 40)
-      const raw = p.content.slice(start, end).replace(/[#*_\[\]]/g, '')
-      results.push({ page: p, snippet: (start > 0 ? '...' : '') + raw + (end < p.content.length ? '...' : '') })
     }
   }
   return results.slice(0, 8)
@@ -227,6 +236,11 @@ export function PublicDocs(): React.ReactElement {
   const chatApiRef = useRef<ChatSurfaceApi>(buildPublicChatApi())
   const [pages, setPages] = useState<PublicPage[]>([])
   const [activePage, setActivePage] = useState<PublicPage | null>(null)
+  // Per-slug cache for lazily-loaded page bodies. Revisiting a page is free
+  // after the first hit; navigating a 200-page doc site no longer forces
+  // the server to ship all content up front.
+  const [pageContents, setPageContents] = useState<Map<string, PublicPageContent>>(() => new Map())
+  const [contentLoading, setContentLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -273,6 +287,34 @@ export function PublicDocs(): React.ReactElement {
     const match = pages.find((p) => p.slug === slug)
     if (match && match.id !== activePage?.id) setActivePage(match)
   }, [slug, pages, activePage?.id])
+
+  // Lazily fetch the active page's content. Cached per slug so repeat
+  // visits don't re-request, and aborted on rapid navigation to avoid
+  // stale late-arriving responses overwriting the current view.
+  useEffect(() => {
+    if (!projectId || !activePage) return
+    if (pageContents.has(activePage.slug)) { setContentLoading(false); return }
+    const controller = new AbortController()
+    setContentLoading(true)
+    void (async () => {
+      try {
+        const res = await fetch(`/api/docs/${projectId}/pages/${encodeURIComponent(activePage.slug)}`, { signal: controller.signal })
+        if (!res.ok) throw new Error('Page not found')
+        const body = await res.json() as PublicPageContent
+        setPageContents((prev) => {
+          const next = new Map(prev)
+          next.set(body.slug, body)
+          return next
+        })
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') return
+        // Soft-fail: the page shell still renders, just without content.
+      } finally {
+        setContentLoading(false)
+      }
+    })()
+    return () => controller.abort()
+  }, [projectId, activePage, pageContents])
 
   // Fire-and-forget: ping the view endpoint so the owner sees page-view
   // analytics. Dedupe per slug so strict-mode / re-renders don't double-count.
@@ -398,49 +440,64 @@ export function PublicDocs(): React.ReactElement {
                 // Attach the narrated video player inline when the cited
                 // page has one — so answers like "check how to publish"
                 // actually include the screen recording with voice-over.
+                // Only cited pages already visited (or ones whose content
+                // was warmed up elsewhere) can inline their video here.
+                // For uncached pages we fall back to the link-only source
+                // chip — same behaviour as any other unknown resource.
                 resolveSourceMedia={(s) => {
-                  const page = pages.find((p) => p.id === s.pageId || p.slug === s.pageSlug)
-                  if (!page?.videoUrl) return null
-                  return { videoUrl: page.videoUrl, audioUrl: page.audioUrl ?? null }
+                  const meta = pages.find((p) => p.id === s.pageId || p.slug === s.pageSlug)
+                  if (!meta) return null
+                  const cached = pageContents.get(meta.slug)
+                  if (!cached?.videoUrl) return null
+                  return { videoUrl: cached.videoUrl, audioUrl: cached.audioUrl ?? null }
                 }}
               />
             </div>
           ) : (
           <div className={styles.content}>
-            {activePage && (
-              <>
-                <h1 className={styles.pageTitle}>{activePage.title}</h1>
-                <div className={styles.articleIndent}>
-                  {activePage.videoUrl && (
-                    <NarratedVideo videoUrl={activePage.videoUrl} audioUrl={activePage.audioUrl ?? undefined} />
-                  )}
-                  {activePage.content ? (
-                    <MarkdownRenderer content={activePage.content} />
-                  ) : (
-                    <p className={styles.empty}>This page has no content yet.</p>
-                  )}
-                </div>
-                {/* Notion-style child page links */}
-                {(() => {
-                  const children = pages.filter((p) => p.parentId === activePage.id)
-                  if (children.length === 0) return null
-                  return (
-                    <div className={styles.childPages}>
-                      {children.map((child) => (
-                        <button key={child.id} className={styles.childPageLink} onClick={() => selectPage(child)}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
-                          {child.title}
-                        </button>
-                      ))}
-                    </div>
-                  )
-                })()}
-              </>
-            )}
+            {activePage && (() => {
+              const cached = pageContents.get(activePage.slug)
+              return (
+                <>
+                  <h1 className={styles.pageTitle}>{activePage.title}</h1>
+                  <div className={styles.articleIndent}>
+                    {cached?.videoUrl && (
+                      <NarratedVideo videoUrl={cached.videoUrl} audioUrl={cached.audioUrl ?? undefined} />
+                    )}
+                    {cached ? (
+                      cached.content ? (
+                        <MarkdownRenderer content={cached.content} />
+                      ) : (
+                        <p className={styles.empty}>This page has no content yet.</p>
+                      )
+                    ) : contentLoading ? (
+                      <div style={{ padding: 'var(--space-xl) 0', display: 'flex', justifyContent: 'center' }}>
+                        <Spinner size="md" />
+                      </div>
+                    ) : null}
+                  </div>
+                  {/* Notion-style child page links */}
+                  {(() => {
+                    const children = pages.filter((p) => p.parentId === activePage.id)
+                    if (children.length === 0) return null
+                    return (
+                      <div className={styles.childPages}>
+                        {children.map((child) => (
+                          <button key={child.id} className={styles.childPageLink} onClick={() => selectPage(child)}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
+                            {child.title}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })()}
+                </>
+              )
+            })()}
           </div>
           )}
-          {!inChatMode && activePage?.content && (
-            <TableOfContents content={activePage.content} scrollContainer={contentRef.current} />
+          {!inChatMode && activePage && pageContents.get(activePage.slug)?.content && (
+            <TableOfContents content={pageContents.get(activePage.slug)!.content!} scrollContainer={contentRef.current} />
           )}
         </div>
       </div>

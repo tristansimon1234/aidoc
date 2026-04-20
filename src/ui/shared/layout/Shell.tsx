@@ -49,8 +49,12 @@ export function Shell({ children, actions, navBar, fullWidth = false }: ShellPro
         <QuotaBanner />
         <header className={styles.topbar}>
           <div className={styles.topbarLeft}>
-            <Link to="/" className={styles.logo}>
-              <span>doclee</span>
+            <Link to="/" className={styles.logo} aria-label="doclee">
+              <img
+                src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent.png"
+                alt="doclee"
+                className={styles.logoImg}
+              />
             </Link>
             <JobBadge />
             {actions}

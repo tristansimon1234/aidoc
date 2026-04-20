@@ -50,6 +50,13 @@
   color: var(--color-primary);
 }
 
+.logoImg {
+  height: 24px;
+  width: auto;
+  display: block;
+  object-fit: contain;
+}
+
 .nav {
   display: flex;
   align-items: center;

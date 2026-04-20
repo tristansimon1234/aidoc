@@ -108,6 +108,92 @@ export async function findPublicPagesByProjectId(projectId: string): Promise<Doc
   return (data as PageRow[]).map(mapToPage)
 }
 
+/**
+ * Metadata-only row for the public-docs navigation tree. Deliberately
+ * skips `content`, `content_blocks`, `briefing` etc. so a project with
+ * hundreds of pages ships a small JSON payload to the browser — the
+ * actual page content is fetched lazily per slug on selection.
+ */
+export interface PublicPageMeta {
+  id: string
+  title: string
+  slug: string
+  parentId: string | null
+  sortOrder: number
+  hasVideo: boolean
+}
+
+function isShowVideo(briefing: unknown): boolean {
+  if (!briefing || typeof briefing !== 'object') return false
+  return (briefing as Record<string, unknown>).showVideoOnPublic === true
+}
+
+export async function findPublicPagesMetaByProjectId(projectId: string): Promise<PublicPageMeta[]> {
+  const columns = 'id, title, slug, parent_id, sort_order, briefing'
+  const { data, error } = await supabase
+    .from('doc_pages')
+    .select(columns)
+    .eq('project_id', projectId)
+    .eq('is_public', true)
+    .order('sort_order', { ascending: true })
+
+  if (error && error.message.includes('is_public')) {
+    const fallback = await supabase
+      .from('doc_pages')
+      .select(columns)
+      .eq('project_id', projectId)
+      .eq('status', 'published')
+      .order('sort_order', { ascending: true })
+    if (fallback.error) throw new DatabaseError(fallback.error.message)
+    return (fallback.data as Array<{ id: string; title: string; slug: string; parent_id: string | null; sort_order: number; briefing: unknown }>)
+      .map((r) => ({
+        id: r.id,
+        title: r.title,
+        slug: r.slug,
+        parentId: r.parent_id,
+        sortOrder: r.sort_order,
+        hasVideo: isShowVideo(r.briefing),
+      }))
+  }
+
+  if (error) throw new DatabaseError(error.message)
+  return (data as Array<{ id: string; title: string; slug: string; parent_id: string | null; sort_order: number; briefing: unknown }>)
+    .map((r) => ({
+      id: r.id,
+      title: r.title,
+      slug: r.slug,
+      parentId: r.parent_id,
+      sortOrder: r.sort_order,
+      hasVideo: isShowVideo(r.briefing),
+    }))
+}
+
+/** Look up a single public page by slug within a project — for lazy content loads. */
+export async function findPublicPageBySlug(projectId: string, slug: string): Promise<DocPage | null> {
+  const { data, error } = await supabase
+    .from('doc_pages')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('slug', slug)
+    .eq('is_public', true)
+    .maybeSingle()
+
+  if (error && error.message.includes('is_public')) {
+    const fallback = await supabase
+      .from('doc_pages')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('slug', slug)
+      .eq('status', 'published')
+      .maybeSingle()
+    if (fallback.error) throw new DatabaseError(fallback.error.message)
+    return fallback.data ? mapToPage(fallback.data as PageRow) : null
+  }
+
+  if (error) throw new DatabaseError(error.message)
+  return data ? mapToPage(data as PageRow) : null
+}
+
 export async function updatePage(id: string, input: UpdatePageInput, editorUserId?: string | null): Promise<DocPage> {
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (input.title !== undefined) updates.title = input.title
