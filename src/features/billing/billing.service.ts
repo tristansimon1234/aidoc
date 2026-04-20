@@ -48,8 +48,8 @@ export const OVERAGE_ENABLED_PLANS: ReadonlySet<PlanId> = new Set(['team', 'agen
 export const MAX_TEAM_MEMBERS: Record<PlanId, number> = {
   free: 1,
   founder: 3,      // owner + 2 (a solo founder occasionally brings in a collab)
-  team: 26,        // owner + 25 (product/support org)
-  agency: 100,     // agency shared across the whole firm
+  team: 10,        // owner + 9 (product/support squad)
+  agency: 25,      // owner + 24 (docs-touching folks inside an agency)
 } as const
 
 function currentPeriodMonth(): string {

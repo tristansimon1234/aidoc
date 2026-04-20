@@ -310,9 +310,9 @@ User-facing **monthly token budget** per plan; each metered op consumes a config
 | Plan | Price | Monthly tokens | Max projects | Persona | Overage |
 |---|---|---|---|---|---|
 | Free | 0 € | 3 000 | 1 | discovery | hard cap |
-| Founder | 19 € | 40 000 | 5 | solo founder / freelance | hard cap |
-| Team | 59 € | 200 000 | 15 | Head of Product / Support | pay-as-you-go |
-| Agency | 149 € | 1 000 000 | 50 | AI/Ops consultant, agency | pay-as-you-go |
+| Founder | 19 € | 30 000 | 5 | solo founder / freelance | hard cap |
+| Team | 59 € | 100 000 | 15 | Head of Product / Support | pay-as-you-go |
+| Agency | 149 € | 500 000 | 50 | AI/Ops consultant, agency | pay-as-you-go |
 
 Hard cap = blocks the operation when over budget (drives upgrades). Pay-as-you-go = lets the user continue, charged at `OVERAGE_EUR` rates.
 

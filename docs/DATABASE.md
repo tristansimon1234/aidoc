@@ -118,7 +118,7 @@ features             jsonb NOT NULL DEFAULT '[]'  -- human-readable bullets for 
 created_at           timestamptz DEFAULT now()
 ```
 **RLS**: SELECT allowed to anyone (public pricing data).
-**Seeded** (after 20260420000000): free=3 000 tk · founder=40 000 tk (19€) · team=200 000 tk (59€) · agency=1 000 000 tk (149€).
+**Seeded** (after 20260420000001): free=3 000 tk · founder=30 000 tk (19€) · team=100 000 tk (59€) · agency=500 000 tk (149€).
 **Token costs** (app-side constants in `src/features/billing/billing.service.ts`, tunable without migration):
 `TOKEN_COSTS = { doc_run: 100, voiceover: 300, try_doc: 400, chat_sessions: 20 }`
 `EURO_COSTS = { doc_run: 0.10, voiceover: 0.30, try_doc: 0.40, chat_sessions: 0.02 }` (real COGS)
