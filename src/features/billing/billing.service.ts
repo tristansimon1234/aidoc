@@ -31,7 +31,7 @@ export const EURO_COSTS = {
 
 // Overage price per extra op, billed once the user exceeds their plan's
 // monthly budget. Set at ~1.5× COGS so the marginal op still turns a healthy
-// profit. Only applied on plans in `OVERAGE_ENABLED_PLANS` — Free / Startup
+// profit. Only applied on plans in `OVERAGE_ENABLED_PLANS` — Free / Founder
 // hit a hard wall instead, which is intentional (drives upgrades).
 export const OVERAGE_EUR = {
   doc_run: 0.15,
@@ -40,16 +40,16 @@ export const OVERAGE_EUR = {
   chat_sessions: 0.03,
 } as const
 
-export const OVERAGE_ENABLED_PLANS: ReadonlySet<PlanId> = new Set(['growth', 'business'])
+export const OVERAGE_ENABLED_PLANS: ReadonlySet<PlanId> = new Set(['team', 'agency'])
 
 // Maximum total team size (owner + members) per plan. Pending invites count
 // toward the cap to prevent "blast a pile of invites, bypass check at accept".
 // Free = owner-only (can't invite); paid tiers scale up. Tunable in code.
 export const MAX_TEAM_MEMBERS: Record<PlanId, number> = {
   free: 1,
-  startup: 6,      // owner + 5
-  growth: 26,      // owner + 25
-  business: 100,
+  founder: 3,      // owner + 2 (a solo founder occasionally brings in a collab)
+  team: 26,        // owner + 25 (product/support org)
+  agency: 100,     // agency shared across the whole firm
 } as const
 
 function currentPeriodMonth(): string {
@@ -106,8 +106,8 @@ export interface QuotaCheck {
 /**
  * Pre-flight quota check — call before any metered operation (chat, doc gen,
  * voiceover, try doc). Returns `allowed: false` when a hard-cap plan
- * (Free / Startup) has hit 100% of its monthly token budget. Overage-enabled
- * plans (Growth / Business) always pass through; they'll be billed the overage
+ * (Free / Founder) has hit 100% of its monthly token budget. Overage-enabled
+ * plans (Team / Agency) always pass through; they'll be billed the overage
  * via `OVERAGE_EUR` when Stripe is wired.
  *
  * Accepts a teamId since subscriptions are team-scoped post-teams migration.

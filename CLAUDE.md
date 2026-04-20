@@ -18,7 +18,7 @@ Doclee is a **project-based documentation platform** that generates user-facing 
 
 **Analytics**: Per-project **Analytics** tab captures every chat turn (widget / public docs / in-app) and every public-doc page view, then shows KPIs + a Gemini-generated read on sentiment, pain points, content gaps, frustration signals, and actionable recommendations — in the users' own language. Stats come from SQL; insights come from Gemini on the last 200 user messages (10-min cache).
 
-**SaaS billing**: Token-based monthly budget per plan (Free / Startup 49€ / Growth 149€ / Business 449€). Each metered operation consumes a configurable number of tokens. Users see a single usage percent; admins see real € COGS per user and overage billable. Stripe wiring is scaffolded but not yet live.
+**SaaS billing**: Token-based monthly budget per plan (Free / Founder 19€ / Team 59€ / Agency 149€). Each metered operation consumes a configurable number of tokens. Users see a single usage percent; admins see real € COGS per user and overage billable. Stripe wiring is scaffolded but not yet live.
 
 **Core flow**: Record screen or upload video → AI generates doc with screenshots + voice-over → User reviews/edits → Enable chat widget → Embed on client app
 
@@ -307,12 +307,12 @@ See `docs/DATABASE.md` — 13 tables (core: projects, doc_pages, runs, run_steps
 User-facing **monthly token budget** per plan; each metered op consumes a configurable number of tokens. Users see a single percent — never raw counts. Admins see real € COGS per user.
 
 ### Plans (seeded in `plans` table)
-| Plan | Price | Monthly tokens | Max projects | Overage |
-|---|---|---|---|---|
-| Free | 0 € | 3 000 | 1 | hard cap |
-| Startup | 49 € | 40 000 | 3 | hard cap |
-| Growth | 149 € | 124 000 | 10 | pay-as-you-go |
-| Business | 449 € | 800 000 | 40 | pay-as-you-go |
+| Plan | Price | Monthly tokens | Max projects | Persona | Overage |
+|---|---|---|---|---|---|
+| Free | 0 € | 3 000 | 1 | discovery | hard cap |
+| Founder | 19 € | 40 000 | 5 | solo founder / freelance | hard cap |
+| Team | 59 € | 200 000 | 15 | Head of Product / Support | pay-as-you-go |
+| Agency | 149 € | 1 000 000 | 50 | AI/Ops consultant, agency | pay-as-you-go |
 
 Hard cap = blocks the operation when over budget (drives upgrades). Pay-as-you-go = lets the user continue, charged at `OVERAGE_EUR` rates.
 
@@ -321,7 +321,7 @@ Tunable in code, no migration needed:
 - `TOKEN_COSTS` — weight each op contributes to the monthly budget (`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`)
 - `EURO_COSTS` — real COGS in € per op (`0.10 / 0.30 / 0.40 / 0.02`) — drives the admin "AI cost" column
 - `OVERAGE_EUR` — billable rate per extra op once over quota (`0.15 / 0.45 / 0.60 / 0.03`, ≈ 1.5× COGS)
-- `OVERAGE_ENABLED_PLANS` — `Set('growth', 'business')`
+- `OVERAGE_ENABLED_PLANS` — `Set('team', 'agency')`
 
 ### Tracking
 - Increments wrap each successful metered op in a `try/catch` (a billing glitch never fails an AI op):

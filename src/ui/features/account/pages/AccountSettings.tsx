@@ -229,10 +229,10 @@ function BillingTab(): React.ReactElement {
         {sortedPlans.map((plan) => {
           const isCurrent = plan.id === currentPlanId
           const isBusy = selecting === plan.id
-          // Growth + Business require Stripe checkout, which isn't wired yet.
-          // We let users go free → startup directly (mutates the DB) but block
+          // Team + Agency require Stripe checkout, which isn't wired yet.
+          // We let users go free → founder directly (mutates the DB) but block
           // anything paid until the webhook handler lands.
-          const stripeRequired = !isCurrent && (plan.id === 'growth' || plan.id === 'business')
+          const stripeRequired = !isCurrent && (plan.id === 'team' || plan.id === 'agency')
           return (
             <div
               key={plan.id}
