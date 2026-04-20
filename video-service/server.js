@@ -296,8 +296,13 @@ app.post('/concat-audio', async (req, res) => {
       })
 
       // Calculate silence needed — always relative to targetStart, not currentTime
-      // This prevents drift accumulation when segments are longer than expected
-      const silenceNeeded = Math.max(0, targetStart - currentTime)
+      // This prevents drift accumulation when segments are longer than expected.
+      // Leading silence (before the first segment) gets clamped to 0.3s —
+      // users flagged a "trop de blanc" at the start when the first step's
+      // timestamp was a few seconds in. The narration should start promptly;
+      // the video player stays in sync with the audio either way.
+      let silenceNeeded = Math.max(0, targetStart - currentTime)
+      if (i === 0 && silenceNeeded > 0.3) silenceNeeded = 0.3
 
       console.log(`[concat] Seg ${i}: target=${targetStart.toFixed(1)}s, current=${currentTime.toFixed(1)}s, silence=${silenceNeeded.toFixed(1)}s, audio=${segDuration.toFixed(1)}s${currentTime > targetStart ? ' ⚠️ OVERLAP' : ''}`)
 

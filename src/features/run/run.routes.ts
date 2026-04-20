@@ -476,8 +476,8 @@ ${sectionList}
 ## Content rules
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
-- GREETING: Section 1 starts with a short greeting
-- CLOSING: Section ${numStepsMerged} MUST end with a closing phrase ("Thanks for watching!", "That's a wrap!")
+- GREETING: Section 1 starts with a short, product-focused opener (not a generic greeting — get into the content quickly)
+- CLOSING: Section ${numStepsMerged} ends with a concrete final note — a tip, a next step, or a short summary of what the user just accomplished. Do NOT use sign-off phrases like "Thanks for watching", "Goodbye", "Au revoir", "See you next time", or "That's a wrap" — this narration ships on a documentation page, not a YouTube video, and sign-offs feel out of place when users come back to re-watch a section.
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 
