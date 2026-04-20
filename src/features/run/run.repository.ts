@@ -112,10 +112,16 @@ export async function createRun(input: {
 }
 
 export async function findLatestRunByPageId(pageId: string): Promise<Run | null> {
+  // Exclude Try-Doc test runs — they're stored on the same page but don't
+  // produce videos or voice-overs, so every downstream consumer
+  // (public-docs player, MCP walkthrough URL, doc-ready email) wants
+  // the real recording run, not the test. A separate
+  // findLatestTestRunByPageId is provided below for the Try-Doc report.
   const { data, error } = await supabase
     .from('runs')
     .select('*')
     .eq('doc_page_id', pageId)
+    .not('feature_name', 'like', '[Test]%')
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
