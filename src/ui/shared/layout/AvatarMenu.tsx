@@ -190,22 +190,6 @@ export function AvatarMenu(): React.ReactElement {
             <span>View all plans</span>
           </button>
 
-          <a
-            className={styles.item}
-            role="menuitem"
-            href="https://app.doclee.tech/docs/d8577a1d-b81b-4c0b-b009-25b351a6376a"
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => setOpen(false)}
-            style={{ textDecoration: 'none' }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            </svg>
-            <span>Doclee docs</span>
-          </a>
-
           {profile?.isAdmin && (
             <>
               <div className={styles.divider} />
