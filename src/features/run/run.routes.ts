@@ -269,7 +269,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       await enforceQuotaOrThrow(await teamForRun(params.data.id))
 
-      const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number; narrationLanguage?: string }
+      const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
 
       // Check ElevenLabs is configured before attempting
       const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
@@ -416,12 +416,6 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       }
 
       const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
-      // Explicit language for the narration itself. `body.language` (used
-      // further down) is the TRANSLATION target — if unset, the narration
-      // is generated in `body.narrationLanguage`, defaulting to English so
-      // Gemini doesn't silently pick French just because the video's UI
-      // happens to be in French.
-      const narrationLanguage = body.narrationLanguage ?? 'English'
 
       // Download video for Gemini to watch while generating narration
       const videoPath = summary?.videoPath as string | undefined
@@ -480,15 +474,17 @@ ${sectionList}
 - Too short = dead silence = BAD. Too long = minor overlap = acceptable.
 
 ## Language — STRICT
-- Write the entire narration in **${narrationLanguage}**. This is non-negotiable.
-- Do NOT switch to another language mid-script, even if the video's UI text, the documentation context, or the spoken audio in the video are in a different language. The narration is always in ${narrationLanguage}.
-- When referring to a UI element whose label is in another language (e.g. the video shows a "Paramètres" button but narration is English), keep the label as-is in quotes and describe the action in ${narrationLanguage}: \`Click on "Paramètres" to open the settings panel.\`
+- Detect the language of the **Documentation context** above (the markdown under "## Documentation context"). That is the source of truth for the narration's language.
+- Write the ENTIRE narration in that same language. Do not translate, do not switch mid-script, do not mix languages.
+- Ignore the language of the video's on-screen UI, the language of the spoken audio in the video, and any tone/examples below — those are just style references. Only the doc's language determines the narration's language.
+- If the doc is in English, the narration is 100% English. If the doc is in French, the narration is 100% French. Same for every other language.
+- When narrating a UI element whose on-screen label is in a different language than the doc, keep the label verbatim in quotes but describe the action in the doc's language: e.g. doc in English, button labelled "Paramètres" → "Click 'Paramètres' to open the settings panel."
 
 ## Content rules
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
 - GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
-- CLOSING: Section ${numStepsMerged} MUST end with a short, warm closing in ${narrationLanguage} — a one-sentence recap + a friendly sign-off. Don't skip this.
+- CLOSING: Section ${numStepsMerged} MUST end with a short, warm closing in the doc's language — a one-sentence recap + a friendly sign-off. Don't skip this.
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 
