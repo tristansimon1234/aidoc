@@ -517,12 +517,15 @@
           return;
         }
 
-        // Cycle detection — if Gemini hands back the same instruction
-        // and element twice in a row, we're stuck. Bail instead of
-        // looping the user in place.
+        // Cycle detection — bail only on confident-but-identical steps
+        // (same instruction AND same non-null elementRef twice in a row).
+        // Repeated textual-only steps (elementRef=null) are legitimate
+        // when Gemini is guiding across multiple pages without a DOM
+        // target — don't kill the walkthrough over a natural recurrence.
         var last = wtCompletedSteps[wtCompletedSteps.length - 1];
-        if (last && last.instruction === data.step.instruction
-            && wtCurrentStep && wtCurrentStep.elementRef === data.step.elementRef) {
+        var newRef = data.step.elementRef;
+        var prevRef = wtCurrentStep && wtCurrentStep.elementRef;
+        if (last && last.instruction === data.step.instruction && newRef && newRef === prevRef) {
           exitWalkthrough();
           return;
         }
