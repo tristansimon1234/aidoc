@@ -363,9 +363,19 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         mergedTimestamps.splice(minIdx, 1)
       }
 
-      // Intro: if first action starts late (> 3s), prepend a timestamp at 0 for greeting
-      if (mergedTimestamps.length > 0 && mergedTimestamps[0]! > 3) {
+      // Intro: always prepend a 0-timestamp so Section 1 is dedicated to
+      // a proper greeting, and guarantee at least 6s of budget for it.
+      // Previously: intro was only prepended if the first action started
+      // > 3s in, which left tiny Section-1 slots whenever recordings
+      // started immediately — Gemini then tried to cram both a greeting
+      // and the first step's narration into ~2s, the TTS overflowed,
+      // and the shortener cut off the greeting mid-sentence.
+      if (mergedTimestamps.length === 0 || mergedTimestamps[0]! !== 0) {
         mergedTimestamps.unshift(0)
+      }
+      const MIN_INTRO_BUDGET = 6
+      if (mergedTimestamps.length > 1 && mergedTimestamps[1]! < MIN_INTRO_BUDGET) {
+        mergedTimestamps[1] = MIN_INTRO_BUDGET
       }
 
       // Drop last timestamp if too close to video end (< 5s remaining = not enough for a segment)
