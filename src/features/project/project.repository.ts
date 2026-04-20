@@ -114,6 +114,17 @@ export async function updateProject(id: string, input: UpdateProjectInput): Prom
   return mapToProject(data as ProjectRow)
 }
 
+export async function updateProjectTeam(id: string, teamId: string): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ team_id: teamId, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw new DatabaseError(error.message)
+  return mapToProject(data as ProjectRow)
+}
+
 export async function updateDiscoveredContext(id: string, context: DiscoveredContext): Promise<void> {
   const { error } = await supabase
     .from('projects')

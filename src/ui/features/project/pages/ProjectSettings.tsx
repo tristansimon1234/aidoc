@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
-import { type ProjectDTO, type DiscoveredContextDTO } from '../../../shared/api/client.js'
+import { useConfirmDialog } from '../../../design-system/components/index.js'
+import { api, type ProjectDTO, type DiscoveredContextDTO, type TeamDTO, type TeamRoleDTO } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
 import styles from './ProjectSettings.module.css'
 
@@ -283,6 +284,8 @@ export function ProjectSettings(): React.ReactElement {
             </div>
           )}
 
+          <TransferSection project={project} onTransferred={(next) => { setProject(next); setParentProject(next) }} />
+
         </div>
     </div>
   )
@@ -408,4 +411,106 @@ function formatTimeAgo(iso: string): string {
   const hours = Math.floor(mins / 60)
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
+}
+
+// --- Transfer to another workspace ---
+
+/**
+ * Move a project from its current workspace to another workspace the
+ * user also owns. Requires owner role on both sides; enforced server-
+ * side but we also filter the dropdown client-side so users can't
+ * pick an ineligible team.
+ */
+function TransferSection({ project, onTransferred }: {
+  project: ProjectDTO
+  onTransferred: (p: ProjectDTO) => void
+}): React.ReactElement {
+  const navigate = useNavigate()
+  const { confirm, dialog } = useConfirmDialog()
+  const [teams, setTeams] = useState<{ team: TeamDTO; role: TeamRoleDTO }[]>([])
+  const [destId, setDestId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void api.teams.list()
+      .then((list) => { if (!cancelled) setTeams(list) })
+      .catch(() => { /* silently hide the section */ })
+    return () => { cancelled = true }
+  }, [])
+
+  // Eligible destinations: teams user owns, excluding the current one.
+  // Server checks this again but the dropdown reflects the same truth.
+  const eligible = teams.filter((t) => t.role === 'owner' && t.team.id !== project.teamId)
+  if (eligible.length === 0) return <></>
+
+  const currentTeam = teams.find((t) => t.team.id === project.teamId)?.team
+
+  const handleTransfer = async (): Promise<void> => {
+    if (!destId || busy) return
+    const dest = eligible.find((t) => t.team.id === destId)
+    if (!dest) return
+    const ok = await confirm({
+      title: `Move this project to ${dest.team.name}?`,
+      message: `All pages, runs, voice-overs, embeddings, and widget keys stay intact — only the workspace owner and billing change. ${currentTeam ? `Moving from ${currentTeam.name}.` : ''}`,
+      confirmLabel: 'Transfer project',
+      variant: 'primary',
+    })
+    if (!ok) return
+    setBusy(true); setError(null)
+    try {
+      const updated = await api.projects.transfer(project.id, destId)
+      onTransferred(updated)
+      setDestId('')
+      // Navigate back to the project list of the new workspace — the
+      // project is still accessible at the same URL but the active
+      // workspace needs re-selection to see it in the sidebar.
+      navigate(`/projects/${updated.id}`)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>Transfer to another workspace</h2>
+        <p className={styles.sectionDesc}>
+          Move this project into a different workspace you own. The content and URLs don't change — only the billing and access control move over.
+        </p>
+      </div>
+      <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
+        <select
+          value={destId}
+          onChange={(e) => setDestId(e.target.value)}
+          disabled={busy}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid var(--color-border)',
+            background: 'var(--color-bg)',
+            color: 'var(--color-fg)',
+            fontSize: 'var(--text-sm)',
+            fontFamily: 'inherit',
+            minWidth: 220,
+          }}
+        >
+          <option value="">Choose a destination workspace…</option>
+          {eligible.map((t) => (
+            <option key={t.team.id} value={t.team.id}>
+              {t.team.name}{t.team.personal ? ' (personal)' : ''}
+            </option>
+          ))}
+        </select>
+        <Button size="sm" onClick={() => void handleTransfer()} disabled={!destId || busy}>
+          {busy ? 'Transferring…' : 'Transfer project'}
+        </Button>
+        {error && <span className={`${styles.saveMsg} ${styles.error}`}>{error}</span>}
+      </div>
+      {dialog}
+    </div>
+  )
 }
