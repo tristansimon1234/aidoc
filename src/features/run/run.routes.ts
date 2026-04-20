@@ -499,7 +499,12 @@ ${sectionList}
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
 - GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
-- CLOSING: Section ${numStepsMerged} MUST end with a real closing the user can HEAR as a goodbye. Write it in the doc's language and make it SPECIFIC to what the user just accomplished — don't default to a generic \"Thanks for watching\" / \"Merci d'avoir suivi\". Anchor it in the content: mention what they just learned to do, nudge them toward the next logical step, or give them a warm send-off that references the feature they configured. The listener must feel the video has ended — not just that a sentence finished.
+- CLOSING: Section ${numStepsMerged} ends with TWO parts, in this order, joined into one smooth passage (no list, no line break between them):
+  PART A — a one-sentence recap SPECIFIC to what the user just accomplished (mention the feature, the next logical step, or what they can now do).
+  PART B — a real farewell phrase in the doc's language. This is NON-OPTIONAL: the user must hear a goodbye word, not a trailing sentence. Pick something natural that fits the tone — e.g. \"Thanks for watching — see you in the next one!\", \"Have fun building and catch you later!\", \"Merci d'avoir suivi, à bientôt !\", \"Bon build, à la prochaine !\".
+  Don't reuse the exact same farewell every time; vary it across videos. But DO include one — \"don't be generic\" means make PART A specific, not skip PART B.
+  Example of the full pattern (English): \"You've got your widget wired up and answering questions on your app — ship it, watch what users ask, and iterate from there. Thanks for watching, see you in the next one!\"
+  Example (French): \"Et voilà, ton widget est en place et répond aux questions directement sur ton app — déploie-le, regarde ce que tes users demandent, et ajuste. Merci d'avoir suivi, à bientôt !\"
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 
