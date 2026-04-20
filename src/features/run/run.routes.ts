@@ -8,6 +8,30 @@ import { findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
 
 export const runRouter = Router()
 
+/**
+ * Detect the language of a documentation markdown string so the
+ * voice-over narration can be pinned to it. Heuristic: count French
+ * diacritics + common FR stopwords vs English stopwords. Defaults to
+ * English when neither signal dominates — safer than guessing wrong.
+ *
+ * Not trying to be a general language detector (would need a proper
+ * n-gram library); we only need to disambiguate EN vs FR since that's
+ * the recurring failure mode (English doc + French-UI screen recording
+ * → Gemini picks French). Easy to extend later.
+ */
+function detectDocLanguage(markdown: string): string {
+  if (!markdown || markdown.length < 30) return 'English'
+  const text = markdown.toLowerCase()
+  const diacritics = (text.match(/[àâäéèêëïîôöùûüÿç]/g) ?? []).length
+  const frenchStops = (text.match(/\b(le|la|les|un|une|des|du|est|sont|avec|pour|dans|sur|que|qui|cette|cet|ces|mais|nous|vous|votre|leur|aussi|comme|sera|être|avoir|alors|donc|déjà|ainsi|cliquez|ouvrez|saisissez)\b/g) ?? []).length
+  const englishStops = (text.match(/\b(the|is|are|with|for|in|on|that|which|this|but|we|you|your|their|also|will|can|click|open|enter|press|type|have|has|been|here|there|how|what|when|where|next|after|before)\b/g) ?? []).length
+  // Each diacritic counts as 3 French points — they're strong signals.
+  // Stopwords each count as 1. English defaults when scores are close.
+  const frenchScore = diacritics * 3 + frenchStops
+  const englishScore = englishStops
+  return frenchScore > englishScore * 1.3 ? 'French' : 'English'
+}
+
 /** Resolve the team a run belongs to, throws if unknown. Used as the single
  *  quota-enforcement anchor on run-scoped routes. */
 async function teamForRun(runId: string): Promise<string> {
@@ -408,6 +432,16 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
       const wordsFactor = tone.wordsPerSecondFactor
 
+      // Detect the documentation language so we can pin it into the
+      // prompt as an explicit constant. Gemini was otherwise picking
+      // up the French UI / audio from the video when the user recorded
+      // a French-UI app — even though the doc was English. Heuristic:
+      // count French diacritics + stopwords vs English stopwords. No
+      // extra Gemini call needed. Defaults to English when neither
+      // signal is clearly dominant.
+      const narrationLanguage = detectDocLanguage(doc.markdownContent ?? '')
+      console.log(`[voiceover] Detected doc language: ${narrationLanguage}`)
+
       const numStepsMerged = mergedTimestamps.length
       const timeBudgets = mergedTimestamps.map((t, i) => {
         const next = mergedTimestamps[i + 1]
@@ -489,22 +523,19 @@ ${sectionList}
 - Too short = dead silence = BAD. Too long = minor overlap = acceptable.
 
 ## Language — STRICT
-- Detect the language of the **Documentation context** above (the markdown under "## Documentation context"). That is the source of truth for the narration's language.
-- Write the ENTIRE narration in that same language. Do not translate, do not switch mid-script, do not mix languages.
-- Ignore the language of the video's on-screen UI, the language of the spoken audio in the video, and any tone/examples below — those are just style references. Only the doc's language determines the narration's language.
-- If the doc is in English, the narration is 100% English. If the doc is in French, the narration is 100% French. Same for every other language.
-- When narrating a UI element whose on-screen label is in a different language than the doc, keep the label verbatim in quotes but describe the action in the doc's language: e.g. doc in English, button labelled "Paramètres" → "Click 'Paramètres' to open the settings panel."
+- The entire narration MUST be written in **${narrationLanguage}**. This language has already been determined from the documentation; do not re-detect, do not second-guess, do not change.
+- Do not translate to another language, do not switch mid-script, do not mix languages.
+- Ignore the language of the video's on-screen UI, the language of the spoken audio in the video, and any tone/examples below — those are just style references. The narration is in ${narrationLanguage}, full stop.
+- When narrating a UI element whose on-screen label is in a different language than ${narrationLanguage}, keep the label verbatim in quotes but describe the action in ${narrationLanguage}: e.g. narration in English, button labelled "Paramètres" → "Click 'Paramètres' to open the settings panel."
 
 ## Content rules
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
 - GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
 - CLOSING: Section ${numStepsMerged} ends with TWO parts, in this order, joined into one smooth passage (no list, no line break between them):
-  PART A — a one-sentence recap SPECIFIC to what the user just accomplished (mention the feature, the next logical step, or what they can now do).
-  PART B — a real farewell phrase in the doc's language. This is NON-OPTIONAL: the user must hear a goodbye word, not a trailing sentence. Pick something natural that fits the tone — e.g. \"Thanks for watching — see you in the next one!\", \"Have fun building and catch you later!\", \"Merci d'avoir suivi, à bientôt !\", \"Bon build, à la prochaine !\".
+  PART A — a one-sentence recap SPECIFIC to what the user just accomplished (mention the feature, the next logical step, or what they can now do). Written in ${narrationLanguage}.
+  PART B — a real farewell phrase, written in ${narrationLanguage}. This is NON-OPTIONAL: the user must hear a goodbye word, not a trailing sentence. Pick something natural that fits the tone — e.g. \"Thanks for watching — see you in the next one!\", \"Have fun building and catch you later!\" (when ${narrationLanguage} is English) or \"Merci d'avoir suivi, à bientôt !\", \"Bon build, à la prochaine !\" (when ${narrationLanguage} is French).
   Don't reuse the exact same farewell every time; vary it across videos. But DO include one — \"don't be generic\" means make PART A specific, not skip PART B.
-  Example of the full pattern (English): \"You've got your widget wired up and answering questions on your app — ship it, watch what users ask, and iterate from there. Thanks for watching, see you in the next one!\"
-  Example (French): \"Et voilà, ton widget est en place et répond aux questions directement sur ton app — déploie-le, regarde ce que tes users demandent, et ajuste. Merci d'avoir suivi, à bientôt !\"
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 
