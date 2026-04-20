@@ -8,6 +8,55 @@ import { findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
 
 export const runRouter = Router()
 
+/**
+ * Detect the language of a documentation markdown string so the
+ * voice-over narration can be pinned to it. Heuristic: count French
+ * diacritics + common FR stopwords vs English stopwords. Defaults to
+ * English when neither signal dominates — safer than guessing wrong.
+ *
+ * Not trying to be a general language detector (would need a proper
+ * n-gram library); we only need to disambiguate EN vs FR since that's
+ * the recurring failure mode (English doc + French-UI screen recording
+ * → Gemini picks French). Easy to extend later.
+ */
+function detectDocLanguage(markdown: string): string {
+  if (!markdown || markdown.length < 30) return 'English'
+  const text = markdown.toLowerCase()
+  const diacritics = (text.match(/[àâäéèêëïîôöùûüÿç]/g) ?? []).length
+  const frenchStops = (text.match(/\b(le|la|les|un|une|des|du|est|sont|avec|pour|dans|sur|que|qui|cette|cet|ces|mais|nous|vous|votre|leur|aussi|comme|sera|être|avoir|alors|donc|déjà|ainsi|cliquez|ouvrez|saisissez)\b/g) ?? []).length
+  const englishStops = (text.match(/\b(the|is|are|with|for|in|on|that|which|this|but|we|you|your|their|also|will|can|click|open|enter|press|type|have|has|been|here|there|how|what|when|where|next|after|before)\b/g) ?? []).length
+  // Each diacritic counts as 3 French points — they're strong signals.
+  // Stopwords each count as 1. English defaults when scores are close.
+  const frenchScore = diacritics * 3 + frenchStops
+  const englishScore = englishStops
+  return frenchScore > englishScore * 1.3 ? 'French' : 'English'
+}
+
+/**
+ * Remove audio-tag fragments that don't close with `]`. ElevenLabs v3
+ * tags look like `[excited]`, `[happy gasp]`, `[short pause]`. When
+ * either Gemini truncates mid-tag or our word-limit shortener cuts a
+ * sentence boundary inside a tag, we get leftovers like `[happy.` or
+ * trailing `[` that make the TTS output a literal bracket noise or
+ * drop the segment entirely.
+ *
+ * Strategy: keep any `[foo]` that closes, drop any `[foo` that doesn't.
+ * Also trims trailing whitespace + dangling punctuation from the cut.
+ */
+function stripBrokenAudioTags(text: string): string {
+  // Kill opening brackets that never close. Walk forward: if we see a
+  // `[` without a matching `]` before the string ends, drop from that
+  // `[` to the end (or to the next whitespace-terminated fragment).
+  let cleaned = text
+  // Remove any trailing unclosed tag fragment like " [happy." or " [."
+  cleaned = cleaned.replace(/\s*\[[^\]]*$/g, '').trim()
+  // Also remove any stray empty tags `[]` or single `[` / `]` chars
+  cleaned = cleaned.replace(/\[\s*\]/g, '').replace(/(?:^|\s)[\[\]](?=\s|$)/g, '').trim()
+  // Re-anchor terminal punctuation if the cut left an orphan word
+  if (cleaned && !/[.!?]$/.test(cleaned)) cleaned = cleaned + '.'
+  return cleaned
+}
+
 /** Resolve the team a run belongs to, throws if unknown. Used as the single
  *  quota-enforcement anchor on run-scoped routes. */
 async function teamForRun(runId: string): Promise<string> {
@@ -339,9 +388,19 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         mergedTimestamps.splice(minIdx, 1)
       }
 
-      // Intro: if first action starts late (> 3s), prepend a timestamp at 0 for greeting
-      if (mergedTimestamps.length > 0 && mergedTimestamps[0]! > 3) {
+      // Intro: always prepend a 0-timestamp so Section 1 is dedicated to
+      // a proper greeting, and guarantee at least 6s of budget for it.
+      // Previously: intro was only prepended if the first action started
+      // > 3s in, which left tiny Section-1 slots whenever recordings
+      // started immediately — Gemini then tried to cram both a greeting
+      // and the first step's narration into ~2s, the TTS overflowed,
+      // and the shortener cut off the greeting mid-sentence.
+      if (mergedTimestamps.length === 0 || mergedTimestamps[0]! !== 0) {
         mergedTimestamps.unshift(0)
+      }
+      const MIN_INTRO_BUDGET = 6
+      if (mergedTimestamps.length > 1 && mergedTimestamps[1]! < MIN_INTRO_BUDGET) {
+        mergedTimestamps[1] = MIN_INTRO_BUDGET
       }
 
       // Drop last timestamp if too close to video end (< 5s remaining = not enough for a segment)
@@ -361,6 +420,63 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections: [${mergedTimestamps.map(t => t.toFixed(1)).join(', ')}]`)
 
+      // Ask Gemini to transform the DOC into a narration script.
+      // Tone presets — controls voice delivery style.
+      // wordsPerSecondFactor adjusts the min/max words budget relative to
+      // the 1.5-2.0 words/sec baseline so Gemini's output lines up with
+      // ElevenLabs playback duration for tones that add non-word timing
+      // (ellipses, whispers, emphasis tags).
+      //   < 1.0 = script gets fewer words because TTS is slower for this
+      //           tone (pauses, whispers)
+      //   > 1.0 = script gets more words because TTS runs at normal pace
+      //           with short punchy sentences (energetic tone writes more
+      //           individual sentences than long ones would)
+      const TONE_PRESETS: Record<string, { label: string; direction: string; example: string; wordsPerSecondFactor: number }> = {
+        friendly: {
+          label: 'Friendly & Casual',
+          direction: `Warm, upbeat, conversational. Use contractions, light humor. Say it in one sentence when you can, but feel free to use a second sentence for context when the slot allows.`,
+          example: `[SECTION 1]\nHey! [excited] Let's set up your workspace.\n[SECTION 2]\nCreate a new project — this is home base for your docs. [laughs] Easy.`,
+          wordsPerSecondFactor: 1.0,
+        },
+        professional: {
+          label: 'Professional & Clear',
+          direction: `Polished, confident, measured. Clear and articulate, no filler. One precise sentence per idea.`,
+          example: `[SECTION 1]\nWelcome. Let's set up your workspace.\n[SECTION 2]\nFirst, create a project. [short pause] Each project groups docs for one product.`,
+          wordsPerSecondFactor: 1.0,
+        },
+        energetic: {
+          label: 'Energetic & Hyped',
+          direction: `High-energy, hyped delivery. Use CAPS for key words (not whole sentences) and energy tags like [excited], [laughs], [happy gasp]. Write COMPLETE, full-length explanations — fill the word budget — the energy comes from the DELIVERY, not from being curt. Don't write fragments or one-word sentences; pumped doesn't mean short.`,
+          example: `[SECTION 1]\n[excited] Let's GO! Time to build out your workspace and get everything set up.\n[SECTION 2]\nNow we're creating your first project — [happy gasp] this is where ALL the magic happens, so pay attention to the URL field because that's what drives the AI analysis later.`,
+          wordsPerSecondFactor: 1.1,
+        },
+        calm: {
+          label: 'Calm & Reassuring',
+          direction: `Gentle, patient delivery. Use ONE ellipsis per section MAX (they add real TTS pause time). Prefer [short pause] tags over \`...\` when you need a beat. Reassuring phrases are great but keep sentences concrete. [whispers] sparingly — once per section at most.`,
+          example: `[SECTION 1]\nHi, welcome. [calm] Let's set up your workspace together — it only takes a minute.\n[SECTION 2]\nCreate a project here... [whispers] this is the space where all your docs will live.`,
+          wordsPerSecondFactor: 0.7,
+        },
+        playful: {
+          label: 'Playful & Fun',
+          direction: `Witty, cheeky. Light sarcasm, playful asides. [giggles], [whispers], [sarcastic].`,
+          example: `[SECTION 1]\n[laughs] Alright — workspace time. [whispers] Very official.\n[SECTION 2]\nCreate a project. [giggles] Groundbreaking, I know.`,
+          wordsPerSecondFactor: 1.0,
+        },
+      }
+
+      const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
+      const wordsFactor = tone.wordsPerSecondFactor
+
+      // Detect the documentation language so we can pin it into the
+      // prompt as an explicit constant. Gemini was otherwise picking
+      // up the French UI / audio from the video when the user recorded
+      // a French-UI app — even though the doc was English. Heuristic:
+      // count French diacritics + stopwords vs English stopwords. No
+      // extra Gemini call needed. Defaults to English when neither
+      // signal is clearly dominant.
+      const narrationLanguage = detectDocLanguage(doc.markdownContent ?? '')
+      console.log(`[voiceover] Detected doc language: ${narrationLanguage}`)
+
       const numStepsMerged = mergedTimestamps.length
       const timeBudgets = mergedTimestamps.map((t, i) => {
         const next = mergedTimestamps[i + 1]
@@ -369,11 +485,11 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         return Math.max(5, estimatedVideoEnd - t)
       })
       const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
-      const totalMaxWords = Math.floor(totalVideoTime * 2)
+      const totalMaxWords = Math.floor(totalVideoTime * 2 * wordsFactor)
       const sectionList = mergedTimestamps.map((t, i) => {
         const budget = timeBudgets[i]!
-        const minWords = Math.max(4, Math.floor(budget * 1.5))
-        const maxWords = Math.max(6, Math.floor(budget * 2.0))
+        const minWords = Math.max(4, Math.floor(budget * 1.5 * wordsFactor))
+        const maxWords = Math.max(6, Math.floor(budget * 2.0 * wordsFactor))
         const nextT = mergedTimestamps[i + 1]
         const timeRange = nextT != null ? `${formatTime(t)}–${formatTime(nextT)}` : `${formatTime(t)}–end`
         return `[SECTION ${i + 1}] (${timeRange}, ${budget.toFixed(0)}s → ${minWords}-${maxWords} words)`
@@ -384,38 +500,6 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         const sec = Math.floor(s % 60)
         return `${m}:${sec.toString().padStart(2, '0')}`
       }
-
-      // Ask Gemini to transform the DOC into a narration script
-      // Tone presets — controls voice delivery style
-      const TONE_PRESETS: Record<string, { label: string; direction: string; example: string }> = {
-        friendly: {
-          label: 'Friendly & Casual',
-          direction: `Warm, upbeat, conversational. Use contractions, light humor. Keep it SHORT — say it in one sentence when you can.`,
-          example: `[SECTION 1]\nHey! [excited] Let's set up your workspace.\n[SECTION 2]\nCreate a new project — this is home base for your docs. [laughs] Easy.`,
-        },
-        professional: {
-          label: 'Professional & Clear',
-          direction: `Polished, confident, measured. Clear and articulate, no filler. One precise sentence per idea.`,
-          example: `[SECTION 1]\nWelcome. Let's set up your workspace.\n[SECTION 2]\nFirst, create a project. [short pause] Each project groups docs for one product.`,
-        },
-        energetic: {
-          label: 'Energetic & Hyped',
-          direction: `High-energy, PUMPED. CAPS for emphasis, short punchy sentences. [excited], [laughs], [happy gasp].`,
-          example: `[SECTION 1]\n[excited] Let's GO! Time to set up your workspace.\n[SECTION 2]\nCreate a project — [happy gasp] watch how fast this is!`,
-        },
-        calm: {
-          label: 'Calm & Reassuring',
-          direction: `Gentle, patient. Ellipses for breathing room... reassuring phrases. [whispers] for tips.`,
-          example: `[SECTION 1]\nHi... welcome. [calm] Let's set up your workspace together.\n[SECTION 2]\nCreate a project... [whispers] it only takes a moment.`,
-        },
-        playful: {
-          label: 'Playful & Fun',
-          direction: `Witty, cheeky. Light sarcasm, playful asides. [giggles], [whispers], [sarcastic].`,
-          example: `[SECTION 1]\n[laughs] Alright — workspace time. [whispers] Very official.\n[SECTION 2]\nCreate a project. [giggles] Groundbreaking, I know.`,
-        },
-      }
-
-      const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
 
       // Download video for Gemini to watch while generating narration
       const videoPath = summary?.videoPath as string | undefined
@@ -435,7 +519,11 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       }
 
       // Generate narration — with video if available, text-only as fallback
-      const narrationPrompt = `You are writing a voice-over narration script for this product tutorial video. WATCH THE VIDEO CAREFULLY — your narration must describe exactly what's happening on screen at each moment.
+      const narrationPrompt = `You are writing a voice-over narration script for this product tutorial video. BLEND two sources:
+1. The VIDEO drives TIMING and ACTIONS — watch it to know exactly what happens in each section's slot.
+2. The DOCUMENTATION drives CONTENT — it holds the why, the context, the caveats, the terminology, the audience-appropriate wording the author already crafted. Don't just describe pixels; lean on the doc to give the user the understanding the author intended.
+
+Within each section's time slot, synchronize to the video (narrate what's on screen right now, anticipate what's about to happen) BUT flesh out the narration using the documentation's explanations. If the doc mentions a reason, a tip, or a caveat tied to the step you're narrating, include it. If the doc doesn't cover what's on screen, describe the action plainly. Never contradict the doc.
 
 This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an essay.
 
@@ -457,8 +545,10 @@ Pacing: [short pause]
 
 Tag rules: tags go BETWEEN sentences only, NEVER mid-sentence. Use 3-5 different tags.
 
-## Documentation context (for terminology and feature names):
-${doc.markdownContent.slice(0, 3000)}
+## Documentation — the authoritative content source for the narration
+
+Treat this as the reference for WHAT to say during each section (the explanations, reasons, tips, caveats, and exact terminology the author wrote). The video tells you WHEN each step happens; this tells you HOW to describe it with depth. Prefer the doc's phrasing for feature names, settings labels, and step order — don't rename things Gemini-style.
+${doc.markdownContent.slice(0, 8000)}
 
 ## Script structure — TIMING IS CRITICAL
 ${numStepsMerged} sections using [SECTION N] markers.
@@ -473,11 +563,20 @@ ${sectionList}
 - For short sections (3-8s): 1-2 punchy sentences.
 - Too short = dead silence = BAD. Too long = minor overlap = acceptable.
 
+## Language — STRICT
+- The entire narration MUST be written in **${narrationLanguage}**. This language has already been determined from the documentation; do not re-detect, do not second-guess, do not change.
+- Do not translate to another language, do not switch mid-script, do not mix languages.
+- Ignore the language of the video's on-screen UI, the language of the spoken audio in the video, and any tone/examples below — those are just style references. The narration is in ${narrationLanguage}, full stop.
+- When narrating a UI element whose on-screen label is in a different language than ${narrationLanguage}, keep the label verbatim in quotes but describe the action in ${narrationLanguage}: e.g. narration in English, button labelled "Paramètres" → "Click 'Paramètres' to open the settings panel."
+
 ## Content rules
-- WATCH THE VIDEO: describe what you SEE happening, not what the doc says
+- BLEND video + doc: the video gives you the TIMING + ACTIONS (what's on screen right now, what's about to happen); the doc gives you the EXPLANATIONS + CONTEXT (the why, the caveats, the exact wording the author used). Use both per section. Don't reduce the narration to a play-by-play of visible pixels — draw on the doc to enrich each moment.
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
-- GREETING: Section 1 starts with a short greeting
-- CLOSING: Section ${numStepsMerged} MUST end with a closing phrase ("Thanks for watching!", "That's a wrap!")
+- GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
+- CLOSING: Section ${numStepsMerged} ends with TWO parts, in this order, joined into one smooth passage (no list, no line break between them):
+  PART A — a one-sentence recap SPECIFIC to what the user just accomplished (mention the feature, the next logical step, or what they can now do). Written in ${narrationLanguage}.
+  PART B — a real farewell phrase, written in ${narrationLanguage}. This is NON-OPTIONAL: the user must hear a goodbye word, not a trailing sentence. Pick something natural that fits the tone — e.g. \"Thanks for watching — see you in the next one!\", \"Have fun building and catch you later!\" (when ${narrationLanguage} is English) or \"Merci d'avoir suivi, à bientôt !\", \"Bon build, à la prochaine !\" (when ${narrationLanguage} is French).
+  Don't reuse the exact same farewell every time; vary it across videos. But DO include one — \"don't be generic\" means make PART A specific, not skip PART B.
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 
@@ -514,7 +613,7 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
         // Enforce word limit — trim to budget if Gemini went way over
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(5, Math.floor(budget * 2.0))
+        const maxWords = Math.max(5, Math.floor(budget * 2.0 * wordsFactor))
         const words = text.split(/\s+/)
         if (words.length > maxWords * 1.2) {
           // Over by 20%+ — truncate to limit, ending at a sentence boundary if possible
@@ -524,13 +623,51 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
           text = lastSentence > joined.length * 0.5 ? joined.slice(0, lastSentence + 1) : joined + '.'
           console.log(`[voiceover] Step ${i}: TRIMMED from ${words.length} to ~${maxWords} words (budget: ${budget.toFixed(0)}s)`)
         }
+        // Defensive: strip any half-open audio tag the shortener (or Gemini)
+        // may have left behind — e.g. "[happy." from a cut-mid-tag edit.
+        // ElevenLabs tags must be `[something]`; anything else is noise.
+        text = stripBrokenAudioTags(text)
         return { stepIndex: i, text }
       })
       for (const s of stepsWithText) {
         const wordCount = s.text.split(/\s+/).length
         const budget = timeBudgets[s.stepIndex]!
-        const limit = Math.max(5, Math.floor(budget * 2.0))
+        const limit = Math.max(5, Math.floor(budget * 2.0 * wordsFactor))
         console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
+      }
+
+      // Safety net: Gemini drops the closing farewell more often than the
+      // prompt would suggest. If the last section doesn't end with a real
+      // sign-off word, fire a tiny Gemini call to append one that's
+      // grounded in what the narrator just said. Deterministic — we don't
+      // stop trying until the farewell lands.
+      const lastStep = stepsWithText[stepsWithText.length - 1]
+      if (lastStep) {
+        const FAREWELL_RE = /(thanks?\s+for\s+(watching|following)|see\s+you|catch\s+you|happy\s+build|have\s+fun|enjoy|cheers|goodbye|bye!?$|take\s+care|merci\s+d['']avoir|à\s+(bient[oô]t|la\s+prochaine|plus)|bon\s+build|bonne\s+(continuation|journ[ée]e)|au\s+revoir|adieu|¡?hasta\s+(la\s+)?pr[oó]xima|gracias\s+por\s+ver|bis\s+bald|viel\s+spa[ßs])/i
+        if (!FAREWELL_RE.test(lastStep.text)) {
+          try {
+            const { generateText } = await import('../../shared/ai/gemini.client.js')
+            const farewell = await generateText({
+              userPrompt: `This is the final paragraph of a voice-over narration for a product tutorial. It's missing a warm farewell at the end.
+
+Write ONE short farewell sentence in ${narrationLanguage}, max 15 words. It must feel natural as a spoken outro, include an actual goodbye word (e.g. "Thanks for watching", "See you in the next one", "Merci d'avoir suivi", "À bientôt"), and fit the context of the paragraph below. Do NOT repeat the paragraph. Output ONLY the farewell sentence, nothing else.
+
+Paragraph:
+${lastStep.text}`,
+              maxTokens: 80,
+              temperature: 0.4,
+            })
+            const cleaned = farewell.text.trim().replace(/^["']|["']$/g, '')
+            if (cleaned.length > 0 && cleaned.length < 200 && FAREWELL_RE.test(cleaned)) {
+              lastStep.text = lastStep.text.replace(/[.!?]?\s*$/, '. ') + cleaned
+              console.log(`[voiceover] Appended farewell to last section: "${cleaned}"`)
+            } else {
+              console.warn(`[voiceover] Farewell top-up didn't pass regex, skipped. Got: "${cleaned.slice(0, 100)}"`)
+            }
+          } catch (err) {
+            console.warn(`[voiceover] Farewell top-up failed: ${(err as Error).message}`)
+          }
+        }
       }
 
       // Pass timestamps + video end sentinel so the service knows the last segment's limit

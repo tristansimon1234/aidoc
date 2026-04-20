@@ -296,8 +296,15 @@ app.post('/concat-audio', async (req, res) => {
       })
 
       // Calculate silence needed — always relative to targetStart, not currentTime
-      // This prevents drift accumulation when segments are longer than expected
-      const silenceNeeded = Math.max(0, targetStart - currentTime)
+      // This prevents drift accumulation when segments are longer than expected.
+      // Inter-segment silence is capped at INTER_SILENCE_MAX so very sparse
+      // step timestamps don't create long dead-air gaps; the narration
+      // for step N+1 starts early instead and the audio stays close to
+      // the video action. Leading silence (first segment) is kept intact —
+      // it matches the video's natural lead-in.
+      let silenceNeeded = Math.max(0, targetStart - currentTime)
+      const INTER_SILENCE_MAX = 4
+      if (i > 0 && silenceNeeded > INTER_SILENCE_MAX) silenceNeeded = INTER_SILENCE_MAX
 
       console.log(`[concat] Seg ${i}: target=${targetStart.toFixed(1)}s, current=${currentTime.toFixed(1)}s, silence=${silenceNeeded.toFixed(1)}s, audio=${segDuration.toFixed(1)}s${currentTime > targetStart ? ' ⚠️ OVERLAP' : ''}`)
 
@@ -318,7 +325,13 @@ app.post('/concat-audio', async (req, res) => {
       }
 
       parts.push(segPath)
-      currentTime = targetStart + segDuration
+      // Track actual cumulative output-audio time. When silence got
+      // clamped (INTER_SILENCE_MAX), the audio output is shorter than
+      // the video targetStart would predict — so we can't just reset
+      // to targetStart + segDuration or the drift keeps compounding.
+      // Audio simply runs slightly ahead of video on sparse timestamps,
+      // which is the intentional tradeoff for less dead air.
+      currentTime += silenceNeeded + segDuration
     }
 
     // Write concat file list

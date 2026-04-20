@@ -50,6 +50,34 @@
   max-width: 320px;
 }
 
+.publicDocsLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-muted-fg);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.publicDocsLink:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary);
+  background: var(--color-accent);
+  text-decoration: none;
+}
+
+.publicDocsLink svg {
+  flex-shrink: 0;
+}
+
 .searchBar {
   display: flex;
   align-items: center;
