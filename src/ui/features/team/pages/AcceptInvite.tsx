@@ -65,13 +65,7 @@ export function AcceptInvite(): React.ReactElement {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <h1 className={styles.logo}>
-            <img
-              src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent.png"
-              alt="doclee"
-              className={styles.logoImg}
-            />
-          </h1>
+          <h1 className={styles.logo}>doclee</h1>
           <p className={styles.subtitle}>This invitation has already been accepted.</p>
           <Link to="/" className={styles.toggleLink}>Go to doclee</Link>
         </div>
@@ -83,13 +77,7 @@ export function AcceptInvite(): React.ReactElement {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <h1 className={styles.logo}>
-            <img
-              src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent.png"
-              alt="doclee"
-              className={styles.logoImg}
-            />
-          </h1>
+          <h1 className={styles.logo}>doclee</h1>
           <p className={styles.subtitle}>This invitation has expired. Ask {invite.inviterName ?? 'the team owner'} to resend it.</p>
         </div>
       </div>
@@ -103,13 +91,7 @@ export function AcceptInvite(): React.ReactElement {
     return (
       <div className={styles.page}>
         <div className={styles.card}>
-          <h1 className={styles.logo}>
-            <img
-              src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent.png"
-              alt="doclee"
-              className={styles.logoImg}
-            />
-          </h1>
+          <h1 className={styles.logo}>doclee</h1>
           <p className={styles.subtitle}>
             {invite.inviterName ?? 'Someone'} invited you to <strong>{invite.teamName}</strong>.
           </p>
@@ -130,13 +112,7 @@ export function AcceptInvite(): React.ReactElement {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <h1 className={styles.logo}>
-            <img
-              src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent.png"
-              alt="doclee"
-              className={styles.logoImg}
-            />
-          </h1>
+        <h1 className={styles.logo}>doclee</h1>
         <p className={styles.subtitle}>
           {invite.inviterName ?? 'Someone'} invited you to <strong>{invite.teamName}</strong>.
         </p>
