@@ -607,6 +607,40 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
       }
 
+      // Safety net: Gemini drops the closing farewell more often than the
+      // prompt would suggest. If the last section doesn't end with a real
+      // sign-off word, fire a tiny Gemini call to append one that's
+      // grounded in what the narrator just said. Deterministic — we don't
+      // stop trying until the farewell lands.
+      const lastStep = stepsWithText[stepsWithText.length - 1]
+      if (lastStep) {
+        const FAREWELL_RE = /(thanks?\s+for\s+(watching|following)|see\s+you|catch\s+you|happy\s+build|have\s+fun|enjoy|cheers|goodbye|bye!?$|take\s+care|merci\s+d['']avoir|à\s+(bient[oô]t|la\s+prochaine|plus)|bon\s+build|bonne\s+(continuation|journ[ée]e)|au\s+revoir|adieu|¡?hasta\s+(la\s+)?pr[oó]xima|gracias\s+por\s+ver|bis\s+bald|viel\s+spa[ßs])/i
+        if (!FAREWELL_RE.test(lastStep.text)) {
+          try {
+            const { generateText } = await import('../../shared/ai/gemini.client.js')
+            const farewell = await generateText({
+              userPrompt: `This is the final paragraph of a voice-over narration for a product tutorial. It's missing a warm farewell at the end.
+
+Write ONE short farewell sentence in ${narrationLanguage}, max 15 words. It must feel natural as a spoken outro, include an actual goodbye word (e.g. "Thanks for watching", "See you in the next one", "Merci d'avoir suivi", "À bientôt"), and fit the context of the paragraph below. Do NOT repeat the paragraph. Output ONLY the farewell sentence, nothing else.
+
+Paragraph:
+${lastStep.text}`,
+              maxTokens: 80,
+              temperature: 0.4,
+            })
+            const cleaned = farewell.text.trim().replace(/^["']|["']$/g, '')
+            if (cleaned.length > 0 && cleaned.length < 200 && FAREWELL_RE.test(cleaned)) {
+              lastStep.text = lastStep.text.replace(/[.!?]?\s*$/, '. ') + cleaned
+              console.log(`[voiceover] Appended farewell to last section: "${cleaned}"`)
+            } else {
+              console.warn(`[voiceover] Farewell top-up didn't pass regex, skipped. Got: "${cleaned.slice(0, 100)}"`)
+            }
+          } catch (err) {
+            console.warn(`[voiceover] Farewell top-up failed: ${(err as Error).message}`)
+          }
+        }
+      }
+
       // Pass timestamps + video end sentinel so the service knows the last segment's limit
       const timestampsWithEnd = [...mergedTimestamps, estimatedVideoEnd]
 
