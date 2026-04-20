@@ -415,7 +415,7 @@ Task: determine the ONE next action the user should take.
 RULES:
 1. Return exactly ONE step — the next logical action on the CURRENT page OR a navigation step to a different page if that's what the flow requires.
 2. Match the target element by text, aria-label, or role from the DOM list
-3. elementRef = the element's "ref" from the DOM list. fallbackSelector = short CSS selector backup
+3. elementRef MUST be copied EXACTLY from a ref="..." value in the DOM list — never invent one, never reuse a ref from a previous step, never abbreviate. If no DOM element matches the target, set elementRef=null (the widget will show a textual hint instead). fallbackSelector = short CSS selector backup; keep it specific to THIS element (prefer \`#id\` or \`[data-testid="..."]\` over generic tag selectors).
 4. done=true ONLY when the user has fully completed the goal (reached the success state). An uncertain element match, a missing DOM node, or "I'm not sure what to click" is NEVER a reason to set done=true — emit a textual step instead (see Confidence rules). The walkthrough must continue across pages.
 5. instruction: under 80 chars, in the user's language
 6. action: click | type | select | scroll | observe | navigate

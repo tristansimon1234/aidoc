@@ -364,6 +364,12 @@
       if (el.closest('#aidoc-widget-btn,#aidoc-widget-panel,#aidoc-wt-overlay,#aidoc-wt-ring,#aidoc-wt-tooltip')) continue;
 
       var ref = el.getAttribute('data-testid') || el.id || ('el-' + el.tagName.toLowerCase() + '-' + i);
+      // Tag the DOM so the walkthrough can resolve synthetic refs
+      // (`el-button-5`) directly via a selector later. Without this,
+      // refs not backed by an id / data-testid were unresolvable, and
+      // the widget fell through to a generic fallbackSelector that
+      // could land on a completely unrelated element.
+      el.setAttribute('data-aidoc-ref', ref);
       var text = redactPii((el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 100));
       var tag = el.tagName.toLowerCase();
       var role = el.getAttribute('role') || inferRole(tag);
@@ -580,9 +586,15 @@
     wtCurrentStep = null;
     wtCompletedSteps = [];
     wtStepNumber = 0;
+    wtFetching = false;
+    wtRetryCount = 0;
     stopDomObserver();
     removeHighlight();
     removeWalkthroughBar();
+    // Sweep data-aidoc-ref attributes we stamped during capture — leave
+    // the customer's DOM exactly as we found it.
+    var tagged = document.querySelectorAll('[data-aidoc-ref]');
+    for (var i = 0; i < tagged.length; i++) tagged[i].removeAttribute('data-aidoc-ref');
   }
 
   function removeWalkthroughBar() {
@@ -651,22 +663,84 @@
 
   // --- Highlight Engine ---
 
+  /** Tokenize an instruction or element-text into meaningful lowercase
+   *  keywords (≥3 chars, skip stopwords). Used to verify a matched
+   *  element is actually related to the instruction — Gemini sometimes
+   *  emits a generic selector like `button` that resolves to a random
+   *  interactive element unrelated to the step. */
+  var STOPWORDS = {
+    'the':1,'and':1,'for':1,'with':1,'that':1,'this':1,'from':1,'into':1,'your':1,'you':1,'click':1,'tap':1,'press':1,'type':1,'enter':1,'select':1,'choose':1,'open':1,'find':1,'locate':1,'navigate':1,'button':1,'field':1,'input':1,'link':1,'icon':1,'here':1,'there':1,
+    'le':1,'la':1,'les':1,'un':1,'une':1,'des':1,'de':1,'du':1,'sur':1,'dans':1,'pour':1,'avec':1,'votre':1,'vos':1,'ce':1,'cette':1,'ces':1,'au':1,'aux':1,'et':1,'ou':1,'cliquez':1,'tapez':1,'saisir':1,'saisissez':1,'entrez':1,'appuyez':1,'ouvrez':1,'trouvez':1,'bouton':1,'champ':1,'lien':1,
+  };
+  function tokenize(text) {
+    if (!text) return [];
+    return text.toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .split(/\s+/)
+      .filter(function (w) { return w.length >= 3 && !STOPWORDS[w]; });
+  }
+
+  /** Return true if the instruction keywords share at least one content
+   *  word with the element's text / aria / placeholder / value. Cheap
+   *  defensive check against Gemini picking a generic selector. */
+  function elementMatchesInstruction(el, instructionTokens) {
+    if (!el || !instructionTokens || instructionTokens.length === 0) return true; // can't verify → trust
+    var haystackParts = [
+      el.textContent || '',
+      el.getAttribute('aria-label') || '',
+      el.getAttribute('placeholder') || '',
+      el.getAttribute('title') || '',
+      el.getAttribute('name') || '',
+      el.getAttribute('value') || '',
+      el.getAttribute('data-testid') || '',
+    ];
+    var elementTokens = tokenize(haystackParts.join(' '));
+    if (elementTokens.length === 0) return false;
+    var elementSet = {};
+    elementTokens.forEach(function (t) { elementSet[t] = true; });
+    return instructionTokens.some(function (t) { return elementSet[t]; });
+  }
+
   function matchElement(step) {
     if (!step) return null;
 
-    // 1. Try by ref (data-testid or id)
-    if (step.elementRef) {
-      var byTestId = document.querySelector('[data-testid="' + CSS.escape(step.elementRef) + '"]');
-      if (byTestId) return byTestId;
-      var byId = document.getElementById(step.elementRef);
-      if (byId) return byId;
+    // Instruction keywords used to verify each candidate match is
+    // actually about the element — rejects generic selector hits.
+    var instructionTokens = tokenize(step.instruction || '');
+
+    function verify(el) {
+      // Refs + ids are usually intentional — trust them. Verify only
+      // selector-based / text-based matches where Gemini has more leeway
+      // to be wrong.
+      return el;
     }
 
-    // 2. Try fallback selector (validate to prevent ReDoS / selector injection)
+    // 1. Try by ref — high-confidence, no verification. Three variants:
+    //    - data-aidoc-ref attribute (set during capture, covers synthetic
+    //      refs like `el-button-5` that don't match data-testid or id)
+    //    - data-testid (customer app's own tag)
+    //    - id fallback
+    if (step.elementRef) {
+      var byAidocRef = document.querySelector('[data-aidoc-ref="' + CSS.escape(step.elementRef) + '"]');
+      if (byAidocRef) return verify(byAidocRef);
+      var byTestId = document.querySelector('[data-testid="' + CSS.escape(step.elementRef) + '"]');
+      if (byTestId) return verify(byTestId);
+      var byId = document.getElementById(step.elementRef);
+      if (byId) return verify(byId);
+    }
+
+    // 2. Try fallback selector (validate shape, then verify the match is
+    //    topically related to the instruction — rejects `button` hitting
+    //    an unrelated interactive element).
     if (step.fallbackSelector && step.fallbackSelector.length <= 150 && /^[a-zA-Z0-9#.\-_\[\]=":,>\s\(\)]+$/.test(step.fallbackSelector)) {
       try {
-        var bySel = document.querySelector(step.fallbackSelector);
-        if (bySel) return bySel;
+        var matches = document.querySelectorAll(step.fallbackSelector);
+        for (var k = 0; k < matches.length; k++) {
+          var m = matches[k];
+          if (isElementVisible(m) && elementMatchesInstruction(m, instructionTokens)) {
+            return m;
+          }
+        }
       } catch (e) {}
     }
 
