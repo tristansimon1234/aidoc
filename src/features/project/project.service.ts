@@ -62,3 +62,36 @@ export async function deleteProject(id: string, userId: string): Promise<void> {
   await assertAccess(project, userId)
   return projectRepo.deleteProject(id)
 }
+
+/**
+ * Transfer a project from its current workspace to another one the
+ * caller also owns. Requires owner role on BOTH teams — lets us move
+ * a project from a personal workspace into a team for collaboration,
+ * or consolidate between teams, without re-creating pages + runs +
+ * embeddings (everything is FK'd to the project id, so the team_id
+ * column flip is sufficient).
+ */
+export async function transferProject(id: string, userId: string, destTeamId: string): Promise<Project> {
+  const project = await projectRepo.findProjectById(id)
+  if (!project) throw new NotFoundError('Project')
+  if (project.teamId === destTeamId) {
+    throw new AppError('Project is already in this workspace.', 'ALREADY_IN_TEAM', 400)
+  }
+
+  const { findMember } = await import('../team/team.repository.js')
+  const [sourceRole, destRole] = await Promise.all([
+    findMember(project.teamId, userId),
+    findMember(destTeamId, userId),
+  ])
+  if (!sourceRole || sourceRole.role !== 'owner') {
+    throw new AppError('You must be the owner of the current workspace to transfer it.', 'NOT_SOURCE_OWNER', 403)
+  }
+  if (!destRole) {
+    throw new AppError('You are not a member of the destination workspace.', 'NOT_DEST_MEMBER', 403)
+  }
+  if (destRole.role !== 'owner') {
+    throw new AppError('You must be the owner of the destination workspace to move projects into it.', 'NOT_DEST_OWNER', 403)
+  }
+
+  return projectRepo.updateProjectTeam(id, destTeamId)
+}

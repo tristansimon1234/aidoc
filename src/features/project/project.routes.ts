@@ -334,3 +334,21 @@ projectRouter.delete('/:id', (req: Request, res: Response, next: NextFunction) =
   })()
 })
 
+projectRouter.post('/:id/transfer', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = ProjectIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { teamId?: unknown }
+      const teamId = typeof body?.teamId === 'string' ? body.teamId : ''
+      if (!/^[0-9a-f-]{36}$/i.test(teamId)) {
+        throw new ValidationError('teamId must be a valid UUID')
+      }
+      const project = await projectService.transferProject(params.data.id, getUserId(req), teamId)
+      res.status(200).json(project)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
