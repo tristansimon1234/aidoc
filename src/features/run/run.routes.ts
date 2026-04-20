@@ -32,6 +32,31 @@ function detectDocLanguage(markdown: string): string {
   return frenchScore > englishScore * 1.3 ? 'French' : 'English'
 }
 
+/**
+ * Remove audio-tag fragments that don't close with `]`. ElevenLabs v3
+ * tags look like `[excited]`, `[happy gasp]`, `[short pause]`. When
+ * either Gemini truncates mid-tag or our word-limit shortener cuts a
+ * sentence boundary inside a tag, we get leftovers like `[happy.` or
+ * trailing `[` that make the TTS output a literal bracket noise or
+ * drop the segment entirely.
+ *
+ * Strategy: keep any `[foo]` that closes, drop any `[foo` that doesn't.
+ * Also trims trailing whitespace + dangling punctuation from the cut.
+ */
+function stripBrokenAudioTags(text: string): string {
+  // Kill opening brackets that never close. Walk forward: if we see a
+  // `[` without a matching `]` before the string ends, drop from that
+  // `[` to the end (or to the next whitespace-terminated fragment).
+  let cleaned = text
+  // Remove any trailing unclosed tag fragment like " [happy." or " [."
+  cleaned = cleaned.replace(/\s*\[[^\]]*$/g, '').trim()
+  // Also remove any stray empty tags `[]` or single `[` / `]` chars
+  cleaned = cleaned.replace(/\[\s*\]/g, '').replace(/(?:^|\s)[\[\]](?=\s|$)/g, '').trim()
+  // Re-anchor terminal punctuation if the cut left an orphan word
+  if (cleaned && !/[.!?]$/.test(cleaned)) cleaned = cleaned + '.'
+  return cleaned
+}
+
 /** Resolve the team a run belongs to, throws if unknown. Used as the single
  *  quota-enforcement anchor on run-scoped routes. */
 async function teamForRun(runId: string): Promise<string> {
@@ -598,6 +623,10 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
           text = lastSentence > joined.length * 0.5 ? joined.slice(0, lastSentence + 1) : joined + '.'
           console.log(`[voiceover] Step ${i}: TRIMMED from ${words.length} to ~${maxWords} words (budget: ${budget.toFixed(0)}s)`)
         }
+        // Defensive: strip any half-open audio tag the shortener (or Gemini)
+        // may have left behind — e.g. "[happy." from a cut-mid-tag edit.
+        // ElevenLabs tags must be `[something]`; anything else is noise.
+        text = stripBrokenAudioTags(text)
         return { stepIndex: i, text }
       })
       for (const s of stepsWithText) {
