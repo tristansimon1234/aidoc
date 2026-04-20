@@ -72,9 +72,11 @@ export async function generateVoiceover(
       text = lastDot > shortened.length * 0.4 ? shortened.slice(0, lastDot + 1) : shortened + '.'
       // Preserve a closing on the last segment when the shortener would
       // otherwise cut off the sign-off phrase. Users prefer a proper
-      // wrap-up — dropping it feels abrupt.
-      if (isLastSegment && !/thanks|bye|wrap|watching|revoir|voil[àa]/i.test(text)) {
-        text += ' Thanks for watching!'
+      // wrap-up — dropping it feels abrupt. Pick a language-appropriate
+      // fallback so a French translation doesn't get an English
+      // "Thanks for watching!" stitched on.
+      if (isLastSegment && !/thanks|bye|wrap|watching|revoir|voil[àa]|gracias|danke|grazie|obrigado/i.test(text)) {
+        text += ' ' + closingFallbackFor(options?.language)
       }
 
       console.log(`[voiceover] Segment ${i}: overflow (${estimatedDuration.toFixed(1)}s > ${slotDuration.toFixed(1)}s slot) — retrying with ${text.split(/\s+/).length} words`)
@@ -109,4 +111,30 @@ export async function generateVoiceover(
   console.log(`[voiceover] Done → ${audioUrl}`)
 
   return { audioPath, audioUrl, segments }
+}
+
+/** Pick a closing phrase that matches the narration language when the
+ *  overflow shortener trimmed the sign-off. English by default (the
+ *  untranslated path + any language we don't have a preset for). */
+function closingFallbackFor(language: string | undefined): string {
+  if (!language) return 'Thanks for watching!'
+  const key = language.toLowerCase()
+  const map: Record<string, string> = {
+    french: "Merci d'avoir suivi !",
+    français: "Merci d'avoir suivi !",
+    fr: "Merci d'avoir suivi !",
+    spanish: '¡Gracias por ver!',
+    español: '¡Gracias por ver!',
+    es: '¡Gracias por ver!',
+    german: 'Danke fürs Zuschauen!',
+    deutsch: 'Danke fürs Zuschauen!',
+    de: 'Danke fürs Zuschauen!',
+    italian: 'Grazie per aver guardato!',
+    italiano: 'Grazie per aver guardato!',
+    it: 'Grazie per aver guardato!',
+    portuguese: 'Obrigado por assistir!',
+    português: 'Obrigado por assistir!',
+    pt: 'Obrigado por assistir!',
+  }
+  return map[key] ?? 'Thanks for watching!'
 }

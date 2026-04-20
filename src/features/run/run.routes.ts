@@ -269,7 +269,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       await enforceQuotaOrThrow(await teamForRun(params.data.id))
 
-      const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
+      const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number; narrationLanguage?: string }
 
       // Check ElevenLabs is configured before attempting
       const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
@@ -416,6 +416,12 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       }
 
       const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
+      // Explicit language for the narration itself. `body.language` (used
+      // further down) is the TRANSLATION target — if unset, the narration
+      // is generated in `body.narrationLanguage`, defaulting to English so
+      // Gemini doesn't silently pick French just because the video's UI
+      // happens to be in French.
+      const narrationLanguage = body.narrationLanguage ?? 'English'
 
       // Download video for Gemini to watch while generating narration
       const videoPath = summary?.videoPath as string | undefined
@@ -473,11 +479,16 @@ ${sectionList}
 - For short sections (3-8s): 1-2 punchy sentences.
 - Too short = dead silence = BAD. Too long = minor overlap = acceptable.
 
+## Language — STRICT
+- Write the entire narration in **${narrationLanguage}**. This is non-negotiable.
+- Do NOT switch to another language mid-script, even if the video's UI text, the documentation context, or the spoken audio in the video are in a different language. The narration is always in ${narrationLanguage}.
+- When referring to a UI element whose label is in another language (e.g. the video shows a "Paramètres" button but narration is English), keep the label as-is in quotes and describe the action in ${narrationLanguage}: \`Click on "Paramètres" to open the settings panel.\`
+
 ## Content rules
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
 - GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
-- CLOSING: Section ${numStepsMerged} MUST end with a short, warm closing — a recap + a sign-off that wraps the video naturally. Match the tone and language of the narration. Examples: "That's a wrap — you're ready to start!", "Et voilà, tu es prêt à te lancer. Merci d'avoir suivi !", "Thanks for watching, see you in the next one!". Don't skip this — users flagged that missing closings feel abrupt.
+- CLOSING: Section ${numStepsMerged} MUST end with a short, warm closing in ${narrationLanguage} — a one-sentence recap + a friendly sign-off. Don't skip this.
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 
