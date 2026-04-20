@@ -167,10 +167,11 @@ function buildPageTree(pages: PublicPage[]): TreePage[] {
   return roots
 }
 
-function NavTree({ items, activePage, onSelect, depth = 0 }: {
+function NavTree({ items, activePage, onSelect, onPrefetch, depth = 0 }: {
   items: TreePage[]
   activePage: PublicPage | null
   onSelect: (page: PublicPage) => void
+  onPrefetch: (page: PublicPage) => void
   depth?: number
 }): React.ReactElement {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -208,13 +209,15 @@ function NavTree({ items, activePage, onSelect, depth = 0 }: {
               <button
                 className={`${styles.navItem} ${activePage?.id === p.id ? styles.navItemActive : ''}`}
                 onClick={() => onSelect(p)}
+                onMouseEnter={() => onPrefetch(p)}
+                onFocus={() => onPrefetch(p)}
                 title={p.title}
               >
                 {p.title}
               </button>
             </div>
             {hasChildren && !isCollapsed && (
-              <NavTree items={p.children} activePage={activePage} onSelect={onSelect} depth={depth + 1} />
+              <NavTree items={p.children} activePage={activePage} onSelect={onSelect} onPrefetch={onPrefetch} depth={depth + 1} />
             )}
           </div>
         )
@@ -288,17 +291,22 @@ export function PublicDocs(): React.ReactElement {
     if (match && match.id !== activePage?.id) setActivePage(match)
   }, [slug, pages, activePage?.id])
 
-  // Lazily fetch the active page's content. Cached per slug so repeat
-  // visits don't re-request, and aborted on rapid navigation to avoid
-  // stale late-arriving responses overwriting the current view.
-  useEffect(() => {
-    if (!projectId || !activePage) return
-    if (pageContents.has(activePage.slug)) { setContentLoading(false); return }
-    const controller = new AbortController()
-    setContentLoading(true)
+  // Track in-flight prefetches so hovering twice on the same nav item
+  // doesn't fire duplicate requests. Shared between the hover prefetch
+  // and the active-page effect so they collapse into a single fetch.
+  const inFlightRef = useRef<Set<string>>(new Set())
+
+  // Prefetch a page's content into the cache if we don't already have it.
+  // Called from the nav tree on hover/focus so clicking feels instant,
+  // and from the active-page effect on direct navigation.
+  const prefetchPage = useCallback((page: PublicPage): void => {
+    if (!projectId) return
+    if (pageContents.has(page.slug)) return
+    if (inFlightRef.current.has(page.slug)) return
+    inFlightRef.current.add(page.slug)
     void (async () => {
       try {
-        const res = await fetch(`/api/docs/${projectId}/pages/${encodeURIComponent(activePage.slug)}`, { signal: controller.signal })
+        const res = await fetch(`/api/docs/${projectId}/pages/${encodeURIComponent(page.slug)}`)
         if (!res.ok) throw new Error('Page not found')
         const body = await res.json() as PublicPageContent
         setPageContents((prev) => {
@@ -306,15 +314,28 @@ export function PublicDocs(): React.ReactElement {
           next.set(body.slug, body)
           return next
         })
-      } catch (err) {
-        if ((err as { name?: string }).name === 'AbortError') return
+      } catch {
         // Soft-fail: the page shell still renders, just without content.
       } finally {
-        setContentLoading(false)
+        inFlightRef.current.delete(page.slug)
       }
     })()
-    return () => controller.abort()
-  }, [projectId, activePage, pageContents])
+  }, [projectId, pageContents])
+
+  // Drive the loading spinner for the currently-viewed page. Prefetch
+  // dedupes with inFlightRef so this doesn't trigger a second request.
+  useEffect(() => {
+    if (!projectId || !activePage) return
+    if (pageContents.has(activePage.slug)) { setContentLoading(false); return }
+    setContentLoading(true)
+    prefetchPage(activePage)
+  }, [projectId, activePage, pageContents, prefetchPage])
+
+  // Clear the spinner once the active page's content lands in cache.
+  useEffect(() => {
+    if (!activePage) return
+    if (pageContents.has(activePage.slug)) setContentLoading(false)
+  }, [activePage, pageContents])
 
   // Fire-and-forget: ping the view endpoint so the owner sees page-view
   // analytics. Dedupe per slug so strict-mode / re-renders don't double-count.
@@ -399,7 +420,13 @@ export function PublicDocs(): React.ReactElement {
                 {results.length === 0 ? (
                   <div className={styles.searchEmpty}>No results</div>
                 ) : results.map((r) => (
-                  <button key={r.page.id} className={styles.searchResult} onClick={() => { selectPage(r.page); setSearch(''); setSearchFocused(false) }}>
+                  <button
+                    key={r.page.id}
+                    className={styles.searchResult}
+                    onMouseEnter={() => prefetchPage(r.page)}
+                    onFocus={() => prefetchPage(r.page)}
+                    onClick={() => { selectPage(r.page); setSearch(''); setSearchFocused(false) }}
+                  >
                     <span className={styles.searchResultTitle}>{r.page.title}</span>
                     <span className={styles.searchResultSnippet}>{r.snippet}</span>
                   </button>
@@ -413,7 +440,7 @@ export function PublicDocs(): React.ReactElement {
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
           <nav className={styles.nav}>
-            <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={selectPage} />
+            <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={selectPage} onPrefetch={prefetchPage} />
           </nav>
           <a
             className={styles.poweredBy}
@@ -483,7 +510,13 @@ export function PublicDocs(): React.ReactElement {
                     return (
                       <div className={styles.childPages}>
                         {children.map((child) => (
-                          <button key={child.id} className={styles.childPageLink} onClick={() => selectPage(child)}>
+                          <button
+                            key={child.id}
+                            className={styles.childPageLink}
+                            onMouseEnter={() => prefetchPage(child)}
+                            onFocus={() => prefetchPage(child)}
+                            onClick={() => selectPage(child)}
+                          >
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
                             {child.title}
                           </button>
