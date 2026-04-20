@@ -484,7 +484,7 @@ ${sectionList}
 - WATCH THE VIDEO: describe what you SEE happening, not what the doc says
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
 - GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
-- CLOSING: Section ${numStepsMerged} MUST end with a short, warm closing in the doc's language — a one-sentence recap + a friendly sign-off. Don't skip this.
+- CLOSING: Section ${numStepsMerged} MUST end with a real closing the user can HEAR as a goodbye. Write it in the doc's language and make it SPECIFIC to what the user just accomplished — don't default to a generic \"Thanks for watching\" / \"Merci d'avoir suivi\". Anchor it in the content: mention what they just learned to do, nudge them toward the next logical step, or give them a warm send-off that references the feature they configured. The listener must feel the video has ended — not just that a sentence finished.
 - Skip: URLs, code, technical IDs
 - Never say: "as you can see", "in this tutorial", "notice how"
 

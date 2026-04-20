@@ -64,20 +64,16 @@ export async function generateVoiceover(
     let estimatedDuration = Math.max(1, buffer.length / 16000)
 
     if (estimatedDuration > slotDuration * 1.1 && text.split(/\s+/).length > 6) {
-      const isLastSegment = i === steps.length - 1
       const words = text.split(/\s+/)
       const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration))
       const shortened = words.slice(0, Math.max(4, targetWords)).join(' ')
       const lastDot = shortened.lastIndexOf('.')
       text = lastDot > shortened.length * 0.4 ? shortened.slice(0, lastDot + 1) : shortened + '.'
-      // Preserve a closing on the last segment when the shortener would
-      // otherwise cut off the sign-off phrase. Users prefer a proper
-      // wrap-up — dropping it feels abrupt. Pick a language-appropriate
-      // fallback so a French translation doesn't get an English
-      // "Thanks for watching!" stitched on.
-      if (isLastSegment && !/thanks|bye|wrap|watching|revoir|voil[àa]|gracias|danke|grazie|obrigado/i.test(text)) {
-        text += ' ' + closingFallbackFor(options?.language)
-      }
+      // No hardcoded sign-off injection — the prompt now tells Gemini to
+      // write a contextual closing specific to what the user just
+      // accomplished. Injecting a generic "Thanks for watching!" on the
+      // last segment's overflow replaced a bespoke sign-off with a
+      // wallpaper phrase — users hated it.
 
       console.log(`[voiceover] Segment ${i}: overflow (${estimatedDuration.toFixed(1)}s > ${slotDuration.toFixed(1)}s slot) — retrying with ${text.split(/\s+/).length} words`)
 
@@ -113,28 +109,3 @@ export async function generateVoiceover(
   return { audioPath, audioUrl, segments }
 }
 
-/** Pick a closing phrase that matches the narration language when the
- *  overflow shortener trimmed the sign-off. English by default (the
- *  untranslated path + any language we don't have a preset for). */
-function closingFallbackFor(language: string | undefined): string {
-  if (!language) return 'Thanks for watching!'
-  const key = language.toLowerCase()
-  const map: Record<string, string> = {
-    french: "Merci d'avoir suivi !",
-    français: "Merci d'avoir suivi !",
-    fr: "Merci d'avoir suivi !",
-    spanish: '¡Gracias por ver!',
-    español: '¡Gracias por ver!',
-    es: '¡Gracias por ver!',
-    german: 'Danke fürs Zuschauen!',
-    deutsch: 'Danke fürs Zuschauen!',
-    de: 'Danke fürs Zuschauen!',
-    italian: 'Grazie per aver guardato!',
-    italiano: 'Grazie per aver guardato!',
-    it: 'Grazie per aver guardato!',
-    portuguese: 'Obrigado por assistir!',
-    português: 'Obrigado por assistir!',
-    pt: 'Obrigado por assistir!',
-  }
-  return map[key] ?? 'Thanks for watching!'
-}
