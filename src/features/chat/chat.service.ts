@@ -386,6 +386,36 @@ Generate 6 highly specific questions that users of THIS product would actually a
 
 // --- Progressive walkthrough generation (one step at a time) ---
 
+/**
+ * Best-effort repair of a truncated JSON string — Gemini occasionally
+ * hits maxTokens mid-output and emits something like
+ * `{"done": false, "step": {"instruction": "Click …"`
+ * which JSON.parse naturally rejects. We trim any dangling partial key
+ * or value, close open strings, then close unbalanced braces / brackets.
+ * Not a full JSON5 parser — just enough to salvage the common patterns.
+ */
+function repairTruncatedJson(input: string): string {
+  let s = input.trim()
+  // Drop trailing incomplete structures in reverse-precedence order:
+  //   - partial "key":"val  (unterminated string value)
+  //   - partial "key":        (colon then nothing)
+  //   - partial "key          (unterminated key)
+  //   - trailing comma
+  s = s.replace(/,?\s*"[^"]*"\s*:\s*"[^"]*$/, '')
+  s = s.replace(/,?\s*"[^"]*"\s*:\s*$/, '')
+  s = s.replace(/,?\s*"[^"]*$/, '')
+  s = s.replace(/,\s*$/, '')
+  // Close any still-open string (odd number of unescaped quotes)
+  const unescapedQuotes = (s.match(/(?<!\\)"/g) ?? []).length
+  if (unescapedQuotes % 2 === 1) s += '"'
+  // Close unbalanced brackets / braces in insertion order
+  const openBrackets = (s.match(/\[/g) ?? []).length - (s.match(/\]/g) ?? []).length
+  const openBraces = (s.match(/\{/g) ?? []).length - (s.match(/\}/g) ?? []).length
+  s += ']'.repeat(Math.max(0, openBrackets))
+  s += '}'.repeat(Math.max(0, openBraces))
+  return s
+}
+
 // Cache RAG context — same question always produces same doc chunks
 const walkthroughContextCache = new Map<string, { docContext: string; expiresAt: number }>()
 const WT_CONTEXT_TTL_MS = 600_000 // 10 minutes
@@ -422,12 +452,18 @@ export async function generateWalkthrough(
   const response = await generateText({
     systemPrompt: WALKTHROUGH_SYSTEM_PROMPT,
     userPrompt,
-    maxTokens: 1024,
+    // json:true forces Gemini to emit syntactically valid JSON — no
+    // more stray prose, no markdown fences. Still cap tokens but
+    // bumped higher so the step description + elementRef + explanation
+    // don't get truncated mid-string on richer UI snapshots.
+    maxTokens: 2048,
+    json: true,
+    temperature: 0,
   })
 
   // 3. Parse single-step JSON response (tolerant of Gemini quirks)
   let jsonStr = response.text.trim()
-  // Strip markdown fences
+  // Strip markdown fences (defensive — json:true should already prevent this)
   if (jsonStr.startsWith('```')) {
     jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
   }
@@ -439,8 +475,18 @@ export async function generateWalkthrough(
   try {
     parsed = JSON.parse(jsonStr) as Record<string, unknown>
   } catch (parseErr) {
-    console.error('[walkthrough] JSON parse failed:', (parseErr as Error).message, '| raw:', jsonStr.slice(0, 300))
-    return { done: true, step: null, stepNumber: 0, hint: null }
+    // Second chance: repair a truncated string (dangling key, open
+    // string, unclosed braces) and try again. Common failure mode when
+    // Gemini stops mid-output on large DOM snapshots — we'd rather
+    // salvage a partial step than abort the whole walkthrough.
+    const repaired = repairTruncatedJson(jsonStr)
+    try {
+      parsed = JSON.parse(repaired) as Record<string, unknown>
+      console.warn('[walkthrough] JSON repaired from truncated output')
+    } catch {
+      console.error('[walkthrough] JSON parse failed:', (parseErr as Error).message, '| raw:', jsonStr.slice(0, 300))
+      return { done: true, step: null, stepNumber: 0, hint: null }
+    }
   }
 
   // Normalize Gemini output — coerce empty strings to null for nullable fields
@@ -462,6 +508,21 @@ export async function generateWalkthrough(
       hint: validated.hint,
     }
   } catch (zodErr) {
+    // Last-chance salvage: if the shape is close but missing some
+    // required field (e.g. truncated mid-key), try to surface whatever
+    // instruction text we do have as a "hint" step with no element to
+    // highlight, so the walkthrough continues instead of dying.
+    const step = (parsed.step ?? {}) as Record<string, unknown>
+    const instruction = typeof step.instruction === 'string' ? step.instruction : null
+    if (instruction && instruction.length > 10) {
+      console.warn('[walkthrough] Zod failed, degrading to hint-only step:', (zodErr as Error).message)
+      return {
+        done: false,
+        step: null,
+        stepNumber: (request.completedSteps?.length ?? 0) + 1,
+        hint: instruction,
+      }
+    }
     console.error('[walkthrough] Zod validation failed:', (zodErr as Error).message, '| parsed:', JSON.stringify(parsed).slice(0, 300))
     return { done: true, step: null, stepNumber: 0, hint: null }
   }

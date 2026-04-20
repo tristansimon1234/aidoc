@@ -69,6 +69,11 @@
   var wtCompletedSteps = [];
   var wtCurrentStep = null;
   var wtStepNumber = 0;
+  var wtFetching = false;         // guard to prevent double-fetch races
+  var wtRetryCount = 0;           // retry counter on transient fetch failure
+  var WT_MAX_STEPS = 20;          // cap walkthrough length — Gemini
+                                  // occasionally loops; this bails us out.
+  var WT_MAX_RETRIES = 2;
 
   // --- Build CSS from current config ---
   function buildCSS() {
@@ -464,6 +469,20 @@
   }
 
   function fetchNextStep() {
+    // Guard against double-fetch: the DOM observer + click handler can both
+    // fire for a single user action (click causes DOM mutation → observer
+    // also triggers). Without this, we'd burn 2 Gemini calls per step and
+    // race the responses.
+    if (wtFetching) return;
+    wtFetching = true;
+
+    // Safety cap — bail out if Gemini keeps looping on a stuck UI.
+    if (wtStepNumber >= WT_MAX_STEPS) {
+      wtFetching = false;
+      exitWalkthrough();
+      return;
+    }
+
     // Show loading in mini bar or messages
     if (wtActive) {
       showLoadingBar();
@@ -486,12 +505,28 @@
         userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() },
       }),
     })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        if (!r.ok) { throw new Error('HTTP ' + r.status); }
+        return r.json();
+      })
       .then(function (data) {
+        wtFetching = false;
+        wtRetryCount = 0;
         if (data.done || !data.step) {
           exitWalkthrough();
           return;
         }
+
+        // Cycle detection — if Gemini hands back the same instruction
+        // and element twice in a row, we're stuck. Bail instead of
+        // looping the user in place.
+        var last = wtCompletedSteps[wtCompletedSteps.length - 1];
+        if (last && last.instruction === data.step.instruction
+            && wtCurrentStep && wtCurrentStep.elementRef === data.step.elementRef) {
+          exitWalkthrough();
+          return;
+        }
+
         wtCurrentStep = data.step;
         wtStepNumber = data.stepNumber;
 
@@ -508,7 +543,16 @@
         highlightStep(wtCurrentStep);
       })
       .catch(function () {
-        exitWalkthrough();
+        wtFetching = false;
+        // Retry on transient error — network blip, Vercel cold start,
+        // rate-limit that'll clear in a second. Give up after two tries.
+        if (wtRetryCount < WT_MAX_RETRIES) {
+          wtRetryCount += 1;
+          setTimeout(fetchNextStep, 1000);
+        } else {
+          wtRetryCount = 0;
+          exitWalkthrough();
+        }
       });
   }
 
@@ -627,28 +671,79 @@
     var INTERACTIVE = 'button,a,input,select,textarea,[role="button"],[role="link"],[role="tab"]';
     var candidates = document.querySelectorAll(INTERACTIVE);
     var instructionLower = step.instruction.toLowerCase();
+    // Prefer visible + in-viewport elements when text-matching — helps
+    // on pages with duplicate labels (e.g. a hidden mobile menu + a
+    // visible desktop nav with the same button label).
+    var visibleCandidates = [];
+    var offscreenCandidates = [];
     for (var i = 0; i < candidates.length; i++) {
-      var el = candidates[i];
+      var cand = candidates[i];
+      if (isElementVisible(cand)) {
+        if (isInViewport(cand)) visibleCandidates.push(cand);
+        else offscreenCandidates.push(cand);
+      }
+    }
+    var sorted = visibleCandidates.concat(offscreenCandidates);
+    for (var j = 0; j < sorted.length; j++) {
+      var el = sorted[j];
       var text = (el.textContent || '').trim().toLowerCase();
       var ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
-      if (text && instructionLower.indexOf(text) !== -1) return el;
+      // Require short element text (<60 chars) to avoid spurious matches
+      // where a long paragraph happens to contain the label substring.
+      if (text && text.length < 60 && instructionLower.indexOf(text) !== -1) return el;
       if (ariaLabel && instructionLower.indexOf(ariaLabel) !== -1) return el;
     }
 
     return null;
   }
 
+  function isElementVisible(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    var rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    var style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    return true;
+  }
+
+  function isInViewport(el) {
+    var rect = el.getBoundingClientRect();
+    return rect.top < window.innerHeight && rect.bottom > 0
+        && rect.left < window.innerWidth && rect.right > 0;
+  }
+
   // Track the currently highlighted DOM element for click detection
   var wtHighlightedEl = null;
   var wtClickHandler = null;
 
-  function highlightStep(step) {
+  function highlightStep(step, attempt) {
     removeHighlight();
     if (!step) return;
+    attempt = attempt || 0;
+
+    // Server-declared \"I'm not confident which element\" — skip the
+    // highlight engine entirely and show the instruction as a manual
+    // hint. Avoids pointing a ring at a random-looking element when
+    // Gemini has nulled out both refs on purpose.
+    var serverGaveUp = !step.elementRef && !step.fallbackSelector;
+    if (serverGaveUp) {
+      renderWalkthroughBarManual(step);
+      return;
+    }
 
     var el = matchElement(step);
     if (!el) {
-      // Element not found — show instruction in the bar with manual mode
+      // Not found yet. SPAs often mount the target element a tick later
+      // (async route change, lazy-loaded modal, framer-motion animation).
+      // Retry twice with short backoff before falling back to manual mode.
+      if (attempt < 2) {
+        setTimeout(function () {
+          // Still on the same step? Don't stomp a newer one mid-retry.
+          if (wtCurrentStep === step) highlightStep(step, attempt + 1);
+        }, attempt === 0 ? 400 : 900);
+        return;
+      }
+      // Element not found after retries — show instruction in the bar with manual mode
       renderWalkthroughBarManual(step);
       return;
     }
