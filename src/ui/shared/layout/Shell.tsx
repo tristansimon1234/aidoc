@@ -13,6 +13,7 @@ interface ShellProps {
 }
 
 const DOCLEE_WIDGET_ID = 'doclee-self-widget'
+const DOCLEE_DOCS_URL = 'https://app.doclee.tech/docs/d8577a1d-b81b-4c0b-b009-25b351a6376a'
 
 /** Inject Doclee's own widget on first Shell mount, remove on unmount.
  *  Scoped to the admin Shell so the public-docs SPA — which renders its
@@ -52,6 +53,19 @@ export function Shell({ children, actions, navBar, fullWidth = false }: ShellPro
             <Link to="/" className={styles.logo}>
               <span>doclee</span>
             </Link>
+            <a
+              className={styles.docsButton}
+              href={DOCLEE_DOCS_URL}
+              target="_blank"
+              rel="noreferrer"
+              title="Open the Doclee documentation in a new tab"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
+              <span>Docs</span>
+            </a>
             <JobBadge />
             {actions}
           </div>

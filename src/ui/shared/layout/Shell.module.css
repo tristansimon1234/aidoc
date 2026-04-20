@@ -50,6 +50,34 @@
   color: var(--color-primary);
 }
 
+/* Prominent Docs shortcut — always visible next to the logo so new users
+   can find the documentation in one click instead of hunting the avatar
+   menu or the AppRail book icon. */
+.docsButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-primary);
+  background: var(--color-accent);
+  text-decoration: none;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.1s;
+  margin-left: 4px;
+}
+
+.docsButton:hover {
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+
+.docsButton svg {
+  flex-shrink: 0;
+}
+
 .nav {
   display: flex;
   align-items: center;
