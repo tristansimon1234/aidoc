@@ -494,7 +494,11 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       }
 
       // Generate narration — with video if available, text-only as fallback
-      const narrationPrompt = `You are writing a voice-over narration script for this product tutorial video. WATCH THE VIDEO CAREFULLY — your narration must describe exactly what's happening on screen at each moment.
+      const narrationPrompt = `You are writing a voice-over narration script for this product tutorial video. BLEND two sources:
+1. The VIDEO drives TIMING and ACTIONS — watch it to know exactly what happens in each section's slot.
+2. The DOCUMENTATION drives CONTENT — it holds the why, the context, the caveats, the terminology, the audience-appropriate wording the author already crafted. Don't just describe pixels; lean on the doc to give the user the understanding the author intended.
+
+Within each section's time slot, synchronize to the video (narrate what's on screen right now, anticipate what's about to happen) BUT flesh out the narration using the documentation's explanations. If the doc mentions a reason, a tip, or a caveat tied to the step you're narrating, include it. If the doc doesn't cover what's on screen, describe the action plainly. Never contradict the doc.
 
 This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an essay.
 
@@ -516,8 +520,10 @@ Pacing: [short pause]
 
 Tag rules: tags go BETWEEN sentences only, NEVER mid-sentence. Use 3-5 different tags.
 
-## Documentation context (for terminology and feature names):
-${doc.markdownContent.slice(0, 3000)}
+## Documentation — the authoritative content source for the narration
+
+Treat this as the reference for WHAT to say during each section (the explanations, reasons, tips, caveats, and exact terminology the author wrote). The video tells you WHEN each step happens; this tells you HOW to describe it with depth. Prefer the doc's phrasing for feature names, settings labels, and step order — don't rename things Gemini-style.
+${doc.markdownContent.slice(0, 8000)}
 
 ## Script structure — TIMING IS CRITICAL
 ${numStepsMerged} sections using [SECTION N] markers.
@@ -539,7 +545,7 @@ ${sectionList}
 - When narrating a UI element whose on-screen label is in a different language than ${narrationLanguage}, keep the label verbatim in quotes but describe the action in ${narrationLanguage}: e.g. narration in English, button labelled "Paramètres" → "Click 'Paramètres' to open the settings panel."
 
 ## Content rules
-- WATCH THE VIDEO: describe what you SEE happening, not what the doc says
+- BLEND video + doc: the video gives you the TIMING + ACTIONS (what's on screen right now, what's about to happen); the doc gives you the EXPLANATIONS + CONTEXT (the why, the caveats, the exact wording the author used). Use both per section. Don't reduce the narration to a play-by-play of visible pixels — draw on the doc to enrich each moment.
 - ANTICIPATORY: narrate what's ABOUT to happen, just before it does
 - GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
 - CLOSING: Section ${numStepsMerged} ends with TWO parts, in this order, joined into one smooth passage (no list, no line break between them):
