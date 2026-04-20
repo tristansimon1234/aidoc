@@ -25,6 +25,16 @@
   color: var(--color-fg);
   text-align: center;
   margin-bottom: var(--space-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logoImg {
+  height: 36px;
+  width: auto;
+  display: block;
+  object-fit: contain;
 }
 
 .subtitle {

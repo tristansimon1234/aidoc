@@ -49,6 +49,13 @@
   background: var(--color-secondary);
 }
 
+.logoImg {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
 .navBtn {
   display: flex;
   align-items: center;

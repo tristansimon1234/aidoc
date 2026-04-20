@@ -2,7 +2,7 @@ import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { NotFoundError, ValidationError } from '../../shared/middleware/error.middleware.js'
 import { findProjectById } from '../project/project.repository.js'
-import { findPublicPagesByProjectId } from './page.repository.js'
+import { findPublicPagesMetaByProjectId, findPublicPageBySlug } from './page.repository.js'
 import { findLatestRunByPageId } from '../run/run.repository.js'
 import { getPublicUrl } from '../../shared/db/storage.repository.js'
 import * as chatService from '../chat/chat.service.js'
@@ -54,48 +54,17 @@ async function loadChatEnabledProject(projectId: string): Promise<Project> {
 const publicSuggestionsCache = new Map<string, { suggestions: string[]; expiresAt: number }>()
 const PUBLIC_SUGGESTIONS_TTL_MS = 3_600_000
 
-// GET /docs/:projectId — public, no auth
+// GET /docs/:projectId — public, no auth.
+// Returns only page metadata (title + slug + hierarchy) so projects with
+// hundreds of pages ship a small payload on first paint. Content, video
+// and voice-over are fetched lazily per page via /docs/:projectId/pages/:slug.
 publicDocsRouter.get('/:projectId', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
       const project = await findProjectById(req.params.projectId as string)
       if (!project) throw new NotFoundError('Project not found')
 
-      const pages = await findPublicPagesByProjectId(project.id)
-
-      // For pages with showVideoOnPublic, include video/voiceover data
-      const pagesWithVideo = await Promise.all(pages.map(async (p) => {
-        const briefing = p.briefing as Record<string, unknown> | null
-        const showVideo = briefing?.showVideoOnPublic === true
-
-        let videoUrl: string | null = null
-        let audioUrl: string | null = null
-
-        if (showVideo) {
-          const run = await findLatestRunByPageId(p.id)
-          const summary = run?.summaryJson as Record<string, unknown> | null
-          if (summary?.videoPath) {
-            videoUrl = getPublicUrl('artifacts', summary.videoPath as string)
-          }
-          const voiceover = summary?.voiceover as Record<string, unknown> | null
-          if (voiceover?.audioUrl) {
-            audioUrl = voiceover.audioUrl as string
-          } else if (voiceover?.audioPath) {
-            audioUrl = getPublicUrl('artifacts', voiceover.audioPath as string)
-          }
-        }
-
-        return {
-          id: p.id,
-          title: p.title,
-          slug: p.slug,
-          content: p.content,
-          parentId: p.parentId,
-          sortOrder: p.sortOrder,
-          videoUrl,
-          audioUrl,
-        }
-      }))
+      const pages = await findPublicPagesMetaByProjectId(project.id)
 
       res.status(200).json({
         project: {
@@ -105,7 +74,58 @@ publicDocsRouter.get('/:projectId', (req: Request, res: Response, next: NextFunc
           design: project.design,
         },
         chatEnabled: Boolean(project.publicDocsChatEnabled),
-        pages: pagesWithVideo,
+        pages,
+      })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// GET /docs/:projectId/pages/:slug — single public page with content + media.
+// Called lazily as the user navigates between pages; the initial payload
+// from /docs/:projectId intentionally omits content to keep it light.
+publicDocsRouter.get('/:projectId/pages/:slug', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const projectId = req.params.projectId as string
+      const slug = req.params.slug as string
+
+      const project = await findProjectById(projectId)
+      if (!project) throw new NotFoundError('Project not found')
+
+      const page = await findPublicPageBySlug(projectId, slug)
+      if (!page) throw new NotFoundError('Page not found')
+
+      const briefing = page.briefing as Record<string, unknown> | null
+      const showVideo = briefing?.showVideoOnPublic === true
+
+      let videoUrl: string | null = null
+      let audioUrl: string | null = null
+
+      if (showVideo) {
+        const run = await findLatestRunByPageId(page.id)
+        const summary = run?.summaryJson as Record<string, unknown> | null
+        if (summary?.videoPath) {
+          videoUrl = getPublicUrl('artifacts', summary.videoPath as string)
+        }
+        const voiceover = summary?.voiceover as Record<string, unknown> | null
+        if (voiceover?.audioUrl) {
+          audioUrl = voiceover.audioUrl as string
+        } else if (voiceover?.audioPath) {
+          audioUrl = getPublicUrl('artifacts', voiceover.audioPath as string)
+        }
+      }
+
+      res.status(200).json({
+        id: page.id,
+        title: page.title,
+        slug: page.slug,
+        content: page.content,
+        parentId: page.parentId,
+        sortOrder: page.sortOrder,
+        videoUrl,
+        audioUrl,
       })
     } catch (err) {
       next(err)

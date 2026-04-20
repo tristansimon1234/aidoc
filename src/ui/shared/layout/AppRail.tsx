@@ -12,12 +12,11 @@ export function AppRail(): React.ReactElement {
     <aside className={styles.rail}>
       <div className={styles.top}>
         <Link to="/" className={styles.logo} aria-label="Home">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M4 4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
-            <path d="M14 2v4a2 2 0 0 0 2 2h4" />
-            <circle cx="10" cy="16" r="2" fill="currentColor" stroke="none" />
-            <path d="M14 14l-2.5 2.5" />
-          </svg>
+          <img
+            src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-appicon-purple.png"
+            alt="doclee"
+            className={styles.logoImg}
+          />
         </Link>
 
         <Link
