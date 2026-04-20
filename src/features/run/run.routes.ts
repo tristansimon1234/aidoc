@@ -361,6 +361,53 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections: [${mergedTimestamps.map(t => t.toFixed(1)).join(', ')}]`)
 
+      // Ask Gemini to transform the DOC into a narration script.
+      // Tone presets — controls voice delivery style.
+      // wordsPerSecondFactor adjusts the min/max words budget relative to
+      // the 1.5-2.0 words/sec baseline so Gemini's output lines up with
+      // ElevenLabs playback duration for tones that add non-word timing
+      // (ellipses, whispers, emphasis tags).
+      //   < 1.0 = script gets fewer words because TTS is slower for this
+      //           tone (pauses, whispers)
+      //   > 1.0 = script gets more words because TTS runs at normal pace
+      //           with short punchy sentences (energetic tone writes more
+      //           individual sentences than long ones would)
+      const TONE_PRESETS: Record<string, { label: string; direction: string; example: string; wordsPerSecondFactor: number }> = {
+        friendly: {
+          label: 'Friendly & Casual',
+          direction: `Warm, upbeat, conversational. Use contractions, light humor. Say it in one sentence when you can, but feel free to use a second sentence for context when the slot allows.`,
+          example: `[SECTION 1]\nHey! [excited] Let's set up your workspace.\n[SECTION 2]\nCreate a new project — this is home base for your docs. [laughs] Easy.`,
+          wordsPerSecondFactor: 1.0,
+        },
+        professional: {
+          label: 'Professional & Clear',
+          direction: `Polished, confident, measured. Clear and articulate, no filler. One precise sentence per idea.`,
+          example: `[SECTION 1]\nWelcome. Let's set up your workspace.\n[SECTION 2]\nFirst, create a project. [short pause] Each project groups docs for one product.`,
+          wordsPerSecondFactor: 1.0,
+        },
+        energetic: {
+          label: 'Energetic & Hyped',
+          direction: `High-energy, hyped delivery. Use CAPS for key words (not whole sentences) and energy tags like [excited], [laughs], [happy gasp]. Write COMPLETE, full-length explanations — fill the word budget — the energy comes from the DELIVERY, not from being curt. Don't write fragments or one-word sentences; pumped doesn't mean short.`,
+          example: `[SECTION 1]\n[excited] Let's GO! Time to build out your workspace and get everything set up.\n[SECTION 2]\nNow we're creating your first project — [happy gasp] this is where ALL the magic happens, so pay attention to the URL field because that's what drives the AI analysis later.`,
+          wordsPerSecondFactor: 1.1,
+        },
+        calm: {
+          label: 'Calm & Reassuring',
+          direction: `Gentle, patient delivery. Use ONE ellipsis per section MAX (they add real TTS pause time). Prefer [short pause] tags over \`...\` when you need a beat. Reassuring phrases are great but keep sentences concrete. [whispers] sparingly — once per section at most.`,
+          example: `[SECTION 1]\nHi, welcome. [calm] Let's set up your workspace together — it only takes a minute.\n[SECTION 2]\nCreate a project here... [whispers] this is the space where all your docs will live.`,
+          wordsPerSecondFactor: 0.7,
+        },
+        playful: {
+          label: 'Playful & Fun',
+          direction: `Witty, cheeky. Light sarcasm, playful asides. [giggles], [whispers], [sarcastic].`,
+          example: `[SECTION 1]\n[laughs] Alright — workspace time. [whispers] Very official.\n[SECTION 2]\nCreate a project. [giggles] Groundbreaking, I know.`,
+          wordsPerSecondFactor: 1.0,
+        },
+      }
+
+      const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
+      const wordsFactor = tone.wordsPerSecondFactor
+
       const numStepsMerged = mergedTimestamps.length
       const timeBudgets = mergedTimestamps.map((t, i) => {
         const next = mergedTimestamps[i + 1]
@@ -369,11 +416,11 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         return Math.max(5, estimatedVideoEnd - t)
       })
       const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
-      const totalMaxWords = Math.floor(totalVideoTime * 2)
+      const totalMaxWords = Math.floor(totalVideoTime * 2 * wordsFactor)
       const sectionList = mergedTimestamps.map((t, i) => {
         const budget = timeBudgets[i]!
-        const minWords = Math.max(4, Math.floor(budget * 1.5))
-        const maxWords = Math.max(6, Math.floor(budget * 2.0))
+        const minWords = Math.max(4, Math.floor(budget * 1.5 * wordsFactor))
+        const maxWords = Math.max(6, Math.floor(budget * 2.0 * wordsFactor))
         const nextT = mergedTimestamps[i + 1]
         const timeRange = nextT != null ? `${formatTime(t)}–${formatTime(nextT)}` : `${formatTime(t)}–end`
         return `[SECTION ${i + 1}] (${timeRange}, ${budget.toFixed(0)}s → ${minWords}-${maxWords} words)`
@@ -384,38 +431,6 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         const sec = Math.floor(s % 60)
         return `${m}:${sec.toString().padStart(2, '0')}`
       }
-
-      // Ask Gemini to transform the DOC into a narration script
-      // Tone presets — controls voice delivery style
-      const TONE_PRESETS: Record<string, { label: string; direction: string; example: string }> = {
-        friendly: {
-          label: 'Friendly & Casual',
-          direction: `Warm, upbeat, conversational. Use contractions, light humor. Keep it SHORT — say it in one sentence when you can.`,
-          example: `[SECTION 1]\nHey! [excited] Let's set up your workspace.\n[SECTION 2]\nCreate a new project — this is home base for your docs. [laughs] Easy.`,
-        },
-        professional: {
-          label: 'Professional & Clear',
-          direction: `Polished, confident, measured. Clear and articulate, no filler. One precise sentence per idea.`,
-          example: `[SECTION 1]\nWelcome. Let's set up your workspace.\n[SECTION 2]\nFirst, create a project. [short pause] Each project groups docs for one product.`,
-        },
-        energetic: {
-          label: 'Energetic & Hyped',
-          direction: `High-energy, PUMPED. CAPS for emphasis, short punchy sentences. [excited], [laughs], [happy gasp].`,
-          example: `[SECTION 1]\n[excited] Let's GO! Time to set up your workspace.\n[SECTION 2]\nCreate a project — [happy gasp] watch how fast this is!`,
-        },
-        calm: {
-          label: 'Calm & Reassuring',
-          direction: `Gentle, patient. Ellipses for breathing room... reassuring phrases. [whispers] for tips.`,
-          example: `[SECTION 1]\nHi... welcome. [calm] Let's set up your workspace together.\n[SECTION 2]\nCreate a project... [whispers] it only takes a moment.`,
-        },
-        playful: {
-          label: 'Playful & Fun',
-          direction: `Witty, cheeky. Light sarcasm, playful asides. [giggles], [whispers], [sarcastic].`,
-          example: `[SECTION 1]\n[laughs] Alright — workspace time. [whispers] Very official.\n[SECTION 2]\nCreate a project. [giggles] Groundbreaking, I know.`,
-        },
-      }
-
-      const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
 
       // Download video for Gemini to watch while generating narration
       const videoPath = summary?.videoPath as string | undefined
@@ -521,7 +536,7 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
         // Enforce word limit — trim to budget if Gemini went way over
         const budget = timeBudgets[i]!
-        const maxWords = Math.max(5, Math.floor(budget * 2.0))
+        const maxWords = Math.max(5, Math.floor(budget * 2.0 * wordsFactor))
         const words = text.split(/\s+/)
         if (words.length > maxWords * 1.2) {
           // Over by 20%+ — truncate to limit, ending at a sentence boundary if possible
@@ -536,7 +551,7 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
       for (const s of stepsWithText) {
         const wordCount = s.text.split(/\s+/).length
         const budget = timeBudgets[s.stepIndex]!
-        const limit = Math.max(5, Math.floor(budget * 2.0))
+        const limit = Math.max(5, Math.floor(budget * 2.0 * wordsFactor))
         console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
       }
 
