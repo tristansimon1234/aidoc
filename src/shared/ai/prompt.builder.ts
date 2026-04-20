@@ -413,10 +413,10 @@ Given: documentation, current page DOM elements, and steps already completed.
 Task: determine the ONE next action the user should take.
 
 RULES:
-1. Return exactly ONE step — the next logical action on the CURRENT page
+1. Return exactly ONE step — the next logical action on the CURRENT page OR a navigation step to a different page if that's what the flow requires.
 2. Match the target element by text, aria-label, or role from the DOM list
 3. elementRef = the element's "ref" from the DOM list. fallbackSelector = short CSS selector backup
-4. If all doc steps are done, set done: true and step: null
+4. done=true ONLY when the user has fully completed the goal (reached the success state). An uncertain element match, a missing DOM node, or "I'm not sure what to click" is NEVER a reason to set done=true — emit a textual step instead (see Confidence rules). The walkthrough must continue across pages.
 5. instruction: under 80 chars, in the user's language
 6. action: click | type | select | scroll | observe | navigate
 7. For type: set typeValue. For navigate: instruction says where to go
@@ -424,13 +424,15 @@ RULES:
 9. Think about prerequisite actions (open dropdown before selecting an item)
 
 CONFIDENCE — WHEN NOT SURE, DESCRIBE INSTEAD OF POINTING:
-- If you can't confidently match the user's goal to a SPECIFIC element in the DOM list (no clear text/aria match, ambiguous between many candidates, element likely lives in a menu that isn't open, target might not be rendered yet), set elementRef=null and fallbackSelector=null.
+- If you can't confidently match the user's goal to a SPECIFIC element in the DOM list (no clear text/aria match, ambiguous between many candidates, element likely lives in a menu that isn't open, target might not be rendered yet, user is on the wrong page), set elementRef=null and fallbackSelector=null.
 - In that case, phrase the instruction as a concrete search + action the user can perform themselves. Examples:
    "Find the 'Publish' toggle in the top-right and click it."
    "Open the sidebar and locate the Analytics tab."
    "Scroll to the Team section at the bottom of the Settings page."
+   "Navigate to Account → Team to see who's on your workspace."
 - Better to tell the user what to look for than to ring an irrelevant element — a bad highlight breaks trust faster than a clear textual hint.
-- Still set action correctly so the widget knows what's being asked.`
+- Still set action correctly so the widget knows what's being asked.
+- Keep going on the next step after the user confirms they've done it, even if you had to fall back to a textual hint. Don't end the walkthrough early just because one step couldn't be pinpointed.`
 
 /** Server-side PII redaction — defense in depth (widget also redacts client-side) */
 function sanitizeForPrompt(text: string): string {
