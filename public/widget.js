@@ -134,7 +134,12 @@
       '.aidoc-perm-allow{background:' + C.accent + ';color:white;border-color:' + C.accent + '}',
       '.aidoc-perm-deny{background:transparent;color:' + mutedText + '}',
       // Mini bar — replaces the full panel during walkthrough
-      '#aidoc-wt-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100001;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:' + C.bg + ';border:1px solid ' + border + ';box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:' + C.font + ';color:' + C.text + ';font-size:12px;white-space:nowrap}',
+      '#aidoc-wt-bar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:100001;display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:' + C.bg + ';border:1px solid ' + border + ';box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:' + C.font + ';color:' + C.text + ';font-size:12px;white-space:nowrap;max-width:calc(100vw - 32px)}',
+      /* Manual variant (no highlight, instruction IS the guidance): let the text wrap to multiple lines so users see the full ask instead of a truncated ellipsis. */
+      '#aidoc-wt-bar.aidoc-wt-bar-manual{white-space:normal;align-items:flex-start;max-width:min(520px,calc(100vw - 32px))}',
+      '#aidoc-wt-bar.aidoc-wt-bar-manual .aidoc-wt-bar-text{max-width:none;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.5;flex:1}',
+      '#aidoc-wt-bar.aidoc-wt-bar-manual .aidoc-wt-bar-step{margin-top:3px}',
+      '#aidoc-wt-bar.aidoc-wt-bar-manual button{flex-shrink:0;align-self:center}',
       '#aidoc-wt-bar .aidoc-wt-bar-step{color:' + mutedText + ';font-size:11px}',
       '#aidoc-wt-bar .aidoc-wt-bar-text{font-weight:500;max-width:280px;overflow:hidden;text-overflow:ellipsis}',
       '#aidoc-wt-bar button{padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;border:1px solid ' + border + ';background:transparent;color:' + C.text + ';transition:all .15s}',
@@ -641,6 +646,7 @@
 
     var bar = document.createElement('div');
     bar.id = 'aidoc-wt-bar';
+    bar.className = 'aidoc-wt-bar-manual';
     bar.style.borderColor = '#f59e0b';
     bar.innerHTML = [
       '<span class="aidoc-wt-bar-step">' + wtStepNumber + '</span>',
