@@ -92,6 +92,24 @@ export async function reorderPages(items: ReorderItem[]): Promise<void> {
   return pageRepo.reorderPages(items)
 }
 
+/** Revert the last regeneration. Re-indexes embeddings on the restored
+ *  content so chat/search see the old version again. */
+export async function restorePreviousContent(id: string): Promise<DocPage> {
+  const restored = await pageRepo.restorePreviousContent(id)
+  import('../chat/chat.service.js')
+    .then(({ indexPage }) =>
+      indexPage({
+        id: restored.id,
+        projectId: restored.projectId,
+        title: restored.title,
+        slug: restored.slug,
+        content: restored.content,
+      }),
+    )
+    .catch((err) => console.error('[chat] Re-index after restore failed:', err))
+  return restored
+}
+
 // --- Pre-flight verification ---
 
 export async function runPreflight(pageId: string, projectId: string): Promise<PreflightResult> {

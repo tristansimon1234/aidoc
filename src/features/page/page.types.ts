@@ -42,6 +42,15 @@ export interface DocPage {
    * populated for public-docs rendering and RAG indexing.
    */
   contentBlocks: unknown
+  /**
+   * Snapshot of the previous content, kept so the user can undo a
+   * destructive regeneration (video → doc). Only the most recent snapshot
+   * is retained — regenerating twice drops the oldest. Null once restored
+   * or when no regeneration has happened yet.
+   */
+  previousContent: string | null
+  previousContentBlocks: unknown
+  previousContentSavedAt: Date | null
   customPrompt: string | null
   briefing: PageBriefing | null
   status: PageStatus

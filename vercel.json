@@ -5,9 +5,14 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 300
+    },
+    "api/docs-ssr.ts": {
+      "maxDuration": 10,
+      "includeFiles": "dist/client/index.html"
     }
   },
   "rewrites": [
+    { "source": "/docs/:projectId/:slug?", "destination": "/api/docs-ssr" },
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]

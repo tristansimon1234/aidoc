@@ -204,6 +204,21 @@ pageRouter.post('/:pageId/preflight', (req: Request, res: Response, next: NextFu
   })()
 })
 
+// Restore the previous version of a page (set by a doc regeneration).
+// 404 when there's no snapshot to restore.
+pageRouter.post('/:pageId/restore-previous', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = PageParams.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const restored = await pageService.restorePreviousContent(params.data.pageId)
+      res.status(200).json(restored)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 pageRouter.delete('/:pageId', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
