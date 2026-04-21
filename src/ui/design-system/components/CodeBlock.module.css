@@ -1,29 +1,100 @@
 .wrapper {
   position: relative;
-  background-color: var(--color-secondary);
-  border: 1px solid var(--color-border);
+  background-color: #161616;
+  color: #f5f5f5;
   border-radius: var(--radius-lg);
   overflow: hidden;
+  margin: 0 0 var(--space-md);
 }
 
-.lang {
-  padding: var(--space-xs) var(--space-sm);
-  font-size: var(--text-xs);
-  font-family: var(--font-mono);
-  color: var(--color-muted-fg);
-  background-color: var(--color-card);
-  border-bottom: 1px solid var(--color-border);
-  user-select: none;
-}
-
-.pre {
+/* Ancestor-scoped selectors (`.wrapper pre`, `.wrapper code`) bump the
+ * specificity above any external rule like `.article pre { … }` that may
+ * live in a parent stylesheet. Without this, MarkdownRenderer's old
+ * `.article pre` fallback used to win and the code block rendered light
+ * grey on light grey (unreadable). */
+.wrapper pre {
   margin: 0;
   padding: var(--space-md);
+  padding-right: 60px; /* room for the absolute-positioned Copy button */
   font-size: var(--text-sm);
   font-family: var(--font-mono);
-  color: var(--color-fg);
+  color: #f5f5f5;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   overflow-x: auto;
   line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
+}
+
+.wrapper code {
+  font-family: inherit;
+  color: #f5f5f5;
+  background: transparent;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+/* Copy button: floats in the top-right of the block. Fades in on hover to
+ * stay out of the way of the code itself but remain discoverable. Always
+ * visible on touch devices (no hover state). */
+.copyBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  color: #cfcfcf;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s, background-color 0.1s, opacity 0.15s;
+  opacity: 0;
+  z-index: 1;
+}
+
+.wrapper:hover .copyBtn,
+.copyBtn:focus-visible {
+  opacity: 1;
+}
+
+.copyBtn:hover {
+  color: #f5f5f5;
+  background: #242424;
+  border-color: #4a4a4a;
+}
+
+.copyBtn:focus-visible {
+  outline: 2px solid #5b8cff;
+  outline-offset: 1px;
+}
+
+.copyIcon {
+  flex-shrink: 0;
+  color: currentColor;
+}
+
+.copied {
+  color: #3dd68c;
+  border-color: #1f4a34;
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .copyBtn { opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 }

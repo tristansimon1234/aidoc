@@ -106,30 +106,17 @@
   transform: scale(1.01);
 }
 
-.article code {
+/* Inline code (`backticks` inside a paragraph). Scoped with :not(pre) so
+ * the rule never bleeds into the dark CodeBlock body — fenced ``` blocks
+ * are rendered entirely by the CodeBlock component and must stay on the
+ * #161616 / #f5f5f5 palette regardless of the MarkdownRenderer context. */
+.article :not(pre) > code {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   background-color: var(--color-secondary);
   padding: 1px 5px;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
-}
-
-.article pre {
-  background-color: var(--color-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-md);
-  overflow-x: auto;
-  margin: 0 0 var(--space-md);
-}
-
-.article pre code {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: var(--text-sm);
-  line-height: 1.6;
 }
 
 .article blockquote {
@@ -141,13 +128,18 @@
   color: var(--color-muted-fg);
 }
 
-/* Callouts — GitHub-style alerts detected in blockquote content */
+/* Callouts — GitHub-style alerts detected in blockquote content.
+ * Background uses a solid RGBA fallback so older browsers / WebViews
+ * without color-mix() still paint a tinted strip; modern browsers pick
+ * up the per-type color-mix override. Every type explicitly redeclares
+ * the background (instead of relying on a shared var) so if color-mix
+ * resolves to invalid, the cascade falls back to the opaque hex below. */
 .article blockquote[data-callout-type] {
   padding: var(--space-md);
   border-left: 3px solid var(--callout-accent, var(--color-primary));
-  background: var(--callout-bg, color-mix(in srgb, var(--color-primary) 8%, transparent));
   border-radius: var(--radius-lg);
   color: var(--color-fg);
+  margin: 0 0 var(--space-md);
 }
 
 .article blockquote[data-callout-type]::before {
@@ -161,30 +153,42 @@
   margin-bottom: var(--space-xs);
 }
 
+/* Colors pinned to hex to match the admin BlockEditor render exactly —
+ * the public shell overrides --color-primary with the project accent,
+ * so relying on CSS vars produces different (blue/purple) INFO callouts
+ * from the neutral grey the author sees in the editor. Keep them in sync
+ * with CalloutBlock.tsx META. */
 .article blockquote[data-callout-type="NOTE"],
 .article blockquote[data-callout-type="INFO"] {
-  --callout-accent: var(--color-primary);
-  --callout-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --callout-accent: #1A1A1A;
   --callout-label: "Info";
+  background: #F3F4F6;
+  border-left-color: #1A1A1A;
 }
 
 .article blockquote[data-callout-type="TIP"] {
-  --callout-accent: var(--color-success);
-  --callout-bg: color-mix(in srgb, var(--color-success) 10%, transparent);
+  --callout-accent: #10B981;
   --callout-label: "Tip";
+  background: #ECFDF5;
+  background: color-mix(in srgb, #10B981 10%, #FFFFFF);
+  border-left-color: #10B981;
 }
 
 .article blockquote[data-callout-type="WARNING"] {
-  --callout-accent: var(--color-warning);
-  --callout-bg: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  --callout-accent: #F59E0B;
   --callout-label: "Warning";
+  background: #FFFBEB;
+  background: color-mix(in srgb, #F59E0B 10%, #FFFFFF);
+  border-left-color: #F59E0B;
 }
 
 .article blockquote[data-callout-type="DANGER"],
 .article blockquote[data-callout-type="CAUTION"] {
-  --callout-accent: var(--color-destructive);
-  --callout-bg: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  --callout-accent: #EF4444;
   --callout-label: "Danger";
+  background: #FEF2F2;
+  background: color-mix(in srgb, #EF4444 10%, #FFFFFF);
+  border-left-color: #EF4444;
 }
 
 .article hr {
