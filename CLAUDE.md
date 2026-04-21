@@ -110,6 +110,15 @@ src/
       admin.repository.ts     # listUsageCountersForMonth, listProfiles, listActiveSubscriptions
       admin.service.ts        # getUsageReport(periodMonth) — joins counters + profiles + subs + plans
       admin.routes.ts         # GET /admin/usage?month=YYYY-MM
+    mcp/                  # Per-user MCP server (workspace-scoped personal access tokens)
+      mcp.types.ts            # McpUserToken, McpUserTokenSummary, McpAuthContext
+      mcp.schema.ts           # Zod for token CRUD + every tool's arguments
+      mcp.repository.ts       # createToken, findActiveTokenByValue, listTokensForUser,
+                              # revokeToken (soft delete), touchTokenLastUsed
+      user-mcp.routes.ts      # Public JSON-RPC 2.0 endpoint — 7 tools (list_projects,
+                              # create_project, list_pages, get_page, search_documentation,
+                              # create_page, update_page) scoped to (userId, teamId)
+      tokens.routes.ts        # Authed CRUD for /api/mcp-tokens
     analytics/            # Per-project chat + doc-view analytics with AI insights
     team/                 # Multi-tenant: teams, members, invites; auto-created personal workspace
       team.types.ts          # Team, TeamMember, TeamInvite, TeamRole
@@ -298,7 +307,7 @@ Every DB call through `*.repository.ts`. Services NEVER call Supabase directly.
 - After generation → auto-copied to `doc_pages.content`
 
 ### Full schema reference
-See `docs/DATABASE.md` — 13 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions), 28 migrations.
+See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions; MCP: mcp_user_tokens), 29 migrations.
 
 ---
 
@@ -354,6 +363,13 @@ Tunable in code, no migration needed:
 
 # Admin (authenticated + ADMIN_EMAILS allowlist)
 /api/admin/usage                           # GET ?month=YYYY-MM: per-user usage report
+
+# User MCP — personal access tokens + JSON-RPC endpoint
+/api/mcp-tokens                            # GET list own tokens (masked); POST create { name, teamId } → full token once; DELETE /:id revoke
+/api/mcp-user/:token                       # POST (public, token auth, 60/min): JSON-RPC 2.0
+                                           # Tools: list_projects, create_project, list_pages, get_page,
+                                           #        search_documentation, create_page, update_page
+                                           # All tools re-assert project.team_id === token.team_id.
 
 # Teams (authenticated — multi-tenant layer above projects)
 /api/teams                                 # GET list; POST create

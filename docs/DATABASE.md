@@ -289,6 +289,24 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 33 | `20260418000002_add_analytics_tables.sql` | `chat_messages` + `doc_page_views` — powers the per-project Analytics tab with AI sentiment insights |
 | 34 | `20260418000003_add_chat_messages_classification.sql` | Add `sentiment` / `frustration_flag` / `language` to `chat_messages` — write-time classification enables filters + trend signals |
 | 35 | `20260418000004_add_chat_messages_category.sql` | Add `category` to `chat_messages` — enables SQL-only pain-point aggregation on the Analytics tab |
+| 36 | `20260421000000_add_mcp_user_tokens.sql` | `mcp_user_tokens` table — per-user personal access tokens scoped to a single workspace; powers the user MCP server (`/api/mcp-user/:token`) |
+
+## `mcp_user_tokens` — user MCP personal access tokens
+
+One row per token. Each token authenticates an MCP client as a specific `(user_id, team_id)` pair; all tool calls on `/api/mcp-user/:token` operate strictly within that pair.
+
+```sql
+id              uuid PK DEFAULT gen_random_uuid()
+user_id         uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
+team_id         uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE
+name            text NOT NULL                  -- user-supplied label
+token           text NOT NULL UNIQUE           -- aidoc_usr_<64-hex>
+last_used_at    timestamptz                    -- fire-and-forget touch on each request
+revoked_at      timestamptz                    -- soft delete; active lookups filter on NULL
+created_at      timestamptz NOT NULL DEFAULT now()
+```
+**Indexes**: `idx_mcp_user_tokens_user_id`, `idx_mcp_user_tokens_token_active` (partial on `revoked_at IS NULL`).
+**RLS**: owner-only read/insert/update/delete (`auth.uid() = user_id`).
 
 ## Relationships
 
@@ -296,6 +314,8 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 auth.users 1:1 profiles (CASCADE)
 auth.users 1:1 subscriptions (active, CASCADE) — plan_id → plans
 auth.users 1:N usage_counters (CASCADE)
+auth.users 1:N mcp_user_tokens (CASCADE)
+teams 1:N mcp_user_tokens (CASCADE)
 projects 1:N doc_pages (CASCADE)
 projects 1:N doc_embeddings (CASCADE)
 projects 1:N chat_sessions (CASCADE)

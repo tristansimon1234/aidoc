@@ -498,6 +498,31 @@ export const api = {
     peek: (token: string): Promise<{ teamName: string; email: string; inviterName: string | null; expiresAt: string; accepted: boolean }> =>
       request(`/invites/${token}`),
   },
+  mcpTokens: {
+    list: (): Promise<McpTokenSummaryDTO[]> => request('/mcp-tokens'),
+    create: (body: { name: string; teamId: string }): Promise<McpTokenCreatedDTO> =>
+      request('/mcp-tokens', { method: 'POST', body: JSON.stringify(body) }),
+    revoke: (id: string): Promise<void> =>
+      request(`/mcp-tokens/${id}`, { method: 'DELETE' }),
+  },
+}
+
+export interface McpTokenSummaryDTO {
+  id: string
+  userId: string
+  teamId: string
+  name: string
+  preview: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+  createdAt: string
+}
+
+/** Returned once on create. `token` is the full secret — the UI must display
+ *  it immediately and then drop it from state; subsequent list calls only
+ *  return the preview. */
+export interface McpTokenCreatedDTO extends McpTokenSummaryDTO {
+  token: string
 }
 
 export type TeamRoleDTO = 'owner' | 'member'
