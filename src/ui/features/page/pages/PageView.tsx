@@ -612,6 +612,14 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                         const { signedUrl } = await api.runs.getSignedUploadUrl(latestRunId, path)
                         const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
                         if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
+                        // Persist the new videoPath on summary_json — Replace
+                        // writes the file under the chosen extension, which
+                        // may differ from the one stored in summary_json
+                        // (e.g. old path pointed to an .mp4 produced by
+                        // convertToMp4, new upload is a .mov). Without this,
+                        // fetchData() either loads the stale path or returns
+                        // undefined and the player goes blank.
+                        await api.runs.attachVideo(latestRunId, path)
                         const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
                         if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
                         setVoiceoverUrl(null)
