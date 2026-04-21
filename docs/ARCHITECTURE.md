@@ -166,7 +166,9 @@ See `CLAUDE.md` § "API Design > Route structure" for the full annotated list. H
 - `/api/widget/:key/*` — public, API-key auth, rate-limited
 - `/api/docs/:projectId*` — public docs (per-page `is_public`) + anonymous chat + page-view pings
 - `/api/projects/:pid/analytics` — per-project chat + doc-view analytics with AI insights (owner-gated)
-- `/api/mcp/*` — Model Context Protocol server for IDE integrations
+- `/api/mcp/*` — Project-scoped MCP server (end-user read-only, keyed by `projects.mcp_api_key`)
+- `/api/mcp-user/:token` — User-scoped MCP server (JSON-RPC 2.0, 7 tools: `list_projects`, `create_project`, `list_pages`, `get_page`, `search_documentation`, `create_page`, `update_page`). Authenticated by a personal access token from the `mcp_user_tokens` table; every tool re-asserts project membership in the token's workspace.
+- `/api/mcp-tokens` — Authed CRUD for personal access tokens (list / create / revoke), surfaced in Account → MCP Tokens.
 
 The same set is mounted twice: in `src/app.ts` for local dev (`npm run dev:server`) and in `api/index.ts` for the Vercel serverless function (with `/api` prefix). Adding a route requires touching both.
 

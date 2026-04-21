@@ -13,6 +13,8 @@ import { documentationRouter } from './features/documentation/documentation.rout
 import { chatRouter } from './features/chat/chat.routes.js'
 import { widgetRouter } from './features/chat/widget.routes.js'
 import { mcpRouter } from './features/chat/mcp.routes.js'
+import { userMcpRouter } from './features/mcp/user-mcp.routes.js'
+import { mcpTokensRouter } from './features/mcp/tokens.routes.js'
 import { publicDocsRouter } from './features/page/public-docs.routes.js'
 import { analyticsRouter } from './features/analytics/analytics.routes.js'
 import { teamRouter, invitePublicRouter } from './features/team/team.routes.js'
@@ -26,6 +28,7 @@ app.use(express.json())
 // Public routes — no auth
 app.use('/widget', widgetRouter)
 app.use('/mcp', mcpRouter)
+app.use('/mcp-user', userMcpRouter)
 app.use('/docs', publicDocsRouter)
 app.use('/invites', invitePublicRouter)
 
@@ -36,6 +39,7 @@ app.use('/profile', profileRouter)
 app.use('/billing', billingRouter)
 app.use('/admin', requireAdmin, adminRouter)
 app.use('/teams', teamRouter)
+app.use('/mcp-tokens', mcpTokensRouter)
 
 // Project routes
 app.use('/projects', projectRouter)

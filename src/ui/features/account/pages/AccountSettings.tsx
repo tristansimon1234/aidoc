@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Spinner, Badge, Field, useConfirmDialog } from '../../../design-system/components/index.js'
-import { api, type BillingSummaryDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
+import { api, type BillingSummaryDTO, type McpTokenSummaryDTO, type McpTokenCreatedDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
 import { Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import styles from './AccountSettings.module.css'
 
-type AccountTab = 'profile' | 'billing' | 'team'
+type AccountTab = 'profile' | 'billing' | 'team' | 'mcp'
 
 export function AccountSettings(): React.ReactElement {
   const [searchParams, setSearchParams] = useSearchParams()
   const rawTab = searchParams.get('tab')
-  const initialTab: AccountTab = rawTab === 'billing' ? 'billing' : rawTab === 'team' ? 'team' : 'profile'
+  const initialTab: AccountTab =
+    rawTab === 'billing' ? 'billing'
+    : rawTab === 'team' ? 'team'
+    : rawTab === 'mcp' ? 'mcp'
+    : 'profile'
   const [activeTab, setActiveTab] = useState<AccountTab>(initialTab)
   const [profile, setProfile] = useState<ProfileDTO | null>(null)
   const [fullName, setFullName] = useState('')
@@ -64,6 +68,7 @@ export function AccountSettings(): React.ReactElement {
     { id: 'profile', label: 'Profile' },
     { id: 'billing', label: 'Plan & Billing' },
     { id: 'team', label: 'Team' },
+    { id: 'mcp', label: 'MCP Tokens' },
   ]
 
   return (
@@ -119,8 +124,10 @@ export function AccountSettings(): React.ReactElement {
             </div>
           ) : activeTab === 'billing' ? (
             <BillingTab />
-          ) : (
+          ) : activeTab === 'team' ? (
             <TeamTab />
+          ) : (
+            <McpTokensTab />
           )}
         </div>
       </div>
@@ -547,6 +554,227 @@ function TeamTab(): React.ReactElement {
             )
           })}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// --- MCP tokens tab ---
+// Personal access tokens for the MCP server, scoped to a single workspace.
+// Each token authenticates as (user, workspace) and lets the holder manage
+// projects / pages via Claude Desktop, Claude Code, or any MCP client.
+function McpTokensTab(): React.ReactElement {
+  const { confirm, dialog } = useConfirmDialog()
+  const [tokens, setTokens] = useState<McpTokenSummaryDTO[]>([])
+  const [teams, setTeams] = useState<{ team: TeamDTO; role: TeamRoleDTO }[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const [name, setName] = useState('')
+  const [teamId, setTeamId] = useState<string>('')
+  const [creating, setCreating] = useState(false)
+  const [justCreated, setJustCreated] = useState<McpTokenCreatedDTO | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const load = async (): Promise<void> => {
+    setLoading(true); setError(null)
+    try {
+      const [t, teamList] = await Promise.all([api.mcpTokens.list(), api.teams.list()])
+      setTokens(t)
+      setTeams(teamList)
+      if (!teamId) {
+        const personal = teamList.find((x) => x.team.personal) ?? teamList[0]
+        if (personal) setTeamId(personal.team.id)
+      }
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [])
+
+  const handleCreate = async (): Promise<void> => {
+    if (!name.trim() || !teamId) return
+    setCreating(true); setError(null)
+    try {
+      const created = await api.mcpTokens.create({ name: name.trim(), teamId })
+      setJustCreated(created)
+      setName('')
+      setCopied(false)
+      await load()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleRevoke = async (t: McpTokenSummaryDTO): Promise<void> => {
+    const ok = await confirm({
+      title: `Revoke "${t.name}"?`,
+      message: 'Any MCP client using this token will stop working immediately. This cannot be undone.',
+      confirmLabel: 'Revoke',
+      variant: 'danger',
+    })
+    if (!ok) return
+    try {
+      await api.mcpTokens.revoke(t.id)
+      if (justCreated?.id === t.id) setJustCreated(null)
+      await load()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  const copyToken = (value: string): void => {
+    void navigator.clipboard.writeText(value)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const teamName = (id: string): string =>
+    teams.find((t) => t.team.id === id)?.team.name ?? 'Unknown workspace'
+
+  const mcpUrl = justCreated
+    ? `${window.location.origin}/api/mcp-user/${justCreated.token}`
+    : null
+
+  const configJson = justCreated && mcpUrl
+    ? JSON.stringify(
+        { mcpServers: { [`doclee-${teamName(justCreated.teamId).toLowerCase().replace(/\s+/g, '-')}`]: { url: mcpUrl } } },
+        null, 2,
+      )
+    : ''
+
+  if (loading) return <div className={styles.loading}><Spinner size="md" /></div>
+
+  const activeTokens = tokens.filter((t) => !t.revokedAt)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+      {dialog}
+
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>MCP Tokens</h2>
+          <p className={styles.sectionDesc}>
+            Create a personal access token to connect an MCP client (Claude Desktop, Claude Code, …) to one of your workspaces.
+            Each token authenticates as you and is scoped to a single workspace — it can list, create, and edit projects and pages in that workspace only.
+          </p>
+        </div>
+
+        {justCreated && (
+          <div style={{
+            marginBottom: 'var(--space-md)',
+            padding: 'var(--space-md)',
+            background: 'var(--color-bg)',
+            border: '1px solid var(--color-primary)',
+            borderRadius: 'var(--radius-lg)',
+            display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)',
+          }}>
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
+              Token created — copy it now
+            </div>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', lineHeight: 1.5 }}>
+              This is the only time the full token will be shown. Store it in your MCP client config; you can always revoke and create a new one.
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+              <code style={{
+                flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)',
+                wordBreak: 'break-all', background: 'var(--color-card)',
+                padding: '6px 8px', borderRadius: 6, border: '1px solid var(--color-border)',
+              }}>{justCreated.token}</code>
+              <Button size="sm" onClick={() => copyToken(justCreated.token)}>
+                {copied ? 'Copied!' : 'Copy'}
+              </Button>
+            </div>
+            <div>
+              <label className={styles.label}>Claude Desktop / Claude Code config</label>
+              <pre style={{
+                margin: 0, padding: 'var(--space-sm)',
+                fontSize: 11, fontFamily: 'var(--font-mono)',
+                background: 'var(--color-card)', border: '1px solid var(--color-border)',
+                borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+              }}>{configJson}</pre>
+            </div>
+            <div>
+              <Button size="sm" variant="ghost" onClick={() => setJustCreated(null)}>Dismiss</Button>
+            </div>
+          </div>
+        )}
+
+        <div className={styles.fieldGrid} style={{ gridTemplateColumns: '1fr 1fr auto', alignItems: 'end' }}>
+          <div className={styles.field}>
+            <label className={styles.label}>Token name</label>
+            <input
+              className={styles.input}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Laptop — Claude Desktop"
+              maxLength={80}
+            />
+          </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Workspace</label>
+            <select
+              className={styles.input}
+              value={teamId}
+              onChange={(e) => setTeamId(e.target.value)}
+              disabled={teams.length === 0}
+            >
+              {teams.map((t) => (
+                <option key={t.team.id} value={t.team.id}>
+                  {t.team.name}{t.team.personal ? ' (personal)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className={styles.field}>
+            <Button
+              size="sm"
+              onClick={() => void handleCreate()}
+              disabled={creating || !name.trim() || !teamId}
+            >
+              {creating ? 'Creating…' : 'Create token'}
+            </Button>
+          </div>
+        </div>
+        {error && <p className={`${styles.saveMsg} ${styles.error}`} style={{ marginTop: 'var(--space-sm)' }}>{error}</p>}
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Active tokens ({activeTokens.length})</h2>
+          <p className={styles.sectionDesc}>
+            Revoke any token you no longer trust — the MCP endpoint will refuse it immediately.
+          </p>
+        </div>
+        {activeTokens.length === 0 ? (
+          <p className={styles.sectionDesc}>No active tokens yet. Create one above to get started.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {activeTokens.map((t) => (
+              <div key={t.id} style={{
+                display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
+                padding: 'var(--space-sm) 0',
+                borderBottom: '1px solid var(--color-border)',
+              }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
+                    {t.name}
+                  </span>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+                    {teamName(t.teamId)} · aidoc_usr_…{t.preview} · created {new Date(t.createdAt).toLocaleDateString()}
+                    {t.lastUsedAt && ` · last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
+                  </span>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => void handleRevoke(t)}>Revoke</Button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

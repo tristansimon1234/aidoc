@@ -14,6 +14,8 @@ import { documentationRouter } from '../src/features/documentation/documentation
 import { chatRouter } from '../src/features/chat/chat.routes.js'
 import { widgetRouter } from '../src/features/chat/widget.routes.js'
 import { mcpRouter } from '../src/features/chat/mcp.routes.js'
+import { userMcpRouter } from '../src/features/mcp/user-mcp.routes.js'
+import { mcpTokensRouter } from '../src/features/mcp/tokens.routes.js'
 import { publicDocsRouter } from '../src/features/page/public-docs.routes.js'
 import { analyticsRouter } from '../src/features/analytics/analytics.routes.js'
 import { teamRouter, invitePublicRouter } from '../src/features/team/team.routes.js'
@@ -32,6 +34,7 @@ app.get('/api/health', (_req: Request, res: Response) => {
 // Public routes (no auth)
 app.use('/api/widget', widgetRouter)
 app.use('/api/mcp', mcpRouter)
+app.use('/api/mcp-user', userMcpRouter)
 app.use('/api/docs', publicDocsRouter)
 app.use('/api/invites', invitePublicRouter)
 
@@ -40,6 +43,7 @@ app.use('/api/profile', authMiddleware, profileRouter)
 app.use('/api/billing', authMiddleware, billingRouter)
 app.use('/api/admin', authMiddleware, requireAdmin, adminRouter)
 app.use('/api/teams', authMiddleware, teamRouter)
+app.use('/api/mcp-tokens', authMiddleware, mcpTokensRouter)
 app.use('/api/projects', authMiddleware, projectRouter)
 app.use('/api/projects/:projectId/pages', authMiddleware, pageRouter)
 app.use('/api/projects/:projectId/chat', authMiddleware, chatRouter)
