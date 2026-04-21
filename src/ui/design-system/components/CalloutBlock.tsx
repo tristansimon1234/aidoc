@@ -86,11 +86,16 @@ export const Callout = createReactBlockSpec(
       // standard and self-explanatory:
       //   > [!TIP]
       //   > Some content
+      //
+      // The second child must be a block-level HTML element that Turndown
+      // keeps INSIDE the blockquote during HTML→markdown export — a <div>
+      // gets hoisted out into a sibling paragraph, stripping the content
+      // from the callout. A <p> stays nested and round-trips cleanly.
       const type = ((block.props.calloutType as string) ?? 'info').toUpperCase()
       return (
         <blockquote data-callout-type={type}>
           <p>[!{type}]</p>
-          <div ref={contentRef} />
+          <p ref={contentRef} />
         </blockquote>
       )
     },

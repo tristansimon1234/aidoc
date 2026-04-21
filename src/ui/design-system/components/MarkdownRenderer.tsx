@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import Markdown from 'react-markdown'
 import { useNavigate } from 'react-router-dom'
 import { useImageLightbox } from './ImageLightbox.js'
+import { CodeBlock } from './CodeBlock.js'
 import styles from './MarkdownRenderer.module.css'
 
 interface MarkdownRendererProps {
@@ -118,6 +119,29 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.Reac
                 {callout.stripped}
               </blockquote>
             )
+          },
+          // react-markdown emits <pre><code>…</code></pre> for fenced blocks
+          // and <code>…</code> for inline spans. We keep inline code as-is
+          // (styled via MarkdownRenderer.module.css) but hijack the <pre>
+          // shell so fenced blocks render via the dark CodeBlock with copy
+          // button — matching the BlockEditor admin view.
+          pre: ({ children }) => {
+            // Expected shape: a single <code> child holding the text.
+            const codeEl = Array.isArray(children) ? children[0] : children
+            if (
+              codeEl &&
+              typeof codeEl === 'object' &&
+              'props' in codeEl
+            ) {
+              const el = codeEl as { props: { children?: ReactNode; className?: string } }
+              const text = extractText(el.props.children).replace(/\n$/, '')
+              // react-markdown encodes the language as `language-ts` in the
+              // code element's className for fenced blocks.
+              const match = /language-([a-z0-9+#-]+)/i.exec(el.props.className ?? '')
+              const language = match?.[1]
+              return <CodeBlock code={text} language={language} />
+            }
+            return <pre>{children}</pre>
           },
         }}
       >

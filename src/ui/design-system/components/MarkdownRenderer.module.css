@@ -106,6 +106,9 @@
   transform: scale(1.01);
 }
 
+/* Inline code (`backticks` inside a paragraph). Fenced ``` code blocks are
+ * rendered by the CodeBlock component (dark themed, with copy button) —
+ * those bypass these rules. */
 .article code {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
@@ -115,6 +118,8 @@
   border: 1px solid var(--color-border);
 }
 
+/* Raw <pre> — only emitted when the pre node falls through CodeBlock
+ * (shouldn't happen for fenced blocks, but we keep a readable default). */
 .article pre {
   background-color: var(--color-secondary);
   border: 1px solid var(--color-border);
@@ -141,13 +146,18 @@
   color: var(--color-muted-fg);
 }
 
-/* Callouts — GitHub-style alerts detected in blockquote content */
+/* Callouts — GitHub-style alerts detected in blockquote content.
+ * Background uses a solid RGBA fallback so older browsers / WebViews
+ * without color-mix() still paint a tinted strip; modern browsers pick
+ * up the per-type color-mix override. Every type explicitly redeclares
+ * the background (instead of relying on a shared var) so if color-mix
+ * resolves to invalid, the cascade falls back to the opaque hex below. */
 .article blockquote[data-callout-type] {
   padding: var(--space-md);
   border-left: 3px solid var(--callout-accent, var(--color-primary));
-  background: var(--callout-bg, color-mix(in srgb, var(--color-primary) 8%, transparent));
   border-radius: var(--radius-lg);
   color: var(--color-fg);
+  margin: 0 0 var(--space-md);
 }
 
 .article blockquote[data-callout-type]::before {
@@ -163,28 +173,36 @@
 
 .article blockquote[data-callout-type="NOTE"],
 .article blockquote[data-callout-type="INFO"] {
-  --callout-accent: var(--color-primary);
-  --callout-bg: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  --callout-accent: #2563EB;
   --callout-label: "Info";
+  background: #EFF6FF;
+  background: color-mix(in srgb, #2563EB 10%, transparent);
+  border-left-color: #2563EB;
 }
 
 .article blockquote[data-callout-type="TIP"] {
-  --callout-accent: var(--color-success);
-  --callout-bg: color-mix(in srgb, var(--color-success) 10%, transparent);
+  --callout-accent: #10B981;
   --callout-label: "Tip";
+  background: #ECFDF5;
+  background: color-mix(in srgb, #10B981 10%, transparent);
+  border-left-color: #10B981;
 }
 
 .article blockquote[data-callout-type="WARNING"] {
-  --callout-accent: var(--color-warning);
-  --callout-bg: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  --callout-accent: #F59E0B;
   --callout-label: "Warning";
+  background: #FFFBEB;
+  background: color-mix(in srgb, #F59E0B 10%, transparent);
+  border-left-color: #F59E0B;
 }
 
 .article blockquote[data-callout-type="DANGER"],
 .article blockquote[data-callout-type="CAUTION"] {
-  --callout-accent: var(--color-destructive);
-  --callout-bg: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  --callout-accent: #EF4444;
   --callout-label: "Danger";
+  background: #FEF2F2;
+  background: color-mix(in srgb, #EF4444 10%, transparent);
+  border-left-color: #EF4444;
 }
 
 .article hr {
