@@ -798,6 +798,12 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                           const { signedUrl } = await api.runs.getSignedUploadUrl(run.id, path)
                           const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
                           if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
+                          // Persist videoPath on the run's summary_json so
+                          // fetchData() finds it on reload — otherwise the
+                          // Video tab resolves videoPath=undefined and the
+                          // player stays hidden even though the file IS in
+                          // storage.
+                          await api.runs.attachVideo(run.id, path)
                           const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
                           if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
                           // Refresh so latestRunId / videoUrl pickup and the

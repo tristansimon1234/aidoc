@@ -252,6 +252,35 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
   })()
 })
 
+// Attach a video to a run WITHOUT running any analysis or generation —
+// just writes summary_json.videoPath so the Video tab resolves the
+// public URL on the next fetch. Used by the "Attach video only" flow
+// on the page Video tab, for authors who already wrote their doc and
+// want to add a walkthrough recording on top.
+runRouter.post('/:id/attach-video', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = req.body as { videoPath?: string }
+      if (!body.videoPath || typeof body.videoPath !== 'string') {
+        throw new ValidationError('videoPath is required')
+      }
+      const run = await runService.getRun(params.data.id)
+      const existingSummary = (run.summaryJson ?? {}) as Record<string, unknown>
+      const { updateRunSummary } = await import('./run.repository.js')
+      await updateRunSummary(params.data.id, {
+        ...existingSummary,
+        videoPath: body.videoPath,
+        attachedOnly: true,
+      })
+      res.status(200).json({ ok: true })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 // Generate SOP doc — responds immediately, generates in background.
 // Client tracks progress via Supabase Realtime on runs.status.
 runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
