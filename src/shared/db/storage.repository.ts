@@ -19,7 +19,12 @@ export async function createSignedUploadUrl(
   bucket: string,
   path: string,
 ): Promise<string> {
-  const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(path)
+  // upsert:true lets Replace flows PUT to the same path as the existing
+  // file. Without it Supabase returns "The resource already exists" and
+  // the user can't overwrite their own video / audio.
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .createSignedUploadUrl(path, { upsert: true })
   if (error || !data) throw new DatabaseError(`Signed URL failed: ${error?.message ?? 'no data'}`)
   return data.signedUrl
 }
