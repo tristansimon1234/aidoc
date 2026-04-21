@@ -574,7 +574,8 @@ function McpTokensTab(): React.ReactElement {
   const [teamId, setTeamId] = useState<string>('')
   const [creating, setCreating] = useState(false)
   const [justCreated, setJustCreated] = useState<McpTokenCreatedDTO | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'token' | 'url' | 'config' | null>(null)
+  const [revealed, setRevealed] = useState(false)
 
   const load = async (): Promise<void> => {
     setLoading(true); setError(null)
@@ -602,7 +603,8 @@ function McpTokensTab(): React.ReactElement {
       const created = await api.mcpTokens.create({ name: name.trim(), teamId })
       setJustCreated(created)
       setName('')
-      setCopied(false)
+      setCopied(null)
+      setRevealed(false)
       await load()
     } catch (err) {
       setError((err as Error).message)
@@ -628,10 +630,16 @@ function McpTokensTab(): React.ReactElement {
     }
   }
 
-  const copyToken = (value: string): void => {
+  const copyValue = (value: string, which: 'token' | 'url' | 'config'): void => {
     void navigator.clipboard.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    setCopied(which)
+    setTimeout(() => setCopied(null), 2000)
+  }
+
+  const maskToken = (full: string): string => {
+    const prefix = 'aidoc_usr_'
+    const tail = full.slice(-4)
+    return `${prefix}${'•'.repeat(20)}${tail}`
   }
 
   const teamName = (id: string): string =>
@@ -665,33 +673,65 @@ function McpTokensTab(): React.ReactElement {
           </p>
         </div>
 
-        {justCreated && (
+        {justCreated && mcpUrl && (
           <div style={{
             marginBottom: 'var(--space-md)',
             padding: 'var(--space-md)',
             background: 'var(--color-bg)',
             border: '1px solid var(--color-primary)',
             borderRadius: 'var(--radius-lg)',
-            display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)',
+            display: 'flex', flexDirection: 'column', gap: 'var(--space-md)',
           }}>
-            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
-              Token created — copy it now
-            </div>
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', lineHeight: 1.5 }}>
-              This is the only time the full token will be shown. Store it in your MCP client config; you can always revoke and create a new one.
-            </div>
-            <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
-              <code style={{
-                flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)',
-                wordBreak: 'break-all', background: 'var(--color-card)',
-                padding: '6px 8px', borderRadius: 6, border: '1px solid var(--color-border)',
-              }}>{justCreated.token}</code>
-              <Button size="sm" onClick={() => copyToken(justCreated.token)}>
-                {copied ? 'Copied!' : 'Copy'}
-              </Button>
-            </div>
             <div>
-              <label className={styles.label}>Claude Desktop / Claude Code config</label>
+              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
+                Token created — copy it now
+              </div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', lineHeight: 1.5, marginTop: 4 }}>
+                This is the only time the full token is shown. Store it in your MCP client config; you can always revoke and create a new one.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label className={styles.label}>MCP Server URL</label>
+              <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+                <code style={{
+                  flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)',
+                  wordBreak: 'break-all', background: 'var(--color-card)',
+                  padding: '6px 8px', borderRadius: 6, border: '1px solid var(--color-border)',
+                }}>{mcpUrl}</code>
+                <Button size="sm" onClick={() => copyValue(mcpUrl, 'url')}>
+                  {copied === 'url' ? 'Copied!' : 'Copy URL'}
+                </Button>
+              </div>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+                The token is embedded in the URL — treat it as a secret.
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <label className={styles.label}>Token (secret)</label>
+              <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+                <code style={{
+                  flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)',
+                  wordBreak: 'break-all', background: 'var(--color-card)',
+                  padding: '6px 8px', borderRadius: 6, border: '1px solid var(--color-border)',
+                }}>{revealed ? justCreated.token : maskToken(justCreated.token)}</code>
+                <Button size="sm" variant="ghost" onClick={() => setRevealed((v) => !v)}>
+                  {revealed ? 'Hide' : 'Reveal'}
+                </Button>
+                <Button size="sm" onClick={() => copyValue(justCreated.token, 'token')}>
+                  {copied === 'token' ? 'Copied!' : 'Copy'}
+                </Button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label className={styles.label}>Claude Desktop / Claude Code config</label>
+                <Button size="sm" variant="ghost" onClick={() => copyValue(configJson, 'config')}>
+                  {copied === 'config' ? 'Copied!' : 'Copy config'}
+                </Button>
+              </div>
               <pre style={{
                 margin: 0, padding: 'var(--space-sm)',
                 fontSize: 11, fontFamily: 'var(--font-mono)',
@@ -699,8 +739,11 @@ function McpTokensTab(): React.ReactElement {
                 borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
               }}>{configJson}</pre>
             </div>
+
             <div>
-              <Button size="sm" variant="ghost" onClick={() => setJustCreated(null)}>Dismiss</Button>
+              <Button size="sm" variant="ghost" onClick={() => { setJustCreated(null); setRevealed(false) }}>
+                Dismiss
+              </Button>
             </div>
           </div>
         )}
