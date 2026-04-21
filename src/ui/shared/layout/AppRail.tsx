@@ -13,7 +13,7 @@ export function AppRail(): React.ReactElement {
       <div className={styles.top}>
         <Link to="/" className={styles.logo} aria-label="Home">
           <img
-            src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-appicon-purple.png"
+            src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/favicon-white-play-ink-1024.png"
             alt="doclee"
             className={styles.logoImg}
           />
