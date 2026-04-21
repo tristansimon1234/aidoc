@@ -205,12 +205,17 @@ const TOOL_DEFINITIONS = [
   {
     name: 'create_page',
     description:
-      'Create a new documentation page in a project. Provide a title; a slug is auto-generated from it when omitted. Optional parentSlug nests the page under another one. Optional content is stored as markdown and auto-indexed for chat / search.',
+      `Create a new documentation page in a project. Provide a title; a slug is auto-generated from it when omitted. Optional parentSlug nests the page under another one. Optional content is stored as markdown and auto-indexed for chat / search.
+
+Markdown guidelines:
+- The \`title\` is rendered separately as the page H1 — DO NOT repeat it as \`# Title\` at the top of \`content\`.
+- Structure \`content\` with section headings: \`## Section\`, \`### Subsection\`. Don't dump a single wall of text.
+- Use bullet lists, numbered steps, fenced code blocks, bold / italic where appropriate. GitHub-flavored markdown (\`> [!TIP]\`, \`> [!WARNING]\` …) is supported and renders as styled callouts.`,
     inputSchema: {
       type: 'object',
       properties: {
         projectId: { type: 'string', description: 'Project UUID.' },
-        title: { type: 'string', description: 'Human-readable page title.' },
+        title: { type: 'string', description: 'Human-readable page title (rendered as H1 above the content — do not duplicate it in content).' },
         slug: {
           type: 'string',
           description: 'Lowercase URL slug (a-z, 0-9, -). Auto-generated from the title when omitted.',
@@ -219,7 +224,10 @@ const TOOL_DEFINITIONS = [
           type: 'string',
           description: 'Optional slug of the parent page to nest this one under.',
         },
-        content: { type: 'string', description: 'Optional initial markdown body.' },
+        content: {
+          type: 'string',
+          description: 'Optional initial markdown body. Do NOT start with an H1 matching the title — use ## for top-level sections instead.',
+        },
       },
       required: ['projectId', 'title'],
     },
@@ -227,15 +235,35 @@ const TOOL_DEFINITIONS = [
   {
     name: 'update_page',
     description:
-      'Update an existing page by slug. Pass any subset of title, newSlug, content. Content changes are auto re-indexed for chat / search.',
+      `Edit an existing page by slug. This is the primary editing tool — use it to fix typos, rewrite sections, add content, rename, or change the slug. Pass any subset of \`title\`, \`newSlug\`, \`content\`, or \`contentAppend\`.
+
+Editing patterns:
+- **Full rewrite**: pass \`content\` with the complete new markdown body (replaces existing).
+- **Incremental addition**: pass \`contentAppend\` with the markdown to add — it's concatenated at the end of the existing content. Faster and safer than a full rewrite when you only want to add a section.
+- **Partial edit of existing sections**: call \`get_page\` first to read current content, edit locally, then \`update_page\` with the full \`content\`. (\`contentAppend\` is only for additions.)
+- \`content\` and \`contentAppend\` are mutually exclusive — pick one.
+
+Any content change is auto re-indexed for chat / search and resets the rich-editor state so the UI picks up the fresh markdown.
+
+Markdown guidelines (same as create_page):
+- The \`title\` is rendered separately as the page H1 — DO NOT repeat it as \`# Title\` at the top of \`content\`.
+- Structure with \`## Section\` / \`### Subsection\` headings.
+- Use GitHub-flavored markdown (lists, code blocks, callouts like \`> [!TIP]\` / \`> [!WARNING]\`).`,
     inputSchema: {
       type: 'object',
       properties: {
         projectId: { type: 'string', description: 'Project UUID.' },
         slug: { type: 'string', description: 'Current slug of the page to update.' },
-        title: { type: 'string', description: 'New title.' },
+        title: { type: 'string', description: 'New title (rendered as H1 above the content — do not duplicate it in content).' },
         newSlug: { type: 'string', description: 'New slug (lowercase a-z 0-9 -).' },
-        content: { type: 'string', description: 'New markdown body (replaces existing).' },
+        content: {
+          type: 'string',
+          description: 'Full new markdown body — REPLACES the existing content entirely. Do NOT start with an H1 matching the title. Mutually exclusive with contentAppend.',
+        },
+        contentAppend: {
+          type: 'string',
+          description: 'Markdown to add at the end of the existing content. Use this for incremental additions (new section, extra note) without rewriting the whole page. Mutually exclusive with content.',
+        },
       },
       required: ['projectId', 'slug'],
     },
@@ -425,10 +453,17 @@ async function handleCreatePage(
   })
 
   // If content was provided, update it through the service so embeddings
-  // get re-indexed (same code path as the UI editor).
+  // get re-indexed (same code path as the UI editor). We also null out
+  // contentBlocks — the BlockNote editor treats contentBlocks as the source
+  // of truth when present, so forgetting to wipe it would make the editor
+  // ignore the markdown we just wrote.
   if (parsed.data.content) {
     const { updatePage } = await import('../page/page.service.js')
-    await updatePage(page.id, { content: parsed.data.content }, ctx.userId)
+    await updatePage(
+      page.id,
+      { content: parsed.data.content, contentBlocks: null },
+      ctx.userId,
+    )
   }
 
   return toolText(`Created page **${page.title}** (slug: ${page.slug}, id: ${page.id}).`)
@@ -454,16 +489,31 @@ async function handleUpdatePage(
     if (taken) return toolText(`Slug "${parsed.data.newSlug}" is already taken by another page.`)
   }
 
-  const { updatePage } = await import('../page/page.service.js')
-  const updated = await updatePage(
-    page.id,
-    {
-      title: parsed.data.title,
-      slug: parsed.data.newSlug,
-      content: parsed.data.content,
-    },
-    ctx.userId,
-  )
+  // Resolve the effective new content:
+  //   - `content` → full replace
+  //   - `contentAppend` → concat at end of existing, with a blank line separator
+  //     so we don't accidentally glue the append onto the last paragraph.
+  let nextContent: string | undefined
+  if (parsed.data.content !== undefined) {
+    nextContent = parsed.data.content
+  } else if (parsed.data.contentAppend !== undefined) {
+    const existing = page.content?.trimEnd() ?? ''
+    const toAppend = parsed.data.contentAppend.trimStart()
+    nextContent = existing ? `${existing}\n\n${toAppend}` : toAppend
+  }
 
-  return toolText(`Updated page **${updated.title}** (slug: ${updated.slug}).`)
+  const { updatePage } = await import('../page/page.service.js')
+  // Wipe contentBlocks whenever we write content — the BlockNote editor
+  // treats content_blocks as the source of truth when present, so leaving
+  // it stale would make the MCP edit look like a no-op in the UI.
+  const input: { title?: string; slug?: string; content?: string; contentBlocks?: unknown } = {
+    title: parsed.data.title,
+    slug: parsed.data.newSlug,
+    content: nextContent,
+  }
+  if (nextContent !== undefined) input.contentBlocks = null
+  const updated = await updatePage(page.id, input, ctx.userId)
+
+  const mode = parsed.data.content !== undefined ? 'replaced' : parsed.data.contentAppend !== undefined ? 'appended to' : 'updated'
+  return toolText(`Updated page **${updated.title}** (slug: ${updated.slug}, ${mode}).`)
 }
