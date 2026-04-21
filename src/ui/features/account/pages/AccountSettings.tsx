@@ -574,7 +574,7 @@ function McpTokensTab(): React.ReactElement {
   const [teamId, setTeamId] = useState<string>('')
   const [creating, setCreating] = useState(false)
   const [justCreated, setJustCreated] = useState<McpTokenCreatedDTO | null>(null)
-  const [copied, setCopied] = useState<'token' | 'url' | 'config' | null>(null)
+  const [copied, setCopied] = useState<'token' | 'url' | null>(null)
   const [revealed, setRevealed] = useState(false)
 
   const load = async (): Promise<void> => {
@@ -630,7 +630,7 @@ function McpTokensTab(): React.ReactElement {
     }
   }
 
-  const copyValue = (value: string, which: 'token' | 'url' | 'config'): void => {
+  const copyValue = (value: string, which: 'token' | 'url'): void => {
     void navigator.clipboard.writeText(value)
     setCopied(which)
     setTimeout(() => setCopied(null), 2000)
@@ -649,12 +649,9 @@ function McpTokensTab(): React.ReactElement {
     ? `${window.location.origin}/api/mcp-user/${justCreated.token}`
     : null
 
-  const configJson = justCreated && mcpUrl
-    ? JSON.stringify(
-        { mcpServers: { [`doclee-${teamName(justCreated.teamId).toLowerCase().replace(/\s+/g, '-')}`]: { url: mcpUrl } } },
-        null, 2,
-      )
-    : ''
+  const maskedMcpUrl = justCreated
+    ? `${window.location.origin}/api/mcp-user/${maskToken(justCreated.token)}`
+    : null
 
   if (loading) return <div className={styles.loading}><Spinner size="md" /></div>
 
@@ -692,19 +689,24 @@ function McpTokensTab(): React.ReactElement {
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <label className={styles.label}>MCP Server URL</label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <label className={styles.label}>MCP Server URL</label>
+                <Button size="sm" variant="ghost" onClick={() => setRevealed((v) => !v)}>
+                  {revealed ? 'Hide' : 'Reveal'}
+                </Button>
+              </div>
               <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
                 <code style={{
                   flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)',
                   wordBreak: 'break-all', background: 'var(--color-card)',
                   padding: '6px 8px', borderRadius: 6, border: '1px solid var(--color-border)',
-                }}>{mcpUrl}</code>
+                }}>{revealed ? mcpUrl : maskedMcpUrl}</code>
                 <Button size="sm" onClick={() => copyValue(mcpUrl, 'url')}>
                   {copied === 'url' ? 'Copied!' : 'Copy URL'}
                 </Button>
               </div>
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
-                The token is embedded in the URL — treat it as a secret.
+                The token is embedded in the URL — paste it into your MCP client (Claude Desktop, Claude Code…) as an HTTP MCP server.
               </span>
             </div>
 
@@ -716,28 +718,10 @@ function McpTokensTab(): React.ReactElement {
                   wordBreak: 'break-all', background: 'var(--color-card)',
                   padding: '6px 8px', borderRadius: 6, border: '1px solid var(--color-border)',
                 }}>{revealed ? justCreated.token : maskToken(justCreated.token)}</code>
-                <Button size="sm" variant="ghost" onClick={() => setRevealed((v) => !v)}>
-                  {revealed ? 'Hide' : 'Reveal'}
-                </Button>
                 <Button size="sm" onClick={() => copyValue(justCreated.token, 'token')}>
                   {copied === 'token' ? 'Copied!' : 'Copy'}
                 </Button>
               </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <label className={styles.label}>Claude Desktop / Claude Code config</label>
-                <Button size="sm" variant="ghost" onClick={() => copyValue(configJson, 'config')}>
-                  {copied === 'config' ? 'Copied!' : 'Copy config'}
-                </Button>
-              </div>
-              <pre style={{
-                margin: 0, padding: 'var(--space-sm)',
-                fontSize: 11, fontFamily: 'var(--font-mono)',
-                background: 'var(--color-card)', border: '1px solid var(--color-border)',
-                borderRadius: 6, whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-              }}>{configJson}</pre>
             </div>
 
             <div>
