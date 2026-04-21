@@ -61,6 +61,7 @@ export function PageView(): React.ReactElement {
   const quota = useQuotaStatus()
   const quotaBlocked = !quota.loading && !quota.allowed
   const [generatingVoiceover, setGeneratingVoiceover] = useState(() => getJobForPage(pageId ?? '', 'voiceover')?.status === 'running')
+  const [uploadingVideo, setUploadingVideo] = useState(false)
   const activeDocGenJob = getJobForPage(pageId ?? '', 'doc-gen')
   const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
   const activeTryDocJob = getJobForPage(pageId ?? '', 'try-doc')
@@ -586,10 +587,19 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                 <div style={{ flex: 1 }} />
 
                 {/* Replace video */}
-                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', padding: '4px 8px', borderRadius: 'var(--radius-md)', transition: 'color 0.15s' }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></svg>
-                  Replace
-                  <input type="file" accept="video/mp4,video/webm,video/quicktime" style={{ display: 'none' }} onChange={(e) => {
+                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: uploadingVideo ? 'default' : 'pointer', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', padding: '4px 8px', borderRadius: 'var(--radius-md)', transition: 'color 0.15s', opacity: uploadingVideo ? 0.6 : 1, pointerEvents: uploadingVideo ? 'none' : 'auto' }}>
+                  {uploadingVideo ? (
+                    <>
+                      <Spinner size="sm" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" /></svg>
+                      Replace
+                    </>
+                  )}
+                  <input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={uploadingVideo} style={{ display: 'none' }} onChange={(e) => {
                     const file = e.target.files?.[0]
                     if (!file || !latestRunId) return
                     // Hard cap: native macOS QuickTime recordings can easily hit
@@ -606,6 +616,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                       return
                     }
                     void (async () => {
+                      setUploadingVideo(true)
                       try {
                         const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
                         const path = `runs/${latestRunId}/video${ext}`
@@ -628,6 +639,8 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                         await fetchData()
                       } catch (err) {
                         console.error('[replace] Failed:', (err as Error).message)
+                      } finally {
+                        setUploadingVideo(false)
                       }
                     })()
                   }} />
@@ -760,17 +773,29 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                   background: 'var(--color-primary)',
                   border: '1px solid var(--color-primary)',
                   borderRadius: 'var(--radius-md)',
-                  cursor: 'pointer',
+                  cursor: uploadingVideo ? 'default' : 'pointer',
+                  opacity: uploadingVideo ? 0.7 : 1,
+                  pointerEvents: uploadingVideo ? 'none' : 'auto',
                 }}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <path d="m17 8-5-5-5 5" />
-                    <path d="M12 3v12" />
-                  </svg>
-                  Attach video only
+                  {uploadingVideo ? (
+                    <>
+                      <Spinner size="sm" />
+                      Uploading…
+                    </>
+                  ) : (
+                    <>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <path d="m17 8-5-5-5 5" />
+                        <path d="M12 3v12" />
+                      </svg>
+                      Attach video only
+                    </>
+                  )}
                   <input
                     type="file"
                     accept="video/mp4,video/webm,video/quicktime"
+                    disabled={uploadingVideo}
                     style={{ display: 'none' }}
                     onChange={(e) => {
                       const file = e.target.files?.[0]
@@ -789,6 +814,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                         return
                       }
                       void (async () => {
+                        setUploadingVideo(true)
                         try {
                           // Create a run linked to the page so the existing
                           // Video-tab code paths (voice-over button, player)
@@ -819,6 +845,8 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                           await fetchData()
                         } catch (err) {
                           console.error('[attach-video] Failed:', (err as Error).message)
+                        } finally {
+                          setUploadingVideo(false)
                         }
                       })()
                     }}
