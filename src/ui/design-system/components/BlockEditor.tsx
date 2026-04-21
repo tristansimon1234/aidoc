@@ -237,6 +237,94 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
     return () => el.removeEventListener('click', handler, true)
   }, [openLightbox])
 
+  // Inject a Copy button into each BlockNote code block so the admin
+  // editor matches the public MarkdownRenderer output visually. We can't
+  // use a custom React block spec without re-implementing code-block
+  // editing (syntax highlighting, language picker, …), so we observe the
+  // editor DOM and append a plain <button> to each [data-content-type="codeBlock"]
+  // node. The button reads the code via the DOM at click time — no refs,
+  // no React portals — so BlockNote's ProseMirror view keeps full control.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const makeButton = (): HTMLButtonElement => {
+      const btn = document.createElement('button')
+      btn.type = 'button'
+      btn.setAttribute('data-code-copy', '')
+      btn.setAttribute('contenteditable', 'false')
+      btn.setAttribute('aria-label', 'Copy to clipboard')
+      btn.textContent = 'Copy'
+      // Inline styles so the injected node doesn't depend on CSS modules
+      // leaking to plain DOM. Mirrors CodeBlock.module.css styling.
+      Object.assign(btn.style, {
+        position: 'absolute',
+        top: '6px',
+        right: '6px',
+        padding: '3px 8px',
+        fontSize: '11px',
+        fontWeight: '500',
+        fontFamily: 'inherit',
+        color: '#cfcfcf',
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid #2a2a2a',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        opacity: '0',
+        transition: 'opacity 0.15s, color 0.1s, background-color 0.1s, border-color 0.1s',
+        zIndex: '2',
+      } as Partial<CSSStyleDeclaration>)
+      return btn
+    }
+
+    const ensureButton = (block: HTMLElement): void => {
+      if (block.querySelector('[data-code-copy]')) return
+      const btn = makeButton()
+      // Show on hover of the code block container
+      block.addEventListener('mouseenter', () => { btn.style.opacity = '1' })
+      block.addEventListener('mouseleave', () => {
+        if (btn.dataset.copied !== '1') btn.style.opacity = '0'
+      })
+      btn.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const codeEl = block.querySelector('code, pre')
+        const text = codeEl?.textContent ?? ''
+        void navigator.clipboard.writeText(text)
+        btn.textContent = 'Copied'
+        btn.style.color = '#3dd68c'
+        btn.style.borderColor = '#1f4a34'
+        btn.style.opacity = '1'
+        btn.dataset.copied = '1'
+        setTimeout(() => {
+          btn.textContent = 'Copy'
+          btn.style.color = '#cfcfcf'
+          btn.style.borderColor = '#2a2a2a'
+          btn.style.opacity = '0'
+          delete btn.dataset.copied
+        }, 1500)
+      })
+      // BlockNote's code block is absolutely-positioned safe (it's a
+      // block-level flex container). Ensure the host is a positioning
+      // context without breaking ProseMirror's own layout.
+      if (getComputedStyle(block).position === 'static') {
+        block.style.position = 'relative'
+      }
+      block.appendChild(btn)
+    }
+
+    const refresh = (): void => {
+      container
+        .querySelectorAll<HTMLElement>('[data-content-type="codeBlock"]')
+        .forEach(ensureButton)
+    }
+
+    refresh()
+    const observer = new MutationObserver(refresh)
+    observer.observe(container, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+
   const handleChange = useCallback(() => {
     if (readOnly) return
     // While props-driven load is happening, swallow the noisy normalization

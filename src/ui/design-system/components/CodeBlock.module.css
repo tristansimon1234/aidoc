@@ -2,31 +2,40 @@
   position: relative;
   background-color: #161616;
   color: #f5f5f5;
-  border: 1px solid #2a2a2a;
   border-radius: var(--radius-lg);
   overflow: hidden;
   margin: 0 0 var(--space-md);
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px 6px 12px;
-  background-color: #0f0f0f;
-  border-bottom: 1px solid #2a2a2a;
-  user-select: none;
-}
-
-.lang {
-  font-size: 11px;
+.pre {
+  margin: 0;
+  padding: var(--space-md);
+  padding-right: 60px; /* room for the absolute-positioned Copy button */
+  font-size: var(--text-sm);
   font-family: var(--font-mono);
-  color: #8b8b8b;
-  text-transform: lowercase;
-  letter-spacing: 0.02em;
+  color: #f5f5f5;
+  background: transparent;
+  overflow-x: auto;
+  line-height: 1.7;
+  white-space: pre;
 }
 
+.pre code {
+  font-family: inherit;
+  color: inherit;
+  background: none;
+  padding: 0;
+  border: 0;
+  font-size: inherit;
+}
+
+/* Copy button: floats in the top-right of the block. Fades in on hover to
+ * stay out of the way of the code itself but remain discoverable. Always
+ * visible on touch devices (no hover state). */
 .copyBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -35,11 +44,18 @@
   font-family: inherit;
   font-weight: 500;
   color: #cfcfcf;
-  background: transparent;
-  border: 1px solid #3a3a3a;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #2a2a2a;
   border-radius: 6px;
   cursor: pointer;
-  transition: color 0.1s, border-color 0.1s, background-color 0.1s;
+  transition: color 0.1s, border-color 0.1s, background-color 0.1s, opacity 0.15s;
+  opacity: 0;
+  z-index: 1;
+}
+
+.wrapper:hover .copyBtn,
+.copyBtn:focus-visible {
+  opacity: 1;
 }
 
 .copyBtn:hover {
@@ -61,31 +77,13 @@
 .copied {
   color: #3dd68c;
   border-color: #1f4a34;
+  opacity: 1;
 }
 
-.pre {
-  margin: 0;
-  padding: var(--space-md);
-  font-size: var(--text-sm);
-  font-family: var(--font-mono);
-  color: #f5f5f5;
-  background: transparent;
-  overflow-x: auto;
-  line-height: 1.7;
-  white-space: pre;
+@media (hover: none) {
+  .copyBtn { opacity: 1; }
 }
 
-.pre code {
-  font-family: inherit;
-  color: inherit;
-  background: none;
-  padding: 0;
-  border: 0;
-  font-size: inherit;
-}
-
-/* Soft-wrap when there's no horizontal scroll affordance (narrow
- * columns on mobile) — keep code readable at small widths. */
 @media (max-width: 640px) {
   .pre {
     white-space: pre-wrap;

@@ -9,26 +9,31 @@ interface CalloutMeta {
   bg: string
 }
 
+// Callout colors are pinned to hex values (rather than CSS vars) so the
+// admin BlockEditor view and the public docs page (which overrides
+// --color-primary with the project's accent) render identical callouts.
+// Info stays a neutral warm grey, Tip/Warning/Danger use their semantic
+// colors at 10% tint on a white-ish background.
 const META: Record<CalloutType, CalloutMeta> = {
   info: {
     label: 'Info',
-    color: 'var(--color-primary)',
-    bg: 'color-mix(in srgb, var(--color-primary) 10%, transparent)',
+    color: '#1A1A1A',
+    bg: '#F3F4F6',
   },
   tip: {
     label: 'Tip',
-    color: 'var(--color-success)',
-    bg: 'color-mix(in srgb, var(--color-success) 10%, transparent)',
+    color: '#10B981',
+    bg: 'color-mix(in srgb, #10B981 10%, #FFFFFF)',
   },
   warning: {
     label: 'Warning',
-    color: 'var(--color-warning)',
-    bg: 'color-mix(in srgb, var(--color-warning) 10%, transparent)',
+    color: '#F59E0B',
+    bg: 'color-mix(in srgb, #F59E0B 10%, #FFFFFF)',
   },
   danger: {
     label: 'Danger',
-    color: 'var(--color-destructive)',
-    bg: 'color-mix(in srgb, var(--color-destructive) 10%, transparent)',
+    color: '#EF4444',
+    bg: 'color-mix(in srgb, #EF4444 10%, #FFFFFF)',
   },
 }
 

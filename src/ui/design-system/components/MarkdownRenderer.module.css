@@ -171,20 +171,24 @@
   margin-bottom: var(--space-xs);
 }
 
+/* Colors pinned to hex to match the admin BlockEditor render exactly —
+ * the public shell overrides --color-primary with the project accent,
+ * so relying on CSS vars produces different (blue/purple) INFO callouts
+ * from the neutral grey the author sees in the editor. Keep them in sync
+ * with CalloutBlock.tsx META. */
 .article blockquote[data-callout-type="NOTE"],
 .article blockquote[data-callout-type="INFO"] {
-  --callout-accent: #2563EB;
+  --callout-accent: #1A1A1A;
   --callout-label: "Info";
-  background: #EFF6FF;
-  background: color-mix(in srgb, #2563EB 10%, transparent);
-  border-left-color: #2563EB;
+  background: #F3F4F6;
+  border-left-color: #1A1A1A;
 }
 
 .article blockquote[data-callout-type="TIP"] {
   --callout-accent: #10B981;
   --callout-label: "Tip";
   background: #ECFDF5;
-  background: color-mix(in srgb, #10B981 10%, transparent);
+  background: color-mix(in srgb, #10B981 10%, #FFFFFF);
   border-left-color: #10B981;
 }
 
@@ -192,7 +196,7 @@
   --callout-accent: #F59E0B;
   --callout-label: "Warning";
   background: #FFFBEB;
-  background: color-mix(in srgb, #F59E0B 10%, transparent);
+  background: color-mix(in srgb, #F59E0B 10%, #FFFFFF);
   border-left-color: #F59E0B;
 }
 
@@ -201,7 +205,7 @@
   --callout-accent: #EF4444;
   --callout-label: "Danger";
   background: #FEF2F2;
-  background: color-mix(in srgb, #EF4444 10%, transparent);
+  background: color-mix(in srgb, #EF4444 10%, #FFFFFF);
   border-left-color: #EF4444;
 }
 
