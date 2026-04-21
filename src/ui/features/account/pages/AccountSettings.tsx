@@ -656,6 +656,7 @@ function McpTokensTab(): React.ReactElement {
   if (loading) return <div className={styles.loading}><Spinner size="md" /></div>
 
   const activeTokens = tokens.filter((t) => !t.revokedAt)
+  const endpointPattern = `${window.location.origin}/api/mcp-user/<YOUR_TOKEN>`
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
@@ -668,6 +669,31 @@ function McpTokensTab(): React.ReactElement {
             Create a personal access token to connect an MCP client (Claude Desktop, Claude Code, …) to one of your workspaces.
             Each token authenticates as you and is scoped to a single workspace — it can list, create, and edit projects and pages in that workspace only.
           </p>
+        </div>
+
+        <div style={{
+          marginBottom: 'var(--space-md)',
+          padding: 'var(--space-sm) var(--space-md)',
+          background: 'var(--color-bg)',
+          border: '1px solid var(--color-border)',
+          borderRadius: 'var(--radius-lg)',
+          display: 'flex', flexDirection: 'column', gap: 4,
+        }}>
+          <label className={styles.label}>MCP endpoint</label>
+          <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center' }}>
+            <code style={{
+              flex: 1, fontSize: 11, fontFamily: 'var(--font-mono)',
+              wordBreak: 'break-all', background: 'var(--color-card)',
+              padding: '6px 8px', borderRadius: 6, border: '1px solid var(--color-border)',
+            }}>{endpointPattern}</code>
+            <Button size="sm" variant="ghost" onClick={() => copyValue(endpointPattern, 'url')}>
+              {copied === 'url' && !justCreated ? 'Copied!' : 'Copy'}
+            </Button>
+          </div>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+            Paste this URL (replacing <code>&lt;YOUR_TOKEN&gt;</code> with the token you saved) as an HTTP MCP server in your client.
+            The full token is only shown once at creation — if you lost it, revoke and create a new one.
+          </span>
         </div>
 
         {justCreated && mcpUrl && (
