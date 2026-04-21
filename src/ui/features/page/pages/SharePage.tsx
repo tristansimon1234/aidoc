@@ -341,14 +341,16 @@ function McpSection({ project, setProject }: { project: ProjectDTO; setProject: 
   return (
     <div className={styles.section}>
       <div className={styles.sectionHeader}>
-        <h2 className={styles.sectionTitle}>MCP Server</h2>
-        <p className={styles.sectionDesc}>Connect your documentation to Claude Desktop, Claude Code, or any MCP-compatible AI assistant.</p>
+        <h2 className={styles.sectionTitle}>Your doc, in Claude</h2>
+        <p className={styles.sectionDesc}>
+          Expose this project as a Model Context Protocol server. Plug Claude Desktop, Claude Code, or Cursor into it — and let your AI browse, search, and read the doc directly from the conversation.
+        </p>
       </div>
 
       {!hasKey ? (
         <div>
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', marginBottom: 'var(--space-md)' }}>
-            Enable the API to generate an MCP endpoint for your documentation. This uses the same API key as the chat widget.
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', marginBottom: 'var(--space-md)', lineHeight: 1.6 }}>
+            One endpoint, scoped to this project. It shares the chat widget's API key, so disabling the widget revokes MCP access at the same time. Rate-limited to 30 requests per minute.
           </p>
           <Button onClick={() => void enableMcp()} disabled={enabling}>
             {enabling ? 'Enabling...' : 'Enable MCP'}
@@ -372,7 +374,11 @@ function McpSection({ project, setProject }: { project: ProjectDTO; setProject: 
           </div>
 
           <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', lineHeight: 1.6 }}>
-            Add this to your Claude Desktop <code>claude_desktop_config.json</code> or Claude Code <code>.mcp.json</code>. Two tools are available: <strong>search_documentation</strong> (RAG search) and <strong>list_pages</strong>.
+            Drop this into Claude Desktop's <code>claude_desktop_config.json</code> or Claude Code's <code>.mcp.json</code>. Three tools are exposed:{' '}
+            <strong>list_pages</strong> (discover the table of contents),{' '}
+            <strong>search_documentation</strong> (pgvector + Gemini embeddings, same RAG as the chat widget), and{' '}
+            <strong>get_page</strong> (fetch a full page, including the narrated walkthrough URL when a screen-recording exists).
+            The endpoint is scoped to this project only — it can't see other projects in your workspace.
           </p>
         </div>
       )}
