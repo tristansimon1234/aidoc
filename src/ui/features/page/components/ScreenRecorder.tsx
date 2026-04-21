@@ -100,7 +100,21 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
   }, [])
 
   const processVideo = async (file: File | Blob, fileName: string, domEvents?: DomEvent[]): Promise<void> => {
-    if (hasExistingVoiceover) {
+    // If the page already has written documentation, generating from a
+    // video will overwrite it. A one-slot backup is kept server-side, but
+    // the destructive step deserves an explicit confirmation regardless —
+    // easier to say "yes I know" than to restore after the fact.
+    const hasExistingContent = Boolean(page.content?.trim())
+    if (hasExistingContent) {
+      const ok = await confirm({
+        title: 'Replace existing documentation?',
+        message:
+          'This page already has written content. Generating from the video will overwrite it with the AI-written version. You can restore the previous version afterwards from the banner at the top of the page.',
+        confirmLabel: 'Overwrite & generate',
+        variant: 'danger',
+      })
+      if (!ok) return
+    } else if (hasExistingVoiceover) {
       const ok = await confirm({ title: 'Replace video?', message: 'The current video and voice-over will be permanently replaced.', confirmLabel: 'Replace', variant: 'danger' })
       if (!ok) return
     }
@@ -177,7 +191,17 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
   }
 
   const startRecording = async (): Promise<void> => {
-    if (hasExistingVoiceover) {
+    const hasExistingContent = Boolean(page.content?.trim())
+    if (hasExistingContent) {
+      const ok = await confirm({
+        title: 'Replace existing documentation?',
+        message:
+          'This page already has written content. Recording a new video will trigger an AI generation that overwrites it. You can restore the previous version afterwards from the banner at the top of the page.',
+        confirmLabel: 'Overwrite & record',
+        variant: 'danger',
+      })
+      if (!ok) return
+    } else if (hasExistingVoiceover) {
       const ok = await confirm({ title: 'Replace video?', message: 'Recording a new video will replace the current video and voice-over.', confirmLabel: 'Record', variant: 'danger' })
       if (!ok) return
     }

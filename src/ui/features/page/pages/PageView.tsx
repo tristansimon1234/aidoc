@@ -434,6 +434,50 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
       {/* ===== DOCUMENTATION TAB ===== */}
       {activeTab === 'doc' && (
         <div className={styles.tabContent} style={{ maxWidth: '820px', margin: '0 auto' }}>
+          {/* Restore banner — appears after a doc regeneration overwrote
+              existing content. One click reverts. */}
+          {page.previousContentSavedAt && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
+              padding: 'var(--space-sm) var(--space-md)',
+              marginBottom: 'var(--space-md)',
+              background: 'var(--color-status-running-bg)',
+              border: '1px solid var(--color-status-running-border)',
+              borderRadius: 'var(--radius-lg)',
+              fontSize: 'var(--text-xs)', color: 'var(--color-status-running-text)',
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M3 12a9 9 0 1 0 9-9" />
+                <polyline points="3 4 3 10 9 10" />
+              </svg>
+              <span style={{ flex: 1 }}>
+                Previous version saved {formatRelativeTime(new Date(page.previousContentSavedAt))}. You can restore it if the regenerated content isn&apos;t what you wanted.
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  void (async () => {
+                    const ok = await confirm({
+                      title: 'Restore previous version?',
+                      message: 'The current content will be replaced by the version saved before the last regeneration. This cannot be undone.',
+                      confirmLabel: 'Restore',
+                      variant: 'primary',
+                    })
+                    if (!ok) return
+                    try {
+                      const restored = await api.pages.restorePrevious(projectId!, pageId!)
+                      setPage(restored)
+                    } catch (err) {
+                      console.error('[restore] Failed:', (err as Error).message)
+                    }
+                  })()
+                }}
+              >
+                Restore
+              </Button>
+            </div>
+          )}
           <input
             className={styles.pageTitle}
             type="text"
@@ -684,10 +728,93 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               )}
             </div>
           ) : (
-            <EmptyState
-              title="No video yet"
-              description="Record or upload a video in the Generate tab to create a narrated walkthrough."
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              <div style={{
+                padding: 'var(--space-lg)',
+                border: '1px dashed var(--color-border)',
+                borderRadius: 'var(--radius-xl)',
+                display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)',
+                alignItems: 'flex-start',
+              }}>
+                <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)' }}>
+                  Attach a video to this page
+                </div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', lineHeight: 1.6 }}>
+                  Upload a video walkthrough to display alongside your written documentation.
+                  The page content stays untouched — no AI generation, no overwrite. Once attached,
+                  you can generate a voice-over from your written docs using the Generate voice-over button.
+                </div>
+                <label style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '6px 12px',
+                  fontSize: 'var(--text-xs)', fontWeight: 500,
+                  color: 'var(--color-on-primary, #fff)',
+                  background: 'var(--color-primary)',
+                  border: '1px solid var(--color-primary)',
+                  borderRadius: 'var(--radius-md)',
+                  cursor: 'pointer',
+                }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <path d="m17 8-5-5-5 5" />
+                    <path d="M12 3v12" />
+                  </svg>
+                  Attach video only
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      // Same 200 MB cap as the Replace flow — keeps the upload
+                      // bounded to something that survives flaky networks.
+                      const MAX_UPLOAD_BYTES = 200 * 1024 * 1024
+                      if (file.size > MAX_UPLOAD_BYTES) {
+                        void confirm({
+                          title: 'Video too large',
+                          message: `This file is ${(file.size / 1024 / 1024).toFixed(0)} MB. Attach only accepts videos under 200 MB.`,
+                          confirmLabel: 'OK',
+                          variant: 'primary',
+                        })
+                        e.target.value = ''
+                        return
+                      }
+                      void (async () => {
+                        try {
+                          // Create a run linked to the page so the existing
+                          // Video-tab code paths (voice-over button, player)
+                          // light up without further plumbing. The run is
+                          // used purely as a container for the video URL —
+                          // no analyze-video, no doc generation.
+                          const run = await api.runs.create({
+                            featureName: page.title,
+                            startUrl: page.startUrl ?? '',
+                            goal: page.goal || 'Attached video walkthrough',
+                            docPageId: pageId!,
+                          })
+                          const ext = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')) : '.mp4'
+                          const path = `runs/${run.id}/video${ext}`
+                          const { signedUrl } = await api.runs.getSignedUploadUrl(run.id, path)
+                          const uploadRes = await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file })
+                          if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.statusText}`)
+                          const publicUrl = supabase.storage.from('artifacts').getPublicUrl(path).data?.publicUrl
+                          if (publicUrl) setVideoUrl(`${publicUrl}?t=${Date.now()}`)
+                          // Refresh so latestRunId / videoUrl pickup and the
+                          // full Video tab UI (tone / voice / generate) renders.
+                          await fetchData()
+                        } catch (err) {
+                          console.error('[attach-video] Failed:', (err as Error).message)
+                        }
+                      })()
+                    }}
+                  />
+                </label>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+                  Need an AI-written doc from your recording instead? Use the <strong>Generate</strong> tab.
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

@@ -287,6 +287,11 @@ export interface DocPageDTO {
   content: string | null
   /** Lossless BlockNote document; null means "parse from `content`". */
   contentBlocks: unknown
+  /** Snapshot of the content replaced by the most recent destructive
+   *  regeneration. Null when nothing to undo. */
+  previousContent?: string | null
+  previousContentBlocks?: unknown
+  previousContentSavedAt?: string | null
   customPrompt: string | null
   briefing: PageBriefingDTO | null
   status: 'draft' | 'exploring' | 'published'
@@ -363,6 +368,8 @@ export const api = {
       request(`/projects/${projectId}/pages/${pageId}`, { method: 'PUT', body: JSON.stringify(body) }),
     delete: (projectId: string, pageId: string): Promise<void> =>
       request(`/projects/${projectId}/pages/${pageId}`, { method: 'DELETE' }),
+    restorePrevious: (projectId: string, pageId: string): Promise<DocPageDTO> =>
+      request(`/projects/${projectId}/pages/${pageId}/restore-previous`, { method: 'POST' }),
     doc: (projectId: string, pageId: string): Promise<GeneratedDocDTO> =>
       request(`/projects/${projectId}/pages/${pageId}/doc`),
     latestRun: (projectId: string, pageId: string): Promise<RunDTO | null> =>

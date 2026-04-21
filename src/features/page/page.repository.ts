@@ -12,6 +12,9 @@ interface PageRow {
   goal: string | null
   content: string | null
   content_blocks: unknown
+  previous_content: string | null
+  previous_content_blocks: unknown
+  previous_content_saved_at: string | null
   custom_prompt: string | null
   briefing: PageBriefing | null
   status: string
@@ -35,6 +38,9 @@ function mapToPage(row: PageRow): DocPage {
     goal: row.goal,
     content: row.content,
     contentBlocks: row.content_blocks ?? null,
+    previousContent: row.previous_content ?? null,
+    previousContentBlocks: row.previous_content_blocks ?? null,
+    previousContentSavedAt: row.previous_content_saved_at ? new Date(row.previous_content_saved_at) : null,
     customPrompt: row.custom_prompt,
     briefing: row.briefing ?? null,
     status: row.status as DocPage['status'],
@@ -252,14 +258,70 @@ export async function reorderPages(items: ReorderItem[]): Promise<void> {
 }
 
 export async function updatePageContent(id: string, content: string): Promise<void> {
-  // Wipe content_blocks on fresh generation: the editor parses the new
-  // markdown on next open and persists JSON from that. Without the wipe,
-  // stale blocks from a previous generation would override the new content.
-  const { error } = await supabase
+  // Snapshot the current content into the previous_* columns before we
+  // overwrite, so an accidental regeneration is recoverable. Only one
+  // snapshot is kept (latest wins) — good enough for the "I didn't mean
+  // to click that" undo without the weight of full versioning.
+  const { data: current, error: fetchErr } = await supabase
     .from('doc_pages')
-    .update({ content, content_blocks: null, updated_at: new Date().toISOString() })
+    .select('content, content_blocks')
     .eq('id', id)
+    .single()
+  if (fetchErr) throw new DatabaseError(fetchErr.message)
+
+  const updates: Record<string, unknown> = {
+    // Wipe content_blocks on fresh generation: the editor parses the new
+    // markdown on next open and persists JSON from that. Without the wipe,
+    // stale blocks from a previous generation would override the new content.
+    content,
+    content_blocks: null,
+    updated_at: new Date().toISOString(),
+  }
+
+  const currentContent = (current as { content: string | null; content_blocks: unknown } | null)?.content
+  if (currentContent?.trim()) {
+    updates.previous_content = currentContent
+    updates.previous_content_blocks = (current as { content_blocks: unknown } | null)?.content_blocks ?? null
+    updates.previous_content_saved_at = new Date().toISOString()
+  }
+
+  const { error } = await supabase.from('doc_pages').update(updates).eq('id', id)
   if (error) throw new DatabaseError(error.message)
+}
+
+/** Restore the most recent snapshot into `content` / `content_blocks` and
+ *  clear the snapshot. Throws when there's nothing to restore. */
+export async function restorePreviousContent(id: string): Promise<DocPage> {
+  const { data: current, error: fetchErr } = await supabase
+    .from('doc_pages')
+    .select('previous_content, previous_content_blocks, previous_content_saved_at')
+    .eq('id', id)
+    .single()
+  if (fetchErr) throw new DatabaseError(fetchErr.message)
+  const row = current as {
+    previous_content: string | null
+    previous_content_blocks: unknown
+    previous_content_saved_at: string | null
+  } | null
+  if (!row?.previous_content) {
+    throw new DatabaseError('No previous version to restore')
+  }
+
+  const { data, error } = await supabase
+    .from('doc_pages')
+    .update({
+      content: row.previous_content,
+      content_blocks: row.previous_content_blocks ?? null,
+      previous_content: null,
+      previous_content_blocks: null,
+      previous_content_saved_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single()
+  if (error) throw new DatabaseError(error.message)
+  return mapToPage(data as PageRow)
 }
 
 export function buildTree(pages: DocPage[]): DocPageTreeNode[] {
