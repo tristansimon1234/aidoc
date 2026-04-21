@@ -376,8 +376,22 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       const { findDocByRunId } = await import('../documentation/documentation.repository.js')
       const doc = await findDocByRunId(params.data.id)
-      if (!doc?.markdownContent) {
-        throw new AppError('Generate documentation first before creating voice-over', 'DOC_NOT_FOUND', 404)
+      // Prefer the AI-generated doc stored on the run, fall back to the
+      // hand-written markdown on the linked page. Voice-over should work
+      // just as well for authors who skipped the AI generation step (eg
+      // wrote the doc by hand and attached a video afterwards).
+      let sourceMarkdown: string | null = doc?.markdownContent ?? null
+      if (!sourceMarkdown && run.docPageId) {
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (page?.content?.trim()) sourceMarkdown = page.content
+      }
+      if (!sourceMarkdown) {
+        throw new AppError(
+          'This page has no documentation yet. Write some content or generate it from a video before creating the voice-over.',
+          'DOC_NOT_FOUND',
+          404,
+        )
       }
 
       // Get timestamps from run summary
@@ -386,7 +400,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const numSteps = timestamps.length || 1
 
       console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
-      console.log(`[voiceover] Doc content length: ${doc.markdownContent.length} chars`)
+      console.log(`[voiceover] Doc content length: ${sourceMarkdown.length} chars`)
 
       // Build time budget — merge short sections, add intro/outro
       const mergedTimestamps: number[] = []
@@ -503,7 +517,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       // count French diacritics + stopwords vs English stopwords. No
       // extra Gemini call needed. Defaults to English when neither
       // signal is clearly dominant.
-      const narrationLanguage = detectDocLanguage(doc.markdownContent ?? '')
+      const narrationLanguage = detectDocLanguage(sourceMarkdown)
       console.log(`[voiceover] Detected doc language: ${narrationLanguage}`)
 
       const numStepsMerged = mergedTimestamps.length
@@ -577,7 +591,7 @@ Tag rules: tags go BETWEEN sentences only, NEVER mid-sentence. Use 3-5 different
 ## Documentation — the authoritative content source for the narration
 
 Treat this as the reference for WHAT to say during each section (the explanations, reasons, tips, caveats, and exact terminology the author wrote). The video tells you WHEN each step happens; this tells you HOW to describe it with depth. Prefer the doc's phrasing for feature names, settings labels, and step order — don't rename things Gemini-style.
-${doc.markdownContent.slice(0, 8000)}
+${sourceMarkdown.slice(0, 8000)}
 
 ## Script structure — TIMING IS CRITICAL
 ${numStepsMerged} sections using [SECTION N] markers.
