@@ -235,11 +235,19 @@ Markdown guidelines:
   {
     name: 'update_page',
     description:
-      `Update an existing page by slug. Pass any subset of title, newSlug, content. Content changes are auto re-indexed for chat / search and reset the rich-editor state so the UI picks up the fresh markdown.
+      `Edit an existing page by slug. This is the primary editing tool — use it to fix typos, rewrite sections, add content, rename, or change the slug. Pass any subset of \`title\`, \`newSlug\`, \`content\`, or \`contentAppend\`.
+
+Editing patterns:
+- **Full rewrite**: pass \`content\` with the complete new markdown body (replaces existing).
+- **Incremental addition**: pass \`contentAppend\` with the markdown to add — it's concatenated at the end of the existing content. Faster and safer than a full rewrite when you only want to add a section.
+- **Partial edit of existing sections**: call \`get_page\` first to read current content, edit locally, then \`update_page\` with the full \`content\`. (\`contentAppend\` is only for additions.)
+- \`content\` and \`contentAppend\` are mutually exclusive — pick one.
+
+Any content change is auto re-indexed for chat / search and resets the rich-editor state so the UI picks up the fresh markdown.
 
 Markdown guidelines (same as create_page):
 - The \`title\` is rendered separately as the page H1 — DO NOT repeat it as \`# Title\` at the top of \`content\`.
-- Structure \`content\` with \`## Section\` / \`### Subsection\` headings.
+- Structure with \`## Section\` / \`### Subsection\` headings.
 - Use GitHub-flavored markdown (lists, code blocks, callouts like \`> [!TIP]\` / \`> [!WARNING]\`).`,
     inputSchema: {
       type: 'object',
@@ -250,7 +258,11 @@ Markdown guidelines (same as create_page):
         newSlug: { type: 'string', description: 'New slug (lowercase a-z 0-9 -).' },
         content: {
           type: 'string',
-          description: 'New markdown body (replaces existing). Do NOT start with an H1 matching the title — use ## for top-level sections.',
+          description: 'Full new markdown body — REPLACES the existing content entirely. Do NOT start with an H1 matching the title. Mutually exclusive with contentAppend.',
+        },
+        contentAppend: {
+          type: 'string',
+          description: 'Markdown to add at the end of the existing content. Use this for incremental additions (new section, extra note) without rewriting the whole page. Mutually exclusive with content.',
         },
       },
       required: ['projectId', 'slug'],
@@ -477,17 +489,31 @@ async function handleUpdatePage(
     if (taken) return toolText(`Slug "${parsed.data.newSlug}" is already taken by another page.`)
   }
 
+  // Resolve the effective new content:
+  //   - `content` → full replace
+  //   - `contentAppend` → concat at end of existing, with a blank line separator
+  //     so we don't accidentally glue the append onto the last paragraph.
+  let nextContent: string | undefined
+  if (parsed.data.content !== undefined) {
+    nextContent = parsed.data.content
+  } else if (parsed.data.contentAppend !== undefined) {
+    const existing = page.content?.trimEnd() ?? ''
+    const toAppend = parsed.data.contentAppend.trimStart()
+    nextContent = existing ? `${existing}\n\n${toAppend}` : toAppend
+  }
+
   const { updatePage } = await import('../page/page.service.js')
-  // When content is provided, wipe contentBlocks so the BlockNote editor
-  // reparses from the fresh markdown. Otherwise the UI keeps rendering the
-  // last editor state and the MCP edit looks like a no-op.
+  // Wipe contentBlocks whenever we write content — the BlockNote editor
+  // treats content_blocks as the source of truth when present, so leaving
+  // it stale would make the MCP edit look like a no-op in the UI.
   const input: { title?: string; slug?: string; content?: string; contentBlocks?: unknown } = {
     title: parsed.data.title,
     slug: parsed.data.newSlug,
-    content: parsed.data.content,
+    content: nextContent,
   }
-  if (parsed.data.content !== undefined) input.contentBlocks = null
+  if (nextContent !== undefined) input.contentBlocks = null
   const updated = await updatePage(page.id, input, ctx.userId)
 
-  return toolText(`Updated page **${updated.title}** (slug: ${updated.slug}).`)
+  const mode = parsed.data.content !== undefined ? 'replaced' : parsed.data.contentAppend !== undefined ? 'appended to' : 'updated'
+  return toolText(`Updated page **${updated.title}** (slug: ${updated.slug}, ${mode}).`)
 }

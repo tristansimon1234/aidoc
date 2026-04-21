@@ -44,15 +44,24 @@ export const CreatePageToolArgsSchema = z.object({
   content: z.string().max(200_000).optional(),
 })
 
-export const UpdatePageToolArgsSchema = z.object({
-  projectId: UuidField,
-  slug: z.string().min(1).max(200),
-  title: z.string().min(1).max(200).optional(),
-  newSlug: z
-    .string()
-    .min(1)
-    .max(200)
-    .regex(/^[a-z0-9-]+$/, 'Slug must be lowercase with hyphens')
-    .optional(),
-  content: z.string().max(200_000).optional(),
-})
+export const UpdatePageToolArgsSchema = z
+  .object({
+    projectId: UuidField,
+    slug: z.string().min(1).max(200),
+    title: z.string().min(1).max(200).optional(),
+    newSlug: z
+      .string()
+      .min(1)
+      .max(200)
+      .regex(/^[a-z0-9-]+$/, 'Slug must be lowercase with hyphens')
+      .optional(),
+    /** Full markdown body — replaces the existing content entirely. */
+    content: z.string().max(200_000).optional(),
+    /** Markdown to append at the end of the existing content. Useful for
+     *  incremental additions without a read-then-full-write round trip.
+     *  Mutually exclusive with `content`. */
+    contentAppend: z.string().max(200_000).optional(),
+  })
+  .refine((d) => !(d.content !== undefined && d.contentAppend !== undefined), {
+    message: 'Provide either `content` (full replace) or `contentAppend` (add to end) — not both.',
+  })
