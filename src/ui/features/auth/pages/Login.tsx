@@ -55,7 +55,7 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
         <div className={styles.card}>
           <h1 className={styles.logo}>
             <img
-              src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent.png"
+              src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent%20(1).png"
               alt="doclee"
               className={styles.logoImg}
             />
@@ -76,7 +76,7 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
       <div className={styles.card}>
         <h1 className={styles.logo}>
           <img
-            src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent.png"
+            src="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-lockup-transparent%20(1).png"
             alt="doclee"
             className={styles.logoImg}
           />
