@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
-import { Button } from '../../../design-system/components/index.js'
+import { Button, ShareMenu } from '../../../design-system/components/index.js'
 import { type ProjectDTO } from '../../../shared/api/client.js'
 import { api } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
@@ -79,6 +79,20 @@ function PublishSection({ project, setProject }: { project: ProjectDTO; setProje
           }}>
             {copied ? 'Copied!' : 'Copy'}
           </button>
+        </div>
+      </div>
+
+      <div className={styles.field}>
+        <label className={styles.label}>Share on social</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          <ShareMenu
+            url={publicUrl}
+            title={`${project.name} — Documentation`}
+            label="Share"
+          />
+          <span className={styles.hint} style={{ margin: 0 }}>
+            Post to LinkedIn, X, Facebook, WhatsApp, or send by email.
+          </span>
         </div>
       </div>
 
