@@ -23,7 +23,7 @@ export function CodeBlock({ code, language }: CodeBlockProps): React.ReactElemen
 
   return (
     <div className={styles.wrapper} data-language={language ?? undefined}>
-      <pre className={styles.pre}>
+      <pre>
         <code>{code}</code>
       </pre>
       <button
