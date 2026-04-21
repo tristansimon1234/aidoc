@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { JobTracker, JobBadge } from '../jobs/JobTracker.js'
 import { AppRail } from './AppRail.js'
 import { QuotaBanner } from './QuotaBanner.js'
+import { WorkspaceChip } from './WorkspaceChip.js'
 import styles from './Shell.module.css'
 
 interface ShellProps {
@@ -52,6 +53,7 @@ export function Shell({ children, actions, navBar, fullWidth = false }: ShellPro
             <Link to="/" className={styles.logo}>
               <span>doclee</span>
             </Link>
+            <WorkspaceChip />
             <JobBadge />
             {actions}
           </div>
