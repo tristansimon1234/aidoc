@@ -67,18 +67,15 @@ export async function registerChatSession(
   // inserted row tells us whether WE inserted vs someone else did first.
   const { data: inserted, error: insertError } = await supabase
     .from('chat_sessions')
-    .insert(
-      {
-        project_id: projectId,
-        session_token: sessionToken,
-        period_month: period,
-        user_id: ownerUserId ?? teamId,
-        source,
-        started_at: nowIso,
-        last_seen_at: nowIso,
-      },
-      { count: 'exact' },
-    )
+    .insert({
+      project_id: projectId,
+      session_token: sessionToken,
+      period_month: period,
+      user_id: ownerUserId ?? teamId,
+      source,
+      started_at: nowIso,
+      last_seen_at: nowIso,
+    })
     .select('project_id')
 
   if (insertError) {

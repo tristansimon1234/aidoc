@@ -145,6 +145,10 @@ src/
       prompt.builder.ts     # ALL AI prompts: doc gen, voiceover narration + tone presets,
                             # RAG chat system/user, Try Doc exploration + analysis,
                             # preflight, walkthrough, analytics, message classifier
+    observability/
+      sentry.ts             # initSentry() — no-op when SENTRY_DSN unset; redacts
+                            # Authorization / cookie / x-api-key headers and
+                            # /mcp-user/:token URLs before send.
     browser/
       playwright.client.ts  # launchBrowser(), closeBrowser(), getSessionId()
       browser.types.ts
@@ -182,6 +186,7 @@ src/
                              # CalloutBlock (custom BlockNote block: info/tip/warning/danger),
                              # ImageLightbox (click-to-fullscreen image overlay),
                              # ConfirmDialog (portal-based confirm, useConfirmDialog hook),
+                             # AlreadyRunningNotice (shared 409 dialog for RUN_ALREADY_RUNNING),
                              # TableOfContents (floating TOC with heading tracking),
                              # ProgressLoader (multi-step progress indicator)
                              # Each: Component.tsx + Component.module.css
@@ -323,7 +328,7 @@ Every DB call through `*.repository.ts`. Services NEVER call Supabase directly.
 - After generation → auto-copied to `doc_pages.content`
 
 ### Full schema reference
-See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions; MCP: mcp_user_tokens — `token_hash` / `preview` columns added 2026-04-22), 30 migrations.
+See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs — `triggered_by_user_id` + nullable `page_id` added 2026-04-22 to support the exclusive-lock pattern; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions; MCP: mcp_user_tokens — `token_hash` / `preview` columns added 2026-04-22), 31 migrations.
 
 ---
 
@@ -520,12 +525,17 @@ UPSTASH_REDIS_REST_TOKEN   # missing both falls back to an in-memory limiter.
                            # Prod fallback is bypassable across cold starts, so we fail fast.
 CRON_SECRET                # Required in prod — Vercel injects it as
                            # `Authorization: Bearer ${CRON_SECRET}` on every cron hit,
-                           # and /api/cron/* rejects anything else.
+                           # and /api/cron/* rejects anything else (timing-safe compare).
+SENTRY_DSN                 # Optional — when set, Sentry captures 5xx AppErrors
+                           # and unhandled errors. VERCEL_GIT_COMMIT_SHA auto-populates release.
+SENTRY_RELEASE             # Optional — override for the release tag.
 ```
 
 **Frontend** (Vite prefix):
 ```
 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+VITE_SENTRY_DSN          # Optional — enables browser-side Sentry
+VITE_SENTRY_RELEASE      # Optional — override for the release tag
 ```
 
 ---
@@ -567,12 +577,12 @@ VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
 - [ ] **Stripe wiring missing** — `plans.stripe_price_id`, `subscriptions.stripe_subscription_id`, `profiles.stripe_customer_id` columns are in place but plan switching mutates DB directly. Need Checkout Session + webhook handler.
 - [ ] Code blocks have no syntax highlighting (Shiki = ~2 MB to bundle, deferred). Language picker also not yet exposed.
 - [x] ~~`src/app.ts` and `api/index.ts` duplicate router mounts~~ — factored into `src/shared/middleware/mount-routers.ts`; both entrypoints call it with the right prefix.
-- [ ] **Scale bottlenecks surfaced by the pre-launch audit, not yet addressed**:
+- [x] ~~No Sentry / error tracking~~ — `src/shared/observability/sentry.ts` + `src/ui/shared/observability/sentry.ts`. 5xx AppErrors + unhandled errors captured with `error_code` and `path` tags. Redacts Authorization / cookie / x-api-key / MCP-token URLs. No-op when DSN unset.
+- [x] ~~No concurrent-run protection~~ — every heavy action (exploration, doc-gen, voiceover, try-doc-analysis, project index) routes through `job.service.ensureExclusiveJob`. Page-scoped UNIQUE `(page_id, type) WHERE status='running'` + project-scoped UNIQUE `(project_id, type) WHERE status='running' AND page_id IS NULL`. Staleness reclaim > 10 min handles Vercel-timeout orphans. Blocked callers get a 409 `RUN_ALREADY_RUNNING` with the triggering user's name + started-at, rendered by the shared `AlreadyRunningNotice` component.
+- [ ] **Scale bottlenecks still on the shelf**:
   - [ ] Embeddings stored via `JSON.stringify()` cast to `vector(768)` — index works, but a native `pgvector-node` path would drop the parsing overhead on bulk inserts. Defer until latency signals justify it.
   - [ ] RLS `user_team_ids()` subquery re-executed on every SELECT — at ~100 concurrent chats it adds measurable latency. Fix is either Postgres-side (make the function `STABLE`) or client-side (cache the team ids on the JWT). Needs an architecture call.
   - [ ] Video is buffered to a `Buffer` in memory for voice-over; a 300 MB recording OOMs Vercel. Needs streaming to Gemini Files API, or a hard client-side cap on upload size.
-  - [ ] No concurrent-run protection on Browserbase — double-clicking Explore spawns two runs. Needs a unique constraint or in-app lock on `(page_id, status='running')`.
-  - [ ] No Sentry / error tracking. Blind to production failures until a design partner reports them.
   - [ ] `chat_messages` grows unbounded. Need a pruning cron or partition scheme before ~10M rows degrade analytics queries.
 - [ ] **Chat RAG quality — deferred batches** (already landed: top-20 retrieval, conversational query rewriting, temperature 0.3, hierarchy breadcrumbs, Gemini-as-judge reranking, Pro model routing on complex queries). Still on the shelf:
   - [ ] Hybrid BM25 + vector search (pgvector + `tsvector`). Helps on queries with exact terms / proper nouns that embed weakly.

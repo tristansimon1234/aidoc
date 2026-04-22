@@ -94,6 +94,39 @@ Public routes (`/widget/*`, `/mcp/*`, `/docs/*`, `/invites/*`) use their own cre
 
 Any time you `fetch(url)` with a URL that came from user input, go through `src/shared/http/safe-fetch.ts` — it DNS-resolves the target, rejects private/link-local/loopback/cloud-metadata addresses and non-http(s) schemes, and caps body size + timeout. Never call `fetch` directly on a user-provided URL.
 
+## Adding a Heavy Action (> 5s, spawns a browser / big Gemini / ElevenLabs call)
+
+Route every new heavy action through `job.service.ensureExclusiveJob()` in `src/features/run/`:
+
+```ts
+const job = await ensureExclusiveJob({
+  runId,                  // or null for project-scoped jobs
+  pageId: run.docPageId,  // or null for project-scoped
+  projectId,
+  type: 'my-action',      // add to JobType union if new
+  triggeredByUserId: getUserId(req),
+})
+try {
+  const result = await doTheWork()
+  await completeJob(job.id)
+  res.json(result)
+} catch (err) {
+  await failJob(job.id, (err as Error).message)
+  throw err
+}
+```
+
+You get for free:
+- A 409 `RUN_ALREADY_RUNNING` with the triggering user's name when a teammate already has a job on this page.
+- Automatic reclaim of stale jobs (> 10 min — covers Vercel timeouts).
+- A row in `jobs` that `JobTracker` shows in the UI and that the frontend can cancel.
+
+Frontend: catch the 409 with `isAlreadyRunningError(err)` and render `AlreadyRunningNotice` — do NOT print the raw error message.
+
+## Error Tracking
+
+`src/shared/observability/sentry.ts` is initialised at the top of both entrypoints. Sentry captures 5xx `AppError` + unhandled errors automatically via the error middleware; you shouldn't need to call `Sentry.captureException` by hand. If you deliberately want to record a non-throwing signal (e.g. a recoverable classification miss), use `Sentry.captureMessage(...)` with a clear tag. The frontend has its own init in `src/ui/shared/observability/sentry.ts` — both are no-ops when the DSN env var is unset.
+
 ## Known Technical Debt
 
 See CLAUDE.md § "Known Tech Debt" for the current canonical list. Highlights:
@@ -111,8 +144,8 @@ See CLAUDE.md § "Known Tech Debt" for the current canonical list. Highlights:
 - [x] ~~IDOR on pages/runs/analytics~~ — routes now assert team membership
 - [x] ~~SSRF on analyze-url~~ — `safeFetch` DNS-resolves + blocks private ranges
 - [x] ~~Duplicate router mounts~~ — factored into `mount-routers.ts`
+- [x] ~~No concurrent-run protection~~ — all heavy actions route through `ensureExclusiveJob`
+- [x] ~~No Sentry / error tracking~~ — wired in both entrypoints, no-op when DSN unset
 - [ ] Video buffered in memory for voice-over (OOM risk on 300MB+ recordings) — needs streaming to Gemini Files
-- [ ] No concurrent-run protection on Browserbase — double-click Explore spawns two runs
-- [ ] No Sentry / error tracking — blind to prod failures until reported
 - [ ] `chat_messages` grows unbounded — needs pruning cron before ~10M rows
 - [ ] **Stripe wiring missing** — columns in place, plan switching mutates DB directly

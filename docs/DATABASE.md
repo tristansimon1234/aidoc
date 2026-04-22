@@ -301,6 +301,7 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 45 | `20260421000001_add_page_content_backup.sql` | `previous_content` / `previous_content_blocks` / `previous_content_saved_at` on `doc_pages` for the Restore previous version action. |
 | 46 | `20260422000000_mcp_token_scope_and_observability.sql` | Add `scope` / `expires_at` / `last_used_ip` to `mcp_user_tokens` for scoped tokens + observability. |
 | 47 | `20260422000001_hash_mcp_tokens_at_rest.sql` | Hash MCP tokens at rest — add `token_hash` + `preview` columns; app-layer SHA-256. Legacy `token` column kept NOT NULL for transition. |
+| 48 | `20260422000002_extend_jobs_for_exclusive_locks.sql` | Add `triggered_by_user_id` to `jobs`, make `page_id` nullable for project-scoped locks, add UNIQUE `(project_id, type) WHERE status='running' AND page_id IS NULL` for project-scoped exclusivity (indexing). |
 
 ## `mcp_user_tokens` — user MCP personal access tokens
 
@@ -338,7 +339,7 @@ projects 1:N doc_embeddings (CASCADE)
 projects 1:N chat_sessions (CASCADE)
 projects 1:N chat_messages (CASCADE)
 projects 1:N doc_page_views (CASCADE)
-projects 1:N jobs (CASCADE)
+projects 1:N jobs (CASCADE) — page_id is nullable so project-scoped jobs (index) can exist without a page
 doc_pages 1:N doc_pages (self-ref via parent_id, SET NULL)
 doc_pages 1:N doc_embeddings (CASCADE)
 doc_pages 1:N runs (via doc_page_id, SET NULL)

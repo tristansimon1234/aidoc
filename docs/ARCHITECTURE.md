@@ -68,6 +68,7 @@ src/shared/
   http/             # safe-fetch: SSRF-safe HTTP wrapper (used by analyze-url)
   config/           # Zod-validated env vars + isAdminEmail(); prod requires Upstash + CRON_SECRET
   middleware/       # auth (JWT), admin (allowlist), error, mount-routers (shared by app.ts + api/index.ts)
+  observability/    # Sentry init (no-op without SENTRY_DSN) — captures 5xx + unhandled
   usage/            # incrementUsage RPC + listUsageForCurrentMonth + chat session dedup
   validation/       # Shared Zod schemas
 
@@ -109,6 +110,9 @@ interface RunDeps {
 
 ### Prompt Centralization
 All AI prompts live in `shared/ai/prompt.builder.ts` — doc generation, voice-over narration (+ tone presets), RAG chat system/user, Try Doc exploration + analysis, preflight, walkthrough, analytics synthesis, message classifier. The exploration instruction for open-ended runs is the remaining exception (built inline in `exploration.service.ts` because it's dynamic).
+
+### Exclusive Locks for Heavy Actions
+Every heavy action (exploration, doc-gen, voiceover, try-doc-analysis, project indexing) routes through `ensureExclusiveJob()` in `src/features/run/job.service.ts`. The `jobs` table's UNIQUE partial indexes — `(page_id, type) WHERE status='running'` for page-scoped types and `(project_id, type) WHERE status='running' AND page_id IS NULL` for project-scoped types — act as the single race anchor. When two teammates click the same button, Postgres lets exactly one INSERT succeed and rejects the other with 23505; the helper catches that, fetches the existing row, and either reclaims it (older than 10 min = abandoned Vercel run) or throws `AlreadyRunningError` with the triggering user's name and started-at timestamp. The error surfaces as a 409 `RUN_ALREADY_RUNNING` with structured `details`, rendered by the shared `AlreadyRunningNotice` React component.
 
 ### Try Doc
 Try Doc: Stagehand exploration → Gemini structured analysis → persisted JSON report

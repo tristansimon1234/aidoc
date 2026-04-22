@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
+import { timingSafeEqual } from 'node:crypto'
 import { AppError } from '../../shared/middleware/error.middleware.js'
 import { env } from '../../shared/config/env.js'
 import { classifyPendingMessages } from './analytics.service.js'
@@ -23,7 +24,14 @@ function requireCronSecret(req: Request): void {
   }
   const header = req.headers.authorization ?? ''
   const expectedHeader = `Bearer ${expected}`
-  if (header !== expectedHeader) {
+  // timingSafeEqual requires same-length buffers; bail early when lengths
+  // differ so the fixed-length compare doesn't throw.
+  if (header.length !== expectedHeader.length) {
+    throw new AppError('Unauthorized', 'UNAUTHORIZED', 401)
+  }
+  const headerBuf = Buffer.from(header, 'utf8')
+  const expectedBuf = Buffer.from(expectedHeader, 'utf8')
+  if (!timingSafeEqual(headerBuf, expectedBuf)) {
     throw new AppError('Unauthorized', 'UNAUTHORIZED', 401)
   }
 }
