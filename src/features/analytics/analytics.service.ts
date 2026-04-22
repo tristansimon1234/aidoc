@@ -18,6 +18,7 @@ import {
   computePainPoints,
   sampleUserMessages,
   updateMessageClassification,
+  findUnclassifiedUserMessages,
   type MessageCategory,
 } from './analytics.repository.js'
 import type { AiRecommendations, AnalyticsPeriod, AnalyticsReport, ChatSource, FrustrationSignal } from './analytics.types.js'
@@ -268,4 +269,53 @@ export async function applyClassificationToMessage(
   } catch (err) {
     console.warn(`[classifier] UPDATE failed for ${messageId}: ${(err as Error).message}`)
   }
+}
+
+// --- Cron-driven batch classifier ---
+
+/** Concurrency cap for the cron's parallel Gemini calls. Gemini 2.5 Flash
+ *  holds ~60 RPM on the free tier; 5 in flight leaves room for live chat
+ *  to continue serving while the hourly batch catches up. */
+const CRON_CLASSIFY_CONCURRENCY = 5
+/** Max messages processed per cron tick. At 60 RPM × concurrency 5 we can
+ *  drain ~1000 in 5 minutes comfortably; cap below that to avoid chaining
+ *  many Gemini calls per invocation. The cron runs hourly, so steady-state
+ *  traffic well under 300 messages/hour is fully absorbed. */
+const CRON_CLASSIFY_BATCH_LIMIT = 300
+
+/**
+ * Pull every unclassified user message from the last 72h and classify them
+ * in bounded-concurrency waves. Invoked hourly by the Vercel cron at
+ * /api/cron/classify-messages — see src/features/analytics/cron.routes.ts.
+ *
+ * Moving classification off the live chat path means:
+ *   - Live chat latency is no longer bounded by the classifier Gemini call
+ *   - Gemini quota (~60 RPM) isn't halved between chat + classify per
+ *     message, so the widget no longer 429s under multi-user demos
+ *   - Analytics insights lag by up to ~1h, which is acceptable for
+ *     sentiment / frustration aggregates
+ */
+export async function classifyPendingMessages(): Promise<{ picked: number; updated: number; failed: number }> {
+  const pending = await findUnclassifiedUserMessages(CRON_CLASSIFY_BATCH_LIMIT)
+  if (pending.length === 0) return { picked: 0, updated: 0, failed: 0 }
+
+  let updated = 0
+  let failed = 0
+  for (let i = 0; i < pending.length; i += CRON_CLASSIFY_CONCURRENCY) {
+    const wave = pending.slice(i, i + CRON_CLASSIFY_CONCURRENCY)
+    const outcomes = await Promise.allSettled(
+      wave.map(async (m) => {
+        const c = await classifyMessageContent(m.content)
+        if (!c) return 'skipped' as const
+        await applyClassificationToMessage(m.id, c)
+        return 'ok' as const
+      }),
+    )
+    for (const r of outcomes) {
+      if (r.status === 'fulfilled' && r.value === 'ok') updated++
+      else if (r.status === 'rejected') failed++
+    }
+  }
+  console.log(`[classifier cron] picked=${pending.length} updated=${updated} failed=${failed}`)
+  return { picked: pending.length, updated, failed }
 }

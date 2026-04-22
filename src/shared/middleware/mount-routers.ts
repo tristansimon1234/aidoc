@@ -16,6 +16,7 @@ import { userMcpRouter } from '../../features/mcp/user-mcp.routes.js'
 import { mcpTokensRouter } from '../../features/mcp/tokens.routes.js'
 import { publicDocsRouter } from '../../features/page/public-docs.routes.js'
 import { analyticsRouter } from '../../features/analytics/analytics.routes.js'
+import { cronRouter } from '../../features/analytics/cron.routes.js'
 import { teamRouter, invitePublicRouter } from '../../features/team/team.routes.js'
 
 interface MountOptions {
@@ -48,6 +49,9 @@ export function mountRouters(app: Express, options: MountOptions): void {
   app.use(`${p}/mcp-user`, userMcpRouter)
   app.use(`${p}/docs`, publicDocsRouter)
   app.use(`${p}/invites`, invitePublicRouter)
+  // Vercel cron handlers — authed via `Authorization: Bearer CRON_SECRET`,
+  // not the user JWT.
+  app.use(`${p}/cron`, cronRouter)
 
   // Authed routes.
   app.use(`${p}/profile`, authMiddleware, profileRouter)

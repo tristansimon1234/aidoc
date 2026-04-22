@@ -5,7 +5,6 @@ import { ChatRequestSchema, WalkthroughRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
-import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { createLimiter } from '../../shared/rate-limit/rate-limit.js'
 import type { Project } from '../project/project.types.js'
@@ -68,14 +67,13 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      // Billing: register the chat session (dedup per cookie+month). Run the
-      // tracker + classifier in parallel with the chat Gemini call so neither
-      // adds user-visible latency.
+      // Billing: register the chat session (dedup per cookie+month) in
+      // parallel with the chat Gemini call so session tracking doesn't
+      // add user-visible latency. Classification is deferred to the
+      // hourly cron at /api/cron/classify-messages (keeps Gemini quota
+      // free for live chat traffic — see analytics.service).
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
       const sessionTrackPromise = trackWidgetSession(project, sessionToken)
-      const classifyPromise = sessionToken
-        ? classifyMessageContent(body.data.message)
-        : Promise.resolve(null)
 
       const result = await chatService.chat(
         project.id,
@@ -91,7 +89,7 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
 
       if (sessionToken) {
         try {
-          const { userMessageId } = await logChatMessages({
+          await logChatMessages({
             projectId: project.id,
             userId: project.userId,
             sessionToken,
@@ -99,10 +97,6 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
             userMessage: body.data.message,
             assistantMessage: result.answer,
           })
-          const classified = await classifyPromise
-          if (userMessageId && classified) {
-            await applyClassificationToMessage(userMessageId, classified)
-          }
         } catch (err) {
           console.warn('[analytics] widget chat log failed:', (err as Error).message)
         }

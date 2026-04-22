@@ -6,7 +6,6 @@ import * as chatService from './chat.service.js'
 import { UuidParamSchema } from '../../shared/validation/schemas.js'
 import { registerChatSession, incrementUsage, findTeamIdByProjectId, findOwnerUserIdByTeamId } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
-import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 
 export const chatRouter = Router({ mergeParams: true })
@@ -37,11 +36,9 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
       // Block hard-cap plans before spending on Gemini.
       await enforceQuotaOrThrow(teamId)
 
+      // Classification is deferred to the hourly cron — see analytics.service.
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
       const sessionTrackPromise = trackAppChatSession(params.data.id, teamId, sessionToken)
-      const classifyPromise = sessionToken
-        ? classifyMessageContent(body.data.message)
-        : Promise.resolve(null)
 
       const result = await chatService.chat(
         params.data.id,
@@ -55,7 +52,7 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
           // chat_messages keeps user_id as audit — pick the team's primary owner.
           const ownerId = await findOwnerUserIdByTeamId(teamId)
           if (ownerId) {
-            const { userMessageId } = await logChatMessages({
+            await logChatMessages({
               projectId: params.data.id,
               userId: ownerId,
               sessionToken,
@@ -63,10 +60,6 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
               userMessage: body.data.message,
               assistantMessage: result.answer,
             })
-            const classified = await classifyPromise
-            if (userMessageId && classified) {
-              await applyClassificationToMessage(userMessageId, classified)
-            }
           }
         } catch (err) {
           console.warn('[analytics] app chat log failed:', (err as Error).message)

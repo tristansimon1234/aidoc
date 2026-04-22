@@ -24,6 +24,11 @@ const EnvSchema = z.object({
   // resets the counter), fine for local dev but weak in prod.
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  // Vercel Cron shared secret. Vercel injects this as `Authorization: Bearer
+  // ${CRON_SECRET}` on every scheduled hit; our /api/cron/* handlers reject
+  // anything that doesn't match, so the endpoint can't be drained publicly.
+  // Required in production; optional in dev (disables the cron endpoint).
+  CRON_SECRET: z.string().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>
@@ -38,6 +43,13 @@ if (env.NODE_ENV === 'production' && (!env.UPSTASH_REDIS_REST_URL || !env.UPSTAS
   throw new Error(
     'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must both be set in production. ' +
     'The in-memory rate-limit fallback is bypassable on serverless — configure Upstash before deploying.',
+  )
+}
+
+if (env.NODE_ENV === 'production' && !env.CRON_SECRET) {
+  throw new Error(
+    'CRON_SECRET must be set in production — the /api/cron/* handlers reject ' +
+    'any request whose Authorization header does not match this value.',
   )
 }
 

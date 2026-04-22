@@ -10,7 +10,6 @@ import { ChatRequestSchema } from '../chat/chat.schema.js'
 import { hasEmbeddings } from '../chat/chat.repository.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
 import { logChatMessages, logPageView } from '../analytics/analytics.repository.js'
-import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { PageViewPingSchema } from '../analytics/analytics.schema.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { createLimiter } from '../../shared/rate-limit/rate-limit.js'
@@ -150,11 +149,10 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       if (!body.success) throw new ValidationError(body.error.flatten())
 
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
-      // Run session counter + classifier in parallel with the chat Gemini call.
+      // Run session counter in parallel with the chat Gemini call. Sentiment
+      // / frustration classification is deferred to the hourly cron —
+      // see analytics.service.classifyPendingMessages.
       const sessionTrackPromise = trackPublicSession(project, sessionToken)
-      const classifyPromise = sessionToken
-        ? classifyMessageContent(body.data.message)
-        : Promise.resolve(null)
 
       const result = await chatService.chat(
         project.id,
@@ -168,7 +166,7 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
 
       if (sessionToken) {
         try {
-          const { userMessageId } = await logChatMessages({
+          await logChatMessages({
             projectId: project.id,
             userId: project.userId,
             sessionToken,
@@ -176,10 +174,6 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
             userMessage: body.data.message,
             assistantMessage: result.answer,
           })
-          const classified = await classifyPromise
-          if (userMessageId && classified) {
-            await applyClassificationToMessage(userMessageId, classified)
-          }
         } catch (err) {
           console.warn('[analytics] public chat log failed:', (err as Error).message)
         }

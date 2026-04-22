@@ -11,6 +11,12 @@
       "includeFiles": "dist/client/index.html"
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/classify-messages",
+      "schedule": "0 * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/docs/:projectId/:slug?", "destination": "/api/docs-ssr" },
     { "source": "/api/(.*)", "destination": "/api" },

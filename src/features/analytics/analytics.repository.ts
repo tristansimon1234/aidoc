@@ -63,6 +63,29 @@ export async function updateMessageClassification(
   if (error) throw new DatabaseError(error.message)
 }
 
+export interface UnclassifiedMessage { id: string; content: string }
+
+/**
+ * Pull user-role messages that the classifier hasn't tagged yet. Used by
+ * the hourly cron: sentiment IS NULL means "never classified". We bound
+ * the window to 72h so a long cron outage doesn't drag the classifier
+ * across weeks of stale traffic; anything older is accepted as
+ * permanently-uncategorised for analytics purposes.
+ */
+export async function findUnclassifiedUserMessages(limit: number, maxAgeHours = 72): Promise<UnclassifiedMessage[]> {
+  const cutoff = new Date(Date.now() - maxAgeHours * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('id, content')
+    .eq('role', 'user')
+    .is('sentiment', null)
+    .gte('created_at', cutoff)
+    .order('created_at', { ascending: true })
+    .limit(limit)
+  if (error) throw new DatabaseError(error.message)
+  return (data ?? []) as UnclassifiedMessage[]
+}
+
 export async function logPageView(input: {
   projectId: string
   userId: string
