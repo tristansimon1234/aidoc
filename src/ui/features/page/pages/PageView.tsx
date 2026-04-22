@@ -29,19 +29,35 @@ interface PageContext {
 }
 
 export function PageView(): React.ReactElement {
+  const { pageId } = useParams<{ pageId: string }>()
+  // Force a full remount on page change so every useState/useRef/useEffect
+  // restarts cleanly. Kills the render-phase sync hack and the defensive
+  // `page.id !== pageId` spinner that used to erase the page mid-navigation.
+  return <PageViewInner key={pageId ?? 'none'} />
+}
+
+function PageViewInner(): React.ReactElement {
   const { projectId, pageId } = useParams<{ projectId: string; pageId: string }>()
   const context = useOutletContext<PageContext>()
 
-  // Instant page lookup from sidebar data — no flash on page switch
+  // Instant page lookup from sidebar data — no flash on first paint
   const cachedPage = context.pages.find((p) => p.id === pageId) ?? null
+
+  const { addJob, updateJob, failJob, getJobForPage } = useJobs()
+
+  // Restore per-page state from the job context on mount — e.g. if the user
+  // navigates to a page that already has a Try Doc running, we want the Test
+  // tab open with the live browser iframe, not a stale Doc tab.
+  const initialTestJob = getJobForPage(pageId ?? '', 'try-doc')
+  const hasRunningTest = initialTestJob?.status === 'running' && !!initialTestJob.liveUrl
 
   const [page, setPage] = useState<DocPageDTO | null>(cachedPage)
   const [loading, setLoading] = useState(!cachedPage)
   const abortRef = useRef<AbortController | null>(null)
-  const [liveUrl, setLiveUrl] = useState<string | null>(null)
+  const [liveUrl, setLiveUrl] = useState<string | null>(hasRunningTest ? (initialTestJob.liveUrl ?? null) : null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test'>('doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test'>(hasRunningTest ? 'test' : 'doc')
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
@@ -57,7 +73,6 @@ export function PageView(): React.ReactElement {
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | undefined>(undefined)
   const [selectedTone, setSelectedTone] = useState<string>('friendly')
   const { dialog: confirmDialog, confirm } = useConfirmDialog()
-  const { addJob, updateJob, failJob, getJobForPage } = useJobs()
   const quota = useQuotaStatus()
   const quotaBlocked = !quota.loading && !quota.allowed
   const [generatingVoiceover, setGeneratingVoiceover] = useState(() => getJobForPage(pageId ?? '', 'voiceover')?.status === 'running')
@@ -72,46 +87,6 @@ export function PageView(): React.ReactElement {
       setLiveUrl(activeTryDocJob.liveUrl)
     }
   }, [activeTryDocJob, liveUrl])
-
-  const prevPageIdRef = useRef(pageId)
-
-  // Sync page instantly when pageId changes (no async gap)
-  if (pageId !== prevPageIdRef.current) {
-    prevPageIdRef.current = pageId
-    if (cachedPage) {
-      setPage(cachedPage)
-      setLoading(false)
-    } else {
-      setPage(null)
-      setLoading(true)
-    }
-    setError(null)
-    setStatusMessage(null)
-    // Reset run-dependent state
-    setVideoUrl(null)
-    setVoiceoverUrl(null)
-    setVoiceoverSegments([])
-    setLatestRunId(null)
-    setVideoDuration(0)
-    setTryReport(null)
-    setTryRunning(false)
-    setAnalyzing(false)
-    setTryStreamSteps([])
-    setPreflightResult(null)
-    setPreflightLoading(false)
-    // Restore voiceover generating state from job context
-    const incomingVoiceoverJob = getJobForPage(pageId!, 'voiceover')
-    setGeneratingVoiceover(incomingVoiceoverJob?.status === 'running')
-    // Restore liveUrl + tab for pages with active test, reset for others
-    const incomingTestJob = getJobForPage(pageId!, 'try-doc')
-    if (incomingTestJob?.status === 'running' && incomingTestJob.liveUrl) {
-      setLiveUrl(incomingTestJob.liveUrl)
-      setActiveTab('test')
-    } else {
-      setLiveUrl(null)
-      setActiveTab('doc')
-    }
-  }
 
   const fetchData = useCallback(async () => {
     if (!projectId || !pageId) return
@@ -379,17 +354,12 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
     void context.refetchPages()
   }
 
-  if (loading) return <Spinner size="lg" />
+  if (loading) return (
+    <div className={styles.loadingSkeleton}>
+      <Spinner size="md" />
+    </div>
+  )
   if (!page) return <EmptyState title="Page not found" />
-  // Defensive: the inline sync block above schedules setPage(cachedPage)
-  // when pageId changes, but React commits in two passes. On the first
-  // render after navigation the `page` state can still point at the
-  // previous pageId — rendering the BlockEditor at that point flashes
-  // the old page's content before the new one loads. Early-return a
-  // spinner until the state catches up.
-  if (page.id !== pageId) return <Spinner size="lg" />
-
-
 
   return (
     <div>
