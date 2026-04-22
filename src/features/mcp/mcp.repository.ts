@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
 import type { McpScope, McpUserToken, McpUserTokenSummary } from './mcp.types.js'
@@ -7,7 +8,9 @@ interface McpUserTokenRow {
   user_id: string
   team_id: string
   name: string
-  token: string
+  token: string | null
+  token_hash: string | null
+  preview: string | null
   scope: McpScope
   last_used_at: string | null
   last_used_ip: string | null
@@ -16,13 +19,28 @@ interface McpUserTokenRow {
   created_at: string
 }
 
+/** SHA-256 of a raw MCP token. Fixed algorithm (not bcrypt): we need an
+ *  indexed lookup on the hash, and the token itself has 256 bits of entropy
+ *  so rainbow-table attacks are impractical. The hash exists to defuse DB
+ *  backup leaks, not to slow down online guessing. */
+export function hashMcpToken(raw: string): string {
+  return createHash('sha256').update(raw, 'utf8').digest('hex')
+}
+
+function previewOf(raw: string): string {
+  return raw.slice(-4)
+}
+
 function mapToken(row: McpUserTokenRow): McpUserToken {
+  // `token` is only populated post-create (by createToken). Lookups return
+  // null — the raw token isn't recoverable from the stored hash. Callers that
+  // need a preview should read `preview` directly.
   return {
     id: row.id,
     userId: row.user_id,
     teamId: row.team_id,
     name: row.name,
-    token: row.token,
+    token: row.token ?? '',
     scope: row.scope,
     lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
     lastUsedIp: row.last_used_ip,
@@ -33,12 +51,15 @@ function mapToken(row: McpUserTokenRow): McpUserToken {
 }
 
 function mapTokenSummary(row: McpUserTokenRow): McpUserTokenSummary {
+  // Prefer the explicit preview column; fall back to a legacy derivation
+  // from the raw `token` column for rows migrated before preview was wired.
+  const preview = row.preview ?? row.token?.slice(-4) ?? '••••'
   return {
     id: row.id,
     userId: row.user_id,
     teamId: row.team_id,
     name: row.name,
-    preview: row.token.slice(-4),
+    preview,
     scope: row.scope,
     lastUsedAt: row.last_used_at ? new Date(row.last_used_at) : null,
     lastUsedIp: row.last_used_ip,
@@ -56,20 +77,32 @@ export async function createToken(input: {
   scope: McpScope
   expiresAt: Date | null
 }): Promise<McpUserToken> {
+  // Store the hash — the raw token is never kept at rest. We keep a 4-char
+  // preview separately so the UI can still render "…a3f7" for the row.
+  const hash = hashMcpToken(input.token)
+  const preview = previewOf(input.token)
   const { data, error } = await supabase
     .from('mcp_user_tokens')
     .insert({
       user_id: input.userId,
       team_id: input.teamId,
       name: input.name,
-      token: input.token,
+      // token column is DEPRECATED but still NOT NULL UNIQUE on older DBs —
+      // write the hash there too as a bridge until the migration can drop it.
+      // UNIQUE holds because hash is globally unique.
+      token: hash,
+      token_hash: hash,
+      preview,
       scope: input.scope,
       expires_at: input.expiresAt ? input.expiresAt.toISOString() : null,
     })
     .select('*')
     .single()
   if (error) throw new DatabaseError(error.message)
-  return mapToken(data as McpUserTokenRow)
+  const mapped = mapToken(data as McpUserTokenRow)
+  // Return the RAW token this one time — the caller (route) echoes it back
+  // to the user who just generated it. It is NOT recoverable afterwards.
+  return { ...mapped, token: input.token }
 }
 
 /** Resolve a raw token string to its row. Returns null when the token is
@@ -77,10 +110,11 @@ export async function createToken(input: {
  *  Distinct expired-vs-revoked surfacing happens in the route layer when
  *  needed (we look up the row again to disambiguate the error message). */
 export async function findActiveTokenByValue(tokenValue: string): Promise<McpUserToken | null> {
+  const hash = hashMcpToken(tokenValue)
   const { data, error } = await supabase
     .from('mcp_user_tokens')
     .select('*')
-    .eq('token', tokenValue)
+    .eq('token_hash', hash)
     .is('revoked_at', null)
     .maybeSingle()
   if (error) throw new DatabaseError(error.message)
@@ -95,10 +129,11 @@ export async function findActiveTokenByValue(tokenValue: string): Promise<McpUse
  *  `TOKEN_REVOKED` vs `TOKEN_UNKNOWN`). Single extra round-trip on the
  *  unhappy path only — successful requests never hit this. */
 export async function findTokenByValueAnyState(tokenValue: string): Promise<McpUserToken | null> {
+  const hash = hashMcpToken(tokenValue)
   const { data, error } = await supabase
     .from('mcp_user_tokens')
     .select('*')
-    .eq('token', tokenValue)
+    .eq('token_hash', hash)
     .maybeSingle()
   if (error) throw new DatabaseError(error.message)
   return data ? mapToken(data as McpUserTokenRow) : null

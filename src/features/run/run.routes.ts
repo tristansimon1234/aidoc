@@ -1,10 +1,27 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { ValidationError, AppError } from '../../shared/middleware/error.middleware.js'
+import { ValidationError, AppError, NotFoundError } from '../../shared/middleware/error.middleware.js'
 import { CreateRunSchema, RunIdParamSchema } from './run.schema.js'
 import * as runService from './run.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
+
+/** Pull the userId the auth middleware attached, or throw 401. */
+function getUserId(req: Request): string {
+  const uid = (req as Request & { userId?: string }).userId
+  if (!uid) throw new AppError('Unauthorized', 'UNAUTHORIZED', 401)
+  return uid
+}
+
+/** Assert the caller is a member of the team that owns the run before
+ *  every run-scoped op. Returns the resolved runId. */
+async function assertRunAccessFromReq(req: Request): Promise<string> {
+  const parsed = RunIdParamSchema.safeParse(req.params)
+  if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+  const id = parsed.data.id
+  await runService.assertRunAccess(id, getUserId(req))
+  return id
+}
 
 export const runRouter = Router()
 
@@ -65,15 +82,11 @@ async function teamForRun(runId: string): Promise<string> {
   return teamId
 }
 
-runRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
-  void (async () => {
-    try {
-      const runs = await runService.listRuns()
-      res.status(200).json(runs)
-    } catch (err) {
-      next(err)
-    }
-  })()
+// Legacy: used to list every run in the system. We no longer expose it —
+// a new caller would need a team-scoped version (GET /api/teams/:id/runs
+// or similar). Returning 404 preserves the mount without leaking runs.
+runRouter.get('/', (_req: Request, _res: Response, next: NextFunction) => {
+  next(new NotFoundError('Endpoint'))
 })
 
 runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
@@ -93,12 +106,11 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
 runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
       // Exploration is the single most expensive op we run (Claude + Browserbase
       // + Gemini). Refuse hard-cap plans at 100% before spinning up a browser.
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { context?: string }
       const context = typeof body.context === 'string' ? body.context : undefined
@@ -111,7 +123,7 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
       res.flushHeaders()
 
       await runService.exploreWithEvents(
-        params.data.id,
+        runId,
         (event) => {
           res.write(`data: ${JSON.stringify(event)}\n\n`)
         },
@@ -137,9 +149,8 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
 runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      await runService.cancelExploration(params.data.id)
+      const runId = await assertRunAccessFromReq(req)
+      await runService.cancelExploration(runId)
       res.status(200).json({ cancelled: true })
     } catch (err) {
       next(err)
@@ -151,11 +162,15 @@ runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) 
 runRouter.post('/:id/signed-upload-url', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = req.body as { path?: string }
       if (!body.path || typeof body.path !== 'string') {
         throw new ValidationError('path is required')
+      }
+      // Lock the upload path under the run's prefix so a caller can't write
+      // over another run's artifacts through this signed URL.
+      if (!body.path.startsWith(`runs/${runId}/`)) {
+        throw new AppError('path must start with runs/:id/', 'INVALID_PATH', 400)
       }
       const { createSignedUploadUrl } = await import('../../shared/db/storage.repository.js')
       const signedUrl = await createSignedUploadUrl('artifacts', body.path)
@@ -170,8 +185,7 @@ runRouter.post('/:id/signed-upload-url', (req: Request, res: Response, next: Nex
 runRouter.post('/:id/steps/:stepIndex/screenshot', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const stepIndex = Number(req.params.stepIndex)
       if (isNaN(stepIndex)) throw new ValidationError('stepIndex must be a number')
       const body = req.body as { screenshotPath?: string }
@@ -179,7 +193,7 @@ runRouter.post('/:id/steps/:stepIndex/screenshot', (req: Request, res: Response,
         throw new ValidationError('screenshotPath is required')
       }
       const { updateStepScreenshot } = await import('./run.repository.js')
-      await updateStepScreenshot(params.data.id, stepIndex, body.screenshotPath)
+      await updateStepScreenshot(runId, stepIndex, body.screenshotPath)
       res.status(200).json({ ok: true })
     } catch (err) {
       next(err)
@@ -191,10 +205,9 @@ runRouter.post('/:id/steps/:stepIndex/screenshot', (req: Request, res: Response,
 runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { videoPath?: string; generateDoc?: boolean }
       if (!body.videoPath || typeof body.videoPath !== 'string') {
@@ -205,7 +218,7 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
       // The HTTP connection stays open — fetch survives client-side navigation.
       // The job row in DB survives browser refresh.
       if (body.generateDoc) {
-        const run = await runService.getRun(params.data.id)
+        const run = await runService.getRun(runId)
         if (!run.docPageId) throw new AppError('Run has no linked page', 'NO_PAGE', 400)
         const { findPageById } = await import('../page/page.repository.js')
         const page = await findPageById(run.docPageId)
@@ -215,7 +228,7 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
         let job: { id: string }
         try {
           job = await createJob({
-            runId: params.data.id,
+            runId,
             pageId: run.docPageId,
             projectId: page.projectId,
             type: 'doc-gen',
@@ -229,8 +242,8 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
         }
 
         try {
-          await runService.analyzeVideo(params.data.id, body.videoPath)
-          await runService.generateDoc(params.data.id, (req as Request & { userId?: string }).userId ?? null)
+          await runService.analyzeVideo(runId, body.videoPath)
+          await runService.generateDoc(runId, getUserId(req))
           if (run.docPageId) {
             const { updatePage } = await import('../page/page.repository.js')
             await updatePage(run.docPageId, { status: 'published' })
@@ -244,7 +257,7 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
         return
       }
 
-      const result = await runService.analyzeVideo(params.data.id, body.videoPath)
+      const result = await runService.analyzeVideo(runId, body.videoPath)
       res.status(200).json(result)
     } catch (err) {
       next(err)
@@ -260,16 +273,15 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
 runRouter.post('/:id/attach-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = req.body as { videoPath?: string }
       if (!body.videoPath || typeof body.videoPath !== 'string') {
         throw new ValidationError('videoPath is required')
       }
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       const existingSummary = (run.summaryJson ?? {}) as Record<string, unknown>
       const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(params.data.id, {
+      await updateRunSummary(runId, {
         ...existingSummary,
         videoPath: body.videoPath,
         attachedOnly: true,
@@ -286,30 +298,29 @@ runRouter.post('/:id/attach-video', (req: Request, res: Response, next: NextFunc
 runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
       // Refuse hard-cap plans (Free / Startup) at 100% budget — doc gen is the
       // most expensive op we run.
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       // Verify run has steps before generating
-      const steps = await runService.getRunSteps(params.data.id)
+      const steps = await runService.getRunSteps(runId)
       if (steps.length === 0) {
         throw new AppError('No steps found — the video analysis didn\'t detect any actions. Try re-uploading.', 'NO_STEPS', 400)
       }
 
-      const triggeredBy = (req as Request & { userId?: string }).userId ?? null
+      const triggeredBy = getUserId(req)
       const async = req.query.async === '1'
       if (async) {
         // Non-blocking: respond immediately, generate in background
-        res.status(202).json({ runId: params.data.id, status: 'running' })
-        void runService.generateDoc(params.data.id, triggeredBy).catch((err) =>
-          console.error(`[generate-doc] Background generation failed for ${params.data.id}:`, err),
+        res.status(202).json({ runId, status: 'running' })
+        void runService.generateDoc(runId, triggeredBy).catch((err) =>
+          console.error(`[generate-doc] Background generation failed for ${runId}:`, err),
         )
       } else {
         // Legacy blocking mode (for backwards compat)
-        const doc = await runService.generateDoc(params.data.id, triggeredBy)
+        const doc = await runService.generateDoc(runId, triggeredBy)
         res.status(200).json(doc)
       }
     } catch (err) {
@@ -342,10 +353,9 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
   let voiceoverJobId: string | null = null
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
 
@@ -358,7 +368,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const { generateVoiceover } = await import('../documentation/voiceover.service.js')
 
       // Get the generated doc content — this is the quality source
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
 
       // Create a DB job so tracker survives navigation + refresh
@@ -368,14 +378,14 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
           const page = await findPageById(run.docPageId)
           if (page) {
             const { createJob } = await import('./job.repository.js')
-            const job = await createJob({ runId: params.data.id, pageId: run.docPageId, projectId: page.projectId, type: 'voiceover' })
+            const job = await createJob({ runId: runId, pageId: run.docPageId, projectId: page.projectId, type: 'voiceover' })
             voiceoverJobId = job.id
           }
         } catch { /* duplicate job or missing page — continue without tracking */ }
       }
 
       const { findDocByRunId } = await import('../documentation/documentation.repository.js')
-      const doc = await findDocByRunId(params.data.id)
+      const doc = await findDocByRunId(runId)
       // Prefer the AI-generated doc stored on the run, fall back to the
       // hand-written markdown on the linked page. Voice-over should work
       // just as well for authors who skipped the AI generation step (eg
@@ -399,7 +409,7 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const timestamps = (summary?.stepTimestamps as number[]) ?? []
       const numSteps = timestamps.length || 1
 
-      console.log(`[voiceover] Run ${params.data.id}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
+      console.log(`[voiceover] Run ${runId}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
       console.log(`[voiceover] Doc content length: ${sourceMarkdown.length} chars`)
 
       // Build time budget — merge short sections, add intro/outro
@@ -463,51 +473,10 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections: [${mergedTimestamps.map(t => t.toFixed(1)).join(', ')}]`)
 
-      // Ask Gemini to transform the DOC into a narration script.
-      // Tone presets — controls voice delivery style.
-      // wordsPerSecondFactor adjusts the min/max words budget relative to
-      // the 1.5-2.0 words/sec baseline so Gemini's output lines up with
-      // ElevenLabs playback duration for tones that add non-word timing
-      // (ellipses, whispers, emphasis tags).
-      //   < 1.0 = script gets fewer words because TTS is slower for this
-      //           tone (pauses, whispers)
-      //   > 1.0 = script gets more words because TTS runs at normal pace
-      //           with short punchy sentences (energetic tone writes more
-      //           individual sentences than long ones would)
-      const TONE_PRESETS: Record<string, { label: string; direction: string; example: string; wordsPerSecondFactor: number }> = {
-        friendly: {
-          label: 'Friendly & Casual',
-          direction: `Warm, upbeat, conversational. Use contractions, light humor. Say it in one sentence when you can, but feel free to use a second sentence for context when the slot allows.`,
-          example: `[SECTION 1]\nHey! [excited] Let's set up your workspace.\n[SECTION 2]\nCreate a new project — this is home base for your docs. [laughs] Easy.`,
-          wordsPerSecondFactor: 1.0,
-        },
-        professional: {
-          label: 'Professional & Clear',
-          direction: `Polished, confident, measured. Clear and articulate, no filler. One precise sentence per idea.`,
-          example: `[SECTION 1]\nWelcome. Let's set up your workspace.\n[SECTION 2]\nFirst, create a project. [short pause] Each project groups docs for one product.`,
-          wordsPerSecondFactor: 1.0,
-        },
-        energetic: {
-          label: 'Energetic & Hyped',
-          direction: `High-energy, hyped delivery. Use CAPS for key words (not whole sentences) and energy tags like [excited], [laughs], [happy gasp]. Write COMPLETE, full-length explanations — fill the word budget — the energy comes from the DELIVERY, not from being curt. Don't write fragments or one-word sentences; pumped doesn't mean short.`,
-          example: `[SECTION 1]\n[excited] Let's GO! Time to build out your workspace and get everything set up.\n[SECTION 2]\nNow we're creating your first project — [happy gasp] this is where ALL the magic happens, so pay attention to the URL field because that's what drives the AI analysis later.`,
-          wordsPerSecondFactor: 1.1,
-        },
-        calm: {
-          label: 'Calm & Reassuring',
-          direction: `Gentle, patient delivery. Use ONE ellipsis per section MAX (they add real TTS pause time). Prefer [short pause] tags over \`...\` when you need a beat. Reassuring phrases are great but keep sentences concrete. [whispers] sparingly — once per section at most.`,
-          example: `[SECTION 1]\nHi, welcome. [calm] Let's set up your workspace together — it only takes a minute.\n[SECTION 2]\nCreate a project here... [whispers] this is the space where all your docs will live.`,
-          wordsPerSecondFactor: 0.7,
-        },
-        playful: {
-          label: 'Playful & Fun',
-          direction: `Witty, cheeky. Light sarcasm, playful asides. [giggles], [whispers], [sarcastic].`,
-          example: `[SECTION 1]\n[laughs] Alright — workspace time. [whispers] Very official.\n[SECTION 2]\nCreate a project. [giggles] Groundbreaking, I know.`,
-          wordsPerSecondFactor: 1.0,
-        },
-      }
-
-      const tone = TONE_PRESETS[body.tone ?? 'friendly'] ?? TONE_PRESETS.friendly!
+      // Ask Gemini to transform the DOC into a narration script. Tone presets
+      // + the big prompt body live in prompt.builder.ts (Hard Rule #3).
+      const { VOICEOVER_TONE_PRESETS } = await import('../../shared/ai/prompt.builder.js')
+      const tone = VOICEOVER_TONE_PRESETS[body.tone ?? 'friendly'] ?? VOICEOVER_TONE_PRESETS.friendly!
       const wordsFactor = tone.wordsPerSecondFactor
 
       // Detect the documentation language so we can pin it into the
@@ -562,72 +531,15 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       }
 
       // Generate narration — with video if available, text-only as fallback
-      const narrationPrompt = `You are writing a voice-over narration script for this product tutorial video. BLEND two sources:
-1. The VIDEO drives TIMING and ACTIONS — watch it to know exactly what happens in each section's slot.
-2. The DOCUMENTATION drives CONTENT — it holds the why, the context, the caveats, the terminology, the audience-appropriate wording the author already crafted. Don't just describe pixels; lean on the doc to give the user the understanding the author intended.
-
-Within each section's time slot, synchronize to the video (narrate what's on screen right now, anticipate what's about to happen) BUT flesh out the narration using the documentation's explanations. If the doc mentions a reason, a tip, or a caveat tied to the step you're narrating, include it. If the doc doesn't cover what's on screen, describe the action plainly. Never contradict the doc.
-
-This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an essay.
-
-## Tone: ${tone.label}
-${tone.direction}
-
-## ElevenLabs v3 formatting rules (CRITICAL — follow exactly)
-**Punctuation controls delivery:**
-- Ellipsis (...) creates a natural pause or trailing off
-- Em dash (—) creates a short punchy pause
-- CAPS emphasize words: "This is REALLY important"
-- Questions create natural rising intonation: "Pretty cool, right?"
-
-**Audio tags are stage directions** — place them between sentences:
-Emotional: [excited], [happy], [calm]
-Reactions: [laughs], [giggles], [sighs], [happy gasp]
-Delivery: [whispers], [cheerfully], [playfully], [sarcastic]
-Pacing: [short pause]
-
-Tag rules: tags go BETWEEN sentences only, NEVER mid-sentence. Use 3-5 different tags.
-
-## Documentation — the authoritative content source for the narration
-
-Treat this as the reference for WHAT to say during each section (the explanations, reasons, tips, caveats, and exact terminology the author wrote). The video tells you WHEN each step happens; this tells you HOW to describe it with depth. Prefer the doc's phrasing for feature names, settings labels, and step order — don't rename things Gemini-style.
-${sourceMarkdown.slice(0, 8000)}
-
-## Script structure — TIMING IS CRITICAL
-${numStepsMerged} sections using [SECTION N] markers.
-Total word budget: ~${totalMaxWords} words. The narration MUST fit within the video duration.
-
-${sectionList}
-
-⚠️ FILL THE TIME — this is the #1 priority. Each section has a word RANGE (min-max). You MUST write at least the minimum number of words. Silence between sections ruins the experience.
-- Count your words for each section. If the minimum says 45 words, write at least 45 words.
-- For long sections (15s+): explain the WHY, add context, give tips, describe what's on screen in detail. Use 3-5 sentences.
-- For medium sections (8-15s): 2-3 sentences with context.
-- For short sections (3-8s): 1-2 punchy sentences.
-- Too short = dead silence = BAD. Too long = minor overlap = acceptable.
-
-## Language — STRICT
-- The entire narration MUST be written in **${narrationLanguage}**. This language has already been determined from the documentation; do not re-detect, do not second-guess, do not change.
-- Do not translate to another language, do not switch mid-script, do not mix languages.
-- Ignore the language of the video's on-screen UI, the language of the spoken audio in the video, and any tone/examples below — those are just style references. The narration is in ${narrationLanguage}, full stop.
-- When narrating a UI element whose on-screen label is in a different language than ${narrationLanguage}, keep the label verbatim in quotes but describe the action in ${narrationLanguage}: e.g. narration in English, button labelled "Paramètres" → "Click 'Paramètres' to open the settings panel."
-
-## Content rules
-- BLEND video + doc: the video gives you the TIMING + ACTIONS (what's on screen right now, what's about to happen); the doc gives you the EXPLANATIONS + CONTEXT (the why, the caveats, the exact wording the author used). Use both per section. Don't reduce the narration to a play-by-play of visible pixels — draw on the doc to enrich each moment.
-- ANTICIPATORY: narrate what's ABOUT to happen, just before it does
-- GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
-- CLOSING: Section ${numStepsMerged} ends with TWO parts, in this order, joined into one smooth passage (no list, no line break between them):
-  PART A — a one-sentence recap SPECIFIC to what the user just accomplished (mention the feature, the next logical step, or what they can now do). Written in ${narrationLanguage}.
-  PART B — a real farewell phrase, written in ${narrationLanguage}. This is NON-OPTIONAL: the user must hear a goodbye word, not a trailing sentence. Pick something natural that fits the tone — e.g. \"Thanks for watching — see you in the next one!\", \"Have fun building and catch you later!\" (when ${narrationLanguage} is English) or \"Merci d'avoir suivi, à bientôt !\", \"Bon build, à la prochaine !\" (when ${narrationLanguage} is French).
-  Don't reuse the exact same farewell every time; vary it across videos. But DO include one — \"don't be generic\" means make PART A specific, not skip PART B.
-- Skip: URLs, code, technical IDs
-- Never say: "as you can see", "in this tutorial", "notice how"
-
-## Example:
-${tone.example}
-
-## Output
-Start DIRECTLY with [SECTION 1]. No preamble.`
+      const { buildVoiceoverNarrationPrompt } = await import('../../shared/ai/prompt.builder.js')
+      const narrationPrompt = buildVoiceoverNarrationPrompt({
+        tone,
+        sourceMarkdown,
+        narrationLanguage,
+        numSections: numStepsMerged,
+        totalMaxWords,
+        sectionList,
+      })
 
       let narrationResult: { text: string }
 
@@ -690,13 +602,9 @@ Start DIRECTLY with [SECTION 1]. No preamble.`
         if (!FAREWELL_RE.test(lastStep.text)) {
           try {
             const { generateText } = await import('../../shared/ai/gemini.client.js')
+            const { buildVoiceoverFarewellTopUpPrompt } = await import('../../shared/ai/prompt.builder.js')
             const farewell = await generateText({
-              userPrompt: `This is the final paragraph of a voice-over narration for a product tutorial. It's missing a warm farewell at the end.
-
-Write ONE short farewell sentence in ${narrationLanguage}, max 15 words. It must feel natural as a spoken outro, include an actual goodbye word (e.g. "Thanks for watching", "See you in the next one", "Merci d'avoir suivi", "À bientôt"), and fit the context of the paragraph below. Do NOT repeat the paragraph. Output ONLY the farewell sentence, nothing else.
-
-Paragraph:
-${lastStep.text}`,
+              userPrompt: buildVoiceoverFarewellTopUpPrompt(lastStep.text, narrationLanguage),
               maxTokens: 80,
               temperature: 0.4,
             })
@@ -716,7 +624,7 @@ ${lastStep.text}`,
       // Pass timestamps + video end sentinel so the service knows the last segment's limit
       const timestampsWithEnd = [...mergedTimestamps, estimatedVideoEnd]
 
-      const result = await generateVoiceover(params.data.id, stepsWithText, timestampsWithEnd, {
+      const result = await generateVoiceover(runId, stepsWithText, timestampsWithEnd, {
         voiceId: body.voiceId,
         language: body.language,
       })
@@ -724,7 +632,7 @@ ${lastStep.text}`,
       // Metered: bump monthly voiceover counter for the project owner
       try {
         const { findTeamIdByRunId, incrementUsage } = await import('../../shared/usage/usage.repository.js')
-        const teamId = await findTeamIdByRunId(params.data.id)
+        const teamId = await findTeamIdByRunId(runId)
         if (teamId) await incrementUsage(teamId, 'voiceover')
       } catch (err) {
         console.warn('[usage] increment voiceover failed:', (err as Error).message)
@@ -733,7 +641,7 @@ ${lastStep.text}`,
       // Store voiceover info in run summary
       const existingSummary = run.summaryJson ?? {}
       const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(params.data.id, { ...existingSummary, voiceover: result })
+      await updateRunSummary(runId, { ...existingSummary, voiceover: result })
 
       // Mark job completed
       if (voiceoverJobId) {
@@ -756,10 +664,9 @@ ${lastStep.text}`,
 runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { stepIndex: number; text?: string; voiceId?: string }
       if (body.stepIndex == null) throw new ValidationError('stepIndex is required')
@@ -773,7 +680,7 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
       const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
 
       // Get existing voiceover data
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
       const summary = run.summaryJson as Record<string, unknown> | null
       const voiceover = summary?.voiceover as { segments?: Array<Record<string, unknown>> } | undefined
@@ -785,7 +692,7 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
 
       // Synthesize new segment audio — use same naming as generateVoiceover
       const buffer = await synthesizeSpeech(text, { voiceId: body.voiceId })
-      const segPath = `runs/${params.data.id}/voiceover-seg-${body.stepIndex}.mp3`
+      const segPath = `runs/${runId}/voiceover-seg-${body.stepIndex}.mp3`
       await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
 
       // Update the segment in the summary
@@ -804,15 +711,15 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
         const concatSegments = updatedSegments
           .sort((a, b) => (a.stepIndex as number) - (b.stepIndex as number))
           .map((s) => ({
-            audioPath: (s.audioPath as string) ?? `runs/${params.data.id}/voiceover-seg-${s.stepIndex as number}.mp3`,
+            audioPath: (s.audioPath as string) ?? `runs/${runId}/voiceover-seg-${s.stepIndex as number}.mp3`,
             targetStartTime: Math.max(0, (s.startTime as number) - 1.5),
           }))
-        mainAudioPath = await concatAudio(params.data.id, concatSegments)
+        mainAudioPath = await concatAudio(runId, concatSegments)
         mainAudioUrl = `${getPublicUrl('artifacts', mainAudioPath) ?? ''}?v=${Date.now()}`
       }
 
       const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(params.data.id, {
+      await updateRunSummary(runId, {
         ...summary,
         voiceover: {
           ...voiceover,
@@ -832,12 +739,11 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
 runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = req.body as { segments: Array<{ stepIndex: number; startTime: number; endTime: number }> }
       if (!Array.isArray(body.segments)) throw new ValidationError('segments array required')
 
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
       const summary = run.summaryJson as Record<string, unknown> | null
       const voiceover = summary?.voiceover as { segments?: Array<Record<string, unknown>> } | undefined
@@ -850,7 +756,7 @@ runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: Nex
       })
 
       const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(params.data.id, {
+      await updateRunSummary(runId, {
         ...summary,
         voiceover: { ...voiceover, segments: updatedSegments },
       })
@@ -866,13 +772,12 @@ runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: Nex
 runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = req.body as { startTime: number; endTime: number }
       if (body.startTime == null || body.endTime == null) throw new ValidationError('startTime and endTime required')
       if (body.startTime >= body.endTime) throw new ValidationError('startTime must be before endTime')
 
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
 
       const summary = run.summaryJson as Record<string, unknown> | null
@@ -885,7 +790,7 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
         throw new AppError('Video service not configured — set VIDEO_SERVICE_URL', 'VIDEO_SERVICE_NOT_CONFIGURED', 400)
       }
 
-      const trimmedPath = await trimVideo(videoPath, params.data.id, body.startTime, body.endTime)
+      const trimmedPath = await trimVideo(videoPath, runId, body.startTime, body.endTime)
 
       // Update summary with new video path + adjust timestamps for trimmed range
       const { updateRunSummary } = await import('./run.repository.js')
@@ -895,7 +800,7 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
         .map((t) => t - body.startTime)
         .filter((t) => t >= 0 && t <= trimmedDuration)
 
-      await updateRunSummary(params.data.id, {
+      await updateRunSummary(runId, {
         ...summary,
         videoPath: trimmedPath,
         stepTimestamps: adjustedTimestamps,
@@ -915,14 +820,13 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
 runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { pageContent: string; pageTitle: string; pageId: string }
       if (!body.pageContent) throw new ValidationError('pageContent is required')
-      const report = await runService.analyzeTryDoc(params.data.id, body.pageContent, body.pageTitle, body.pageId)
+      const report = await runService.analyzeTryDoc(runId, body.pageContent, body.pageTitle, body.pageId)
       res.status(200).json(report)
     } catch (err) {
       next(err)
@@ -933,9 +837,8 @@ runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunct
 runRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      const run = await runService.getRun(params.data.id)
+      const runId = await assertRunAccessFromReq(req)
+      const run = await runService.getRun(runId)
       res.status(200).json(run)
     } catch (err) {
       next(err)
@@ -946,9 +849,8 @@ runRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
 runRouter.get('/:id/steps', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      const steps = await runService.getRunSteps(params.data.id)
+      const runId = await assertRunAccessFromReq(req)
+      const steps = await runService.getRunSteps(runId)
       res.status(200).json(steps)
     } catch (err) {
       next(err)
@@ -959,9 +861,8 @@ runRouter.get('/:id/steps', (req: Request, res: Response, next: NextFunction) =>
 runRouter.get('/:id/questions', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      const questions = await runService.getQuestions(params.data.id)
+      const runId = await assertRunAccessFromReq(req)
+      const questions = await runService.getQuestions(runId)
       res.status(200).json(questions)
     } catch (err) {
       next(err)

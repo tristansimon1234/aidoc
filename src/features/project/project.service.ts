@@ -1,22 +1,26 @@
 import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import type { Project, CreateProjectInput, UpdateProjectInput } from './project.types.js'
 import * as projectRepo from './project.repository.js'
-import { supabase } from '../../shared/db/supabase.client.js'
-import { DatabaseError } from '../../shared/middleware/error.middleware.js'
+import { findMember } from '../team/team.repository.js'
 
-async function assertTeamMembership(teamId: string, userId: string): Promise<void> {
-  const { data, error } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('team_id', teamId)
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (error) throw new DatabaseError(error.message)
-  if (!data) throw new AppError('Forbidden', 'FORBIDDEN', 403)
+export async function assertTeamMembership(teamId: string, userId: string): Promise<void> {
+  const member = await findMember(teamId, userId)
+  if (!member) throw new AppError('Forbidden', 'FORBIDDEN', 403)
 }
 
 async function assertAccess(project: Project, userId: string): Promise<void> {
   await assertTeamMembership(project.teamId, userId)
+}
+
+/** Resolve a project and assert the caller has access to it via team
+ *  membership. Returns the project so callers can use it directly.
+ *  Throws 404 (project) or 403 (forbidden) — callers should not care
+ *  which, treat both as "no access". */
+export async function assertProjectAccess(projectId: string, userId: string): Promise<Project> {
+  const project = await projectRepo.findProjectById(projectId)
+  if (!project) throw new NotFoundError('Project')
+  await assertAccess(project, userId)
+  return project
 }
 
 export async function createProject(userId: string, teamId: string, input: CreateProjectInput): Promise<Project> {

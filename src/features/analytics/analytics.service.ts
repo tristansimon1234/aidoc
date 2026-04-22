@@ -1,5 +1,6 @@
 import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import { findProjectById } from '../project/project.repository.js'
+import { assertTeamMembership } from '../project/project.service.js'
 import { findPagesByProjectId } from '../page/page.repository.js'
 import { generateText } from '../../shared/ai/gemini.client.js'
 import {
@@ -60,7 +61,7 @@ export async function getReport(
 ): Promise<AnalyticsReport> {
   const project = await findProjectById(projectId)
   if (!project) throw new NotFoundError('Project')
-  if (project.userId !== ownerUserId) throw new AppError('Forbidden', 'FORBIDDEN', 403)
+  await assertTeamMembership(project.teamId, ownerUserId)
 
   const days = PERIOD_DAYS[period]
   const periodEnd = new Date()
@@ -124,7 +125,7 @@ export async function getRecommendations(
 ): Promise<AiRecommendations> {
   const project = await findProjectById(projectId)
   if (!project) throw new NotFoundError('Project')
-  if (project.userId !== ownerUserId) throw new AppError('Forbidden', 'FORBIDDEN', 403)
+  await assertTeamMembership(project.teamId, ownerUserId)
 
   const cacheKey = `${projectId}:${period}`
   const cached = recommendationsCache.get(cacheKey)

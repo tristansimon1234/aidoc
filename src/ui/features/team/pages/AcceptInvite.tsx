@@ -7,7 +7,6 @@ import styles from '../../auth/pages/Login.module.css'
 
 interface InvitePeek {
   teamName: string
-  email: string
   inviterName: string | null
   expiresAt: string
   accepted: boolean
@@ -50,7 +49,7 @@ export function AcceptInvite(): React.ReactElement {
     } catch (err) {
       const code = err instanceof ApiError ? err.code : null
       if (code === 'EMAIL_MISMATCH') {
-        setAcceptError(`This invite was sent to ${invite?.email}. Sign in with that email to accept.`)
+        setAcceptError('This invite was sent to a different email address. Sign in with the address the invitation was sent to.')
       } else {
         setAcceptError((err as Error).message)
       }
@@ -96,7 +95,7 @@ export function AcceptInvite(): React.ReactElement {
             {invite.inviterName ?? 'Someone'} invited you to <strong>{invite.teamName}</strong>.
           </p>
           <p className={styles.subtitle} style={{ fontSize: 'var(--text-xs)' }}>
-            Sign in or create an account with <strong>{invite.email}</strong> to accept.
+            Sign in or create an account with the email the invitation was sent to.
           </p>
           <div className={styles.actions}>
             <Button onClick={() => navigate(`/login?returnTo=${encodeURIComponent(`/invite/${token}`)}`)}>

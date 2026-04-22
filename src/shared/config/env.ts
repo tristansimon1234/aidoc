@@ -30,6 +30,17 @@ export type Env = z.infer<typeof EnvSchema>
 
 export const env: Env = EnvSchema.parse(process.env)
 
+// In production, Upstash is required — the in-memory rate-limit fallback is
+// trivially bypassable on Vercel serverless (each cold start starts fresh
+// counters). Fail fast at boot instead of letting the app run with effectively
+// no rate limiting on the public widget / MCP endpoints.
+if (env.NODE_ENV === 'production' && (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN)) {
+  throw new Error(
+    'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must both be set in production. ' +
+    'The in-memory rate-limit fallback is bypassable on serverless — configure Upstash before deploying.',
+  )
+}
+
 const ADMIN_EMAIL_SET = new Set(
   (env.ADMIN_EMAILS ?? '')
     .split(',')

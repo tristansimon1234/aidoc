@@ -504,7 +504,7 @@ export const api = {
       request(`/teams/invites/${token}/accept`, { method: 'POST' }),
   },
   invites: {
-    peek: (token: string): Promise<{ teamName: string; email: string; inviterName: string | null; expiresAt: string; accepted: boolean }> =>
+    peek: (token: string): Promise<{ teamName: string; inviterName: string | null; expiresAt: string; accepted: boolean }> =>
       request(`/invites/${token}`),
   },
   mcpTokens: {

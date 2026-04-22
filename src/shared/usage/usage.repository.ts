@@ -45,6 +45,13 @@ export async function listUsageForCurrentMonth(teamId: string): Promise<Record<U
 // current month — the caller bumps the team's chat_sessions counter only on
 // new-session inserts, so the billing unit is the session regardless of how
 // many messages the visitor sends.
+//
+// Atomicity: the PK (project_id, session_token, period_month) is the single
+// race-free anchor. We `insert(..., { ignoreDuplicates: true })` first — the
+// row either inserts or the PK rejects it — then UPDATE last_seen_at when it
+// was a duplicate. Previous implementation did a SELECT-then-INSERT-or-UPDATE
+// which let two concurrent callers (same session, two tabs) each read "no
+// row" and double-count the session before the second INSERT hit the PK.
 export async function registerChatSession(
   projectId: string,
   teamId: string,
@@ -52,39 +59,50 @@ export async function registerChatSession(
   source: ChatSessionSource,
 ): Promise<boolean> {
   const period = currentPeriodMonth()
+  const nowIso = new Date().toISOString()
+  const ownerUserId = await findOwnerUserIdByTeamId(teamId)
 
-  const { data: existing, error: selectError } = await supabase
+  // Attempt the insert. On PK conflict the duplicate is silently dropped
+  // (ignoreDuplicates: true), returning an empty array. The SELECT on the
+  // inserted row tells us whether WE inserted vs someone else did first.
+  const { data: inserted, error: insertError } = await supabase
     .from('chat_sessions')
-    .select('session_token')
+    .insert(
+      {
+        project_id: projectId,
+        session_token: sessionToken,
+        period_month: period,
+        user_id: ownerUserId ?? teamId,
+        source,
+        started_at: nowIso,
+        last_seen_at: nowIso,
+      },
+      { count: 'exact' },
+    )
+    .select('project_id')
+
+  if (insertError) {
+    // Duplicate-key on the PK is expected when the row already exists; any
+    // other error is a real problem.
+    const msg = insertError.message.toLowerCase()
+    if (!msg.includes('duplicate') && insertError.code !== '23505') {
+      throw new DatabaseError(insertError.message)
+    }
+  }
+
+  const isNewSession = (inserted?.length ?? 0) > 0
+  if (isNewSession) return true
+
+  // Existing row — just bump last_seen_at. Failure here is non-fatal for
+  // billing (we already know it's not a new session), but still surface it.
+  const { error: updateError } = await supabase
+    .from('chat_sessions')
+    .update({ last_seen_at: nowIso })
     .eq('project_id', projectId)
     .eq('session_token', sessionToken)
     .eq('period_month', period)
-    .maybeSingle()
-  if (selectError) throw new DatabaseError(selectError.message)
-
-  if (existing) {
-    const { error: updateError } = await supabase
-      .from('chat_sessions')
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq('project_id', projectId)
-      .eq('session_token', sessionToken)
-      .eq('period_month', period)
-    if (updateError) throw new DatabaseError(updateError.message)
-    return false
-  }
-
-  // user_id is the audit column on chat_sessions — keep pointing at the
-  // team's primary owner until we drop it in a cleanup migration.
-  const ownerUserId = await findOwnerUserIdByTeamId(teamId)
-  const { error: insertError } = await supabase.from('chat_sessions').insert({
-    project_id: projectId,
-    session_token: sessionToken,
-    period_month: period,
-    user_id: ownerUserId ?? teamId,   // FK-safe fallback, shouldn't happen
-    source,
-  })
-  if (insertError) throw new DatabaseError(insertError.message)
-  return true
+  if (updateError) throw new DatabaseError(updateError.message)
+  return false
 }
 
 export async function findOwnerUserIdByTeamId(teamId: string): Promise<string | null> {
