@@ -78,23 +78,44 @@ export async function indexPage(page: {
   return chunks.length
 }
 
+/**
+ * Concurrency cap for parallel page indexing. Gemini's embedTexts batch
+ * hits ~60 RPM soft-limit on the free tier; 5 concurrent pages × 1
+ * embedTexts call each ≈ 5 RPM peak, which leaves headroom for chat
+ * traffic to go through at the same time. Previously this loop was
+ * sequential, so a 100-page project serialized into a 60-second wall
+ * clock — now it's under 15s on the same pool.
+ */
+const INDEX_CONCURRENCY = 5
+
 export async function indexProject(projectId: string): Promise<number> {
   const { findPagesByProjectId } = await import('../page/page.repository.js')
   const pages = await findPagesByProjectId(projectId)
 
+  const indexable = pages.filter((p) => p.content?.trim())
+  if (indexable.length === 0) return 0
+
   let total = 0
-  for (const page of pages) {
-    if (page.content?.trim()) {
-      total += await indexPage({
-        id: page.id,
-        projectId: page.projectId,
-        title: page.title,
-        slug: page.slug,
-        content: page.content,
-      })
+  // Process in fixed-size waves so we cap parallelism without pulling in
+  // a queue library. One rejected page doesn't stop the others — we log
+  // and keep the project's other pages indexed.
+  for (let i = 0; i < indexable.length; i += INDEX_CONCURRENCY) {
+    const wave = indexable.slice(i, i + INDEX_CONCURRENCY)
+    const results = await Promise.allSettled(
+      wave.map((p) => indexPage({
+        id: p.id,
+        projectId: p.projectId,
+        title: p.title,
+        slug: p.slug,
+        content: p.content,
+      })),
+    )
+    for (const r of results) {
+      if (r.status === 'fulfilled') total += r.value
+      else console.error('[chat] indexPage failed during indexProject:', r.reason)
     }
   }
-  console.log(`[chat] Indexed ${total} total chunks for project ${projectId}`)
+  console.log(`[chat] Indexed ${total} total chunks for project ${projectId} (${indexable.length} pages)`)
   return total
 }
 
