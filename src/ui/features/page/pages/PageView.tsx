@@ -9,8 +9,9 @@ import {
   TableOfContents,
   ProgressLoader,
   useConfirmDialog,
+  AlreadyRunningNotice,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
+import { api, isAlreadyRunningError, type AlreadyRunningDetails, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { useJobs } from '../../../shared/jobs/JobContext.js'
@@ -78,6 +79,10 @@ function PageViewInner(): React.ReactElement {
   const [generatingVoiceover, setGeneratingVoiceover] = useState(() => getJobForPage(pageId ?? '', 'voiceover')?.status === 'running')
   const [uploadingVideo, setUploadingVideo] = useState(false)
   const activeDocGenJob = getJobForPage(pageId ?? '', 'doc-gen')
+  // When a teammate is already running one of the heavy actions on this
+  // page, the backend returns 409 RUN_ALREADY_RUNNING with details — we
+  // surface them in a shared notice instead of a raw error banner.
+  const [alreadyRunning, setAlreadyRunning] = useState<AlreadyRunningDetails | null>(null)
   const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
   const activeTryDocJob = getJobForPage(pageId ?? '', 'try-doc')
 
@@ -277,7 +282,11 @@ function PageViewInner(): React.ReactElement {
         if (runId) updateJob(runId, { status: 'completed' })
       } catch (err) {
         const e = err as Error & { code?: string | null }
-        if (e.name !== 'AbortError') {
+        if (isAlreadyRunningError(err)) {
+          // A teammate is already running exploration or Try Doc analysis
+          // on this page — surface the notice instead of a generic error.
+          setAlreadyRunning(err.details)
+        } else if (e.name !== 'AbortError') {
           setError(e.message)
         }
         if (runId) failJob(runId, e.message, e.code ?? null)
@@ -336,6 +345,12 @@ function PageViewInner(): React.ReactElement {
   return (
     <div>
       {confirmDialog}
+      {alreadyRunning && (
+        <AlreadyRunningNotice
+          details={alreadyRunning}
+          onClose={() => setAlreadyRunning(null)}
+        />
+      )}
       {/* Header — publish toggle */}
       <div className={styles.pageHeader}>
         <div className={styles.tabBar}>
@@ -629,6 +644,9 @@ function PageViewInner(): React.ReactElement {
                           await fetchData()
                         } catch (err) {
                           const e = err as Error & { code?: string | null }
+                          if (isAlreadyRunningError(err)) {
+                            setAlreadyRunning(err.details)
+                          }
                           failJob(latestRunId, e.message, e.code ?? null)
                         } finally {
                           setGeneratingVoiceover(false)

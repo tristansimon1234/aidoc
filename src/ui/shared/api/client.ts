@@ -4,20 +4,42 @@ const API_BASE = '/api'
 
 /** Error thrown by `request()` that preserves the backend's machine-readable
  *  `code` (e.g. "QUOTA_EXCEEDED") and the HTTP `status`, so UI code can
- *  branch on them without fragile string matching. */
+ *  branch on them without fragile string matching. `details` carries the
+ *  structured payload for codes that ship one (e.g. RUN_ALREADY_RUNNING
+ *  with the triggering user's name + when). */
 export class ApiError extends Error {
   readonly code: string | null
   readonly status: number
-  constructor(message: string, code: string | null, status: number) {
+  readonly details: unknown
+  constructor(message: string, code: string | null, status: number, details?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.code = code
     this.status = status
+    this.details = details
   }
 }
 
 export function isQuotaError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.code === 'QUOTA_EXCEEDED'
+}
+
+/** Metadata shipped with a RUN_ALREADY_RUNNING 409. Mirrors
+ *  src/features/run/job.service.ts → AlreadyRunningDetails. */
+export interface AlreadyRunningDetails {
+  jobId: string
+  jobType: 'exploration' | 'doc-gen' | 'voiceover' | 'try-doc-analysis' | 'index'
+  triggeredByUserId: string | null
+  triggeredByName: string | null
+  runningSince: string
+  pageId: string | null
+  projectId: string
+}
+
+export function isAlreadyRunningError(err: unknown): err is ApiError & { details: AlreadyRunningDetails } {
+  if (!(err instanceof ApiError) || err.code !== 'RUN_ALREADY_RUNNING') return false
+  const d = err.details as { jobType?: unknown } | null | undefined
+  return typeof d === 'object' && d !== null && typeof d.jobType === 'string'
 }
 
 /** Active team id, persisted in localStorage. Set by AcceptInvite when the
@@ -68,11 +90,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null
+    const body = (await res.json().catch(() => null)) as { error?: string; code?: string; details?: unknown } | null
     throw new ApiError(
       body?.error ?? `Request failed: ${res.status}`,
       body?.code ?? null,
       res.status,
+      body?.details,
     )
   }
 

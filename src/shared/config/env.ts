@@ -29,6 +29,12 @@ const EnvSchema = z.object({
   // anything that doesn't match, so the endpoint can't be drained publicly.
   // Required in production; optional in dev (disables the cron endpoint).
   CRON_SECRET: z.string().optional(),
+  // Sentry DSN — optional. When unset, Sentry is a no-op so local dev and
+  // self-hosted installs work without an external account.
+  SENTRY_DSN: z.string().url().optional(),
+  // Release identifier sent with each error. Vercel injects VERCEL_GIT_COMMIT_SHA
+  // automatically; we fall back to it in the init helper.
+  SENTRY_RELEASE: z.string().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>

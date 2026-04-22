@@ -92,8 +92,25 @@ chatRouter.post('/index', (req: Request, res: Response, next: NextFunction) => {
         return
       }
 
-      const count = await chatService.indexProject(params.data.id)
-      res.status(200).json({ indexed: count, cached: false })
+      // Project-level lock so two teammates clicking Re-index simultaneously
+      // don't both burn embedding tokens for the same data.
+      const { ensureExclusiveJob, completeJob, failJob } = await import('../run/job.service.js')
+      const job = await ensureExclusiveJob({
+        runId: null,
+        pageId: null,
+        projectId: params.data.id,
+        type: 'index',
+        triggeredByUserId: (req as Request & { userId?: string }).userId ?? null,
+      })
+
+      try {
+        const count = await chatService.indexProject(params.data.id)
+        await completeJob(job.id)
+        res.status(200).json({ indexed: count, cached: false })
+      } catch (err) {
+        await failJob(job.id, (err as Error).message)
+        throw err
+      }
     } catch (err) {
       next(err)
     }

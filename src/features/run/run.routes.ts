@@ -104,6 +104,7 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
 
 // SSE stream — live exploration events
 runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction) => {
+  let jobId: string | null = null
   void (async () => {
     try {
       const runId = await assertRunAccessFromReq(req)
@@ -111,6 +112,26 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
       // Exploration is the single most expensive op we run (Claude + Browserbase
       // + Gemini). Refuse hard-cap plans at 100% before spinning up a browser.
       await enforceQuotaOrThrow(await teamForRun(runId))
+
+      // Acquire the per-page exploration lock before we spawn anything.
+      // If another teammate is already running an exploration on this page,
+      // ensureExclusiveJob throws AlreadyRunningError → 409 with who / when.
+      const run = await runService.getRun(runId)
+      if (run.docPageId) {
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (page) {
+          const { ensureExclusiveJob } = await import('./job.service.js')
+          const job = await ensureExclusiveJob({
+            runId,
+            pageId: run.docPageId,
+            projectId: page.projectId,
+            type: 'exploration',
+            triggeredByUserId: getUserId(req),
+          })
+          jobId = job.id
+        }
+      }
 
       const body = req.body as { context?: string }
       const context = typeof body.context === 'string' ? body.context : undefined
@@ -130,10 +151,19 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
         context,
       )
 
+      if (jobId) {
+        const { completeJob } = await import('./job.service.js')
+        await completeJob(jobId)
+      }
+
       // Final event
       res.write(`data: ${JSON.stringify({ type: 'close' })}\n\n`)
       res.end()
     } catch (err) {
+      if (jobId) {
+        const { failJob } = await import('./job.service.js')
+        await failJob(jobId, (err as Error).message)
+      }
       // If headers already sent, write error as SSE
       if (res.headersSent) {
         res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
@@ -216,30 +246,23 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
 
       // If generateDoc flag is set, create a DB job and run the full pipeline.
       // The HTTP connection stays open — fetch survives client-side navigation.
-      // The job row in DB survives browser refresh.
+      // The job row in DB survives browser refresh. ensureExclusiveJob handles
+      // the per-page lock and translates a DB unique violation into a 409
+      // AlreadyRunningError with the triggering user's display name.
       if (body.generateDoc) {
         const run = await runService.getRun(runId)
         if (!run.docPageId) throw new AppError('Run has no linked page', 'NO_PAGE', 400)
         const { findPageById } = await import('../page/page.repository.js')
         const page = await findPageById(run.docPageId)
         if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
-        const { createJob, updateJobStatus } = await import('./job.repository.js')
-
-        let job: { id: string }
-        try {
-          job = await createJob({
-            runId,
-            pageId: run.docPageId,
-            projectId: page.projectId,
-            type: 'doc-gen',
-          })
-        } catch (dupErr) {
-          // Unique constraint violation = job already running for this page
-          if ((dupErr as Error).message?.includes('duplicate') || (dupErr as Error).message?.includes('unique')) {
-            throw new AppError('A doc generation is already running for this page', 'JOB_ALREADY_RUNNING', 409)
-          }
-          throw dupErr
-        }
+        const { ensureExclusiveJob, completeJob, failJob } = await import('./job.service.js')
+        const job = await ensureExclusiveJob({
+          runId,
+          pageId: run.docPageId,
+          projectId: page.projectId,
+          type: 'doc-gen',
+          triggeredByUserId: getUserId(req),
+        })
 
         try {
           await runService.analyzeVideo(runId, body.videoPath)
@@ -248,9 +271,9 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
             const { updatePage } = await import('../page/page.repository.js')
             await updatePage(run.docPageId, { status: 'published' })
           }
-          await updateJobStatus(job.id, 'completed')
+          await completeJob(job.id)
         } catch (pipelineErr) {
-          await updateJobStatus(job.id, 'failed', (pipelineErr as Error).message).catch(() => {})
+          await failJob(job.id, (pipelineErr as Error).message)
           throw pipelineErr
         }
         res.status(200).json({ jobId: job.id })
@@ -310,18 +333,44 @@ runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunc
         throw new AppError('No steps found — the video analysis didn\'t detect any actions. Try re-uploading.', 'NO_STEPS', 400)
       }
 
+      // Resolve page + team to acquire the per-page doc-gen lock. If a
+      // teammate is already generating for this page, ensureExclusiveJob
+      // throws AlreadyRunningError → 409 with their name + when they started.
+      const run = await runService.getRun(runId)
+      if (!run.docPageId) throw new AppError('Run has no linked page', 'NO_PAGE', 400)
+      const { findPageById } = await import('../page/page.repository.js')
+      const page = await findPageById(run.docPageId)
+      if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
+      const { ensureExclusiveJob, completeJob, failJob } = await import('./job.service.js')
+      const job = await ensureExclusiveJob({
+        runId,
+        pageId: run.docPageId,
+        projectId: page.projectId,
+        type: 'doc-gen',
+        triggeredByUserId: getUserId(req),
+      })
+
       const triggeredBy = getUserId(req)
       const async = req.query.async === '1'
       if (async) {
-        // Non-blocking: respond immediately, generate in background
-        res.status(202).json({ runId, status: 'running' })
-        void runService.generateDoc(runId, triggeredBy).catch((err) =>
-          console.error(`[generate-doc] Background generation failed for ${runId}:`, err),
-        )
+        // Non-blocking: respond immediately, finish the job + generate in background.
+        res.status(202).json({ runId, jobId: job.id, status: 'running' })
+        void runService.generateDoc(runId, triggeredBy)
+          .then(() => completeJob(job.id))
+          .catch((err) => {
+            console.error(`[generate-doc] Background generation failed for ${runId}:`, err)
+            return failJob(job.id, (err as Error).message)
+          })
       } else {
         // Legacy blocking mode (for backwards compat)
-        const doc = await runService.generateDoc(runId, triggeredBy)
-        res.status(200).json(doc)
+        try {
+          const doc = await runService.generateDoc(runId, triggeredBy)
+          await completeJob(job.id)
+          res.status(200).json(doc)
+        } catch (err) {
+          await failJob(job.id, (err as Error).message)
+          throw err
+        }
       }
     } catch (err) {
       next(err)
@@ -371,17 +420,22 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
       const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
 
-      // Create a DB job so tracker survives navigation + refresh
+      // Create a DB job so tracker survives navigation + refresh AND so a
+      // second caller for the same page gets a clean 409 AlreadyRunningError
+      // instead of burning a second ElevenLabs generation.
       if (run.docPageId) {
-        try {
-          const { findPageById } = await import('../page/page.repository.js')
-          const page = await findPageById(run.docPageId)
-          if (page) {
-            const { createJob } = await import('./job.repository.js')
-            const job = await createJob({ runId: runId, pageId: run.docPageId, projectId: page.projectId, type: 'voiceover' })
-            voiceoverJobId = job.id
-          }
-        } catch { /* duplicate job or missing page — continue without tracking */ }
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
+        const { ensureExclusiveJob } = await import('./job.service.js')
+        const job = await ensureExclusiveJob({
+          runId,
+          pageId: run.docPageId,
+          projectId: page.projectId,
+          type: 'voiceover',
+          triggeredByUserId: getUserId(req),
+        })
+        voiceoverJobId = job.id
       }
 
       const { findDocByRunId } = await import('../documentation/documentation.repository.js')
@@ -818,6 +872,7 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
 
 // Analyze Try Doc — compare exploration results against documentation
 runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunction) => {
+  let tryDocJobId: string | null = null
   void (async () => {
     try {
       const runId = await assertRunAccessFromReq(req)
@@ -826,8 +881,40 @@ runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunct
 
       const body = req.body as { pageContent: string; pageTitle: string; pageId: string }
       if (!body.pageContent) throw new ValidationError('pageContent is required')
-      const report = await runService.analyzeTryDoc(runId, body.pageContent, body.pageTitle, body.pageId)
-      res.status(200).json(report)
+
+      // Per-page lock for Try Doc analysis. If Alice already kicked one off on
+      // this page, Bob gets a 409 instead of a duplicate Gemini call.
+      const run = await runService.getRun(runId)
+      if (run.docPageId) {
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (page) {
+          const { ensureExclusiveJob } = await import('./job.service.js')
+          const job = await ensureExclusiveJob({
+            runId,
+            pageId: run.docPageId,
+            projectId: page.projectId,
+            type: 'try-doc-analysis',
+            triggeredByUserId: getUserId(req),
+          })
+          tryDocJobId = job.id
+        }
+      }
+
+      try {
+        const report = await runService.analyzeTryDoc(runId, body.pageContent, body.pageTitle, body.pageId)
+        if (tryDocJobId) {
+          const { completeJob } = await import('./job.service.js')
+          await completeJob(tryDocJobId)
+        }
+        res.status(200).json(report)
+      } catch (err) {
+        if (tryDocJobId) {
+          const { failJob } = await import('./job.service.js')
+          await failJob(tryDocJobId, (err as Error).message)
+        }
+        throw err
+      }
     } catch (err) {
       next(err)
     }

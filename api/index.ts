@@ -1,8 +1,12 @@
 import express from 'express'
 import cors from 'cors'
 import type { Request, Response } from 'express'
+import { initSentry } from '../src/shared/observability/sentry.js'
 import { mountRouters } from '../src/shared/middleware/mount-routers.js'
 import { errorHandler } from '../src/shared/middleware/error.middleware.js'
+
+// Init Sentry first so module-load errors surface. No-op without SENTRY_DSN.
+initSentry()
 
 const app = express()
 
