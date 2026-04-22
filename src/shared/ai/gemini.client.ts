@@ -15,14 +15,18 @@ function getGenAI(): GoogleGenerativeAI {
   return new GoogleGenerativeAI(env.GEMINI_API_KEY)
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn()
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
       if (status === 429 && attempt < maxRetries) {
-        const waitSec = Math.min(30 * (attempt + 1), 90)
+        // Short first-attempt backoff so a long-running SSE exploration
+        // has a shot at two retries within the 300s Vercel fn timeout.
+        // Previous values (30/60/90s) burned the whole window and left
+        // runs stuck in `running` when the function timed out.
+        const waitSec = Math.min(10 * (attempt + 1), 30)
         console.log(`[gemini] Rate limited, retrying in ${waitSec}s (attempt ${attempt + 1}/${maxRetries})`)
         await new Promise((r) => setTimeout(r, waitSec * 1000))
         continue
