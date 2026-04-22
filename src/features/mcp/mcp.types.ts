@@ -1,3 +1,5 @@
+export type McpScope = 'read' | 'write' | 'admin'
+
 export interface McpUserToken {
   id: string
   userId: string
@@ -5,7 +7,10 @@ export interface McpUserToken {
   name: string
   /** Full token string. Only populated on create; list endpoints mask it. */
   token: string
+  scope: McpScope
   lastUsedAt: Date | null
+  lastUsedIp: string | null
+  expiresAt: Date | null
   revokedAt: Date | null
   createdAt: Date
 }
@@ -16,6 +21,7 @@ export interface McpAuthContext {
   userId: string
   teamId: string
   tokenId: string
+  scope: McpScope
 }
 
 /** Safe-to-expose summary of a token (no full secret). Used by the list
@@ -27,7 +33,10 @@ export interface McpUserTokenSummary {
   teamId: string
   name: string
   preview: string
+  scope: McpScope
   lastUsedAt: Date | null
+  lastUsedIp: string | null
+  expiresAt: Date | null
   revokedAt: Date | null
   createdAt: Date
 }
