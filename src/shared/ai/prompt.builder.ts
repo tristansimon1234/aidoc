@@ -292,6 +292,293 @@ ${formatStepsRich(context.steps)}
 ${blockersSection}`
 }
 
+// --- RAG Chat (widget / in-app / public docs) ---
+
+/**
+ * Build the system prompt for the product-support RAG chat. Takes the
+ * retrieved product knowledge (doc chunks already formatted into lines) and
+ * the optional caller context (name / email / plan / currentUrl) so the
+ * assistant can personalise answers and be plan-aware without the caller
+ * having to reassemble the prompt each time.
+ */
+export function buildChatSystemPrompt(input: {
+  productContext: string[]
+  userContext?: { name?: string | null; email?: string | null; plan?: string | null; currentUrl?: string | null; extra?: string | null } | null
+}): string {
+  const { productContext, userContext } = input
+  const userInfo: string[] = []
+  if (userContext?.name) userInfo.push(`Name: ${userContext.name}`)
+  if (userContext?.email) userInfo.push(`Email: ${userContext.email}`)
+  if (userContext?.plan) userInfo.push(`Plan: ${userContext.plan}`)
+  if (userContext?.currentUrl) userInfo.push(`Currently viewing: ${userContext.currentUrl}`)
+  if (userContext?.extra) userInfo.push(`Additional context: ${userContext.extra}`)
+
+  const userContextBlock = userInfo.length > 0
+    ? `\n\n## About the user you're helping\n${userInfo.join('\n')}\nAddress them by first name if known. If you know which page they're currently viewing, prioritize help related to that page and make your follow-up suggestions relevant to where they are in the app.\n\n### Plan-aware behavior\nThe user's plan is listed above when known (Free / Startup / Growth / Business). If they ask about a capability that requires a higher plan (e.g. more seats, more monthly tokens, widget white-labeling, overage billing on Growth+), don't refuse or hide it. Instead: briefly explain how the feature works, state that it's included on higher plans, and invite them to upgrade from the Plans & usage section. Stay helpful, never pushy.`
+    : ''
+
+  const productBlock = productContext.length > 0
+    ? `\n\n## Product Knowledge\n${productContext.join('\n')}`
+    : ''
+
+  return `You are a friendly, knowledgeable support assistant for a software product.${productBlock}${userContextBlock}
+
+## Your personality
+- Warm, natural, conversational — like a smart colleague helping out
+- You KNOW this product inside out — be confident, not robotic
+- Proactive — suggest things the user hasn't asked about yet if relevant
+
+## How to answer — THIS IS CRITICAL
+- Be concise. Short sentences. No walls of text.
+- For simple questions: answer in 2-3 sentences max.
+- For short "how do I..." tasks (≤4 steps total): give all steps in one go.
+- For long tutorials (≥5 steps): give the FIRST 2-3 steps only, then offer to continue ("Want me to continue with the rest?"). If the user replies "yes", "continue", "ok", "go on" → give the next 2-3 steps.
+- Use the EXACT labels from the documentation — button names, menu items, field titles — never paraphrase them. If the docs say "Publish toggle", don't write "publish button" or "switch to enable publishing".
+- If a relevant screenshot URL appears in the Documentation Context, embed ONE per message using markdown image syntax: \`![short caption](https://exact-url-from-context)\`. Put the image on its own line. Never paste a raw URL — it must always be wrapped in \`![...](...)\`. Never truncate or abbreviate the URL (no \`...\`).
+- Match the user's language (French → French, English → English).
+- When drawing from a specific page in the Documentation Context, cite it inline using Markdown link syntax where the href is the page's slug (the part after the last \`/\` in its path). Example: "Toggle the Published switch on [Publish your documentation](publish-your-documentation) at the top of the page." One citation per distinct page you reference. Never write raw brackets like \`[Page Title]\` without parentheses — it renders as non-clickable text; use \`[Page Title](slug)\` instead. Don't cite if the answer is general.
+
+## Accuracy over confidence
+- If the Documentation Context doesn't clearly cover what was asked, say so explicitly: "I don't have specific documentation on that yet — here's what I can share based on related pages…" Better to admit a gap than to invent a feature that doesn't exist.
+- Never invent UI elements, menu names, settings, or plan features that aren't in the context. If you're tempted to say "there should be a …" — stop and say "I don't see that documented" instead.
+- When the docs only partially answer, answer the part you're sure about, then flag the unknown: "For the rest of the flow, I'd check …" with a link.
+
+## Ambiguity handling
+- If the user's question could reasonably mean two or more different things AND the correct answer depends on which one, ask a one-line clarifying question instead of guessing. Example: "Do you mean publish a single page, or enable the public docs URL for the whole project?"
+- Don't over-clarify — only when the two interpretations would give materially different answers.
+
+## Follow-up suggestions
+- After your answer, add a line "---FOLLOWUPS---" then a JSON array of 1-2 short follow-up questions
+- These must be specific to what was just discussed — not generic
+- Example format:
+  ---FOLLOWUPS---
+  ["How do I invite team members?", "What are the different plans?"]
+- ALWAYS include the ---FOLLOWUPS--- separator and array, even if it's just one question
+
+## Interactive guide flag
+- If your answer describes steps the user could perform in their app's UI (clicking buttons, filling forms, navigating pages), add "---WALKTHROUGH---" on its own line BEFORE the ---FOLLOWUPS--- line
+- ONLY add this flag when the answer contains concrete UI actions (click, type, select, navigate). Do NOT add it for conceptual explanations, FAQs, or answers that don't involve interacting with the UI
+- This flag enables a "Guide me" button that highlights UI elements on the user's screen
+
+## Boundaries
+- Base your answers on the documentation context — don't invent features
+- Do NOT fabricate screenshot URLs — only use images that appear in the context
+- If the docs don't cover something, say so briefly and suggest what to try
+- For complex issues beyond the docs, suggest contacting support`
+}
+
+/**
+ * Build the user-facing turn for the RAG chat — retrieved context +
+ * conversation history + current message. Kept as a function so ordering
+ * stays consistent and the caller doesn't drift from the format the model
+ * was trained on.
+ */
+export function buildChatUserPrompt(input: {
+  context: string | null
+  conversationHistory: string
+  message: string
+}): string {
+  const contextBlock = input.context ? `## Documentation Context\n\n${input.context}\n\n` : ''
+  const historyBlock = input.conversationHistory ? `## Conversation History\n\n${input.conversationHistory}\n\n` : ''
+  return `${contextBlock}${historyBlock}## User's Question
+
+${input.message}`
+}
+
+// --- Voice-over Narration ---
+
+export interface VoiceoverTonePreset {
+  label: string
+  direction: string
+  example: string
+  /**
+   * Adjusts the min/max words budget relative to the 1.5-2.0 words/sec
+   * baseline so Gemini's output lines up with ElevenLabs playback duration.
+   *   < 1.0 = TTS is slower for this tone (pauses, whispers) → fewer words
+   *   > 1.0 = TTS runs at normal pace with punchy sentences → more words
+   */
+  wordsPerSecondFactor: number
+}
+
+/** Tone presets for the voice-over narration prompt. Tunable in code; each
+ *  preset drives both the WRITING (direction + example) and the WORDS budget
+ *  (wordsPerSecondFactor) so the script length matches the audio's real
+ *  playback pace. */
+export const VOICEOVER_TONE_PRESETS: Record<string, VoiceoverTonePreset> = {
+  friendly: {
+    label: 'Friendly & Casual',
+    direction: `Warm, upbeat, conversational. Use contractions, light humor. Say it in one sentence when you can, but feel free to use a second sentence for context when the slot allows.`,
+    example: `[SECTION 1]\nHey! [excited] Let's set up your workspace.\n[SECTION 2]\nCreate a new project — this is home base for your docs. [laughs] Easy.`,
+    wordsPerSecondFactor: 1.0,
+  },
+  professional: {
+    label: 'Professional & Clear',
+    direction: `Polished, confident, measured. Clear and articulate, no filler. One precise sentence per idea.`,
+    example: `[SECTION 1]\nWelcome. Let's set up your workspace.\n[SECTION 2]\nFirst, create a project. [short pause] Each project groups docs for one product.`,
+    wordsPerSecondFactor: 1.0,
+  },
+  energetic: {
+    label: 'Energetic & Hyped',
+    direction: `High-energy, hyped delivery. Use CAPS for key words (not whole sentences) and energy tags like [excited], [laughs], [happy gasp]. Write COMPLETE, full-length explanations — fill the word budget — the energy comes from the DELIVERY, not from being curt. Don't write fragments or one-word sentences; pumped doesn't mean short.`,
+    example: `[SECTION 1]\n[excited] Let's GO! Time to build out your workspace and get everything set up.\n[SECTION 2]\nNow we're creating your first project — [happy gasp] this is where ALL the magic happens, so pay attention to the URL field because that's what drives the AI analysis later.`,
+    wordsPerSecondFactor: 1.1,
+  },
+  calm: {
+    label: 'Calm & Reassuring',
+    direction: `Gentle, patient delivery. Use ONE ellipsis per section MAX (they add real TTS pause time). Prefer [short pause] tags over \`...\` when you need a beat. Reassuring phrases are great but keep sentences concrete. [whispers] sparingly — once per section at most.`,
+    example: `[SECTION 1]\nHi, welcome. [calm] Let's set up your workspace together — it only takes a minute.\n[SECTION 2]\nCreate a project here... [whispers] this is the space where all your docs will live.`,
+    wordsPerSecondFactor: 0.7,
+  },
+  playful: {
+    label: 'Playful & Fun',
+    direction: `Witty, cheeky. Light sarcasm, playful asides. [giggles], [whispers], [sarcastic].`,
+    example: `[SECTION 1]\n[laughs] Alright — workspace time. [whispers] Very official.\n[SECTION 2]\nCreate a project. [giggles] Groundbreaking, I know.`,
+    wordsPerSecondFactor: 1.0,
+  },
+}
+
+/**
+ * Build the voice-over narration prompt. The prompt blends VIDEO (timing +
+ * actions) with DOCUMENTATION (content + terminology) and pins the output
+ * language so Gemini doesn't drift to the video's on-screen UI language.
+ */
+export function buildVoiceoverNarrationPrompt(input: {
+  tone: VoiceoverTonePreset
+  sourceMarkdown: string
+  narrationLanguage: string
+  numSections: number
+  totalMaxWords: number
+  sectionList: string
+}): string {
+  const { tone, sourceMarkdown, narrationLanguage, numSections, totalMaxWords, sectionList } = input
+  return `You are writing a voice-over narration script for this product tutorial video. BLEND two sources:
+1. The VIDEO drives TIMING and ACTIONS — watch it to know exactly what happens in each section's slot.
+2. The DOCUMENTATION drives CONTENT — it holds the why, the context, the caveats, the terminology, the audience-appropriate wording the author already crafted. Don't just describe pixels; lean on the doc to give the user the understanding the author intended.
+
+Within each section's time slot, synchronize to the video (narrate what's on screen right now, anticipate what's about to happen) BUT flesh out the narration using the documentation's explanations. If the doc mentions a reason, a tip, or a caveat tied to the step you're narrating, include it. If the doc doesn't cover what's on screen, describe the action plainly. Never contradict the doc.
+
+This script will be read by ElevenLabs v3 TTS. Write it as a PERFORMANCE, not an essay.
+
+## Tone: ${tone.label}
+${tone.direction}
+
+## ElevenLabs v3 formatting rules (CRITICAL — follow exactly)
+**Punctuation controls delivery:**
+- Ellipsis (...) creates a natural pause or trailing off
+- Em dash (—) creates a short punchy pause
+- CAPS emphasize words: "This is REALLY important"
+- Questions create natural rising intonation: "Pretty cool, right?"
+
+**Audio tags are stage directions** — place them between sentences:
+Emotional: [excited], [happy], [calm]
+Reactions: [laughs], [giggles], [sighs], [happy gasp]
+Delivery: [whispers], [cheerfully], [playfully], [sarcastic]
+Pacing: [short pause]
+
+Tag rules: tags go BETWEEN sentences only, NEVER mid-sentence. Use 3-5 different tags.
+
+## Documentation — the authoritative content source for the narration
+
+Treat this as the reference for WHAT to say during each section (the explanations, reasons, tips, caveats, and exact terminology the author wrote). The video tells you WHEN each step happens; this tells you HOW to describe it with depth. Prefer the doc's phrasing for feature names, settings labels, and step order — don't rename things Gemini-style.
+${sourceMarkdown.slice(0, 8000)}
+
+## Script structure — TIMING IS CRITICAL
+${numSections} sections using [SECTION N] markers.
+Total word budget: ~${totalMaxWords} words. The narration MUST fit within the video duration.
+
+${sectionList}
+
+⚠️ FILL THE TIME — this is the #1 priority. Each section has a word RANGE (min-max). You MUST write at least the minimum number of words. Silence between sections ruins the experience.
+- Count your words for each section. If the minimum says 45 words, write at least 45 words.
+- For long sections (15s+): explain the WHY, add context, give tips, describe what's on screen in detail. Use 3-5 sentences.
+- For medium sections (8-15s): 2-3 sentences with context.
+- For short sections (3-8s): 1-2 punchy sentences.
+- Too short = dead silence = BAD. Too long = minor overlap = acceptable.
+
+## Language — STRICT
+- The entire narration MUST be written in **${narrationLanguage}**. This language has already been determined from the documentation; do not re-detect, do not second-guess, do not change.
+- Do not translate to another language, do not switch mid-script, do not mix languages.
+- Ignore the language of the video's on-screen UI, the language of the spoken audio in the video, and any tone/examples below — those are just style references. The narration is in ${narrationLanguage}, full stop.
+- When narrating a UI element whose on-screen label is in a different language than ${narrationLanguage}, keep the label verbatim in quotes but describe the action in ${narrationLanguage}: e.g. narration in English, button labelled "Paramètres" → "Click 'Paramètres' to open the settings panel."
+
+## Content rules
+- BLEND video + doc: the video gives you the TIMING + ACTIONS (what's on screen right now, what's about to happen); the doc gives you the EXPLANATIONS + CONTEXT (the why, the caveats, the exact wording the author used). Use both per section. Don't reduce the narration to a play-by-play of visible pixels — draw on the doc to enrich each moment.
+- ANTICIPATORY: narrate what's ABOUT to happen, just before it does
+- GREETING: Section 1 starts with a short, product-focused opener (one line, not verbose — get into the content quickly)
+- CLOSING: Section ${numSections} ends with TWO parts, in this order, joined into one smooth passage (no list, no line break between them):
+  PART A — a one-sentence recap SPECIFIC to what the user just accomplished (mention the feature, the next logical step, or what they can now do). Written in ${narrationLanguage}.
+  PART B — a real farewell phrase, written in ${narrationLanguage}. This is NON-OPTIONAL: the user must hear a goodbye word, not a trailing sentence. Pick something natural that fits the tone — e.g. "Thanks for watching — see you in the next one!", "Have fun building and catch you later!" (when ${narrationLanguage} is English) or "Merci d'avoir suivi, à bientôt !", "Bon build, à la prochaine !" (when ${narrationLanguage} is French).
+  Don't reuse the exact same farewell every time; vary it across videos. But DO include one — "don't be generic" means make PART A specific, not skip PART B.
+- Skip: URLs, code, technical IDs
+- Never say: "as you can see", "in this tutorial", "notice how"
+
+## Example:
+${tone.example}
+
+## Output
+Start DIRECTLY with [SECTION 1]. No preamble.`
+}
+
+/**
+ * Farewell top-up prompt — fires when the main narration's last segment
+ * doesn't end with a real sign-off word. Keeps the closing grounded in the
+ * last paragraph and always in the narration language.
+ */
+export function buildVoiceoverFarewellTopUpPrompt(lastSegmentText: string, narrationLanguage: string): string {
+  return `This is the final paragraph of a voice-over narration for a product tutorial. It's missing a warm farewell at the end.
+
+Write ONE short farewell sentence in ${narrationLanguage}, max 15 words. It must feel natural as a spoken outro, include an actual goodbye word (e.g. "Thanks for watching", "See you in the next one", "Merci d'avoir suivi", "À bientôt"), and fit the context of the paragraph below. Do NOT repeat the paragraph. Output ONLY the farewell sentence, nothing else.
+
+Paragraph:
+${lastSegmentText}`
+}
+
+// --- Try Doc Exploration ---
+
+/**
+ * Instruction passed to the Stagehand agent for a Try Doc run. The agent
+ * follows the documentation as a strict tester, reporting PASS/FAIL at every
+ * step and stopping on the first failure. Built server-side so the frontend
+ * only needs to send structured context (testUrl, testNotes) rather than
+ * shipping the full prompt over the wire.
+ */
+export function buildTryDocExplorationPrompt(input: {
+  pageContent: string
+  testUrl: string
+  testNotes?: string | null
+}): string {
+  const notesBlock = input.testNotes?.trim()
+    ? `\n## Additional test context\n${input.testNotes.trim()}`
+    : ''
+  return `You are a STRICT DOCUMENTATION TESTER. You follow the documentation below step-by-step, exactly as written, and report what works and what doesn't.
+
+## Documentation to verify:
+
+${input.pageContent}${notesBlock}
+
+## Your task:
+1. Navigate to: ${input.testUrl}
+2. Follow EACH step in the documentation IN ORDER, exactly as written
+3. For EVERY step you must:
+   a. DESCRIBE what you see on screen before acting (e.g. "I see a login page with email and password fields")
+   b. DESCRIBE what you are about to do (e.g. "I will type the email and click Login")
+   c. PERFORM the action
+   d. REPORT the result: PASS / FAIL / AMBIGUOUS with a clear explanation
+
+## CRITICAL RULES:
+- Be VERBOSE: explicitly describe what you see, what you do, and what happens. This is essential for the test report.
+- Follow the documentation steps IN STRICT ORDER. Do NOT skip ahead or reorder.
+- If a step FAILS or you cannot proceed: STOP IMMEDIATELY. Report the failure and call done.
+- Do NOT try workarounds, alternative paths, or detours. If it doesn't work as documented, it's a FAIL — stop there.
+- Do NOT explore other parts of the application. Stay on the documented path only.
+- Do NOT fill in gaps in the documentation with your own knowledge.
+- If the doc says "click Settings" and you see "Preferences" — that is a FAIL. Stop.
+- If the doc assumes you know something it never explained — that is a FAIL. Stop.
+- If the product shows an error — note the exact error message and STOP.
+- Do NOT take screenshots — they are handled automatically.
+- Do NOT generate new documentation. Only verify the existing one.`
+}
+
 // --- Try Doc Analysis ---
 
 export const TRY_DOC_ANALYSIS_SYSTEM_PROMPT = `You are a documentation quality analyst. You receive the original documentation and step-by-step results from an AI agent that attempted to follow the documentation exactly as a naive user would.

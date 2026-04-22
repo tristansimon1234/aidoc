@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems, insertOrUpdateBlockForSlashMenu } from '@blocknote/core'
+import type { BlockNoteEditor, PartialBlock } from '@blocknote/core'
 import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
 import type { DefaultReactSuggestionItem } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
@@ -25,14 +26,12 @@ const schema = BlockNoteSchema.create({
   },
 })
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Editor = any
+/** BlockNote editor parameterized by our schema (default blocks + Callout). */
+type Editor = BlockNoteEditor<typeof schema.blockSchema, typeof schema.inlineContentSchema, typeof schema.styleSchema>
 
-/** Minimal structural contract for a BlockNote document block. BlockNote's
- *  own `Block` type is generic over the schema and effectively `any` through
- *  our `Editor` alias; this guard is the defensive line before we hand raw
- *  JSONB from the DB to `replaceBlocks`. */
-type BlockLike = { type: string; [k: string]: unknown }
+/** Minimal structural contract for a BlockNote document block. Guard
+ *  run before we hand raw JSONB from the DB to `replaceBlocks`. */
+interface BlockLike { type: string; children?: unknown; content?: unknown; props?: Record<string, unknown>; [k: string]: unknown }
 
 function isBlockLike(value: unknown): value is BlockLike {
   return typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string'
@@ -45,12 +44,13 @@ function asBlockArray(value: unknown): BlockLike[] | null {
 }
 
 function getCalloutItems(editor: Editor): DefaultReactSuggestionItem[] {
-  const insert = (type: CalloutType) => () => {
+  const insert = (type: CalloutType) => (): void => {
+    // `callout` is our custom block; its PartialBlock variant isn't part of
+    // the default union so we assert through PartialBlock<typeof schema...>.
     insertOrUpdateBlockForSlashMenu(editor, {
       type: 'callout',
       props: { calloutType: type },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
+    } as PartialBlock<typeof schema.blockSchema, typeof schema.inlineContentSchema, typeof schema.styleSchema>)
   }
   return [
     { title: 'Info callout', subtext: 'Blue info box', group: 'Callouts', aliases: ['info', 'note', 'callout'], onItemClick: insert('info') },
@@ -65,16 +65,25 @@ function getCalloutItems(editor: Editor): DefaultReactSuggestionItem[] {
 // to `callout` blocks so reload preserves the styling round-trip.
 const ALERT_RE = /^\s*\[!(INFO|NOTE|TIP|WARNING|DANGER|CAUTION)\]\s*\n?/i
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function promoteCallouts(blocks: any[]): any[] {
+interface InlineTextRun { type: 'text'; text: string; [k: string]: unknown }
+
+function isInlineTextRun(value: unknown): value is InlineTextRun {
+  return typeof value === 'object'
+    && value !== null
+    && (value as { type?: unknown }).type === 'text'
+    && typeof (value as { text?: unknown }).text === 'string'
+}
+
+function promoteCallouts(blocks: BlockLike[]): BlockLike[] {
   return blocks.map((b) => {
-    const withChildren = b.children && Array.isArray(b.children) && b.children.length > 0
-      ? { ...b, children: promoteCallouts(b.children) }
+    const children = Array.isArray(b.children) ? (b.children as unknown[]).filter(isBlockLike) : []
+    const withChildren: BlockLike = children.length > 0
+      ? { ...b, children: promoteCallouts(children) }
       : b
     if (withChildren.type !== 'quote' || !Array.isArray(withChildren.content)) return withChildren
-    // Only support inline content arrays here (BlockNote's default for quotes)
-    const first = withChildren.content[0]
-    if (!first || first.type !== 'text' || typeof first.text !== 'string') return withChildren
+    const content = withChildren.content as unknown[]
+    const first = content[0]
+    if (!isInlineTextRun(first)) return withChildren
     const match = ALERT_RE.exec(first.text)
     if (!match) return withChildren
     const raw = match[1]!.toUpperCase()
@@ -86,13 +95,13 @@ function promoteCallouts(blocks: any[]): any[] {
       raw === 'WARNING' ? 'warning' :
       'danger'
     const stripped = first.text.slice(match[0].length)
-    const newContent = stripped.length > 0
-      ? [{ ...first, text: stripped }, ...withChildren.content.slice(1)]
-      : withChildren.content.slice(1)
+    const newContent: unknown[] = stripped.length > 0
+      ? [{ ...first, text: stripped }, ...content.slice(1)]
+      : content.slice(1)
     return {
       ...withChildren,
       type: 'callout',
-      props: { ...withChildren.props, calloutType },
+      props: { ...(withChildren.props ?? {}), calloutType },
       content: newContent,
     }
   })
@@ -102,16 +111,20 @@ function promoteCallouts(blocks: any[]): any[] {
 // parser if HTML import ever throws. Kept module-level so the load effect
 // reads linearly; any failure is logged so silent blank editors don't
 // happen unnoticed.
+// Parameters-derived replaceBlocks shape — keeps us honest against BlockNote's
+// schema-generic PartialBlock union without having to reconstruct it here.
+type ReplaceArg = Parameters<Editor['replaceBlocks']>[1]
+
 async function loadFromMarkdown(editor: Editor, markdown: string): Promise<void> {
   try {
     const html = await marked.parse(markdown)
     const blocks = await editor.tryParseHTMLToBlocks(html)
-    editor.replaceBlocks(editor.document, promoteCallouts(blocks))
+    editor.replaceBlocks(editor.document, promoteCallouts(blocks as unknown as BlockLike[]) as unknown as ReplaceArg)
   } catch (err) {
     console.warn('[BlockEditor] HTML-first import failed, falling back to markdown parser', err)
     try {
       const blocks = await editor.tryParseMarkdownToBlocks(markdown)
-      editor.replaceBlocks(editor.document, promoteCallouts(blocks))
+      editor.replaceBlocks(editor.document, promoteCallouts(blocks as unknown as BlockLike[]) as unknown as ReplaceArg)
     } catch (fallbackErr) {
       console.error('[BlockEditor] both HTML and markdown parsers failed', fallbackErr)
     }

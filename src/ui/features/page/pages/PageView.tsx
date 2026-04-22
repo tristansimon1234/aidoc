@@ -210,36 +210,6 @@ function PageViewInner(): React.ReactElement {
     if (!projectId || !pageId || !page?.content) return
     const briefingData = page.briefing as Record<string, unknown> | null
     const testUrl = (briefingData?.testUrl as string) || page.startUrl || context.project.baseUrl
-    const testNotes = (briefingData?.testNotes as string) || ''
-
-    const tryDocPrompt = `You are a STRICT DOCUMENTATION TESTER. You follow the documentation below step-by-step, exactly as written, and report what works and what doesn't.
-
-## Documentation to verify:
-
-${page.content}
-${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
-
-## Your task:
-1. Navigate to: ${testUrl}
-2. Follow EACH step in the documentation IN ORDER, exactly as written
-3. For EVERY step you must:
-   a. DESCRIBE what you see on screen before acting (e.g. "I see a login page with email and password fields")
-   b. DESCRIBE what you are about to do (e.g. "I will type the email and click Login")
-   c. PERFORM the action
-   d. REPORT the result: PASS / FAIL / AMBIGUOUS with a clear explanation
-
-## CRITICAL RULES:
-- Be VERBOSE: explicitly describe what you see, what you do, and what happens. This is essential for the test report.
-- Follow the documentation steps IN STRICT ORDER. Do NOT skip ahead or reorder.
-- If a step FAILS or you cannot proceed: STOP IMMEDIATELY. Report the failure and call done.
-- Do NOT try workarounds, alternative paths, or detours. If it doesn't work as documented, it's a FAIL — stop there.
-- Do NOT explore other parts of the application. Stay on the documented path only.
-- Do NOT fill in gaps in the documentation with your own knowledge.
-- If the doc says "click Settings" and you see "Preferences" — that is a FAIL. Stop.
-- If the doc assumes you know something it never explained — that is a FAIL. Stop.
-- If the product shows an error — note the exact error message and STOP.
-- Do NOT take screenshots — they are handled automatically.
-- Do NOT generate new documentation. Only verify the existing one.`
 
     setTryRunning(true)
     setTryStreamSteps([])
@@ -266,7 +236,9 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         runId = run.id
         addJob({ runId: run.id, pageId: pageId!, pageTitle: page.title, type: 'try-doc', status: 'running' })
 
-        // Phase 1: Explore with naive user prompt
+        // Phase 1: Explore. The server detects the "[Test]" run prefix
+        // and swaps in the canonical STRICT TESTER prompt — no client
+        // prompt string is shipped.
         await api.runs.exploreStream(
           run.id,
           (event: StepEventDTO) => {
@@ -286,7 +258,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               case 'error': setStatusMessage(event.message ?? 'Error'); break
             }
           },
-          tryDocPrompt,
+          undefined,
           controller.signal,
         )
 

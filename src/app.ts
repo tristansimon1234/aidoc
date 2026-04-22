@@ -1,23 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import { authMiddleware } from './shared/middleware/auth.middleware.js'
-import { projectRouter } from './features/project/project.routes.js'
-import { profileRouter } from './features/profile/profile.routes.js'
-import { billingRouter } from './features/billing/billing.routes.js'
-import { adminRouter } from './features/admin/admin.routes.js'
-import { requireAdmin } from './shared/middleware/admin.middleware.js'
-import { pageRouter } from './features/page/page.routes.js'
-import { runRouter } from './features/run/run.routes.js'
-import { questionsRouter } from './features/questions/questions.routes.js'
-import { documentationRouter } from './features/documentation/documentation.routes.js'
-import { chatRouter } from './features/chat/chat.routes.js'
-import { widgetRouter } from './features/chat/widget.routes.js'
-import { mcpRouter } from './features/chat/mcp.routes.js'
-import { userMcpRouter } from './features/mcp/user-mcp.routes.js'
-import { mcpTokensRouter } from './features/mcp/tokens.routes.js'
-import { publicDocsRouter } from './features/page/public-docs.routes.js'
-import { analyticsRouter } from './features/analytics/analytics.routes.js'
-import { teamRouter, invitePublicRouter } from './features/team/team.routes.js'
+import { mountRouters } from './shared/middleware/mount-routers.js'
 import { errorHandler } from './shared/middleware/error.middleware.js'
 
 export const app = express()
@@ -25,32 +8,8 @@ export const app = express()
 app.use(cors())
 app.use(express.json())
 
-// Public routes — no auth
-app.use('/widget', widgetRouter)
-app.use('/mcp', mcpRouter)
-app.use('/mcp-user', userMcpRouter)
-app.use('/docs', publicDocsRouter)
-app.use('/invites', invitePublicRouter)
+// Local dev: Vite proxies /api/* to this server and strips the /api prefix,
+// so routes mount at the root. Prod (api/index.ts) mounts at /api.
+mountRouters(app, { prefix: '' })
 
-app.use(authMiddleware)
-
-// Account / user profile
-app.use('/profile', profileRouter)
-app.use('/billing', billingRouter)
-app.use('/admin', requireAdmin, adminRouter)
-app.use('/teams', teamRouter)
-app.use('/mcp-tokens', mcpTokensRouter)
-
-// Project routes
-app.use('/projects', projectRouter)
-app.use('/projects/:projectId/pages', pageRouter)
-app.use('/projects/:projectId/chat', chatRouter)
-app.use('/projects/:projectId/analytics', analyticsRouter)
-
-// Legacy run routes (still functional)
-app.use('/runs', runRouter)
-app.use('/runs', questionsRouter)
-app.use('/runs', documentationRouter)
-
-// Error handler
 app.use(errorHandler)
