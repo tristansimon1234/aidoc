@@ -142,9 +142,10 @@ function PageViewInner(): React.ReactElement {
         setVideoUrl(null)
       }
 
-      // If doc exists but page.content is empty, copy it over
+      // If doc exists but page.content is empty, copy it over.
+      // Backend route so the auto-copy also re-indexes embeddings.
       if (docData?.markdownContent && !pageData.content) {
-        void dbUpdatePage(projectId, pageId, { content: docData.markdownContent })
+        void api.pages.update(projectId, pageId, { content: docData.markdownContent })
         setPage({ ...pageData, content: docData.markdownContent })
       }
     } catch (err) {
@@ -346,9 +347,11 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
 
   const handleSaveContent = async (markdown: string, blocks: unknown): Promise<void> => {
     if (!projectId || !pageId) return
-    // Persist both: JSON (lossless source of truth) + markdown (projection
-    // for public-docs rendering, RAG, Try Doc, voice-over, etc.).
-    await dbUpdatePage(projectId, pageId, { content: markdown, contentBlocks: blocks })
+    // Route content saves through the backend (PUT /projects/:pid/pages/:id)
+    // instead of a direct Supabase write. page.service.updatePage detects
+    // the content change and re-indexes doc_embeddings so the chat doesn't
+    // drift off the edited doc.
+    await api.pages.update(projectId, pageId, { content: markdown, contentBlocks: blocks })
     // Update local + sidebar cache so navigation doesn't show stale content
     setPage((prev) => prev ? { ...prev, content: markdown, contentBlocks: blocks } : prev)
     void context.refetchPages()
