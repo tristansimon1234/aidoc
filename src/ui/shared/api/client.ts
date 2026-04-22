@@ -509,12 +509,21 @@ export const api = {
   },
   mcpTokens: {
     list: (): Promise<McpTokenSummaryDTO[]> => request('/mcp-tokens'),
-    create: (body: { name: string; teamId: string }): Promise<McpTokenCreatedDTO> =>
+    create: (body: {
+      name: string
+      teamId: string
+      scope?: McpScopeDTO
+      expiresInDays?: number
+    }): Promise<McpTokenCreatedDTO> =>
       request('/mcp-tokens', { method: 'POST', body: JSON.stringify(body) }),
+    rotate: (id: string): Promise<McpTokenRotatedDTO> =>
+      request(`/mcp-tokens/${id}/rotate`, { method: 'POST' }),
     revoke: (id: string): Promise<void> =>
       request(`/mcp-tokens/${id}`, { method: 'DELETE' }),
   },
 }
+
+export type McpScopeDTO = 'read' | 'write' | 'admin'
 
 export interface McpTokenSummaryDTO {
   id: string
@@ -522,7 +531,10 @@ export interface McpTokenSummaryDTO {
   teamId: string
   name: string
   preview: string
+  scope: McpScopeDTO
   lastUsedAt: string | null
+  lastUsedIp: string | null
+  expiresAt: string | null
   revokedAt: string | null
   createdAt: string
 }
@@ -532,6 +544,13 @@ export interface McpTokenSummaryDTO {
  *  return the preview. */
 export interface McpTokenCreatedDTO extends McpTokenSummaryDTO {
   token: string
+}
+
+/** Returned by the rotate endpoint — same shape as create plus the grace
+ *  window during which the old token still works. */
+export interface McpTokenRotatedDTO extends McpTokenCreatedDTO {
+  rotatedFromId: string
+  oldTokenValidUntil: string
 }
 
 export type TeamRoleDTO = 'owner' | 'member'

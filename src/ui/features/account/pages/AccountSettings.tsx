@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Spinner, Badge, Field, useConfirmDialog } from '../../../design-system/components/index.js'
-import { api, type BillingSummaryDTO, type McpTokenSummaryDTO, type McpTokenCreatedDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
+import { api, type BillingSummaryDTO, type McpScopeDTO, type McpTokenSummaryDTO, type McpTokenCreatedDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
 import { Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import styles from './AccountSettings.module.css'
@@ -572,10 +572,13 @@ function McpTokensTab(): React.ReactElement {
 
   const [name, setName] = useState('')
   const [teamId, setTeamId] = useState<string>('')
+  const [scope, setScope] = useState<McpScopeDTO>('admin')
+  const [expiryChoice, setExpiryChoice] = useState<'never' | '30' | '90' | '365'>('never')
   const [creating, setCreating] = useState(false)
   const [justCreated, setJustCreated] = useState<McpTokenCreatedDTO | null>(null)
   const [copied, setCopied] = useState<'token' | 'url' | null>(null)
   const [revealed, setRevealed] = useState(false)
+  const [rotatingId, setRotatingId] = useState<string | null>(null)
 
   const load = async (): Promise<void> => {
     setLoading(true); setError(null)
@@ -600,7 +603,13 @@ function McpTokensTab(): React.ReactElement {
     if (!name.trim() || !teamId) return
     setCreating(true); setError(null)
     try {
-      const created = await api.mcpTokens.create({ name: name.trim(), teamId })
+      const expiresInDays = expiryChoice === 'never' ? undefined : Number(expiryChoice)
+      const created = await api.mcpTokens.create({
+        name: name.trim(),
+        teamId,
+        scope,
+        ...(expiresInDays ? { expiresInDays } : {}),
+      })
       setJustCreated(created)
       setName('')
       setCopied(null)
@@ -610,6 +619,29 @@ function McpTokensTab(): React.ReactElement {
       setError((err as Error).message)
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleRotate = async (t: McpTokenSummaryDTO): Promise<void> => {
+    const ok = await confirm({
+      title: `Rotate "${t.name}"?`,
+      message:
+        'A new token will be generated with the same scope and expiry. The current one keeps working for 24 hours so a session in flight isn\'t cut mid-call. After that, it stops working.',
+      confirmLabel: 'Rotate',
+      variant: 'primary',
+    })
+    if (!ok) return
+    setRotatingId(t.id)
+    try {
+      const rotated = await api.mcpTokens.rotate(t.id)
+      setJustCreated(rotated)
+      setCopied(null)
+      setRevealed(false)
+      await load()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setRotatingId(null)
     }
   }
 
@@ -758,7 +790,7 @@ function McpTokensTab(): React.ReactElement {
           </div>
         )}
 
-        <div className={styles.fieldGrid} style={{ gridTemplateColumns: '1fr 1fr auto', alignItems: 'end' }}>
+        <div className={styles.fieldGrid} style={{ gridTemplateColumns: '1fr 1fr', alignItems: 'end' }}>
           <div className={styles.field}>
             <label className={styles.label}>Token name</label>
             <input
@@ -785,14 +817,39 @@ function McpTokensTab(): React.ReactElement {
             </select>
           </div>
           <div className={styles.field}>
-            <Button
-              size="sm"
-              onClick={() => void handleCreate()}
-              disabled={creating || !name.trim() || !teamId}
+            <label className={styles.label}>Scope</label>
+            <select
+              className={styles.input}
+              value={scope}
+              onChange={(e) => setScope(e.target.value as McpScopeDTO)}
             >
-              {creating ? 'Creating…' : 'Create token'}
-            </Button>
+              <option value="admin">Admin — full access (create, edit, delete)</option>
+              <option value="write">Write — list, read, create, edit (no delete)</option>
+              <option value="read">Read-only — list, get, search</option>
+            </select>
           </div>
+          <div className={styles.field}>
+            <label className={styles.label}>Expiry</label>
+            <select
+              className={styles.input}
+              value={expiryChoice}
+              onChange={(e) => setExpiryChoice(e.target.value as typeof expiryChoice)}
+            >
+              <option value="never">Never — rotate manually when needed</option>
+              <option value="30">30 days</option>
+              <option value="90">90 days</option>
+              <option value="365">1 year</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ marginTop: 'var(--space-sm)', display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            size="sm"
+            onClick={() => void handleCreate()}
+            disabled={creating || !name.trim() || !teamId}
+          >
+            {creating ? 'Creating…' : 'Create token'}
+          </Button>
         </div>
         {error && <p className={`${styles.saveMsg} ${styles.error}`} style={{ marginTop: 'var(--space-sm)' }}>{error}</p>}
       </div>
@@ -808,27 +865,72 @@ function McpTokensTab(): React.ReactElement {
           <p className={styles.sectionDesc}>No active tokens yet. Create one above to get started.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
-            {activeTokens.map((t) => (
-              <div key={t.id} style={{
-                display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-                padding: 'var(--space-sm) 0',
-                borderBottom: '1px solid var(--color-border)',
-              }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                  <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
-                    {t.name}
-                  </span>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
-                    {teamName(t.teamId)} · aidoc_usr_…{t.preview} · created {new Date(t.createdAt).toLocaleDateString()}
-                    {t.lastUsedAt && ` · last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
-                  </span>
+            {activeTokens.map((t) => {
+              const now = Date.now()
+              const expiresAt = t.expiresAt ? new Date(t.expiresAt) : null
+              const daysLeft = expiresAt
+                ? Math.max(0, Math.ceil((expiresAt.getTime() - now) / (24 * 60 * 60 * 1000)))
+                : null
+              const expiringSoon = daysLeft !== null && daysLeft <= 7
+              return (
+                <div key={t.id} style={{
+                  display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
+                  padding: 'var(--space-sm) 0',
+                  borderBottom: '1px solid var(--color-border)',
+                }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs, 6px)' }}>
+                      <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--color-fg)' }}>
+                        {t.name}
+                      </span>
+                      <ScopeBadge scope={t.scope} />
+                      {daysLeft !== null && (
+                        <span style={{
+                          fontSize: 10, padding: '2px 8px', borderRadius: 999,
+                          textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
+                          background: expiringSoon ? 'var(--color-warning-bg, var(--color-secondary))' : 'var(--color-secondary)',
+                          color: expiringSoon ? 'var(--color-warning, var(--color-muted-fg))' : 'var(--color-muted-fg)',
+                        }}>
+                          {daysLeft === 0 ? 'Expires today' : daysLeft === 1 ? 'Expires tomorrow' : `Expires in ${daysLeft}d`}
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
+                      {teamName(t.teamId)} · aidoc_usr_…{t.preview} · created {new Date(t.createdAt).toLocaleDateString()}
+                      {t.lastUsedAt && ` · last used ${new Date(t.lastUsedAt).toLocaleDateString()}`}
+                      {t.lastUsedIp && ` · from ${t.lastUsedIp}`}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => void handleRotate(t)}
+                    disabled={rotatingId === t.id}
+                  >
+                    {rotatingId === t.id ? 'Rotating…' : 'Rotate'}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void handleRevoke(t)}>Revoke</Button>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => void handleRevoke(t)}>Revoke</Button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+/** Small badge that color-codes a token's capability scope so the user can
+ *  spot a risky `admin` token at a glance vs a safe `read` one. */
+function ScopeBadge({ scope }: { scope: McpScopeDTO }): React.ReactElement {
+  const label = scope === 'admin' ? 'admin' : scope === 'write' ? 'write' : 'read'
+  const bg = scope === 'admin' ? 'var(--color-accent)' : scope === 'write' ? 'var(--color-secondary)' : 'var(--color-bg)'
+  const fg = scope === 'admin' ? 'var(--color-primary)' : 'var(--color-muted-fg)'
+  return (
+    <span style={{
+      fontSize: 10, padding: '2px 8px', borderRadius: 999,
+      textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600,
+      background: bg, color: fg, border: '1px solid var(--color-border)',
+    }}>{label}</span>
   )
 }
