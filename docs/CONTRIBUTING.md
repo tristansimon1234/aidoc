@@ -23,7 +23,7 @@
    - `my-feature.repository.ts` — DB calls
    - `my-feature.service.ts` — business logic
    - `my-feature.routes.ts` — Express routes
-3. Mount routes in `src/app.ts` AND `api/index.ts`
+3. Mount routes in `src/shared/middleware/mount-routers.ts` — single edit covers both local dev (`src/app.ts`) and prod serverless (`api/index.ts`).
 4. Add frontend pages in `src/ui/features/my-feature/`
 5. If adding AI analysis, put prompts in `shared/ai/prompt.builder.ts`
 6. If adding Zod validation for AI output, put schemas in the feature's `*.schema.ts`
@@ -62,23 +62,57 @@ All validated at startup via Zod in `src/shared/config/env.ts`:
 NODE_ENV, PORT, SUPABASE_URL, SUPABASE_SERVICE_KEY,
 GEMINI_API_KEY, BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
 
+# Optional in dev, REQUIRED in prod (env.ts throws at boot)
+UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN  # distributed rate limiting
+CRON_SECRET                                         # Authorization: Bearer for /api/cron/*
+
 # Optional
-ANTHROPIC_API_KEY    # Only needed for beta auto-exploration (Stagehand)
+ANTHROPIC_API_KEY    # Only needed for Try Doc (Stagehand)
+ELEVENLABS_API_KEY   # Voice-over narration
+VIDEO_SERVICE_URL    # External video processing service
+ADMIN_EMAILS         # Comma-separated allowlist for /api/admin/*
+RESEND_API_KEY       # Transactional email (team invites, doc-ready pings)
+EMAIL_FROM           # e.g. "doclee <hello@doclee.tech>"
+PUBLIC_APP_URL       # e.g. https://app.doclee.tech (used in email links)
 ```
 
 Frontend (Vite prefix): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 
+## Auth / Authorization
+
+Two layers work together:
+
+- **Edge**: `auth.middleware.ts` validates the Supabase JWT on every `/api/*` (non-public) route and attaches `req.userId`.
+- **Feature**: because the backend runs with the Supabase service key (RLS bypassed), every handler that touches a resource calls one of:
+  - `project.service.assertProjectAccess(projectId, userId)` — returns the project if the caller is a member of its team, else 404.
+  - `run.service.assertRunAccess(runId, userId)` — same contract for runs.
+  - `assertTeamMembership(teamId, userId)` for pre-resolved team ids.
+
+Public routes (`/widget/*`, `/mcp/*`, `/docs/*`, `/invites/*`) use their own credential (API key, MCP token, invite token) and must not rely on the JWT.
+
+## Outbound HTTP
+
+Any time you `fetch(url)` with a URL that came from user input, go through `src/shared/http/safe-fetch.ts` — it DNS-resolves the target, rejects private/link-local/loopback/cloud-metadata addresses and non-http(s) schemes, and caps body size + timeout. Never call `fetch` directly on a user-provided URL.
+
 ## Known Technical Debt
 
-- [ ] Exploration instruction built inline in `exploration.service.ts` (should be in `prompt.builder.ts`)
-- [x] ~~Stagehand model hardcoded in 2 places~~ — now uses `STAGEHAND_MODEL` constant
-- [ ] `run.service.ts` imports `questions.repository` directly (cross-feature)
-- [ ] No tests written (Vitest configured but unused)
-- [x] ~~No rate limiting~~ — widget endpoint has 30 req/min per API key
-- [ ] No pagination on list endpoints
-- [ ] RunDashboard and NewRun pages are legacy (pre-project model)
-- [ ] Try Doc screenshots not yet linked to report steps
-- [ ] Widget: no domain restriction (API key is public)
-- [ ] No usage analytics for widget chat
-- [x] ~~Widget config slow~~ — edge caching + data-cfg
-- [x] ~~Chat admin slow~~ — direct Supabase embedding check
+See CLAUDE.md § "Known Tech Debt" for the current canonical list. Highlights:
+
+- [ ] Exploration instruction for open-ended runs still built inline in `exploration.service.ts` (other AI prompts now in `prompt.builder.ts`)
+- [x] ~~Stagehand model hardcoded~~ — `STAGEHAND_MODEL` constant
+- [x] ~~`run.service.ts` imports `questions.repository` directly~~ — lazy-loaded via `getQuestionRepo()`
+- [ ] No tests (Vitest configured but unused)
+- [ ] No cursor pagination on list endpoints (hard caps applied as safety net: projects 100, members 200, pages 500)
+- [ ] Legacy RunDashboard/NewRun pages still in codebase
+- [ ] Widget: no domain restriction (Origin check) — API key is public
+- [x] ~~Widget chat classifier blocked chat path~~ — moved to hourly Vercel cron (`/api/cron/classify-messages`)
+- [x] ~~Sequential per-page indexing~~ — `chat.service.indexProject` runs 5 pages in parallel waves
+- [x] ~~MCP tokens stored as plaintext~~ — SHA-256 hash at rest, raw only surfaced once at creation
+- [x] ~~IDOR on pages/runs/analytics~~ — routes now assert team membership
+- [x] ~~SSRF on analyze-url~~ — `safeFetch` DNS-resolves + blocks private ranges
+- [x] ~~Duplicate router mounts~~ — factored into `mount-routers.ts`
+- [ ] Video buffered in memory for voice-over (OOM risk on 300MB+ recordings) — needs streaming to Gemini Files
+- [ ] No concurrent-run protection on Browserbase — double-click Explore spawns two runs
+- [ ] No Sentry / error tracking — blind to prod failures until reported
+- [ ] `chat_messages` grows unbounded — needs pruning cron before ~10M rows
+- [ ] **Stripe wiring missing** — columns in place, plan switching mutates DB directly

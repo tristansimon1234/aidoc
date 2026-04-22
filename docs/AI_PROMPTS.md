@@ -36,6 +36,24 @@
 
 **maxSteps**: 50
 
+## Try Doc Exploration Instruction
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `buildTryDocExplorationPrompt({ pageContent, testUrl, testNotes })`
+
+Canonical "STRICT DOCUMENTATION TESTER" prompt used by Try Doc runs. Built server-side in `run.service.exploreWithEvents` when the run's `featureName` starts with `[Test]` — the frontend no longer ships the prompt body over the wire. Instructs the agent to describe what it sees, follow each documented step in order, PASS/FAIL each one, and stop on the first failure (no workarounds, no detours, no inventing steps).
+
+## Voice-over Narration Prompt
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `buildVoiceoverNarrationPrompt({ tone, sourceMarkdown, narrationLanguage, numSections, totalMaxWords, sectionList })` + `VOICEOVER_TONE_PRESETS` + `buildVoiceoverFarewellTopUpPrompt`
+
+Blends the VIDEO (timing + actions) with the DOCUMENTATION (content + terminology) to produce an ElevenLabs-v3 script in `[SECTION N]` blocks. Tone presets (friendly / professional / energetic / calm / playful) drive both the writing style and a `wordsPerSecondFactor` that aligns script length with TTS playback pace. A second prompt (`buildVoiceoverFarewellTopUpPrompt`) fires when the last section doesn't end with a real sign-off word, appending a language-matching outro.
+
+## RAG Chat Prompts
+
+**Location**: `src/shared/ai/prompt.builder.ts` → `buildChatSystemPrompt({ productContext, userContext })` + `buildChatUserPrompt({ context, conversationHistory, message })`
+
+The system prompt injects retrieved documentation chunks, optional user context (name / email / plan / currentUrl), and rules for concise answers, exact UI label reuse, ambiguity handling, and the `---FOLLOWUPS---` / `---WALKTHROUGH---` output markers the frontend parses. The user prompt concatenates retrieved context + conversation history + the current question.
+
 ## Documentation Generation Prompt
 
 **Location**: `src/shared/ai/prompt.builder.ts` → `buildDocumentationPrompt()`
@@ -140,11 +158,14 @@ After Stagehand exploration, Gemini analyzes the raw step data against the origi
 6. Recommendations (fix-doc, fix-product, improve-ux with priority)
 7. Global scores (doc quality, test pass rate, UX clarity — each 1-10)
 
-## Message Classifier Prompt (write-time, per message)
+## Message Classifier Prompt (hourly cron)
 
-Tiny Gemini call made fire-and-forget right after each user chat message is stored. Fills `sentiment` / `frustration_flag` / `language` / `category` on `chat_messages` so the Analytics dashboard can aggregate pain points, filter messages, and trend sentiment entirely in SQL — no LLM call when the owner opens the tab.
+Tiny Gemini call made by the hourly Vercel cron `/api/cron/classify-messages` for every user-role message where `sentiment IS NULL`. Fills `sentiment` / `frustration_flag` / `language` / `category` on `chat_messages` so the Analytics dashboard can aggregate pain points, filter messages, and trend sentiment entirely in SQL — no LLM call when the owner opens the tab.
+
+**Previously** the classifier ran inline on every chat turn (`Promise.all([chat, classify])`), which consumed the shared 60 RPM Gemini quota twice per message and 429'd the widget during multi-prospect demos. Moving to a cron drained the hot path of a second Gemini call; the trade-off is that the dashboard sentiment/frustration aggregates lag by up to 1h.
 
 **Location**: `src/shared/ai/prompt.builder.ts` → `MESSAGE_CLASSIFIER_SYSTEM_PROMPT` + `buildMessageClassifierPrompt()`
+**Driver**: `analytics.service.classifyPendingMessages()` pulls up to 300 messages per tick (72h window), runs 5 in parallel, updates via `updateMessageClassification`.
 
 **Inputs**: single message content (trimmed to 500 chars).
 

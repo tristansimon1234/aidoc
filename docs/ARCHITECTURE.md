@@ -65,8 +65,9 @@ src/shared/
   ai/               # Gemini, Anthropic, ElevenLabs clients + prompt builder
   browser/          # Stagehand wrapper
   db/               # Supabase client + storage.repository (upload/download/signed URLs)
-  config/           # Zod-validated env vars + isAdminEmail()
-  middleware/       # auth (JWT), admin (allowlist), error
+  http/             # safe-fetch: SSRF-safe HTTP wrapper (used by analyze-url)
+  config/           # Zod-validated env vars + isAdminEmail(); prod requires Upstash + CRON_SECRET
+  middleware/       # auth (JWT), admin (allowlist), error, mount-routers (shared by app.ts + api/index.ts)
   usage/            # incrementUsage RPC + listUsageForCurrentMonth + chat session dedup
   validation/       # Shared Zod schemas
 
@@ -107,7 +108,7 @@ interface RunDeps {
 ```
 
 ### Prompt Centralization
-All AI prompts live in `shared/ai/prompt.builder.ts`. The exploration instruction is the exception (built inline in `exploration.service.ts` because it's dynamic).
+All AI prompts live in `shared/ai/prompt.builder.ts` — doc generation, voice-over narration (+ tone presets), RAG chat system/user, Try Doc exploration + analysis, preflight, walkthrough, analytics synthesis, message classifier. The exploration instruction for open-ended runs is the remaining exception (built inline in `exploration.service.ts` because it's dynamic).
 
 ### Try Doc
 Try Doc: Stagehand exploration → Gemini structured analysis → persisted JSON report
@@ -125,12 +126,16 @@ Every metered op (`doc_run`, `voiceover`, `try_doc`, `chat_sessions`) is increme
 `enforceQuotaOrThrow(userId)` in `src/shared/middleware/quota.middleware.ts` runs before every metered op (3 chat routes + doc-gen / voiceover / try-doc). It calls `checkQuota()` (`billing.service.ts`) which sums `counters × TOKEN_COSTS` against the plan's `monthlyTokens`. Hard-cap plans (Free / Startup) that hit 100 % get a 402 `QUOTA_EXCEEDED`; overage-enabled plans (Growth / Business) always pass through — they'll be billed via `OVERAGE_EUR` once Stripe is live. The frontend shows a clear upgrade CTA on 402.
 
 ### Chat Session Dedup
-`widget` and `app` chat traffic share the same `chat_sessions` quota. Each request carries a `sessionToken` (per-tab UUID stored in `sessionStorage`). The `chat_sessions` table's PK `(project_id, session_token, period_month)` ensures `incrementUsage('chat_sessions')` only fires once per token per calendar month. The `source` column splits widget vs in-app for analytics without affecting billing.
+`widget` and `app` chat traffic share the same `chat_sessions` quota. Each request carries a `sessionToken` (per-tab UUID stored in `sessionStorage`). The `chat_sessions` table's PK `(project_id, session_token, period_month)` ensures `incrementUsage('chat_sessions')` only fires once per token per calendar month. Registration uses a single INSERT with `ignoreDuplicates: true`, so two concurrent tabs can't both read "no row" and double-count. The `source` column splits widget vs in-app for analytics without affecting billing.
 
-### Analytics (write-time classify, SQL-only dashboard, on-demand recommendations)
+### Analytics (cron-classified, SQL-only dashboard, on-demand recommendations)
 Every chat turn (user + assistant, across widget / public docs / in-app) is persisted in `chat_messages`. Public doc page views ping `POST /api/docs/:projectId/view`, which inserts into `doc_page_views`. Both tables are service-role write, owner-only read via RLS (`auth.uid() = user_id` on a denormalised `user_id` column).
 
-**Write-time classification** — right after each user chat turn is persisted, `classifyAndStoreUserMessage()` makes a tiny Gemini call (~150 in / 80 out tokens) that writes `sentiment` / `frustration_flag` / `language` / `category` back onto the user-role row. `category` is one of `onboarding | pricing | how-to | error | integration | account | other`. Fire-and-forget: a classification hiccup never slows or breaks the chat reply. These columns are what the dashboard aggregates over.
+**Hourly classifier cron** — `POST /api/cron/classify-messages` (Vercel cron, authed via `Authorization: Bearer CRON_SECRET`) picks up user-role messages with `sentiment IS NULL` from the last 72h, up to 300 per tick, and classifies them 5 at a time through Gemini (~150 in / 80 out tokens each), writing `sentiment` / `frustration_flag` / `language` / `category` back onto the row. `category` is one of `onboarding | pricing | how-to | error | integration | account | other`. Moving this off the live chat path means:
+
+- Chat response latency is no longer bounded by a second Gemini call.
+- Gemini's 60 RPM quota stays free for user-facing traffic — a multi-prospect demo won't 429 the widget.
+- Analytics sentiment/frustration aggregates lag by up to 1h, which is acceptable for a dashboard view.
 
 **Read-time dashboard = pure SQL** — `GET /api/projects/:id/analytics?period=7d|30d|90d` does zero LLM calls. It computes:
 - KPIs + source breakdown + sentiment counts via `computeChatStats()`
@@ -142,7 +147,7 @@ Result: dashboard loads in <50ms from a single DB round-trip, no cold-start cach
 
 **On-demand recommendations** — `POST /api/projects/:id/analytics/recommendations?period=...` is an explicit owner-initiated action that runs the Gemini synthesis pass on the last 200 user messages (`ANALYTICS_SYSTEM_PROMPT` in `prompt.builder.ts`). 5-minute cooldown per `(project, period)` to avoid accidental double-spend. Returns `{ summary, items[] }` — prioritised actionable fixes (`type: content | product | ux`).
 
-All tracking + classification writes are fire-and-forget so analytics never blocks a chat reply or a page view.
+Message logging writes are wrapped in `try/catch` so analytics never blocks a chat reply or a page view. The classifier runs out-of-band via the hourly cron above.
 
 ### Admin Allowlist
 `/api/admin/*` is gated by the `requireAdmin` middleware which reads `req.userId` (set by auth middleware), looks up the email via `profile.repository.findAuthUserEmail`, and compares against `isAdminEmail(email)` (env-driven, see `ADMIN_EMAILS`). The frontend hides the "Admin · Usage" menu entry unless `profile.isAdmin = true` — the admin email list never leaks to the bundle.
@@ -170,10 +175,12 @@ See `CLAUDE.md` § "API Design > Route structure" for the full annotated list. H
 - `/api/mcp-user/:token` — User-scoped MCP server (JSON-RPC 2.0, 7 tools: `list_projects`, `create_project`, `list_pages`, `get_page`, `search_documentation`, `create_page`, `update_page`). Authenticated by a personal access token from the `mcp_user_tokens` table; every tool re-asserts project membership in the token's workspace.
 - `/api/mcp-tokens` — Authed CRUD for personal access tokens (list / create / revoke), surfaced in Account → MCP Tokens.
 
-The same set is mounted twice: in `src/app.ts` for local dev (`npm run dev:server`) and in `api/index.ts` for the Vercel serverless function (with `/api` prefix). Adding a route requires touching both.
+Routes mount through `src/shared/middleware/mount-routers.ts` — a single function called from both `src/app.ts` (local dev, no prefix) and `api/index.ts` (Vercel serverless, `/api` prefix). Adding a route is a one-line edit in `mountRouters()`; the two entrypoints can't drift.
 
 ## Deployment
 
-- **Vercel**: `api/index.ts` is the serverless entry, `dist/client/` is the static frontend
-- **maxDuration**: 300s (exploration can take minutes)
+- **Vercel Pro**: required for `maxDuration: 300` (exploration can take minutes) and cron jobs
+- **Entry**: `api/index.ts` is the serverless function, `dist/client/` is the static frontend
 - **Rewrites**: `/api/*` → serverless function, `/*` → SPA fallback
+- **Cron**: `vercel.json` schedules `/api/cron/classify-messages` hourly. Vercel sets `Authorization: Bearer ${CRON_SECRET}` automatically; `env.ts` requires `CRON_SECRET` in prod.
+- **Rate limiting**: `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` required in prod (env.ts throws at boot otherwise — the in-memory fallback is bypassable across cold starts).
