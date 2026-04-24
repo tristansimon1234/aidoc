@@ -115,10 +115,16 @@ export const DeletePageToolArgsSchema = z.object({
 })
 
 /** Args for generate_doc — produces markdown from the video attached to
- *  the page's latest run via Gemini. Scoped to a single page by slug. */
+ *  the page's latest run via Gemini. Scoped to a single page by slug.
+ *
+ *  When `videoUrl` is provided, the tool fetches the video, uploads it to
+ *  the artifacts bucket, creates a run if the page doesn't have one, and
+ *  attaches the video before running the analysis. Lets agents drive a
+ *  full from-scratch flow without ever touching the UI. */
 export const GenerateDocToolArgsSchema = z.object({
   projectId: UuidField,
   slug: z.string().min(1).max(200),
+  videoUrl: z.string().url().max(2000).optional(),
 })
 
 /** Args for generate_voiceover — runs ElevenLabs TTS over the page's
