@@ -5,6 +5,7 @@ import { findLatestRunByPageId, findStepsByRunId } from '../run/run.repository.j
 import { downloadFromStorage, getPublicUrl } from '../../shared/db/storage.repository.js'
 import { supabase } from '../../shared/db/supabase.client.js'
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
+import { isVideoServiceConfigured, muxVideoWithAudio } from '../../shared/video/video.client.js'
 import type { DocPage } from '../page/page.types.js'
 import {
   EXPORT_MANIFEST_VERSION,
@@ -118,17 +119,28 @@ function buildFrontMatter(page: ExportedPage): string {
 interface RunMediaResult {
   media: ExportedMediaRef[]
   voiceover: ExportedVoiceover | null
+  /** Warnings surfaced to the export manifest so the user knows why mux fell
+   *  back to separate tracks. */
+  warnings: string[]
 }
 
 /** Pull everything recorded against a page's latest run that we'd want in a
  *  backup: step screenshots, trimmed video, voice-over final + segments.
  *  Missing files (deleted, not yet generated) are silently skipped — the
- *  whole point of "backup" is to grab what's there, not fail on gaps. */
+ *  whole point of "backup" is to grab what's there, not fail on gaps.
+ *
+ *  When both a video and a voice-over exist, we ask the video-service to mux
+ *  them into a single playable MP4 so the ZIP is self-contained for external
+ *  editors (VS Code / Obsidian / GitHub preview). The raw voice-over + segments
+ *  stay in the archive so a re-import into doclee can still restore per-segment
+ *  regeneration. If the mux step fails or the service isn't configured, we
+ *  gracefully keep the muted video + standalone mp3 and surface a warning. */
 async function collectRunMedia(pageId: string): Promise<RunMediaResult> {
   const run = await findLatestRunByPageId(pageId).catch(() => null)
-  if (!run) return { media: [], voiceover: null }
+  if (!run) return { media: [], voiceover: null, warnings: [] }
 
   const media: ExportedMediaRef[] = []
+  const warnings: string[] = []
   const steps = await findStepsByRunId(run.id).catch(() => [])
 
   for (const step of steps) {
@@ -143,16 +155,30 @@ async function collectRunMedia(pageId: string): Promise<RunMediaResult> {
 
   const summary = (run.summaryJson ?? {}) as Record<string, unknown>
   const videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
-  if (videoPath) {
+  const voiceoverPath = typeof summary.voiceoverPath === 'string' ? summary.voiceoverPath : null
+
+  // Try to produce a merged video+audio MP4 when both tracks are available.
+  // Falls back to shipping them separately on any failure — the export must
+  // never 500 because of an optional video-service hiccup.
+  let primaryVideoPath = videoPath
+  if (videoPath && voiceoverPath && isVideoServiceConfigured()) {
+    try {
+      const muxedPath = await muxVideoWithAudio(videoPath, voiceoverPath, run.id)
+      primaryVideoPath = muxedPath
+    } catch (err) {
+      warnings.push(`Video/voice-over mux failed (${(err as Error).message}). Falling back to separate files.`)
+    }
+  }
+
+  if (primaryVideoPath) {
     media.push({
-      zipPath: `media/${videoPath}`,
-      originalStoragePath: videoPath,
-      contentType: contentTypeFor(videoPath),
+      zipPath: `media/${primaryVideoPath}`,
+      originalStoragePath: primaryVideoPath,
+      contentType: contentTypeFor(primaryVideoPath),
     })
   }
 
   let voiceover: ExportedVoiceover | null = null
-  const voiceoverPath = typeof summary.voiceoverPath === 'string' ? summary.voiceoverPath : null
   if (voiceoverPath) {
     media.push({
       zipPath: `media/${voiceoverPath}`,
@@ -182,7 +208,7 @@ async function collectRunMedia(pageId: string): Promise<RunMediaResult> {
     voiceover = { finalFile: `media/${voiceoverPath}`, segments: segs }
   }
 
-  return { media, voiceover }
+  return { media, voiceover, warnings }
 }
 
 /**
@@ -222,6 +248,7 @@ export async function buildProjectZip(projectId: string): Promise<{ buffer: Buff
       contentType: contentTypeFor(p),
     }))
     const runMedia = await collectRunMedia(page.id)
+    if (runMedia.warnings.length > 0) warnings.push(...runMedia.warnings)
     const pageMedia = [...markdownMedia, ...runMedia.media]
 
     for (const m of pageMedia) {
@@ -314,6 +341,7 @@ export async function buildPageZip(pageId: string): Promise<{ buffer: Buffer; fi
     contentType: contentTypeFor(p),
   }))
   const runMedia = await collectRunMedia(page.id)
+  if (runMedia.warnings.length > 0) warnings.push(...runMedia.warnings)
   const pageMedia = [...markdownMedia, ...runMedia.media]
 
   for (const m of pageMedia) {
