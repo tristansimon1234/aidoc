@@ -114,6 +114,23 @@ export const DeletePageToolArgsSchema = z.object({
   slug: z.string().min(1).max(200),
 })
 
+/** Args for generate_doc — produces markdown from the video attached to
+ *  the page's latest run via Gemini. Scoped to a single page by slug. */
+export const GenerateDocToolArgsSchema = z.object({
+  projectId: UuidField,
+  slug: z.string().min(1).max(200),
+})
+
+/** Args for generate_voiceover — runs ElevenLabs TTS over the page's
+ *  generated (or hand-written) doc, synced to the video timestamps.
+ *  All voice params are optional; defaults come from the project settings. */
+export const GenerateVoiceoverToolArgsSchema = z.object({
+  projectId: UuidField,
+  slug: z.string().min(1).max(200),
+  voiceId: z.string().min(1).max(200).optional(),
+  language: z.string().min(2).max(10).optional(),
+})
+
 /** Each item carries the new (parentId, sortOrder) pair to apply.
  *  parentId is null for top-level pages. */
 export const ReorderPagesToolArgsSchema = z.object({
