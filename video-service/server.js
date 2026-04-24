@@ -368,4 +368,73 @@ app.post('/concat-audio', async (req, res) => {
   }
 })
 
+/**
+ * POST /mux
+ * Combine a silent video with a narration audio track into a single MP4.
+ * Used by the export feature so the ZIP backup contains a self-contained
+ * playable file (VS Code, Obsidian, GitHub preview).
+ *
+ * Request:  { videoPath, audioPath, runId }
+ * Response: { muxedPath: "runs/<runId>/video-with-voiceover.mp4" }
+ *
+ * Strategy: copy video stream (no re-encode), re-encode audio to AAC
+ * (MP4 doesn't support MP3-in-video reliably across browsers). `-shortest`
+ * trims to the shorter of the two streams so we don't dangle a black tail
+ * when the voice-over runs longer than the video, or vice-versa.
+ */
+app.post('/mux', async (req, res) => {
+  const start = Date.now()
+  try {
+    const { videoPath, audioPath, runId } = req.body
+    if (!videoPath || !audioPath || !runId) {
+      return res.status(400).json({ error: 'videoPath, audioPath, runId required' })
+    }
+
+    const supabase = getSupabase(req.body)
+    const [videoBuffer, audioBuffer] = await Promise.all([
+      downloadVideo(supabase, videoPath),
+      downloadVideo(supabase, audioPath),
+    ])
+
+    const tmpVideo = join(tmpdir(), `mux-v-${Date.now()}.mp4`)
+    const tmpAudio = join(tmpdir(), `mux-a-${Date.now()}.mp3`)
+    const tmpOut = join(tmpdir(), `mux-out-${Date.now()}.mp4`)
+    writeFileSync(tmpVideo, videoBuffer)
+    writeFileSync(tmpAudio, audioBuffer)
+
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(tmpVideo)
+        .input(tmpAudio)
+        .outputOptions([
+          '-map', '0:v:0',
+          '-map', '1:a:0',
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '128k',
+          '-shortest',
+          '-movflags', '+faststart',
+        ])
+        .output(tmpOut)
+        .on('end', resolve)
+        .on('error', reject)
+        .run()
+    })
+
+    const muxedBuffer = readFileSync(tmpOut)
+    const muxedPath = `runs/${runId}/video-with-voiceover.mp4`
+    await uploadFile(supabase, muxedPath, muxedBuffer, 'video/mp4')
+
+    try { unlinkSync(tmpVideo) } catch {}
+    try { unlinkSync(tmpAudio) } catch {}
+    try { unlinkSync(tmpOut) } catch {}
+
+    console.log(`[mux] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${muxedPath} (${(muxedBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+    res.json({ muxedPath })
+  } catch (err) {
+    console.error('[mux] Error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.listen(PORT, () => console.log(`Video service running on port ${PORT}`))

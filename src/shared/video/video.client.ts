@@ -66,3 +66,29 @@ export async function trimVideo(videoPath: string, runId: string, startTime: num
   const result = await callService<{ trimmedPath: string }>('/trim', { videoPath, runId, startTime, endTime })
   return result.trimmedPath
 }
+
+/**
+ * Mux a silent video with a narration audio track into a single self-contained
+ * MP4. Used by the export feature so the ZIP backup contains a playable video
+ * for external editors (VS Code, Obsidian, GitHub preview) instead of forcing
+ * the user to sync two files manually.
+ *
+ * Expected server contract (to implement on the video-service side):
+ *   POST /mux
+ *   body: { videoPath, audioPath, runId }
+ *   -> { muxedPath: "runs/<runId>/video-with-voiceover.mp4" }
+ *
+ * The service should: download both inputs from the artifacts bucket, run
+ * `ffmpeg -i video -i audio -c:v copy -c:a aac -shortest out.mp4`, and upload
+ * the result back to the same bucket. Caching by (videoPath, audioPath) is
+ * welcome but not required — the export path is idempotent.
+ */
+export async function muxVideoWithAudio(
+  videoPath: string,
+  audioPath: string,
+  runId: string,
+): Promise<string> {
+  const result = await callService<{ muxedPath: string }>('/mux', { videoPath, audioPath, runId })
+  console.log(`[video-service] Muxed video+audio → ${result.muxedPath}`)
+  return result.muxedPath
+}

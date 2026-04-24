@@ -18,6 +18,7 @@ import { publicDocsRouter } from '../../features/page/public-docs.routes.js'
 import { analyticsRouter } from '../../features/analytics/analytics.routes.js'
 import { cronRouter } from '../../features/analytics/cron.routes.js'
 import { teamRouter, invitePublicRouter } from '../../features/team/team.routes.js'
+import { exportRouter } from '../../features/export/export.routes.js'
 
 interface MountOptions {
   /**
@@ -60,6 +61,9 @@ export function mountRouters(app: Express, options: MountOptions): void {
   app.use(`${p}/teams`, authMiddleware, teamRouter)
   app.use(`${p}/mcp-tokens`, authMiddleware, mcpTokensRouter)
   app.use(`${p}/projects`, authMiddleware, projectRouter)
+  // Mounted BEFORE pageRouter so its `/pages/import` path isn't shadowed by
+  // the page CRUD routes (which would 404 on a non-UUID "import" segment).
+  app.use(`${p}/projects/:projectId`, authMiddleware, exportRouter)
   app.use(`${p}/projects/:projectId/pages`, authMiddleware, pageRouter)
   app.use(`${p}/projects/:projectId/chat`, authMiddleware, chatRouter)
   app.use(`${p}/projects/:projectId/analytics`, authMiddleware, analyticsRouter)

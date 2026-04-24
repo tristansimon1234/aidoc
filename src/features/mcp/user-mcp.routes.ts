@@ -12,6 +12,8 @@ import {
   UpdatePageToolArgsSchema,
   DeletePageToolArgsSchema,
   ReorderPagesToolArgsSchema,
+  GenerateDocToolArgsSchema,
+  GenerateVoiceoverToolArgsSchema,
 } from './mcp.schema.js'
 import {
   findActiveTokenByValue,
@@ -84,6 +86,8 @@ const TOOL_SCOPE_REQUIREMENT: Record<string, McpScope> = {
   create_page: 'write',
   update_page: 'write',
   reorder_pages: 'write',
+  generate_doc: 'write',
+  generate_voiceover: 'write',
   delete_page: 'admin',
 }
 
@@ -238,7 +242,13 @@ const TOOL_DEFINITIONS = [
   {
     name: 'get_page',
     description:
-      'Fetch the full markdown content of a page by slug, including its breadcrumb in the page hierarchy. Call this before a partial update so you can edit locally and send the whole new content back via update_page.\n\nCompanion tools: `list_pages`, `update_page`, `delete_page`, `search_documentation`.',
+      `Fetch everything needed to round-trip a page: markdown content, breadcrumb, parent slug, status, public-visibility, sort order, briefing (objective / knowledge / resources), and recorded media. Image links inside the markdown are absolute public URLs — they keep working even when pasted into another project.
+
+The metadata block includes \`media.video.url\`: when the page has both a screen recording and a voice-over, this is a single MP4 with the narration already muxed in (\`muxed: true\`). Ideal for creating a single video embed block when transferring the page to Notion / Confluence / any other MCP target. If the mux is unavailable, \`media.video\` (raw) and \`media.voiceover\` may be returned separately so you can still surface them.
+
+Use before a partial update so you can edit locally and send the whole new content back via \`update_page\`. Also use to export a page: read it here, then \`create_page\` in another project with the same fields.
+
+Companion tools: \`list_pages\`, \`update_page\`, \`delete_page\`, \`search_documentation\`, \`create_page\` (for export → import).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -291,6 +301,40 @@ Companion tools: \`list_pages\`, \`get_page\`, \`update_page\`, \`delete_page\`,
           type: 'string',
           description: 'Optional initial markdown body. Do NOT start with an H1 matching the title — use ## for top-level sections instead.',
         },
+        status: {
+          type: 'string',
+          enum: ['draft', 'exploring', 'published'],
+          description: 'Lifecycle status. Defaults to "draft" when omitted.',
+        },
+        isPublic: {
+          type: 'boolean',
+          description: 'When true, the page is visible on the public docs site. Defaults to false.',
+        },
+        briefing: {
+          type: 'object',
+          description: 'Per-page briefing (objective, knowledge, typed resources). Pass as-is when importing a page exported via get_page.',
+          properties: {
+            objective: { type: 'string' },
+            knowledge: { type: 'string' },
+            resources: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  type: { type: 'string', enum: ['url', 'credential', 'endpoint', 'file', 'note'] },
+                  label: { type: 'string' },
+                  value: { type: 'string' },
+                },
+                required: ['type', 'label', 'value'],
+              },
+            },
+          },
+        },
+        sortOrder: {
+          type: 'integer',
+          minimum: 0,
+          description: '0-based order among siblings. Auto-assigned (max+1) when omitted.',
+        },
       },
       required: ['projectId', 'title'],
     },
@@ -328,6 +372,35 @@ Companion tools: \`get_page\` (read before partial edit), \`create_page\`, \`del
         contentAppend: {
           type: 'string',
           description: 'Markdown to add at the end of the existing content. Use this for incremental additions (new section, extra note) without rewriting the whole page. Mutually exclusive with content.',
+        },
+        status: {
+          type: 'string',
+          enum: ['draft', 'exploring', 'published'],
+          description: 'New lifecycle status.',
+        },
+        isPublic: {
+          type: 'boolean',
+          description: 'Toggle public-docs visibility.',
+        },
+        briefing: {
+          type: 'object',
+          description: 'Replaces the full briefing object when provided.',
+          properties: {
+            objective: { type: 'string' },
+            knowledge: { type: 'string' },
+            resources: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  type: { type: 'string', enum: ['url', 'credential', 'endpoint', 'file', 'note'] },
+                  label: { type: 'string' },
+                  value: { type: 'string' },
+                },
+                required: ['type', 'label', 'value'],
+              },
+            },
+          },
         },
       },
       required: ['projectId', 'slug'],
@@ -382,6 +455,67 @@ Companion tools: \`list_pages\`, \`create_page\`, \`update_page\`.`,
       required: ['projectId', 'items'],
     },
   },
+  {
+    name: 'generate_doc',
+    description:
+      `Generate the markdown documentation for a page from a screen-recording video using Gemini 2.5 Flash.
+
+Two modes:
+- **With \`videoUrl\`**: tool fetches the video from the URL (any public HTTP MP4 / WebM / MOV), uploads it to the artifacts bucket, creates a run if needed, then runs the analysis. Lets you drive the full flow from MCP — pair with \`create_page\` first to spin up a brand-new doc.
+- **Without \`videoUrl\`**: assumes the page already has a run with a video attached (uploaded via the UI or the Try Doc / Record flow).
+
+Long-running — Gemini analyzes every frame, extracts step-level screenshots, and produces a structured doc. Typical duration: 30–120 seconds depending on video length. The agent calling this should be patient and not retry early.
+
+Side effects:
+- (When \`videoUrl\` provided) downloads up to 200 MB and uploads to \`runs/<id>/video.<ext>\` in the artifacts bucket.
+- Writes the markdown to \`doc_pages.content\` (overwrites any existing content after snapshotting the previous version for undo).
+- Stores the immutable AI output under \`generated_docs.markdown_content\` against the run.
+- Sets \`doc_pages.status = 'published'\`.
+- Re-indexes the page embeddings for chat / search.
+- Counts one \`doc_run\` against the monthly token quota — fails with \`QUOTA_EXCEEDED\` on hard-cap plans.
+
+Source URL constraints (when \`videoUrl\` provided): public HTTP/HTTPS, direct video file (not a viewer page — Loom embed pages won't work, the raw .mp4 will), Content-Type starts with \`video/\`, ≤ 200 MB. Private / loopback / link-local hosts are blocked (SSRF guard).
+
+Companion tools: \`create_page\` (build the destination first), \`get_page\` (read the result), \`update_page\` (manual tweaks), \`generate_voiceover\` (next step).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        slug: { type: 'string', description: 'Page slug. With videoUrl, can be a fresh page; without, must already have a run + video.' },
+        videoUrl: { type: 'string', description: 'Optional public URL to a video file. When provided, the video is fetched, uploaded, attached, and analyzed in one call.' },
+      },
+      required: ['projectId', 'slug'],
+    },
+  },
+  {
+    name: 'generate_voiceover',
+    description:
+      `Produce a voice-over narration (ElevenLabs multilingual TTS) synchronized to the video timestamps of the page's latest run. Uses the page's current \`content\` as the source script — call \`generate_doc\` first if the page has no doc yet.
+
+Long-running (typically 15–60 seconds). Requires \`ELEVENLABS_API_KEY\` on the server and a page that already has (a) a video with step timestamps and (b) some markdown content.
+
+This tool runs the **same pipeline** as the Video tab in the UI — timestamp merging, Gemini narration that watches the video, tone-aware scripting, farewell top-up, per-section word budgeting, ElevenLabs synthesis, and the background video+voice-over mux. MCP callers and UI users get identical audio from the same page.
+
+Side effects:
+- Uploads per-step segment mp3s and a concatenated \`voiceover.mp3\` to the artifacts bucket.
+- Stores the result on \`run.summary_json.voiceover\` and clears any stale video+voiceover mux cache.
+- Kicks off a background mux so the full narrated MP4 is ready for export / \`get_page\` without delay.
+- Counts one \`voiceover\` against the monthly token quota.
+
+Optional voice controls (\`voiceId\`, \`language\`) override the project defaults — omit both to use whatever the project is configured for.
+
+Companion tools: \`generate_doc\` (prerequisite when no content exists), \`get_page\` (read media.video URL after), \`update_page\` (edit script before re-running).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        slug: { type: 'string', description: 'Page slug — must already have a run with video timestamps.' },
+        voiceId: { type: 'string', description: 'Optional ElevenLabs voice ID. Defaults to the project-level voice.' },
+        language: { type: 'string', description: 'Optional BCP-47 language tag (e.g. "en", "fr"). Defaults to the project-level language.' },
+      },
+      required: ['projectId', 'slug'],
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -421,6 +555,10 @@ async function dispatchTool(
       return handleDeletePage(rawArgs, ctx)
     case 'reorder_pages':
       return handleReorderPages(rawArgs, ctx)
+    case 'generate_doc':
+      return handleGenerateDoc(rawArgs, ctx)
+    case 'generate_voiceover':
+      return handleGenerateVoiceover(rawArgs, ctx)
     default:
       return toolText(`Unknown tool: ${name}`)
   }
@@ -493,7 +631,109 @@ async function handleGetPage(
   const byId = new Map(pages.map((p) => [p.id, { id: p.id, title: p.title, parentId: p.parentId }]))
   const crumb = breadcrumbOf(page.id, byId)
   const bodyText = page.content?.trim() || '_(This page has no content yet.)_'
-  return toolText(`# ${crumb || page.title} (/${page.slug})\n\n${bodyText}`)
+  const parentSlug = page.parentId ? pages.find((p) => p.id === page.parentId)?.slug ?? null : null
+
+  // Resolve the page's media so an agent pushing this doc into Notion / any
+  // other MCP target can create matching video/audio blocks — markdown only
+  // carries screenshot URLs, never the full recording or the narration.
+  //
+  // When both a video and a voice-over exist we return a single URL pointing
+  // to the muxed MP4 (`runs/<id>/video-with-voiceover.mp4`) so the agent
+  // creates one embed with narration baked in, rather than two parallel
+  // tracks the user would have to sync manually. The mux path is cached in
+  // `run.summary_json.muxedVideoPath` after the first successful call — later
+  // get_page hits return instantly. Mux failures silently fall back to the
+  // raw video + voiceover URLs so the tool call stays useful.
+  const media = await resolvePageMedia(page.id).catch((err: unknown) => {
+    console.warn('[mcp] get_page media resolve failed:', (err as Error).message)
+    return null
+  })
+
+  // Everything needed for a lossless round-trip into another project via
+  // create_page — status, isPublic, sortOrder, briefing. Markdown image URLs
+  // stay absolute (they point to the public artifacts bucket) so they keep
+  // rendering regardless of which project re-imports the page.
+  const meta = {
+    slug: page.slug,
+    title: page.title,
+    parentSlug,
+    status: page.status,
+    isPublic: page.isPublic,
+    sortOrder: page.sortOrder,
+    briefing: page.briefing,
+    media,
+  }
+
+  const text =
+    `# ${crumb || page.title} (/${page.slug})\n\n` +
+    `${bodyText}\n\n` +
+    `---\n\n` +
+    `**Metadata (for round-trip import via create_page):**\n\n` +
+    '```json\n' +
+    JSON.stringify(meta, null, 2) +
+    '\n```'
+  return toolText(text)
+}
+
+interface PageMediaPayload {
+  video: { url: string; muxed: boolean } | null
+  voiceover: { url: string } | null
+}
+
+/** Look up the page's latest recording run and expose its media as public
+ *  URLs. If a video + voice-over are both present we mux them on the fly
+ *  (cached via `run.summary_json.muxedVideoPath`) so a single URL carries
+ *  the full narrated recording. Graceful fallback to raw tracks whenever
+ *  the video-service isn't configured or the mux call throws. */
+async function resolvePageMedia(pageId: string): Promise<PageMediaPayload | null> {
+  const { findLatestRunByPageId, updateRunSummary } = await import('../run/run.repository.js')
+  const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
+  const { isVideoServiceConfigured, muxVideoWithAudio } = await import('../../shared/video/video.client.js')
+
+  const run = await findLatestRunByPageId(pageId).catch(() => null)
+  if (!run) return null
+
+  // `summary.voiceover = { audioPath, audioUrl, segments }` is how the
+  // voice-over route stores its output — there's no flat `voiceoverPath`.
+  // Reading the wrong key previously meant we never muxed and always fell
+  // back to the raw (silent) video URL.
+  const summary = (run.summaryJson ?? {}) as Record<string, unknown>
+  const videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
+  const voiceoverBlock = summary.voiceover && typeof summary.voiceover === 'object'
+    ? summary.voiceover as Record<string, unknown>
+    : null
+  const voiceoverPath = voiceoverBlock && typeof voiceoverBlock.audioPath === 'string'
+    ? voiceoverBlock.audioPath
+    : null
+  const cachedMuxedPath = typeof summary.muxedVideoPath === 'string' ? summary.muxedVideoPath : null
+
+  if (!videoPath && !voiceoverPath) return null
+
+  let muxedUrl: string | null = null
+  if (cachedMuxedPath) {
+    muxedUrl = getPublicUrl('artifacts', cachedMuxedPath)
+  } else if (videoPath && voiceoverPath && isVideoServiceConfigured()) {
+    try {
+      const muxedPath = await muxVideoWithAudio(videoPath, voiceoverPath, run.id)
+      muxedUrl = getPublicUrl('artifacts', muxedPath)
+      // Persist the cached path so subsequent get_page calls skip the mux.
+      // Fire-and-forget — a DB hiccup here just means we re-mux next time.
+      void updateRunSummary(run.id, { ...summary, muxedVideoPath: muxedPath }).catch(() => {})
+    } catch (err) {
+      console.warn('[mcp] mux failed, returning raw tracks:', (err as Error).message)
+    }
+  }
+
+  if (muxedUrl) {
+    return { video: { url: muxedUrl, muxed: true }, voiceover: null }
+  }
+
+  const rawVideoUrl = videoPath ? getPublicUrl('artifacts', videoPath) : null
+  const rawVoiceoverUrl = voiceoverPath ? getPublicUrl('artifacts', voiceoverPath) : null
+  return {
+    video: rawVideoUrl ? { url: rawVideoUrl, muxed: false } : null,
+    voiceover: rawVoiceoverUrl ? { url: rawVoiceoverUrl } : null,
+  }
 }
 
 async function handleSearchDocumentation(
@@ -618,7 +858,7 @@ async function handleCreatePage(
     parentId = parent.id
   }
 
-  const sortOrder = pages.reduce((max, p) => Math.max(max, p.sortOrder), -1) + 1
+  const sortOrder = parsed.data.sortOrder ?? pages.reduce((max, p) => Math.max(max, p.sortOrder), -1) + 1
 
   const { createPage } = await import('../page/page.service.js')
   const page = await createPage({
@@ -635,15 +875,30 @@ async function handleCreatePage(
   // of truth when present, so forgetting to wipe it would make the editor
   // ignore the markdown we just wrote.
   let h1 = { stripped: false, warning: undefined as string | undefined }
-  if (parsed.data.content) {
-    const processed = processLeadingH1(parsed.data.content, parsed.data.title)
-    h1 = { stripped: processed.stripped, warning: processed.warning }
+  const hasContent = parsed.data.content !== undefined
+  const hasMeta =
+    parsed.data.status !== undefined ||
+    parsed.data.isPublic !== undefined ||
+    parsed.data.briefing !== undefined
+  if (hasContent || hasMeta) {
     const { updatePage } = await import('../page/page.service.js')
-    await updatePage(
-      page.id,
-      { content: processed.content, contentBlocks: null },
-      ctx.userId,
-    )
+    const update: {
+      content?: string
+      contentBlocks?: unknown
+      status?: 'draft' | 'exploring' | 'published'
+      isPublic?: boolean
+      briefing?: { objective: string; knowledge: string; resources: { type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'; label: string; value: string }[] }
+    } = {}
+    if (hasContent && parsed.data.content !== undefined) {
+      const processed = processLeadingH1(parsed.data.content, parsed.data.title)
+      h1 = { stripped: processed.stripped, warning: processed.warning }
+      update.content = processed.content
+      update.contentBlocks = null
+    }
+    if (parsed.data.status !== undefined) update.status = parsed.data.status
+    if (parsed.data.isPublic !== undefined) update.isPublic = parsed.data.isPublic
+    if (parsed.data.briefing !== undefined) update.briefing = parsed.data.briefing
+    await updatePage(page.id, update, ctx.userId)
   }
 
   const notes: string[] = []
@@ -710,12 +965,23 @@ async function handleUpdatePage(
   // Wipe contentBlocks whenever we write content — the BlockNote editor
   // treats content_blocks as the source of truth when present, so leaving
   // it stale would make the MCP edit look like a no-op in the UI.
-  const input: { title?: string; slug?: string; content?: string; contentBlocks?: unknown } = {
+  const input: {
+    title?: string
+    slug?: string
+    content?: string
+    contentBlocks?: unknown
+    status?: 'draft' | 'exploring' | 'published'
+    isPublic?: boolean
+    briefing?: { objective: string; knowledge: string; resources: { type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'; label: string; value: string }[] }
+  } = {
     title: parsed.data.title,
     slug: parsed.data.newSlug,
     content: nextContent,
   }
   if (nextContent !== undefined) input.contentBlocks = null
+  if (parsed.data.status !== undefined) input.status = parsed.data.status
+  if (parsed.data.isPublic !== undefined) input.isPublic = parsed.data.isPublic
+  if (parsed.data.briefing !== undefined) input.briefing = parsed.data.briefing
   const updated = await updatePage(page.id, input, ctx.userId)
 
   const mode = parsed.data.content !== undefined ? 'replaced' : parsed.data.contentAppend !== undefined ? 'appended to' : 'updated'
@@ -785,4 +1051,232 @@ async function handleReorderPages(
   const { reorderPages } = await import('../page/page.service.js')
   await reorderPages(parsed.data.items)
   return toolText(`Reordered ${parsed.data.items.length} page(s).`)
+}
+
+/** Locate a page by projectId + slug for the tools that work on a single
+ *  page (generate_doc, generate_voiceover). Centralises the "wrong slug"
+ *  error message and the team-scope check so both tools stay consistent. */
+async function resolvePageBySlug(
+  projectId: string,
+  slug: string,
+  ctx: McpAuthContext,
+): Promise<{ id: string; title: string; content: string | null; projectId: string }> {
+  await assertProjectInTeam(projectId, ctx.teamId)
+  const { findPagesByProjectId } = await import('../page/page.repository.js')
+  const pages = await findPagesByProjectId(projectId)
+  const page = pages.find((p) => p.slug === slug)
+  if (!page) throw new AppError(`No page with slug "${slug}". Call list_pages to see available slugs.`, 'PAGE_NOT_FOUND', 404)
+  return { id: page.id, title: page.title, content: page.content, projectId: page.projectId }
+}
+
+async function handleGenerateDoc(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = GenerateDocToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+
+  let page
+  try {
+    page = await resolvePageBySlug(parsed.data.projectId, parsed.data.slug, ctx)
+  } catch (err) {
+    if (err instanceof AppError) return toolText(err.message)
+    throw err
+  }
+
+  const runRepo = await import('../run/run.repository.js')
+  const runService = await import('../run/run.service.js')
+  let run = await runRepo.findLatestRunByPageId(page.id)
+
+  // When videoUrl is provided we fetch + upload + (re)create the run + attach
+  // the video so the agent flow doesn't require the UI at all. When it isn't,
+  // we fall back to the legacy "doc gen on existing video" behaviour.
+  let videoPath: string | null = null
+  if (parsed.data.videoUrl) {
+    try {
+      // Create a run upfront so we have a stable runId for the storage path.
+      // Reuse the existing latest run when there is one — avoids piling up
+      // "ghost" runs each time an agent re-runs generate_doc with a new URL.
+      if (!run) {
+        run = await runService.createRun({
+          featureName: page.title,
+          startUrl: 'about:blank',
+          goal: page.title,
+          docPageId: page.id,
+        })
+      }
+      const fetched = await fetchVideoForUpload(parsed.data.videoUrl)
+      const ext = extensionForMimeType(fetched.contentType, parsed.data.videoUrl)
+      const storagePath = `runs/${run.id}/video${ext}`
+      const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
+      await uploadToStorage('artifacts', storagePath, fetched.buffer, fetched.contentType)
+      const existingSummary = (run.summaryJson ?? {}) as Record<string, unknown>
+      // Drop any cached muxed path — the underlying video just changed.
+      await runRepo.updateRunSummary(run.id, {
+        ...existingSummary,
+        videoPath: storagePath,
+        muxedVideoPath: null,
+      })
+      videoPath = storagePath
+    } catch (err) {
+      return toolText(`Failed to fetch / attach the video: ${(err as Error).message}`)
+    }
+  } else {
+    if (!run) return toolText(`No run attached to "${parsed.data.slug}". Provide \`videoUrl\` or upload a video via the UI first.`)
+    const summary = (run.summaryJson ?? {}) as Record<string, unknown>
+    videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
+    if (!videoPath) return toolText(`Latest run for "${parsed.data.slug}" has no video attached. Provide \`videoUrl\` or upload a video via the UI first.`)
+  }
+
+  // Quota: doc-gen is metered (doc_run). Fails with 402 on hard-cap plans.
+  await enforceQuotaOrThrow(ctx.teamId)
+
+  try {
+    await runService.analyzeVideo(run.id, videoPath)
+    await runService.generateDoc(run.id, null)
+    const { updatePage } = await import('../page/page.repository.js')
+    await updatePage(page.id, { status: 'published' })
+  } catch (err) {
+    return toolText(`Doc generation failed: ${(err as Error).message}`)
+  }
+
+  return toolText(
+    `Documentation generated for "${page.title}" (/${parsed.data.slug}).\n\n` +
+    `The markdown is now on the page and has been indexed for chat / search. ` +
+    `Call \`get_page\` with slug "${parsed.data.slug}" to read the result, ` +
+    `or \`generate_voiceover\` to produce the narration next.`,
+  )
+}
+
+/** Hard cap on remote videos pulled into the artifacts bucket via MCP.
+ *  Matches the UI's signed-upload limit so behaviour stays consistent and
+ *  one tool call can't fill a project's quota. */
+const MCP_MAX_VIDEO_BYTES = 200 * 1024 * 1024
+
+/** Reject hostnames that would let an attacker pivot to internal services
+ *  (SSRF). Cheap regex-only check — no DNS resolution because the URL is
+ *  fetched server-side and the resolver could still race. We refuse anything
+ *  that looks like a private / loopback / link-local target by literal name. */
+function isPrivateHost(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
+  if (host === '0.0.0.0' || host === '::' || host === '::1') return true
+  if (/^127\./.test(host)) return true
+  if (/^10\./.test(host)) return true
+  if (/^192\.168\./.test(host)) return true
+  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)) return true
+  if (/^169\.254\./.test(host)) return true            // link-local
+  if (/^(fc|fd)[0-9a-f]{2}:/i.test(host)) return true  // IPv6 ULA
+  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true    // IPv6 link-local
+  return false
+}
+
+/** Pull a remote video into memory ready for upload. Streaming would be
+ *  nicer for huge files but Supabase's JS client wants a Buffer anyway, so
+ *  we just enforce the size cap mid-stream and abort if exceeded. */
+async function fetchVideoForUpload(rawUrl: string): Promise<{ buffer: Buffer; contentType: string }> {
+  const url = new URL(rawUrl)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`Only http(s) URLs are accepted, got ${url.protocol}`)
+  }
+  if (isPrivateHost(url.hostname)) {
+    throw new Error(`Refusing to fetch from private / loopback host: ${url.hostname}`)
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 60_000) // 60 s wall clock for the download
+  // `Response` is shadowed by Express's import at the top of this file —
+  // call through a local alias so we get the global fetch Response shape.
+  let res: Awaited<ReturnType<typeof fetch>>
+  try {
+    res = await fetch(url.toString(), { signal: controller.signal, redirect: 'follow' })
+  } finally {
+    clearTimeout(timeout)
+  }
+  if (!res.ok) throw new Error(`Source URL returned ${res.status} ${res.statusText}`)
+
+  const contentType = (res.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
+  if (!contentType.startsWith('video/')) {
+    throw new Error(`Source URL is not a video (Content-Type: ${contentType || 'unknown'}). If this is a viewer page, use the direct file URL.`)
+  }
+  const declaredLength = Number(res.headers.get('content-length') ?? 0)
+  if (declaredLength > MCP_MAX_VIDEO_BYTES) {
+    throw new Error(`Video too large (${(declaredLength / 1024 / 1024).toFixed(1)} MB > 200 MB cap)`)
+  }
+
+  if (!res.body) throw new Error('Source URL returned an empty body')
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let received = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    if (value) {
+      received += value.byteLength
+      if (received > MCP_MAX_VIDEO_BYTES) {
+        try { await reader.cancel() } catch { /* ignore */ }
+        throw new Error(`Video exceeded 200 MB cap mid-download`)
+      }
+      chunks.push(value)
+    }
+  }
+  return { buffer: Buffer.concat(chunks), contentType }
+}
+
+/** Pick a sensible filename extension for the upload. Prefer the MIME type
+ *  Supabase / the player will use on read; fall back to the URL's extension
+ *  when the server forgot to advertise one. */
+function extensionForMimeType(contentType: string, urlString: string): string {
+  if (contentType === 'video/mp4') return '.mp4'
+  if (contentType === 'video/webm') return '.webm'
+  if (contentType === 'video/quicktime') return '.mov'
+  // URL fallback
+  const path = (() => {
+    try { return new URL(urlString).pathname } catch { return '' }
+  })()
+  const m = path.match(/\.(mp4|webm|mov|m4v)(?:$|\?)/i)
+  if (m) return `.${m[1]!.toLowerCase()}`
+  return '.mp4'
+}
+
+async function handleGenerateVoiceover(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = GenerateVoiceoverToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+
+  let page
+  try {
+    page = await resolvePageBySlug(parsed.data.projectId, parsed.data.slug, ctx)
+  } catch (err) {
+    if (err instanceof AppError) return toolText(err.message)
+    throw err
+  }
+
+  const { findLatestRunByPageId } = await import('../run/run.repository.js')
+  const run = await findLatestRunByPageId(page.id)
+  if (!run) return toolText(`No run attached to "${parsed.data.slug}". Record a screen capture or upload a video via the UI first.`)
+
+  await enforceQuotaOrThrow(ctx.teamId)
+
+  // Same pipeline as the HTTP route — one shared implementation in
+  // voiceover.service.ts handles ElevenLabs check, timestamp shaping, Gemini
+  // narration with video, section parsing, word-budget enforcement, farewell
+  // top-up, synthesis, persistence, and the background mux. Parity guaranteed.
+  try {
+    const { generateVoiceoverForRun } = await import('../documentation/voiceover.service.js')
+    const result = await generateVoiceoverForRun(run.id, {
+      voiceId: parsed.data.voiceId,
+      language: parsed.data.language,
+    })
+    return toolText(
+      `Voice-over generated for "${page.title}" (/${parsed.data.slug}) — ${result.segments.length} segments, ` +
+      `final file: ${result.audioUrl}.\n\n` +
+      `Call \`get_page\` with slug "${parsed.data.slug}" to read \`media.video.url\` — the narrated MP4 will be ` +
+      `muxed in the background and available within a few seconds.`,
+    )
+  } catch (err) {
+    return toolText(`Voice-over generation failed: ${(err as Error).message}`)
+  }
 }

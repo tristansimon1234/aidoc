@@ -37,6 +37,27 @@ export const GetPageToolArgsSchema = z.object({
   slug: z.string().min(1).max(200),
 })
 
+/** Briefing shape accepted by create_page / update_page. Keeps the loose
+ *  JSONB contract on the DB side (extra keys are dropped here so we don't
+ *  leak UI-only fields from the caller). */
+const McpBriefingSchema = z.object({
+  objective: z.string().max(4000).optional().default(''),
+  knowledge: z.string().max(8000).optional().default(''),
+  resources: z
+    .array(
+      z.object({
+        type: z.enum(['url', 'credential', 'endpoint', 'file', 'note']),
+        label: z.string().max(200),
+        value: z.string().max(4000),
+      }),
+    )
+    .max(50)
+    .optional()
+    .default([]),
+})
+
+const PageStatusSchema = z.enum(['draft', 'exploring', 'published'])
+
 export const SearchDocumentationToolArgsSchema = z.object({
   projectId: UuidField,
   query: z.string().min(1).max(2000),
@@ -53,6 +74,13 @@ export const CreatePageToolArgsSchema = z.object({
     .optional(),
   parentSlug: z.string().min(1).max(200).optional(),
   content: z.string().max(200_000).optional(),
+  /** Lifecycle status — defaults to 'draft' server-side when omitted. */
+  status: PageStatusSchema.optional(),
+  /** When true, the page is visible on the public docs site. */
+  isPublic: z.boolean().optional(),
+  briefing: McpBriefingSchema.optional(),
+  /** 0-based order among siblings. Server auto-assigns (max+1) when omitted. */
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
 })
 
 export const UpdatePageToolArgsSchema = z
@@ -72,6 +100,10 @@ export const UpdatePageToolArgsSchema = z
      *  incremental additions without a read-then-full-write round trip.
      *  Mutually exclusive with `content`. */
     contentAppend: z.string().max(200_000).optional(),
+    /** Lifecycle status — useful to publish / unpublish via MCP. */
+    status: PageStatusSchema.optional(),
+    isPublic: z.boolean().optional(),
+    briefing: McpBriefingSchema.optional(),
   })
   .refine((d) => !(d.content !== undefined && d.contentAppend !== undefined), {
     message: 'Provide either `content` (full replace) or `contentAppend` (add to end) — not both.',
@@ -80,6 +112,29 @@ export const UpdatePageToolArgsSchema = z
 export const DeletePageToolArgsSchema = z.object({
   projectId: UuidField,
   slug: z.string().min(1).max(200),
+})
+
+/** Args for generate_doc — produces markdown from the video attached to
+ *  the page's latest run via Gemini. Scoped to a single page by slug.
+ *
+ *  When `videoUrl` is provided, the tool fetches the video, uploads it to
+ *  the artifacts bucket, creates a run if the page doesn't have one, and
+ *  attaches the video before running the analysis. Lets agents drive a
+ *  full from-scratch flow without ever touching the UI. */
+export const GenerateDocToolArgsSchema = z.object({
+  projectId: UuidField,
+  slug: z.string().min(1).max(200),
+  videoUrl: z.string().url().max(2000).optional(),
+})
+
+/** Args for generate_voiceover — runs ElevenLabs TTS over the page's
+ *  generated (or hand-written) doc, synced to the video timestamps.
+ *  All voice params are optional; defaults come from the project settings. */
+export const GenerateVoiceoverToolArgsSchema = z.object({
+  projectId: UuidField,
+  slug: z.string().min(1).max(200),
+  voiceId: z.string().min(1).max(200).optional(),
+  language: z.string().min(2).max(10).optional(),
 })
 
 /** Each item carries the new (parentId, sortOrder) pair to apply.

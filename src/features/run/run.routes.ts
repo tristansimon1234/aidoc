@@ -25,54 +25,6 @@ async function assertRunAccessFromReq(req: Request): Promise<string> {
 
 export const runRouter = Router()
 
-/**
- * Detect the language of a documentation markdown string so the
- * voice-over narration can be pinned to it. Heuristic: count French
- * diacritics + common FR stopwords vs English stopwords. Defaults to
- * English when neither signal dominates — safer than guessing wrong.
- *
- * Not trying to be a general language detector (would need a proper
- * n-gram library); we only need to disambiguate EN vs FR since that's
- * the recurring failure mode (English doc + French-UI screen recording
- * → Gemini picks French). Easy to extend later.
- */
-function detectDocLanguage(markdown: string): string {
-  if (!markdown || markdown.length < 30) return 'English'
-  const text = markdown.toLowerCase()
-  const diacritics = (text.match(/[àâäéèêëïîôöùûüÿç]/g) ?? []).length
-  const frenchStops = (text.match(/\b(le|la|les|un|une|des|du|est|sont|avec|pour|dans|sur|que|qui|cette|cet|ces|mais|nous|vous|votre|leur|aussi|comme|sera|être|avoir|alors|donc|déjà|ainsi|cliquez|ouvrez|saisissez)\b/g) ?? []).length
-  const englishStops = (text.match(/\b(the|is|are|with|for|in|on|that|which|this|but|we|you|your|their|also|will|can|click|open|enter|press|type|have|has|been|here|there|how|what|when|where|next|after|before)\b/g) ?? []).length
-  // Each diacritic counts as 3 French points — they're strong signals.
-  // Stopwords each count as 1. English defaults when scores are close.
-  const frenchScore = diacritics * 3 + frenchStops
-  const englishScore = englishStops
-  return frenchScore > englishScore * 1.3 ? 'French' : 'English'
-}
-
-/**
- * Remove audio-tag fragments that don't close with `]`. ElevenLabs v3
- * tags look like `[excited]`, `[happy gasp]`, `[short pause]`. When
- * either Gemini truncates mid-tag or our word-limit shortener cuts a
- * sentence boundary inside a tag, we get leftovers like `[happy.` or
- * trailing `[` that make the TTS output a literal bracket noise or
- * drop the segment entirely.
- *
- * Strategy: keep any `[foo]` that closes, drop any `[foo` that doesn't.
- * Also trims trailing whitespace + dangling punctuation from the cut.
- */
-function stripBrokenAudioTags(text: string): string {
-  // Kill opening brackets that never close. Walk forward: if we see a
-  // `[` without a matching `]` before the string ends, drop from that
-  // `[` to the end (or to the next whitespace-terminated fragment).
-  let cleaned = text
-  // Remove any trailing unclosed tag fragment like " [happy." or " [."
-  cleaned = cleaned.replace(/\s*\[[^\]]*$/g, '').trim()
-  // Also remove any stray empty tags `[]` or single `[` / `]` chars
-  cleaned = cleaned.replace(/\[\s*\]/g, '').replace(/(?:^|\s)[\[\]](?=\s|$)/g, '').trim()
-  // Re-anchor terminal punctuation if the cut left an orphan word
-  if (cleaned && !/[.!?]$/.test(cleaned)) cleaned = cleaned + '.'
-  return cleaned
-}
 
 /** Resolve the team a run belongs to, throws if unknown. Used as the single
  *  quota-enforcement anchor on run-scoped routes. */
@@ -397,7 +349,13 @@ runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
-// Generate voice-over narration from documentation
+// Generate voice-over narration from documentation. The heavy pipeline
+// (timestamp merging, Gemini narration, ElevenLabs TTS, mux, usage counter,
+// run summary write) lives in voiceover.service → generateVoiceoverForRun
+// so this route and the MCP tool share one implementation. The route layer
+// only owns two things the MCP tool doesn't need: the per-page exclusive
+// lock (so two teammates can't burn duplicate ElevenLabs credits) and the
+// DB-backed `job` row that the frontend JobTracker subscribes to.
 runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: NextFunction) => {
   let voiceoverJobId: string | null = null
   void (async () => {
@@ -408,21 +366,17 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 
       const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
 
-      // Check ElevenLabs is configured before attempting
       const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
       if (!isElevenLabsConfigured()) {
         throw new AppError('Voice-over requires ELEVENLABS_API_KEY to be configured', 'ELEVENLABS_NOT_CONFIGURED', 400)
       }
 
-      const { generateVoiceover } = await import('../documentation/voiceover.service.js')
-
-      // Get the generated doc content — this is the quality source
       const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
 
-      // Create a DB job so tracker survives navigation + refresh AND so a
-      // second caller for the same page gets a clean 409 AlreadyRunningError
-      // instead of burning a second ElevenLabs generation.
+      // Per-page exclusive lock. If another teammate is already generating
+      // voice-over for the same page, ensureExclusiveJob throws
+      // AlreadyRunningError → 409 with who + when.
       if (run.docPageId) {
         const { findPageById } = await import('../page/page.repository.js')
         const page = await findPageById(run.docPageId)
@@ -438,264 +392,14 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         voiceoverJobId = job.id
       }
 
-      const { findDocByRunId } = await import('../documentation/documentation.repository.js')
-      const doc = await findDocByRunId(runId)
-      // Prefer the AI-generated doc stored on the run, fall back to the
-      // hand-written markdown on the linked page. Voice-over should work
-      // just as well for authors who skipped the AI generation step (eg
-      // wrote the doc by hand and attached a video afterwards).
-      let sourceMarkdown: string | null = doc?.markdownContent ?? null
-      if (!sourceMarkdown && run.docPageId) {
-        const { findPageById } = await import('../page/page.repository.js')
-        const page = await findPageById(run.docPageId)
-        if (page?.content?.trim()) sourceMarkdown = page.content
-      }
-      if (!sourceMarkdown) {
-        throw new AppError(
-          'This page has no documentation yet. Write some content or generate it from a video before creating the voice-over.',
-          'DOC_NOT_FOUND',
-          404,
-        )
-      }
-
-      // Get timestamps from run summary
-      const summary = run.summaryJson as Record<string, unknown> | null
-      const timestamps = (summary?.stepTimestamps as number[]) ?? []
-      const numSteps = timestamps.length || 1
-
-      console.log(`[voiceover] Run ${runId}: ${numSteps} steps, timestamps: [${timestamps.map(t => t.toFixed(1)).join(', ')}]`)
-      console.log(`[voiceover] Doc content length: ${sourceMarkdown.length} chars`)
-
-      // Build time budget — merge short sections, add intro/outro
-      const mergedTimestamps: number[] = []
-
-      // Always keep the first timestamp
-      if (timestamps.length > 0) {
-        mergedTimestamps.push(timestamps[0]!)
-      }
-      // Merge subsequent timestamps that are too close (< 8s gap)
-      for (let i = 1; i < timestamps.length; i++) {
-        const prev = mergedTimestamps[mergedTimestamps.length - 1]!
-        const gap = timestamps[i]! - prev
-        if (gap < 8) continue
-        mergedTimestamps.push(timestamps[i]!)
-      }
-
-      // Cap segments: ~1 per 20s of video, min 3, max 10
-      const videoDur = (timestamps[timestamps.length - 1] ?? 60) - (timestamps[0] ?? 0)
-      const maxSegments = Math.max(3, Math.min(10, Math.ceil(videoDur / 20)))
-      while (mergedTimestamps.length > maxSegments) {
-        // Find the smallest gap between consecutive timestamps
-        let minGap = Infinity
-        let minIdx = 1
-        for (let i = 1; i < mergedTimestamps.length; i++) {
-          const gap = mergedTimestamps[i]! - mergedTimestamps[i - 1]!
-          if (gap < minGap) { minGap = gap; minIdx = i }
-        }
-        mergedTimestamps.splice(minIdx, 1)
-      }
-
-      // Intro: always prepend a 0-timestamp so Section 1 is dedicated to
-      // a proper greeting, and guarantee at least 6s of budget for it.
-      // Previously: intro was only prepended if the first action started
-      // > 3s in, which left tiny Section-1 slots whenever recordings
-      // started immediately — Gemini then tried to cram both a greeting
-      // and the first step's narration into ~2s, the TTS overflowed,
-      // and the shortener cut off the greeting mid-sentence.
-      if (mergedTimestamps.length === 0 || mergedTimestamps[0]! !== 0) {
-        mergedTimestamps.unshift(0)
-      }
-      const MIN_INTRO_BUDGET = 6
-      if (mergedTimestamps.length > 1 && mergedTimestamps[1]! < MIN_INTRO_BUDGET) {
-        mergedTimestamps[1] = MIN_INTRO_BUDGET
-      }
-
-      // Drop last timestamp if too close to video end (< 5s remaining = not enough for a segment)
-      // Use actual video duration if provided by frontend, otherwise estimate
-      const estimatedVideoEnd = (body.videoDuration && body.videoDuration > 0)
-        ? body.videoDuration
-        : (timestamps[timestamps.length - 1] ?? 0) + 5
-      console.log(`[voiceover] Video end: ${estimatedVideoEnd.toFixed(1)}s${body.videoDuration ? ' (from player)' : ' (estimated)'}`)
-      while (mergedTimestamps.length > 1) {
-        const last = mergedTimestamps[mergedTimestamps.length - 1]!
-        if (estimatedVideoEnd - last < 5) {
-          mergedTimestamps.pop()
-        } else {
-          break
-        }
-      }
-
-      console.log(`[voiceover] Merged ${timestamps.length} timestamps → ${mergedTimestamps.length} sections: [${mergedTimestamps.map(t => t.toFixed(1)).join(', ')}]`)
-
-      // Ask Gemini to transform the DOC into a narration script. Tone presets
-      // + the big prompt body live in prompt.builder.ts (Hard Rule #3).
-      const { VOICEOVER_TONE_PRESETS } = await import('../../shared/ai/prompt.builder.js')
-      const tone = VOICEOVER_TONE_PRESETS[body.tone ?? 'friendly'] ?? VOICEOVER_TONE_PRESETS.friendly!
-      const wordsFactor = tone.wordsPerSecondFactor
-
-      // Detect the documentation language so we can pin it into the
-      // prompt as an explicit constant. Gemini was otherwise picking
-      // up the French UI / audio from the video when the user recorded
-      // a French-UI app — even though the doc was English. Heuristic:
-      // count French diacritics + stopwords vs English stopwords. No
-      // extra Gemini call needed. Defaults to English when neither
-      // signal is clearly dominant.
-      const narrationLanguage = detectDocLanguage(sourceMarkdown)
-      console.log(`[voiceover] Detected doc language: ${narrationLanguage}`)
-
-      const numStepsMerged = mergedTimestamps.length
-      const timeBudgets = mergedTimestamps.map((t, i) => {
-        const next = mergedTimestamps[i + 1]
-        if (next != null) return next - t
-        // Last segment: cap at video end, min 5s
-        return Math.max(5, estimatedVideoEnd - t)
-      })
-      const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
-      const totalMaxWords = Math.floor(totalVideoTime * 2 * wordsFactor)
-      const sectionList = mergedTimestamps.map((t, i) => {
-        const budget = timeBudgets[i]!
-        const minWords = Math.max(4, Math.floor(budget * 1.5 * wordsFactor))
-        const maxWords = Math.max(6, Math.floor(budget * 2.0 * wordsFactor))
-        const nextT = mergedTimestamps[i + 1]
-        const timeRange = nextT != null ? `${formatTime(t)}–${formatTime(nextT)}` : `${formatTime(t)}–end`
-        return `[SECTION ${i + 1}] (${timeRange}, ${budget.toFixed(0)}s → ${minWords}-${maxWords} words)`
-      }).join('\n')
-
-      function formatTime(s: number): string {
-        const m = Math.floor(s / 60)
-        const sec = Math.floor(s % 60)
-        return `${m}:${sec.toString().padStart(2, '0')}`
-      }
-
-      // Download video for Gemini to watch while generating narration
-      const videoPath = summary?.videoPath as string | undefined
-      const { downloadFromStorage } = await import('../../shared/db/storage.repository.js')
-      let videoBuffer: Buffer | null = null
-      let videoMimeType = 'video/mp4'
-      if (videoPath) {
-        try {
-          videoBuffer = await downloadFromStorage('artifacts', videoPath)
-          if (videoBuffer) {
-            videoMimeType = videoPath.endsWith('.webm') ? 'video/webm' : videoPath.endsWith('.mov') ? 'video/quicktime' : 'video/mp4'
-            console.log(`[voiceover] Video downloaded for narration: ${videoPath} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
-          }
-        } catch (err) {
-          console.warn(`[voiceover] Could not download video, falling back to text-only: ${(err as Error).message}`)
-        }
-      }
-
-      // Generate narration — with video if available, text-only as fallback
-      const { buildVoiceoverNarrationPrompt } = await import('../../shared/ai/prompt.builder.js')
-      const narrationPrompt = buildVoiceoverNarrationPrompt({
-        tone,
-        sourceMarkdown,
-        narrationLanguage,
-        numSections: numStepsMerged,
-        totalMaxWords,
-        sectionList,
-      })
-
-      let narrationResult: { text: string }
-
-      if (videoBuffer) {
-        const { generateNarrationFromVideo } = await import('../../shared/ai/gemini.client.js')
-        narrationResult = await generateNarrationFromVideo(
-          videoBuffer,
-          videoMimeType,
-          videoPath?.split('/').pop() ?? 'video.mp4',
-          narrationPrompt,
-        )
-        console.log(`[voiceover] Narration generated from VIDEO (${narrationResult.text.length} chars)`)
-      } else {
-        const { generateText } = await import('../../shared/ai/gemini.client.js')
-        narrationResult = await generateText({ userPrompt: narrationPrompt, maxTokens: 8192 })
-        console.log(`[voiceover] Narration generated from TEXT-ONLY (${narrationResult.text.length} chars)`)
-      }
-
-      // Parse [SECTION N] markers — strip any preamble before first [SECTION
-      console.log(`[voiceover] Gemini narration raw output (${narrationResult.text.length} chars):\n${narrationResult.text.slice(0, 500)}`)
-      const firstSectionIdx = narrationResult.text.indexOf('[SECTION')
-      const scriptText = firstSectionIdx >= 0 ? narrationResult.text.slice(firstSectionIdx) : narrationResult.text
-      const rawSegments = scriptText.split(/\[SECTION \d+\]\s*\n?/).filter((s) => s.trim())
-      console.log(`[voiceover] Parsed ${rawSegments.length} sections from Gemini (expected ${numStepsMerged})`)
-      const stepsWithText = mergedTimestamps.map((_, i) => {
-        let text = rawSegments[i]?.trim() ?? `Section ${i + 1}`
-        // Enforce word limit — trim to budget if Gemini went way over
-        const budget = timeBudgets[i]!
-        const maxWords = Math.max(5, Math.floor(budget * 2.0 * wordsFactor))
-        const words = text.split(/\s+/)
-        if (words.length > maxWords * 1.2) {
-          // Over by 20%+ — truncate to limit, ending at a sentence boundary if possible
-          const truncated = words.slice(0, maxWords)
-          const joined = truncated.join(' ')
-          const lastSentence = joined.lastIndexOf('.')
-          text = lastSentence > joined.length * 0.5 ? joined.slice(0, lastSentence + 1) : joined + '.'
-          console.log(`[voiceover] Step ${i}: TRIMMED from ${words.length} to ~${maxWords} words (budget: ${budget.toFixed(0)}s)`)
-        }
-        // Defensive: strip any half-open audio tag the shortener (or Gemini)
-        // may have left behind — e.g. "[happy." from a cut-mid-tag edit.
-        // ElevenLabs tags must be `[something]`; anything else is noise.
-        text = stripBrokenAudioTags(text)
-        return { stepIndex: i, text }
-      })
-      for (const s of stepsWithText) {
-        const wordCount = s.text.split(/\s+/).length
-        const budget = timeBudgets[s.stepIndex]!
-        const limit = Math.max(5, Math.floor(budget * 2.0 * wordsFactor))
-        console.log(`[voiceover] Step ${s.stepIndex}: ${wordCount}/${limit} words (${budget.toFixed(0)}s) "${s.text.slice(0, 80)}${s.text.length > 80 ? '...' : ''}"`)
-      }
-
-      // Safety net: Gemini drops the closing farewell more often than the
-      // prompt would suggest. If the last section doesn't end with a real
-      // sign-off word, fire a tiny Gemini call to append one that's
-      // grounded in what the narrator just said. Deterministic — we don't
-      // stop trying until the farewell lands.
-      const lastStep = stepsWithText[stepsWithText.length - 1]
-      if (lastStep) {
-        const FAREWELL_RE = /(thanks?\s+for\s+(watching|following)|see\s+you|catch\s+you|happy\s+build|have\s+fun|enjoy|cheers|goodbye|bye!?$|take\s+care|merci\s+d['']avoir|à\s+(bient[oô]t|la\s+prochaine|plus)|bon\s+build|bonne\s+(continuation|journ[ée]e)|au\s+revoir|adieu|¡?hasta\s+(la\s+)?pr[oó]xima|gracias\s+por\s+ver|bis\s+bald|viel\s+spa[ßs])/i
-        if (!FAREWELL_RE.test(lastStep.text)) {
-          try {
-            const { generateText } = await import('../../shared/ai/gemini.client.js')
-            const { buildVoiceoverFarewellTopUpPrompt } = await import('../../shared/ai/prompt.builder.js')
-            const farewell = await generateText({
-              userPrompt: buildVoiceoverFarewellTopUpPrompt(lastStep.text, narrationLanguage),
-              maxTokens: 80,
-              temperature: 0.4,
-            })
-            const cleaned = farewell.text.trim().replace(/^["']|["']$/g, '')
-            if (cleaned.length > 0 && cleaned.length < 200 && FAREWELL_RE.test(cleaned)) {
-              lastStep.text = lastStep.text.replace(/[.!?]?\s*$/, '. ') + cleaned
-              console.log(`[voiceover] Appended farewell to last section: "${cleaned}"`)
-            } else {
-              console.warn(`[voiceover] Farewell top-up didn't pass regex, skipped. Got: "${cleaned.slice(0, 100)}"`)
-            }
-          } catch (err) {
-            console.warn(`[voiceover] Farewell top-up failed: ${(err as Error).message}`)
-          }
-        }
-      }
-
-      // Pass timestamps + video end sentinel so the service knows the last segment's limit
-      const timestampsWithEnd = [...mergedTimestamps, estimatedVideoEnd]
-
-      const result = await generateVoiceover(runId, stepsWithText, timestampsWithEnd, {
+      const { generateVoiceoverForRun } = await import('../documentation/voiceover.service.js')
+      const result = await generateVoiceoverForRun(runId, {
         voiceId: body.voiceId,
         language: body.language,
+        tone: body.tone,
+        videoDuration: body.videoDuration,
       })
 
-      // Metered: bump monthly voiceover counter for the project owner
-      try {
-        const { findTeamIdByRunId, incrementUsage } = await import('../../shared/usage/usage.repository.js')
-        const teamId = await findTeamIdByRunId(runId)
-        if (teamId) await incrementUsage(teamId, 'voiceover')
-      } catch (err) {
-        console.warn('[usage] increment voiceover failed:', (err as Error).message)
-      }
-
-      // Store voiceover info in run summary
-      const existingSummary = run.summaryJson ?? {}
-      const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(runId, { ...existingSummary, voiceover: result })
 
       // Mark job completed
       if (voiceoverJobId) {
@@ -859,6 +563,9 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
         videoPath: trimmedPath,
         stepTimestamps: adjustedTimestamps,
         trimApplied: { startTime: body.startTime, endTime: body.endTime },
+        // Any previously-computed video+voiceover mux is stale — the video
+        // content just changed. Export / MCP will rebuild it on next access.
+        muxedVideoPath: null,
       })
 
       const { getPublicUrl } = await import('../../shared/db/storage.repository.js')

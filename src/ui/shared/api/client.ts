@@ -331,6 +331,14 @@ export interface DocPageDTO {
   children?: DocPageDTO[]
 }
 
+export interface ImportResultDTO {
+  projectId: string
+  createdPageIds: string[]
+  skippedSlugs: string[]
+  mediaReuploaded: number
+  warnings: string[]
+}
+
 export type ActivityKindDTO = 'page_edited' | 'doc_generated' | 'member_joined' | 'page_published'
 
 export interface ActivityItemDTO {
@@ -378,6 +386,52 @@ export const api = {
       request(`/projects/${id}/mcp-key`, { method: 'POST' }),
     disableMcp: (id: string): Promise<{ mcpEnabled: boolean }> =>
       request(`/projects/${id}/mcp-key`, { method: 'DELETE' }),
+    /** Triggers a browser download of the project as a ZIP. Uses a blob
+     *  fetch (rather than a plain `<a download>`) so the auth header is
+     *  attached — the endpoint is authed and a bare link would 401. */
+    exportZip: async (id: string): Promise<void> => {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token
+      const teamId = getActiveTeamId()
+      const res = await fetch(`${API_BASE}/projects/${id}/export`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(teamId ? { 'X-Team-Id': teamId } : {}),
+        },
+      })
+      if (!res.ok) throw new ApiError(`Export failed (${res.status})`, null, res.status)
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') ?? ''
+      const match = /filename="([^"]+)"/.exec(disposition)
+      const filename = match?.[1] ?? 'doclee-export.zip'
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    },
+    importZip: async (id: string, file: File): Promise<ImportResultDTO> => {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token
+      const teamId = getActiveTeamId()
+      const res = await fetch(`${API_BASE}/projects/${id}/import`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/zip',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(teamId ? { 'X-Team-Id': teamId } : {}),
+        },
+        body: file,
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null
+        throw new ApiError(body?.error ?? `Import failed (${res.status})`, body?.code ?? null, res.status)
+      }
+      return res.json() as Promise<ImportResultDTO>
+    },
   },
   pages: {
     list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
@@ -401,6 +455,50 @@ export const api = {
       request(`/projects/${projectId}/pages/reorder`, { method: 'PUT', body: JSON.stringify(items) }),
     preflight: (projectId: string, pageId: string): Promise<PreflightResultDTO> =>
       request(`/projects/${projectId}/pages/${pageId}/preflight`, { method: 'POST' }),
+    exportZip: async (projectId: string, pageId: string): Promise<void> => {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token
+      const teamId = getActiveTeamId()
+      const res = await fetch(`${API_BASE}/projects/${projectId}/pages/${pageId}/export`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(teamId ? { 'X-Team-Id': teamId } : {}),
+        },
+      })
+      if (!res.ok) throw new ApiError(`Export failed (${res.status})`, null, res.status)
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') ?? ''
+      const match = /filename="([^"]+)"/.exec(disposition)
+      const filename = match?.[1] ?? 'page.zip'
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+    },
+    importZip: async (projectId: string, file: File, parentId?: string): Promise<ImportResultDTO> => {
+      const { data } = await supabase.auth.getSession()
+      const token = data.session?.access_token
+      const teamId = getActiveTeamId()
+      const qs = parentId ? `?parentId=${encodeURIComponent(parentId)}` : ''
+      const res = await fetch(`${API_BASE}/projects/${projectId}/pages/import${qs}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/zip',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(teamId ? { 'X-Team-Id': teamId } : {}),
+        },
+        body: file,
+      })
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null
+        throw new ApiError(body?.error ?? `Import failed (${res.status})`, body?.code ?? null, res.status)
+      }
+      return res.json() as Promise<ImportResultDTO>
+    },
   },
   runs: {
     list: (): Promise<RunDTO[]> => request('/runs'),
