@@ -153,11 +153,6 @@ async function collectRunMedia(pageId: string): Promise<RunMediaResult> {
     }
   }
 
-  // The voice-over route persists its result under `summary.voiceover`
-  // ({ audioPath, audioUrl, segments }) — there's no flat `voiceoverPath` /
-  // `voiceoverSegments` field on the run. Reading the wrong keys silently
-  // skips the mux and omits the audio tracks from the archive, which is
-  // exactly the bug we're fixing here.
   const summary = (run.summaryJson ?? {}) as Record<string, unknown>
   const videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
   const voiceoverBlock = summary.voiceover && typeof summary.voiceover === 'object'
@@ -166,15 +161,27 @@ async function collectRunMedia(pageId: string): Promise<RunMediaResult> {
   const voiceoverPath = voiceoverBlock && typeof voiceoverBlock.audioPath === 'string'
     ? voiceoverBlock.audioPath
     : null
+  const cachedMuxedPath = typeof summary.muxedVideoPath === 'string' ? summary.muxedVideoPath : null
 
   // Try to produce a merged video+audio MP4 when both tracks are available.
   // Falls back to shipping them separately on any failure — the export must
   // never 500 because of an optional video-service hiccup.
+  //
+  // The muxed path is cached on `run.summary_json.muxedVideoPath` so repeated
+  // exports (and the MCP get_page path, which shares the same cache key)
+  // skip the costly ffmpeg round-trip. Only re-mux when (a) both tracks are
+  // present, (b) nothing is cached yet, and (c) the video-service is live.
   let primaryVideoPath = videoPath
-  if (videoPath && voiceoverPath && isVideoServiceConfigured()) {
+  if (cachedMuxedPath) {
+    primaryVideoPath = cachedMuxedPath
+  } else if (videoPath && voiceoverPath && isVideoServiceConfigured()) {
     try {
       const muxedPath = await muxVideoWithAudio(videoPath, voiceoverPath, run.id)
       primaryVideoPath = muxedPath
+      // Persist so the next export / get_page serves instantly. Fire-and-forget
+      // — a DB hiccup here just means we re-mux next time, no correctness hit.
+      const { updateRunSummary } = await import('../run/run.repository.js')
+      void updateRunSummary(run.id, { ...summary, muxedVideoPath: muxedPath }).catch(() => {})
     } catch (err) {
       warnings.push(`Video/voice-over mux failed (${(err as Error).message}). Falling back to separate files.`)
     }

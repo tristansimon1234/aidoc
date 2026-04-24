@@ -12,6 +12,8 @@ import {
   UpdatePageToolArgsSchema,
   DeletePageToolArgsSchema,
   ReorderPagesToolArgsSchema,
+  GenerateDocToolArgsSchema,
+  GenerateVoiceoverToolArgsSchema,
 } from './mcp.schema.js'
 import {
   findActiveTokenByValue,
@@ -84,6 +86,8 @@ const TOOL_SCOPE_REQUIREMENT: Record<string, McpScope> = {
   create_page: 'write',
   update_page: 'write',
   reorder_pages: 'write',
+  generate_doc: 'write',
+  generate_voiceover: 'write',
   delete_page: 'admin',
 }
 
@@ -451,6 +455,59 @@ Companion tools: \`list_pages\`, \`create_page\`, \`update_page\`.`,
       required: ['projectId', 'items'],
     },
   },
+  {
+    name: 'generate_doc',
+    description:
+      `Generate the markdown documentation for a page from its attached screen-recording video using Gemini 2.5 Flash. The page must already have a latest run with a video attached (uploaded via the UI or the Try Doc / Record flow).
+
+This is a long-running call — Gemini analyzes every frame, extracts step-level screenshots, and produces a structured doc. Typical duration: 30–120 seconds depending on video length. The agent calling this should be patient and not retry early.
+
+Side effects:
+- Writes the markdown to \`doc_pages.content\` (overwrites any existing content after snapshotting the previous version for undo).
+- Stores the immutable AI output under \`generated_docs.markdown_content\` against the run.
+- Sets \`doc_pages.status = 'published'\`.
+- Re-indexes the page embeddings for chat / search.
+- Counts one \`doc_run\` against the monthly token quota — fails with \`QUOTA_EXCEEDED\` on hard-cap plans.
+
+Companion tools: \`get_page\` (read the result), \`update_page\` (manual tweaks), \`generate_voiceover\` (next step).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        slug: { type: 'string', description: 'Page slug — the target page must already have a run with a video attached.' },
+      },
+      required: ['projectId', 'slug'],
+    },
+  },
+  {
+    name: 'generate_voiceover',
+    description:
+      `Produce a voice-over narration (ElevenLabs multilingual TTS) synchronized to the video timestamps of the page's latest run. Uses the page's current \`content\` as the source script — call \`generate_doc\` first if the page has no doc yet.
+
+Long-running (typically 15–60 seconds). Requires \`ELEVENLABS_API_KEY\` on the server and a page that already has (a) a video with step timestamps and (b) some markdown content.
+
+This tool runs the **same pipeline** as the Video tab in the UI — timestamp merging, Gemini narration that watches the video, tone-aware scripting, farewell top-up, per-section word budgeting, ElevenLabs synthesis, and the background video+voice-over mux. MCP callers and UI users get identical audio from the same page.
+
+Side effects:
+- Uploads per-step segment mp3s and a concatenated \`voiceover.mp3\` to the artifacts bucket.
+- Stores the result on \`run.summary_json.voiceover\` and clears any stale video+voiceover mux cache.
+- Kicks off a background mux so the full narrated MP4 is ready for export / \`get_page\` without delay.
+- Counts one \`voiceover\` against the monthly token quota.
+
+Optional voice controls (\`voiceId\`, \`language\`) override the project defaults — omit both to use whatever the project is configured for.
+
+Companion tools: \`generate_doc\` (prerequisite when no content exists), \`get_page\` (read media.video URL after), \`update_page\` (edit script before re-running).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        slug: { type: 'string', description: 'Page slug — must already have a run with video timestamps.' },
+        voiceId: { type: 'string', description: 'Optional ElevenLabs voice ID. Defaults to the project-level voice.' },
+        language: { type: 'string', description: 'Optional BCP-47 language tag (e.g. "en", "fr"). Defaults to the project-level language.' },
+      },
+      required: ['projectId', 'slug'],
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -490,6 +547,10 @@ async function dispatchTool(
       return handleDeletePage(rawArgs, ctx)
     case 'reorder_pages':
       return handleReorderPages(rawArgs, ctx)
+    case 'generate_doc':
+      return handleGenerateDoc(rawArgs, ctx)
+    case 'generate_voiceover':
+      return handleGenerateVoiceover(rawArgs, ctx)
     default:
       return toolText(`Unknown tool: ${name}`)
   }
@@ -982,4 +1043,105 @@ async function handleReorderPages(
   const { reorderPages } = await import('../page/page.service.js')
   await reorderPages(parsed.data.items)
   return toolText(`Reordered ${parsed.data.items.length} page(s).`)
+}
+
+/** Locate a page by projectId + slug for the tools that work on a single
+ *  page (generate_doc, generate_voiceover). Centralises the "wrong slug"
+ *  error message and the team-scope check so both tools stay consistent. */
+async function resolvePageBySlug(
+  projectId: string,
+  slug: string,
+  ctx: McpAuthContext,
+): Promise<{ id: string; title: string; content: string | null; projectId: string }> {
+  await assertProjectInTeam(projectId, ctx.teamId)
+  const { findPagesByProjectId } = await import('../page/page.repository.js')
+  const pages = await findPagesByProjectId(projectId)
+  const page = pages.find((p) => p.slug === slug)
+  if (!page) throw new AppError(`No page with slug "${slug}". Call list_pages to see available slugs.`, 'PAGE_NOT_FOUND', 404)
+  return { id: page.id, title: page.title, content: page.content, projectId: page.projectId }
+}
+
+async function handleGenerateDoc(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = GenerateDocToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+
+  let page
+  try {
+    page = await resolvePageBySlug(parsed.data.projectId, parsed.data.slug, ctx)
+  } catch (err) {
+    if (err instanceof AppError) return toolText(err.message)
+    throw err
+  }
+
+  const { findLatestRunByPageId } = await import('../run/run.repository.js')
+  const run = await findLatestRunByPageId(page.id)
+  if (!run) return toolText(`No run attached to "${parsed.data.slug}". Record a screen capture or upload a video via the UI first.`)
+  const summary = (run.summaryJson ?? {}) as Record<string, unknown>
+  const videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
+  if (!videoPath) return toolText(`Latest run for "${parsed.data.slug}" has no video attached. Upload a video before generating the doc.`)
+
+  // Quota: doc-gen is metered (doc_run). Fails with 402 on hard-cap plans.
+  await enforceQuotaOrThrow(ctx.teamId)
+
+  try {
+    const runService = await import('../run/run.service.js')
+    await runService.analyzeVideo(run.id, videoPath)
+    await runService.generateDoc(run.id, null)
+    const { updatePage } = await import('../page/page.repository.js')
+    await updatePage(page.id, { status: 'published' })
+  } catch (err) {
+    return toolText(`Doc generation failed: ${(err as Error).message}`)
+  }
+
+  return toolText(
+    `Documentation generated for "${page.title}" (/${parsed.data.slug}).\n\n` +
+    `The markdown is now on the page and has been indexed for chat / search. ` +
+    `Call \`get_page\` with slug "${parsed.data.slug}" to read the result, ` +
+    `or \`generate_voiceover\` to produce the narration next.`,
+  )
+}
+
+async function handleGenerateVoiceover(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = GenerateVoiceoverToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+
+  let page
+  try {
+    page = await resolvePageBySlug(parsed.data.projectId, parsed.data.slug, ctx)
+  } catch (err) {
+    if (err instanceof AppError) return toolText(err.message)
+    throw err
+  }
+
+  const { findLatestRunByPageId } = await import('../run/run.repository.js')
+  const run = await findLatestRunByPageId(page.id)
+  if (!run) return toolText(`No run attached to "${parsed.data.slug}". Record a screen capture or upload a video via the UI first.`)
+
+  await enforceQuotaOrThrow(ctx.teamId)
+
+  // Same pipeline as the HTTP route — one shared implementation in
+  // voiceover.service.ts handles ElevenLabs check, timestamp shaping, Gemini
+  // narration with video, section parsing, word-budget enforcement, farewell
+  // top-up, synthesis, persistence, and the background mux. Parity guaranteed.
+  try {
+    const { generateVoiceoverForRun } = await import('../documentation/voiceover.service.js')
+    const result = await generateVoiceoverForRun(run.id, {
+      voiceId: parsed.data.voiceId,
+      language: parsed.data.language,
+    })
+    return toolText(
+      `Voice-over generated for "${page.title}" (/${parsed.data.slug}) — ${result.segments.length} segments, ` +
+      `final file: ${result.audioUrl}.\n\n` +
+      `Call \`get_page\` with slug "${parsed.data.slug}" to read \`media.video.url\` — the narrated MP4 will be ` +
+      `muxed in the background and available within a few seconds.`,
+    )
+  } catch (err) {
+    return toolText(`Voice-over generation failed: ${(err as Error).message}`)
+  }
 }
