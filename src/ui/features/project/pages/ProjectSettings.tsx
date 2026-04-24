@@ -23,7 +23,7 @@ const RESOURCE_FILE_EXTENSIONS = [
 ]
 const RESOURCE_MAX_FILE_SIZE = 50 * 1024 * 1024
 
-type SettingsTab = 'general' | 'knowledge' | 'credentials'
+type SettingsTab = 'general' | 'knowledge' | 'credentials' | 'import-export'
 
 export function ProjectSettings(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
@@ -79,6 +79,7 @@ export function ProjectSettings(): React.ReactElement {
     { id: 'general', label: 'General' },
     { id: 'knowledge', label: 'Knowledge' },
     { id: 'credentials', label: 'Test Environment' },
+    { id: 'import-export', label: 'Import / Export' },
   ]
 
   return (
@@ -286,7 +287,9 @@ export function ProjectSettings(): React.ReactElement {
 
           <TransferSection project={project} onTransferred={(next) => { setProject(next); setParentProject(next) }} />
 
-          <ImportExportSection project={project} />
+          {activeTab === 'import-export' && (
+            <ImportExportSection project={project} />
+          )}
 
         </div>
     </div>
