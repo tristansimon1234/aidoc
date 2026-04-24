@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
 import { useConfirmDialog } from '../../../design-system/components/index.js'
-import { api, type ProjectDTO, type DiscoveredContextDTO, type TeamDTO, type TeamRoleDTO } from '../../../shared/api/client.js'
+import { api, type ProjectDTO, type DiscoveredContextDTO, type TeamDTO, type TeamRoleDTO, type ImportResultDTO } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
 import styles from './ProjectSettings.module.css'
 
@@ -23,7 +23,7 @@ const RESOURCE_FILE_EXTENSIONS = [
 ]
 const RESOURCE_MAX_FILE_SIZE = 50 * 1024 * 1024
 
-type SettingsTab = 'general' | 'knowledge' | 'credentials'
+type SettingsTab = 'general' | 'knowledge' | 'credentials' | 'import-export'
 
 export function ProjectSettings(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
@@ -79,6 +79,7 @@ export function ProjectSettings(): React.ReactElement {
     { id: 'general', label: 'General' },
     { id: 'knowledge', label: 'Knowledge' },
     { id: 'credentials', label: 'Test Environment' },
+    { id: 'import-export', label: 'Import / Export' },
   ]
 
   return (
@@ -285,6 +286,10 @@ export function ProjectSettings(): React.ReactElement {
           )}
 
           <TransferSection project={project} onTransferred={(next) => { setProject(next); setParentProject(next) }} />
+
+          {activeTab === 'import-export' && (
+            <ImportExportSection project={project} />
+          )}
 
         </div>
     </div>
@@ -511,6 +516,104 @@ function TransferSection({ project, onTransferred }: {
         {error && <span className={`${styles.saveMsg} ${styles.error}`}>{error}</span>}
       </div>
       {dialog}
+    </div>
+  )
+}
+
+// --- Import / Export ---
+
+/**
+ * Export/import the whole project as a self-contained ZIP (markdown + media).
+ * Export hits an authed endpoint via fetch to preserve the session header —
+ * a plain `<a download>` would 401 since it can't send Authorization.
+ */
+function ImportExportSection({ project }: { project: ProjectDTO }): React.ReactElement {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [exporting, setExporting] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<ImportResultDTO | null>(null)
+
+  const handleExport = async (): Promise<void> => {
+    setExporting(true); setError(null)
+    try {
+      await api.projects.exportZip(project.id)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleImport = async (file: File): Promise<void> => {
+    setImporting(true); setError(null); setResult(null)
+    try {
+      const res = await api.projects.importZip(project.id, file)
+      setResult(res)
+      // Reload after a short delay so the page tree picks up new pages. The
+      // user sees the summary first, then the UI refreshes.
+      setTimeout(() => { window.location.reload() }, 2500)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className={styles.section}>
+      <div className={styles.sectionHeader}>
+        <h2 className={styles.sectionTitle}>Import / Export</h2>
+        <p className={styles.sectionDesc}>
+          Download the whole project as a ZIP (markdown + screenshots + voice-over) for backup or Git versioning. Import a ZIP to add its pages and media to this project — slugs that already exist are renamed with <code>-2</code>, <code>-3</code>, … so nothing is overwritten.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
+        <Button size="sm" onClick={() => void handleExport()} disabled={exporting}>
+          {exporting ? 'Preparing ZIP…' : 'Export as ZIP'}
+        </Button>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".zip,application/zip"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            if (f) void handleImport(f)
+          }}
+        />
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={importing}
+        >
+          {importing ? 'Importing…' : 'Import from ZIP'}
+        </Button>
+
+        {error && <span className={`${styles.saveMsg} ${styles.error}`}>{error}</span>}
+      </div>
+
+      {result && (
+        <div style={{ marginTop: 'var(--space-sm)', padding: 'var(--space-sm)', background: 'var(--color-muted-bg)', borderRadius: 6, fontSize: 'var(--text-sm)' }}>
+          <p style={{ margin: 0 }}>
+            <strong>Imported {result.createdPageIds.length} page(s)</strong> · {result.mediaReuploaded} media file(s) re-hosted.
+          </p>
+          {result.warnings.length > 0 && (
+            <details style={{ marginTop: 6 }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--color-muted-fg)' }}>
+                {result.warnings.length} warning(s)
+              </summary>
+              <ul style={{ margin: '6px 0 0 18px', color: 'var(--color-muted-fg)' }}>
+                {result.warnings.map((w, i) => <li key={i}>{w}</li>)}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
     </div>
   )
 }
