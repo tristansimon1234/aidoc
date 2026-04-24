@@ -624,9 +624,18 @@ async function resolvePageMedia(pageId: string): Promise<PageMediaPayload | null
   const run = await findLatestRunByPageId(pageId).catch(() => null)
   if (!run) return null
 
+  // `summary.voiceover = { audioPath, audioUrl, segments }` is how the
+  // voice-over route stores its output — there's no flat `voiceoverPath`.
+  // Reading the wrong key previously meant we never muxed and always fell
+  // back to the raw (silent) video URL.
   const summary = (run.summaryJson ?? {}) as Record<string, unknown>
   const videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
-  const voiceoverPath = typeof summary.voiceoverPath === 'string' ? summary.voiceoverPath : null
+  const voiceoverBlock = summary.voiceover && typeof summary.voiceover === 'object'
+    ? summary.voiceover as Record<string, unknown>
+    : null
+  const voiceoverPath = voiceoverBlock && typeof voiceoverBlock.audioPath === 'string'
+    ? voiceoverBlock.audioPath
+    : null
   const cachedMuxedPath = typeof summary.muxedVideoPath === 'string' ? summary.muxedVideoPath : null
 
   if (!videoPath && !voiceoverPath) return null
