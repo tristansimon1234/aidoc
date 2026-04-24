@@ -733,7 +733,39 @@ ${lastStep.text}`,
       // Store voiceover info in run summary
       const existingSummary = run.summaryJson ?? {}
       const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(params.data.id, { ...existingSummary, voiceover: result })
+      // A prior mux (from a stale voice-over) is no longer valid — the audio
+      // just changed. Drop the cached path so export / MCP rebuilds it.
+      await updateRunSummary(params.data.id, {
+        ...existingSummary,
+        voiceover: result,
+        muxedVideoPath: null,
+      })
+
+      // Proactively mux video + voice-over so every downstream consumer
+      // (project export ZIP, MCP get_page pushing into Notion, public-docs
+      // player) serves a self-contained MP4 without paying the ffmpeg cost
+      // on first access. Fire-and-forget: voice-over generation is the
+      // user-facing success signal here; a hiccup on the optional mux
+      // (video-service down, no video yet) must not fail the request.
+      void (async () => {
+        try {
+          const existingVideoPath = typeof (existingSummary as Record<string, unknown>).videoPath === 'string'
+            ? (existingSummary as Record<string, unknown>).videoPath as string
+            : null
+          if (!existingVideoPath) return
+          const { isVideoServiceConfigured, muxVideoWithAudio } = await import('../../shared/video/video.client.js')
+          if (!isVideoServiceConfigured()) return
+          const muxedPath = await muxVideoWithAudio(existingVideoPath, result.audioPath, params.data.id)
+          // Re-read so we don't stomp a concurrent update (e.g. user trimmed
+          // the video mid-voiceover-generation).
+          const { findRunById } = await import('./run.repository.js')
+          const latest = await findRunById(params.data.id)
+          const latestSummary = (latest?.summaryJson ?? {}) as Record<string, unknown>
+          await updateRunSummary(params.data.id, { ...latestSummary, muxedVideoPath: muxedPath })
+        } catch (err) {
+          console.warn('[voiceover] post-gen mux failed (lazy fallback still works):', (err as Error).message)
+        }
+      })()
 
       // Mark job completed
       if (voiceoverJobId) {
@@ -900,6 +932,9 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
         videoPath: trimmedPath,
         stepTimestamps: adjustedTimestamps,
         trimApplied: { startTime: body.startTime, endTime: body.endTime },
+        // Any previously-computed video+voiceover mux is stale — the video
+        // content just changed. Export / MCP will rebuild it on next access.
+        muxedVideoPath: null,
       })
 
       const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
