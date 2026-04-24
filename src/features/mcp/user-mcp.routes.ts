@@ -238,7 +238,9 @@ const TOOL_DEFINITIONS = [
   {
     name: 'get_page',
     description:
-      `Fetch everything needed to round-trip a page: markdown content, breadcrumb, parent slug, status, public-visibility, sort order, and briefing (objective / knowledge / resources). Image links inside the markdown are absolute public URLs — they keep working even when pasted into another project.
+      `Fetch everything needed to round-trip a page: markdown content, breadcrumb, parent slug, status, public-visibility, sort order, briefing (objective / knowledge / resources), and recorded media. Image links inside the markdown are absolute public URLs — they keep working even when pasted into another project.
+
+The metadata block includes \`media.video.url\`: when the page has both a screen recording and a voice-over, this is a single MP4 with the narration already muxed in (\`muxed: true\`). Ideal for creating a single video embed block when transferring the page to Notion / Confluence / any other MCP target. If the mux is unavailable, \`media.video\` (raw) and \`media.voiceover\` may be returned separately so you can still surface them.
 
 Use before a partial update so you can edit locally and send the whole new content back via \`update_page\`. Also use to export a page: read it here, then \`create_page\` in another project with the same fields.
 
@@ -562,6 +564,22 @@ async function handleGetPage(
   const bodyText = page.content?.trim() || '_(This page has no content yet.)_'
   const parentSlug = page.parentId ? pages.find((p) => p.id === page.parentId)?.slug ?? null : null
 
+  // Resolve the page's media so an agent pushing this doc into Notion / any
+  // other MCP target can create matching video/audio blocks — markdown only
+  // carries screenshot URLs, never the full recording or the narration.
+  //
+  // When both a video and a voice-over exist we return a single URL pointing
+  // to the muxed MP4 (`runs/<id>/video-with-voiceover.mp4`) so the agent
+  // creates one embed with narration baked in, rather than two parallel
+  // tracks the user would have to sync manually. The mux path is cached in
+  // `run.summary_json.muxedVideoPath` after the first successful call — later
+  // get_page hits return instantly. Mux failures silently fall back to the
+  // raw video + voiceover URLs so the tool call stays useful.
+  const media = await resolvePageMedia(page.id).catch((err: unknown) => {
+    console.warn('[mcp] get_page media resolve failed:', (err as Error).message)
+    return null
+  })
+
   // Everything needed for a lossless round-trip into another project via
   // create_page — status, isPublic, sortOrder, briefing. Markdown image URLs
   // stay absolute (they point to the public artifacts bucket) so they keep
@@ -574,6 +592,7 @@ async function handleGetPage(
     isPublic: page.isPublic,
     sortOrder: page.sortOrder,
     briefing: page.briefing,
+    media,
   }
 
   const text =
@@ -585,6 +604,67 @@ async function handleGetPage(
     JSON.stringify(meta, null, 2) +
     '\n```'
   return toolText(text)
+}
+
+interface PageMediaPayload {
+  video: { url: string; muxed: boolean } | null
+  voiceover: { url: string } | null
+}
+
+/** Look up the page's latest recording run and expose its media as public
+ *  URLs. If a video + voice-over are both present we mux them on the fly
+ *  (cached via `run.summary_json.muxedVideoPath`) so a single URL carries
+ *  the full narrated recording. Graceful fallback to raw tracks whenever
+ *  the video-service isn't configured or the mux call throws. */
+async function resolvePageMedia(pageId: string): Promise<PageMediaPayload | null> {
+  const { findLatestRunByPageId, updateRunSummary } = await import('../run/run.repository.js')
+  const { getPublicUrl } = await import('../../shared/db/storage.repository.js')
+  const { isVideoServiceConfigured, muxVideoWithAudio } = await import('../../shared/video/video.client.js')
+
+  const run = await findLatestRunByPageId(pageId).catch(() => null)
+  if (!run) return null
+
+  // `summary.voiceover = { audioPath, audioUrl, segments }` is how the
+  // voice-over route stores its output — there's no flat `voiceoverPath`.
+  // Reading the wrong key previously meant we never muxed and always fell
+  // back to the raw (silent) video URL.
+  const summary = (run.summaryJson ?? {}) as Record<string, unknown>
+  const videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
+  const voiceoverBlock = summary.voiceover && typeof summary.voiceover === 'object'
+    ? summary.voiceover as Record<string, unknown>
+    : null
+  const voiceoverPath = voiceoverBlock && typeof voiceoverBlock.audioPath === 'string'
+    ? voiceoverBlock.audioPath
+    : null
+  const cachedMuxedPath = typeof summary.muxedVideoPath === 'string' ? summary.muxedVideoPath : null
+
+  if (!videoPath && !voiceoverPath) return null
+
+  let muxedUrl: string | null = null
+  if (cachedMuxedPath) {
+    muxedUrl = getPublicUrl('artifacts', cachedMuxedPath)
+  } else if (videoPath && voiceoverPath && isVideoServiceConfigured()) {
+    try {
+      const muxedPath = await muxVideoWithAudio(videoPath, voiceoverPath, run.id)
+      muxedUrl = getPublicUrl('artifacts', muxedPath)
+      // Persist the cached path so subsequent get_page calls skip the mux.
+      // Fire-and-forget — a DB hiccup here just means we re-mux next time.
+      void updateRunSummary(run.id, { ...summary, muxedVideoPath: muxedPath }).catch(() => {})
+    } catch (err) {
+      console.warn('[mcp] mux failed, returning raw tracks:', (err as Error).message)
+    }
+  }
+
+  if (muxedUrl) {
+    return { video: { url: muxedUrl, muxed: true }, voiceover: null }
+  }
+
+  const rawVideoUrl = videoPath ? getPublicUrl('artifacts', videoPath) : null
+  const rawVoiceoverUrl = voiceoverPath ? getPublicUrl('artifacts', voiceoverPath) : null
+  return {
+    video: rawVideoUrl ? { url: rawVideoUrl, muxed: false } : null,
+    voiceover: rawVoiceoverUrl ? { url: rawVoiceoverUrl } : null,
+  }
 }
 
 async function handleSearchDocumentation(

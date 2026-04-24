@@ -153,9 +153,19 @@ async function collectRunMedia(pageId: string): Promise<RunMediaResult> {
     }
   }
 
+  // The voice-over route persists its result under `summary.voiceover`
+  // ({ audioPath, audioUrl, segments }) — there's no flat `voiceoverPath` /
+  // `voiceoverSegments` field on the run. Reading the wrong keys silently
+  // skips the mux and omits the audio tracks from the archive, which is
+  // exactly the bug we're fixing here.
   const summary = (run.summaryJson ?? {}) as Record<string, unknown>
   const videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
-  const voiceoverPath = typeof summary.voiceoverPath === 'string' ? summary.voiceoverPath : null
+  const voiceoverBlock = summary.voiceover && typeof summary.voiceover === 'object'
+    ? summary.voiceover as Record<string, unknown>
+    : null
+  const voiceoverPath = voiceoverBlock && typeof voiceoverBlock.audioPath === 'string'
+    ? voiceoverBlock.audioPath
+    : null
 
   // Try to produce a merged video+audio MP4 when both tracks are available.
   // Falls back to shipping them separately on any failure — the export must
@@ -185,7 +195,9 @@ async function collectRunMedia(pageId: string): Promise<RunMediaResult> {
       originalStoragePath: voiceoverPath,
       contentType: contentTypeFor(voiceoverPath),
     })
-    const rawSegs = Array.isArray(summary.voiceoverSegments) ? (summary.voiceoverSegments as unknown[]) : []
+    const rawSegs = voiceoverBlock && Array.isArray(voiceoverBlock.segments)
+      ? (voiceoverBlock.segments as unknown[])
+      : []
     const segs: ExportedVoiceoverSegment[] = []
     for (const raw of rawSegs) {
       if (!raw || typeof raw !== 'object') continue
