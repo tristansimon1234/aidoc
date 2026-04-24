@@ -486,6 +486,8 @@ Companion tools: \`get_page\` (read the result), \`update_page\` (manual tweaks)
 
 Long-running (typically 15–60 seconds). Requires \`ELEVENLABS_API_KEY\` on the server and a page that already has (a) a video with step timestamps and (b) some markdown content.
 
+This tool runs the **same pipeline** as the Video tab in the UI — timestamp merging, Gemini narration that watches the video, tone-aware scripting, farewell top-up, per-section word budgeting, ElevenLabs synthesis, and the background video+voice-over mux. MCP callers and UI users get identical audio from the same page.
+
 Side effects:
 - Uploads per-step segment mp3s and a concatenated \`voiceover.mp3\` to the artifacts bucket.
 - Stores the result on \`run.summary_json.voiceover\` and clears any stale video+voiceover mux cache.
@@ -1117,80 +1119,22 @@ async function handleGenerateVoiceover(
     throw err
   }
 
-  const { isElevenLabsConfigured } = await import('../../shared/ai/elevenlabs.client.js')
-  if (!isElevenLabsConfigured()) {
-    return toolText('Voice-over requires ELEVENLABS_API_KEY on the server — ask an operator to configure it.')
-  }
-
-  const { findLatestRunByPageId, updateRunSummary } = await import('../run/run.repository.js')
+  const { findLatestRunByPageId } = await import('../run/run.repository.js')
   const run = await findLatestRunByPageId(page.id)
   if (!run) return toolText(`No run attached to "${parsed.data.slug}". Record a screen capture or upload a video via the UI first.`)
-  const summary = (run.summaryJson ?? {}) as Record<string, unknown>
-  const timestamps = Array.isArray(summary.stepTimestamps) ? summary.stepTimestamps as number[] : []
-  if (timestamps.length === 0) {
-    return toolText(`Latest run for "${parsed.data.slug}" has no step timestamps — run a video analysis first (via \`generate_doc\` or the UI).`)
-  }
-
-  // Prefer the immutable generated doc, fall back to the editable page content.
-  const { findDocByRunId } = await import('../documentation/documentation.repository.js')
-  const doc = await findDocByRunId(run.id)
-  const sourceMarkdown = (doc?.markdownContent ?? page.content ?? '').trim()
-  if (!sourceMarkdown) {
-    return toolText(`"${parsed.data.slug}" has no documentation to narrate yet. Call \`generate_doc\` first, or write content via \`update_page\`.`)
-  }
 
   await enforceQuotaOrThrow(ctx.teamId)
 
-  // MCP-flavoured voice-over: split the markdown into one section per
-  // timestamp (H2 boundaries when present, even splits otherwise). The UI
-  // route has a richer pipeline (short-section merging, Gemini-generated
-  // farewells, tone presets) — MCP users who need that should generate via
-  // the UI; this tool covers the "produce a decent narration from the doc"
-  // case with a lot less surface area.
-  const steps = splitMarkdownIntoSteps(sourceMarkdown, timestamps.length)
-
+  // Same pipeline as the HTTP route — one shared implementation in
+  // voiceover.service.ts handles ElevenLabs check, timestamp shaping, Gemini
+  // narration with video, section parsing, word-budget enforcement, farewell
+  // top-up, synthesis, persistence, and the background mux. Parity guaranteed.
   try {
-    const { generateVoiceover } = await import('../documentation/voiceover.service.js')
-    const videoEnd = typeof summary.videoDurationSec === 'number'
-      ? summary.videoDurationSec
-      : (timestamps[timestamps.length - 1] ?? 0) + 5
-    const result = await generateVoiceover(run.id, steps, [...timestamps, videoEnd], {
+    const { generateVoiceoverForRun } = await import('../documentation/voiceover.service.js')
+    const result = await generateVoiceoverForRun(run.id, {
       voiceId: parsed.data.voiceId,
       language: parsed.data.language,
     })
-
-    // Mirror the HTTP route's persistence: drop any stale mux, save the
-    // voice-over, fire-and-forget usage + background mux.
-    const freshSummary = (run.summaryJson ?? {}) as Record<string, unknown>
-    await updateRunSummary(run.id, {
-      ...freshSummary,
-      voiceover: result,
-      muxedVideoPath: null,
-    })
-
-    void (async () => {
-      try {
-        const { findTeamIdByRunId, incrementUsage } = await import('../../shared/usage/usage.repository.js')
-        const teamId = await findTeamIdByRunId(run.id)
-        if (teamId) await incrementUsage(teamId, 'voiceover')
-      } catch { /* billing glitch never fails the op */ }
-    })()
-
-    void (async () => {
-      try {
-        const videoPath = typeof freshSummary.videoPath === 'string' ? freshSummary.videoPath : null
-        if (!videoPath) return
-        const { isVideoServiceConfigured, muxVideoWithAudio } = await import('../../shared/video/video.client.js')
-        if (!isVideoServiceConfigured()) return
-        const muxedPath = await muxVideoWithAudio(videoPath, result.audioPath, run.id)
-        const latest = await (await import('../run/run.repository.js')).findRunById(run.id)
-        const latestSummary = (latest?.summaryJson ?? {}) as Record<string, unknown>
-        await updateRunSummary(run.id, { ...latestSummary, muxedVideoPath: muxedPath })
-      } catch (err) {
-        console.warn('[mcp generate_voiceover] post-gen mux failed:', (err as Error).message)
-      }
-    })()
-
     return toolText(
       `Voice-over generated for "${page.title}" (/${parsed.data.slug}) — ${result.segments.length} segments, ` +
       `final file: ${result.audioUrl}.\n\n` +
@@ -1200,30 +1144,4 @@ async function handleGenerateVoiceover(
   } catch (err) {
     return toolText(`Voice-over generation failed: ${(err as Error).message}`)
   }
-}
-
-/** Split markdown into N sections for voice-over narration. Prefers H2
- *  boundaries; falls back to an even character-count split when the markdown
- *  has fewer / more sections than timestamps. Crude on purpose — the UI has
- *  the sophisticated pipeline; this just produces usable narration from MCP. */
-function splitMarkdownIntoSteps(markdown: string, targetCount: number): { stepIndex: number; text: string }[] {
-  if (targetCount <= 0) return []
-  const trimmed = markdown.trim()
-  const h2Sections = trimmed.split(/(?=^##\s)/m).map((s) => s.trim()).filter(Boolean)
-
-  let sections: string[]
-  if (h2Sections.length >= targetCount) {
-    // Merge trailing sections into the last bucket so we end up with exactly targetCount entries.
-    sections = h2Sections.slice(0, targetCount - 1)
-    sections.push(h2Sections.slice(targetCount - 1).join('\n\n'))
-  } else if (h2Sections.length === 1) {
-    // No H2 boundaries → even char split.
-    const step = Math.ceil(trimmed.length / targetCount)
-    sections = Array.from({ length: targetCount }, (_, i) => trimmed.slice(i * step, (i + 1) * step))
-  } else {
-    // Pad with empty strings — voice-over service handles zero-text slots gracefully.
-    sections = [...h2Sections, ...Array<string>(targetCount - h2Sections.length).fill('')]
-  }
-
-  return sections.map((text, stepIndex) => ({ stepIndex, text: text.trim() }))
 }
