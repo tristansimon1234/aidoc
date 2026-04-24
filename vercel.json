@@ -15,5 +15,12 @@
     { "source": "/docs/:projectId/:slug?", "destination": "/api/docs-ssr" },
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "redirects": [
+    {
+      "source": "/favicon.ico",
+      "destination": "https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-appicon-purple.png",
+      "permanent": false
+    }
   ]
 }
