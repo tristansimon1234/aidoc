@@ -18,6 +18,7 @@ import { mcpTokensRouter } from './features/mcp/tokens.routes.js'
 import { publicDocsRouter } from './features/page/public-docs.routes.js'
 import { analyticsRouter } from './features/analytics/analytics.routes.js'
 import { teamRouter, invitePublicRouter } from './features/team/team.routes.js'
+import { exportRouter } from './features/export/export.routes.js'
 import { errorHandler } from './shared/middleware/error.middleware.js'
 
 export const app = express()
@@ -43,6 +44,9 @@ app.use('/mcp-tokens', mcpTokensRouter)
 
 // Project routes
 app.use('/projects', projectRouter)
+// Mounted BEFORE pageRouter so its `/pages/import` path isn't shadowed by
+// the page CRUD routes (which would 404 on a non-UUID "import" segment).
+app.use('/projects/:projectId', exportRouter)
 app.use('/projects/:projectId/pages', pageRouter)
 app.use('/projects/:projectId/chat', chatRouter)
 app.use('/projects/:projectId/analytics', analyticsRouter)

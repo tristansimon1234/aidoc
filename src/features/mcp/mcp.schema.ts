@@ -37,6 +37,27 @@ export const GetPageToolArgsSchema = z.object({
   slug: z.string().min(1).max(200),
 })
 
+/** Briefing shape accepted by create_page / update_page. Keeps the loose
+ *  JSONB contract on the DB side (extra keys are dropped here so we don't
+ *  leak UI-only fields from the caller). */
+const McpBriefingSchema = z.object({
+  objective: z.string().max(4000).optional().default(''),
+  knowledge: z.string().max(8000).optional().default(''),
+  resources: z
+    .array(
+      z.object({
+        type: z.enum(['url', 'credential', 'endpoint', 'file', 'note']),
+        label: z.string().max(200),
+        value: z.string().max(4000),
+      }),
+    )
+    .max(50)
+    .optional()
+    .default([]),
+})
+
+const PageStatusSchema = z.enum(['draft', 'exploring', 'published'])
+
 export const SearchDocumentationToolArgsSchema = z.object({
   projectId: UuidField,
   query: z.string().min(1).max(2000),
@@ -53,6 +74,13 @@ export const CreatePageToolArgsSchema = z.object({
     .optional(),
   parentSlug: z.string().min(1).max(200).optional(),
   content: z.string().max(200_000).optional(),
+  /** Lifecycle status — defaults to 'draft' server-side when omitted. */
+  status: PageStatusSchema.optional(),
+  /** When true, the page is visible on the public docs site. */
+  isPublic: z.boolean().optional(),
+  briefing: McpBriefingSchema.optional(),
+  /** 0-based order among siblings. Server auto-assigns (max+1) when omitted. */
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
 })
 
 export const UpdatePageToolArgsSchema = z
@@ -72,6 +100,10 @@ export const UpdatePageToolArgsSchema = z
      *  incremental additions without a read-then-full-write round trip.
      *  Mutually exclusive with `content`. */
     contentAppend: z.string().max(200_000).optional(),
+    /** Lifecycle status — useful to publish / unpublish via MCP. */
+    status: PageStatusSchema.optional(),
+    isPublic: z.boolean().optional(),
+    briefing: McpBriefingSchema.optional(),
   })
   .refine((d) => !(d.content !== undefined && d.contentAppend !== undefined), {
     message: 'Provide either `content` (full replace) or `contentAppend` (add to end) — not both.',

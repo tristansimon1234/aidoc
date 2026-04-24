@@ -19,6 +19,7 @@ import { mcpTokensRouter } from '../src/features/mcp/tokens.routes.js'
 import { publicDocsRouter } from '../src/features/page/public-docs.routes.js'
 import { analyticsRouter } from '../src/features/analytics/analytics.routes.js'
 import { teamRouter, invitePublicRouter } from '../src/features/team/team.routes.js'
+import { exportRouter } from '../src/features/export/export.routes.js'
 import { errorHandler } from '../src/shared/middleware/error.middleware.js'
 
 const app = express()
@@ -45,6 +46,9 @@ app.use('/api/admin', authMiddleware, requireAdmin, adminRouter)
 app.use('/api/teams', authMiddleware, teamRouter)
 app.use('/api/mcp-tokens', authMiddleware, mcpTokensRouter)
 app.use('/api/projects', authMiddleware, projectRouter)
+// Mounted BEFORE pageRouter so its `/pages/import` path isn't shadowed by
+// the page CRUD routes (which would 404 on a non-UUID "import" segment).
+app.use('/api/projects/:projectId', authMiddleware, exportRouter)
 app.use('/api/projects/:projectId/pages', authMiddleware, pageRouter)
 app.use('/api/projects/:projectId/chat', authMiddleware, chatRouter)
 app.use('/api/projects/:projectId/analytics', authMiddleware, analyticsRouter)

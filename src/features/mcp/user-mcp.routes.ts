@@ -238,7 +238,11 @@ const TOOL_DEFINITIONS = [
   {
     name: 'get_page',
     description:
-      'Fetch the full markdown content of a page by slug, including its breadcrumb in the page hierarchy. Call this before a partial update so you can edit locally and send the whole new content back via update_page.\n\nCompanion tools: `list_pages`, `update_page`, `delete_page`, `search_documentation`.',
+      `Fetch everything needed to round-trip a page: markdown content, breadcrumb, parent slug, status, public-visibility, sort order, and briefing (objective / knowledge / resources). Image links inside the markdown are absolute public URLs — they keep working even when pasted into another project.
+
+Use before a partial update so you can edit locally and send the whole new content back via \`update_page\`. Also use to export a page: read it here, then \`create_page\` in another project with the same fields.
+
+Companion tools: \`list_pages\`, \`update_page\`, \`delete_page\`, \`search_documentation\`, \`create_page\` (for export → import).`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -291,6 +295,40 @@ Companion tools: \`list_pages\`, \`get_page\`, \`update_page\`, \`delete_page\`,
           type: 'string',
           description: 'Optional initial markdown body. Do NOT start with an H1 matching the title — use ## for top-level sections instead.',
         },
+        status: {
+          type: 'string',
+          enum: ['draft', 'exploring', 'published'],
+          description: 'Lifecycle status. Defaults to "draft" when omitted.',
+        },
+        isPublic: {
+          type: 'boolean',
+          description: 'When true, the page is visible on the public docs site. Defaults to false.',
+        },
+        briefing: {
+          type: 'object',
+          description: 'Per-page briefing (objective, knowledge, typed resources). Pass as-is when importing a page exported via get_page.',
+          properties: {
+            objective: { type: 'string' },
+            knowledge: { type: 'string' },
+            resources: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  type: { type: 'string', enum: ['url', 'credential', 'endpoint', 'file', 'note'] },
+                  label: { type: 'string' },
+                  value: { type: 'string' },
+                },
+                required: ['type', 'label', 'value'],
+              },
+            },
+          },
+        },
+        sortOrder: {
+          type: 'integer',
+          minimum: 0,
+          description: '0-based order among siblings. Auto-assigned (max+1) when omitted.',
+        },
       },
       required: ['projectId', 'title'],
     },
@@ -328,6 +366,35 @@ Companion tools: \`get_page\` (read before partial edit), \`create_page\`, \`del
         contentAppend: {
           type: 'string',
           description: 'Markdown to add at the end of the existing content. Use this for incremental additions (new section, extra note) without rewriting the whole page. Mutually exclusive with content.',
+        },
+        status: {
+          type: 'string',
+          enum: ['draft', 'exploring', 'published'],
+          description: 'New lifecycle status.',
+        },
+        isPublic: {
+          type: 'boolean',
+          description: 'Toggle public-docs visibility.',
+        },
+        briefing: {
+          type: 'object',
+          description: 'Replaces the full briefing object when provided.',
+          properties: {
+            objective: { type: 'string' },
+            knowledge: { type: 'string' },
+            resources: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  type: { type: 'string', enum: ['url', 'credential', 'endpoint', 'file', 'note'] },
+                  label: { type: 'string' },
+                  value: { type: 'string' },
+                },
+                required: ['type', 'label', 'value'],
+              },
+            },
+          },
         },
       },
       required: ['projectId', 'slug'],
@@ -493,7 +560,31 @@ async function handleGetPage(
   const byId = new Map(pages.map((p) => [p.id, { id: p.id, title: p.title, parentId: p.parentId }]))
   const crumb = breadcrumbOf(page.id, byId)
   const bodyText = page.content?.trim() || '_(This page has no content yet.)_'
-  return toolText(`# ${crumb || page.title} (/${page.slug})\n\n${bodyText}`)
+  const parentSlug = page.parentId ? pages.find((p) => p.id === page.parentId)?.slug ?? null : null
+
+  // Everything needed for a lossless round-trip into another project via
+  // create_page — status, isPublic, sortOrder, briefing. Markdown image URLs
+  // stay absolute (they point to the public artifacts bucket) so they keep
+  // rendering regardless of which project re-imports the page.
+  const meta = {
+    slug: page.slug,
+    title: page.title,
+    parentSlug,
+    status: page.status,
+    isPublic: page.isPublic,
+    sortOrder: page.sortOrder,
+    briefing: page.briefing,
+  }
+
+  const text =
+    `# ${crumb || page.title} (/${page.slug})\n\n` +
+    `${bodyText}\n\n` +
+    `---\n\n` +
+    `**Metadata (for round-trip import via create_page):**\n\n` +
+    '```json\n' +
+    JSON.stringify(meta, null, 2) +
+    '\n```'
+  return toolText(text)
 }
 
 async function handleSearchDocumentation(
@@ -618,7 +709,7 @@ async function handleCreatePage(
     parentId = parent.id
   }
 
-  const sortOrder = pages.reduce((max, p) => Math.max(max, p.sortOrder), -1) + 1
+  const sortOrder = parsed.data.sortOrder ?? pages.reduce((max, p) => Math.max(max, p.sortOrder), -1) + 1
 
   const { createPage } = await import('../page/page.service.js')
   const page = await createPage({
@@ -635,15 +726,30 @@ async function handleCreatePage(
   // of truth when present, so forgetting to wipe it would make the editor
   // ignore the markdown we just wrote.
   let h1 = { stripped: false, warning: undefined as string | undefined }
-  if (parsed.data.content) {
-    const processed = processLeadingH1(parsed.data.content, parsed.data.title)
-    h1 = { stripped: processed.stripped, warning: processed.warning }
+  const hasContent = parsed.data.content !== undefined
+  const hasMeta =
+    parsed.data.status !== undefined ||
+    parsed.data.isPublic !== undefined ||
+    parsed.data.briefing !== undefined
+  if (hasContent || hasMeta) {
     const { updatePage } = await import('../page/page.service.js')
-    await updatePage(
-      page.id,
-      { content: processed.content, contentBlocks: null },
-      ctx.userId,
-    )
+    const update: {
+      content?: string
+      contentBlocks?: unknown
+      status?: 'draft' | 'exploring' | 'published'
+      isPublic?: boolean
+      briefing?: { objective: string; knowledge: string; resources: { type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'; label: string; value: string }[] }
+    } = {}
+    if (hasContent && parsed.data.content !== undefined) {
+      const processed = processLeadingH1(parsed.data.content, parsed.data.title)
+      h1 = { stripped: processed.stripped, warning: processed.warning }
+      update.content = processed.content
+      update.contentBlocks = null
+    }
+    if (parsed.data.status !== undefined) update.status = parsed.data.status
+    if (parsed.data.isPublic !== undefined) update.isPublic = parsed.data.isPublic
+    if (parsed.data.briefing !== undefined) update.briefing = parsed.data.briefing
+    await updatePage(page.id, update, ctx.userId)
   }
 
   const notes: string[] = []
@@ -710,12 +816,23 @@ async function handleUpdatePage(
   // Wipe contentBlocks whenever we write content — the BlockNote editor
   // treats content_blocks as the source of truth when present, so leaving
   // it stale would make the MCP edit look like a no-op in the UI.
-  const input: { title?: string; slug?: string; content?: string; contentBlocks?: unknown } = {
+  const input: {
+    title?: string
+    slug?: string
+    content?: string
+    contentBlocks?: unknown
+    status?: 'draft' | 'exploring' | 'published'
+    isPublic?: boolean
+    briefing?: { objective: string; knowledge: string; resources: { type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'; label: string; value: string }[] }
+  } = {
     title: parsed.data.title,
     slug: parsed.data.newSlug,
     content: nextContent,
   }
   if (nextContent !== undefined) input.contentBlocks = null
+  if (parsed.data.status !== undefined) input.status = parsed.data.status
+  if (parsed.data.isPublic !== undefined) input.isPublic = parsed.data.isPublic
+  if (parsed.data.briefing !== undefined) input.briefing = parsed.data.briefing
   const updated = await updatePage(page.id, input, ctx.userId)
 
   const mode = parsed.data.content !== undefined ? 'replaced' : parsed.data.contentAppend !== undefined ? 'appended to' : 'updated'

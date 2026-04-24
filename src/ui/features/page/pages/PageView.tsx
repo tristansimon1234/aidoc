@@ -388,19 +388,41 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
             )}
           </button>
         </div>
-        <div
-          className={styles.publishToggle}
-          onClick={() => {
-            const newVal = !page.isPublic
-            setPage({ ...page, isPublic: newVal })
-            void dbUpdatePage(projectId!, pageId!, { isPublic: newVal }).then(() => context.refetchPages())
-          }}
-        >
-          <span style={{ color: page.isPublic ? 'var(--color-success)' : 'var(--color-muted-fg)' }}>
-            {page.isPublic ? 'Published' : 'Draft'}
-          </span>
-          <div className={`${styles.toggleTrack} ${page.isPublic ? styles.toggleTrackOn : ''}`}>
-            <div className={`${styles.toggleKnob} ${page.isPublic ? styles.toggleKnobOn : ''}`} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          <button
+            type="button"
+            onClick={() => { void api.pages.exportZip(projectId!, pageId!).catch((err: unknown) => { console.error('Export failed:', err) }) }}
+            title="Download this page as a ZIP (markdown + media)"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '4px 10px',
+              fontSize: 'var(--text-xs)',
+              background: 'transparent', border: '1px solid var(--color-border)',
+              borderRadius: 6, cursor: 'pointer',
+              color: 'var(--color-muted-fg)',
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Export
+          </button>
+          <div
+            className={styles.publishToggle}
+            onClick={() => {
+              const newVal = !page.isPublic
+              setPage({ ...page, isPublic: newVal })
+              void dbUpdatePage(projectId!, pageId!, { isPublic: newVal }).then(() => context.refetchPages())
+            }}
+          >
+            <span style={{ color: page.isPublic ? 'var(--color-success)' : 'var(--color-muted-fg)' }}>
+              {page.isPublic ? 'Published' : 'Draft'}
+            </span>
+            <div className={`${styles.toggleTrack} ${page.isPublic ? styles.toggleTrackOn : ''}`}>
+              <div className={`${styles.toggleKnob} ${page.isPublic ? styles.toggleKnobOn : ''}`} />
+            </div>
           </div>
         </div>
       </div>
