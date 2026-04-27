@@ -1,6 +1,56 @@
+import { SchemaType, type ResponseSchema } from '@google/generative-ai'
 import { generateText } from '../../shared/ai/gemini.client.js'
 import { MarketingScriptSchema } from './marketing-video.schema.js'
 import type { MarketingScript } from './marketing-video.types.js'
+
+/**
+ * Native Gemini schema mirroring MarketingScriptSchema. Passed as
+ * `responseSchema` so the API server-side-constrains the output to this exact
+ * shape — no missing fields, no rename drift, no envelope wrappers. We still
+ * Zod-validate after parsing as defence in depth (string min-length, etc.,
+ * which Gemini's schema can't express).
+ */
+const RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    hook: {
+      type: SchemaType.OBJECT,
+      properties: {
+        voiceover: { type: SchemaType.STRING },
+        headline: { type: SchemaType.STRING },
+        durationSeconds: { type: SchemaType.NUMBER },
+      },
+      required: ['voiceover', 'headline', 'durationSeconds'],
+    },
+    scenes: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        properties: {
+          voiceover: { type: SchemaType.STRING },
+          headline: { type: SchemaType.STRING },
+          subhead: { type: SchemaType.STRING },
+          screenshotIndex: { type: SchemaType.INTEGER, nullable: true },
+          durationSeconds: { type: SchemaType.NUMBER },
+        },
+        required: ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds'],
+      },
+    },
+    cta: {
+      type: SchemaType.OBJECT,
+      properties: {
+        voiceover: { type: SchemaType.STRING },
+        headline: { type: SchemaType.STRING },
+        buttonLabel: { type: SchemaType.STRING },
+        durationSeconds: { type: SchemaType.NUMBER },
+      },
+      required: ['voiceover', 'headline', 'buttonLabel', 'durationSeconds'],
+    },
+    totalDurationSeconds: { type: SchemaType.NUMBER },
+    language: { type: SchemaType.STRING },
+  },
+  required: ['hook', 'scenes', 'cta', 'totalDurationSeconds', 'language'],
+}
 
 interface GenerateMarketingScriptInput {
   productName: string
@@ -108,9 +158,12 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
 
   const result = await generateText({
     userPrompt,
-    maxTokens: 2048,
+    // Bumped from 2048: a 5-scene script with brief subheads in a verbose
+    // language (FR/DE) was occasionally truncating mid-JSON.
+    maxTokens: 4096,
     temperature: 0.6,
     json: true,
+    responseSchema: RESPONSE_SCHEMA,
   })
 
   // Defensive parse — even with responseMimeType: application/json, Gemini
@@ -161,8 +214,14 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
 
   const parsed = MarketingScriptSchema.safeParse(parsedJson)
   if (!parsed.success) {
+    // Log the actual JSON Gemini returned so we can see *why* the shape
+    // drifted (envelope key, renamed field, etc.) — flatten() alone reports
+    // "expected X, received undefined" which doesn't say what we got.
+    const preview = JSON.stringify(parsedJson).slice(0, 1000)
+    console.error('[marketing-script] Gemini returned (first 1000 chars):', preview)
+    console.error('[marketing-script] Zod issues:', JSON.stringify(parsed.error.issues))
     throw new Error(
-      `Marketing script JSON failed validation: ${JSON.stringify(parsed.error.flatten())}`,
+      `Marketing script JSON failed validation: ${JSON.stringify(parsed.error.issues)}`,
     )
   }
 
