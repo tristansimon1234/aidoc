@@ -113,7 +113,53 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     json: true,
   })
 
-  const parsed = MarketingScriptSchema.safeParse(JSON.parse(result.text))
+  // Defensive parse — even with responseMimeType: application/json, Gemini
+  // occasionally returns markdown fences, leading prose, or trailing
+  // commas. Mirror what analyzeVideoWithGemini does in gemini.client.ts so
+  // a stray formatting quirk doesn't fail the whole pipeline.
+  let jsonStr = result.text.trim()
+
+  // Strip markdown fences (```json ... ``` or ``` ... ```)
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
+  if (fenceMatch) jsonStr = fenceMatch[1]!
+
+  // Slice to the first { and last } in case Gemini prefixed prose
+  const firstBrace = jsonStr.indexOf('{')
+  const lastBrace = jsonStr.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1)
+  }
+
+  // Common Gemini quirks: smart quotes inside strings, trailing commas
+  // before } or ]. Both produce SyntaxError at parse time.
+  jsonStr = jsonStr
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/,(\s*[}\]])/g, '$1')
+
+  let parsedJson: unknown
+  try {
+    parsedJson = JSON.parse(jsonStr)
+  } catch (err) {
+    // Last-ditch repair — close any unbalanced brackets/braces. Gemini
+    // sometimes truncates mid-output when it hits the token cap.
+    let repaired = jsonStr.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
+    const openBraces = (repaired.match(/\{/g) ?? []).length
+    const closeBraces = (repaired.match(/\}/g) ?? []).length
+    const openBrackets = (repaired.match(/\[/g) ?? []).length
+    const closeBrackets = (repaired.match(/\]/g) ?? []).length
+    repaired += ']'.repeat(Math.max(0, openBrackets - closeBrackets))
+    repaired += '}'.repeat(Math.max(0, openBraces - closeBraces))
+    try {
+      parsedJson = JSON.parse(repaired)
+      console.warn('[marketing-script] JSON repaired after parse error:', (err as Error).message)
+    } catch {
+      console.error('[marketing-script] JSON parse failed. First 500 chars:', jsonStr.slice(0, 500))
+      throw new Error(`Marketing script JSON parse failed: ${(err as Error).message}`)
+    }
+  }
+
+  const parsed = MarketingScriptSchema.safeParse(parsedJson)
   if (!parsed.success) {
     throw new Error(
       `Marketing script JSON failed validation: ${JSON.stringify(parsed.error.flatten())}`,
