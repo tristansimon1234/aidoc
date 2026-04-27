@@ -14,6 +14,6 @@
   "rewrites": [
     { "source": "/docs/:projectId/:slug?", "destination": "/api/docs-ssr" },
     { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|remotion-bundle/).*)", "destination": "/index.html" }
   ]
 }
