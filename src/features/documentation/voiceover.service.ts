@@ -151,7 +151,13 @@ export async function generateVoiceover(
 
     const startTime = timestamps[i] ?? 0
     const nextStart = timestamps[i + 1]
-    const slotDuration = (nextStart ?? (startTime + 15)) - startTime
+    // The intro audio is placed at INTRO_LEAD_IN_SECONDS in the final file (so
+    // its first phoneme isn't clipped at playback start), but the next segment
+    // still starts at its absolute timestamp. So the intro's actual speaking
+    // budget is the slot minus the lead-in — anything longer gets cut by the
+    // following segment's targetStartTime.
+    const rawSlot = (nextStart ?? (startTime + 15)) - startTime
+    const slotDuration = i === 0 ? rawSlot - INTRO_LEAD_IN_SECONDS : rawSlot
 
     // Synthesize — retry with shorter text if audio overflows the slot
     let buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
@@ -271,9 +277,12 @@ export async function generateVoiceoverForRun(
     mergedTimestamps.splice(minIdx, 1)
   }
   if (mergedTimestamps.length === 0 || mergedTimestamps[0]! !== 0) mergedTimestamps.unshift(0)
+  // Minimum SPEAKING budget for the intro (6 s). The lead-in silence is added
+  // on top so the actual section-1 boundary is MIN_INTRO_BUDGET + lead-in.
   const MIN_INTRO_BUDGET = 6
-  if (mergedTimestamps.length > 1 && mergedTimestamps[1]! < MIN_INTRO_BUDGET) {
-    mergedTimestamps[1] = MIN_INTRO_BUDGET
+  const minSection1Start = MIN_INTRO_BUDGET + INTRO_LEAD_IN_SECONDS
+  if (mergedTimestamps.length > 1 && mergedTimestamps[1]! < minSection1Start) {
+    mergedTimestamps[1] = minSection1Start
   }
 
   const estimatedVideoEnd = (options.videoDuration && options.videoDuration > 0)
@@ -293,7 +302,11 @@ export async function generateVoiceoverForRun(
   const numStepsMerged = mergedTimestamps.length
   const timeBudgets = mergedTimestamps.map((t, i) => {
     const next = mergedTimestamps[i + 1]
-    return next != null ? next - t : Math.max(5, estimatedVideoEnd - t)
+    const raw = next != null ? next - t : Math.max(5, estimatedVideoEnd - t)
+    // Intro starts at INTRO_LEAD_IN_SECONDS in the final audio, so its real
+    // speaking budget is the slot minus the lead-in. Without this, Gemini
+    // writes a full-slot intro and the tail gets clipped by section 2.
+    return i === 0 ? raw - INTRO_LEAD_IN_SECONDS : raw
   })
   const totalVideoTime = (mergedTimestamps[mergedTimestamps.length - 1] ?? 0) - (mergedTimestamps[0] ?? 0) + 15
   const totalMaxWords = Math.floor(totalVideoTime * 2 * wordsFactor)
