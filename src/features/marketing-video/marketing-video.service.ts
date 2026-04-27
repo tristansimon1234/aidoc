@@ -209,6 +209,77 @@ export async function generateMarketingVideoForRun(
   return summary
 }
 
+/**
+ * GET the bundle's index.html and verify it's actually a Remotion bundle
+ * (contains the `getStaticCompositions` global registered by `remotion`).
+ *
+ * Why: when this URL silently returns the wrong page (Vercel deploy
+ * protection auth wall, SPA shell from a catch-all rewrite, etc.) the
+ * video-service hits JSON.parse on something downstream and reports the
+ * useless "Unexpected token '<'" back. We want the actionable error
+ * here.
+ */
+async function preflightRemotionBundle(serveUrl: string): Promise<void> {
+  const indexUrl = `${serveUrl.replace(/\/+$/, '')}/index.html`
+  let res: Response
+  try {
+    res = await fetch(indexUrl, { redirect: 'follow' })
+  } catch (err) {
+    throw new Error(`Remotion bundle unreachable at ${indexUrl}: ${(err as Error).message}`)
+  }
+  if (!res.ok) {
+    throw new Error(`Remotion bundle returned HTTP ${res.status} at ${indexUrl}`)
+  }
+  const body = await res.text()
+  if (!body.includes('getStaticCompositions') && !body.includes('Remotion Bundle')) {
+    const preview = body.replace(/\s+/g, ' ').slice(0, 200)
+    if (body.includes('vc-dash-sidebar-width') || body.includes('skip-nav-link-module')) {
+      throw new Error(
+        `Remotion bundle URL ${indexUrl} is behind Vercel deployment protection — ` +
+          `disable "Vercel Authentication" in Project Settings → Deployment Protection, ` +
+          `or merge to main and use the production URL.`,
+      )
+    }
+    throw new Error(
+      `Remotion bundle URL ${indexUrl} did not return a Remotion bundle. ` +
+        `First 200 chars: "${preview}". ` +
+        `Likely an SPA-fallback rewrite, missing build artifact, or cached old deploy.`,
+    )
+  }
+}
+
+/**
+ * GET the manifest URL and verify it's JSON. Same rationale as
+ * preflightRemotionBundle — an HTML body here surfaces only as the
+ * video-service's downstream "Unexpected token '<'".
+ */
+async function preflightManifest(manifestUrl: string): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(manifestUrl, { redirect: 'follow' })
+  } catch (err) {
+    throw new Error(`Manifest unreachable at ${manifestUrl}: ${(err as Error).message}`)
+  }
+  if (!res.ok) {
+    throw new Error(`Manifest returned HTTP ${res.status} at ${manifestUrl}`)
+  }
+  const contentType = res.headers.get('content-type') ?? ''
+  const body = await res.text()
+  if (!contentType.includes('json') && !body.trimStart().startsWith('{')) {
+    const preview = body.replace(/\s+/g, ' ').slice(0, 200)
+    throw new Error(
+      `Manifest URL ${manifestUrl} returned ${contentType || 'unknown content-type'} instead of JSON. ` +
+        `First 200 chars: "${preview}". ` +
+        `Likely the artifacts bucket isn't public or the URL is being intercepted.`,
+    )
+  }
+  try {
+    JSON.parse(body)
+  } catch (err) {
+    throw new Error(`Manifest at ${manifestUrl} is not valid JSON: ${(err as Error).message}`)
+  }
+}
+
 /** Where the pre-bundled Remotion site lives. Resolution order:
  *  1. REMOTION_SERVE_URL env — escape hatch when the bundle is hosted
  *     somewhere other than the current deploy (rare).
@@ -273,6 +344,17 @@ export async function renderMarketingVideoForRun(
 
   try {
     const remotionServeUrl = resolveRemotionServeUrl()
+
+    // Pre-flight: verify both URLs the video-service will fetch are
+    // serving the expected content. Without this, problems like Vercel
+    // deploy protection, SPA-fallback rewrites swallowing the bundle
+    // path, or a stale Supabase signed URL surface only as the cryptic
+    // "Unexpected token '<'" the video-service reports back from its
+    // own JSON.parse failure. Fail here with a clear, actionable error.
+    console.log(`[marketing-video] Pre-flight: bundle=${remotionServeUrl} manifest=${existing.manifestUrl}`)
+    await preflightRemotionBundle(remotionServeUrl)
+    await preflightManifest(existing.manifestUrl)
+
     const videoPath = await renderMarketingVideo({
       runId,
       manifestUrl: existing.manifestUrl,
