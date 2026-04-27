@@ -23,10 +23,24 @@ const outDir = join(repoRoot, 'dist', 'remotion-bundle')
 console.log(`[remotion-bundle] Bundling ${entryPoint}`)
 console.log(`[remotion-bundle] Output    ${outDir}`)
 
+// The Remotion source uses TS NodeNext-style imports (`./Root.js` referring
+// to `Root.tsx`). Webpack 5's default resolver looks for the literal `.js`
+// file and fails. `extensionAlias` tells it to try `.tsx` / `.ts` first when
+// it sees a `.js` import — the standard fix for ESM TypeScript on webpack.
 const bundled = await bundle({
   entryPoint,
   outDir,
-  webpackOverride: (config) => config,
+  webpackOverride: (config) => ({
+    ...config,
+    resolve: {
+      ...(config.resolve ?? {}),
+      extensionAlias: {
+        ...(config.resolve?.extensionAlias ?? {}),
+        '.js': ['.tsx', '.ts', '.js'],
+        '.jsx': ['.tsx', '.jsx'],
+      },
+    },
+  }),
 })
 
 console.log(`[remotion-bundle] Done → ${bundled}`)
