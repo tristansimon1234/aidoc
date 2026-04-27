@@ -195,7 +195,9 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     parsedJson = JSON.parse(jsonStr)
   } catch (err) {
     // Last-ditch repair — close any unbalanced brackets/braces. Gemini
-    // sometimes truncates mid-output when it hits the token cap.
+    // occasionally truncates mid-output or emits unescaped chars.
+    // With `responseSchema` set the API normally guarantees valid JSON,
+    // but defence in depth.
     let repaired = jsonStr.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
     const openBraces = (repaired.match(/\{/g) ?? []).length
     const closeBraces = (repaired.match(/\}/g) ?? []).length
@@ -210,6 +212,28 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
       console.error('[marketing-script] JSON parse failed. First 500 chars:', jsonStr.slice(0, 500))
       throw new Error(`Marketing script JSON parse failed: ${(err as Error).message}`)
     }
+  }
+
+  // Sanity-check the parsed shape BEFORE feeding to Zod. The repair logic
+  // above can produce a syntactically valid object that's structurally
+  // empty (e.g. when truncation chops off everything past the first key).
+  // Without this guard, Zod just reports "expected X, received undefined"
+  // for every field, which obscures the actual failure mode (model emitted
+  // garbage). Surfaces the raw output so the underlying cause is visible
+  // in logs.
+  const REQUIRED_TOP_LEVEL = ['hook', 'scenes', 'cta', 'totalDurationSeconds'] as const
+  const obj = (parsedJson as Record<string, unknown> | null) ?? {}
+  const missingTop = REQUIRED_TOP_LEVEL.filter((k) => !(k in obj))
+  if (missingTop.length === REQUIRED_TOP_LEVEL.length) {
+    console.error('[marketing-script] Model returned no usable structure. Raw text (first 800 chars):', result.text.slice(0, 800))
+    throw new Error(
+      'Marketing script generation produced no usable JSON structure (every top-level field missing). ' +
+        'This usually means Gemini truncated or emitted malformed output. Please retry.',
+    )
+  }
+  if (missingTop.length > 0) {
+    console.error('[marketing-script] Missing top-level fields after parse:', missingTop)
+    console.error('[marketing-script] Raw text (first 800 chars):', result.text.slice(0, 800))
   }
 
   const parsed = MarketingScriptSchema.safeParse(parsedJson)
