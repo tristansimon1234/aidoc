@@ -211,14 +211,23 @@ export async function generateMarketingVideoForRun(
 
 /** Where the pre-bundled Remotion site lives. Resolution order:
  *  1. REMOTION_SERVE_URL env — escape hatch when the bundle is hosted
- *     somewhere other than the main Doclee deploy (rare).
- *  2. PUBLIC_APP_URL + /remotion-bundle — the default. The `prebuild` npm
- *     script bundles Remotion into `public/remotion-bundle/` so Vite
- *     ships it as a static asset on every Vercel deploy. Zero config.
- *  3. Throw — neither env var set, can't render. */
+ *     somewhere other than the current deploy (rare).
+ *  2. On a Vercel preview deploy (VERCEL_ENV=preview), prefer the deploy's
+ *     own URL via VERCEL_BRANCH_URL / VERCEL_URL. Without this, preview
+ *     renders would point at PUBLIC_APP_URL (production) and pick up the
+ *     PRODUCTION bundle, defeating the purpose of testing changes on a
+ *     preview before merging.
+ *  3. PUBLIC_APP_URL + /remotion-bundle — the production default.
+ *  4. Throw — no URL we can derive. */
 function resolveRemotionServeUrl(): string {
   const explicit = process.env.REMOTION_SERVE_URL
   if (explicit && explicit.length > 0) return explicit
+
+  if (process.env.VERCEL_ENV === 'preview') {
+    const previewHost = process.env.VERCEL_BRANCH_URL || process.env.VERCEL_URL
+    if (previewHost) return `https://${previewHost.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/remotion-bundle`
+  }
+
   const publicAppUrl = process.env.PUBLIC_APP_URL
   if (publicAppUrl) return `${publicAppUrl.replace(/\/+$/, '')}/remotion-bundle`
   throw new Error(
