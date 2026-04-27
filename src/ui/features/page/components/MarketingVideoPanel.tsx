@@ -188,6 +188,26 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
                   ? 'Re-render to MP4'
                   : 'Render to MP4'}
             </Button>
+            {summary.manifestUrl && (
+              <a
+                href={summary.manifestUrl}
+                download={`marketing-manifest-${runId}.json`}
+                title="Download the manifest JSON to render locally with `npm run remotion:render -- --props=<file>`"
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-fg)',
+                  textDecoration: 'none',
+                  fontSize: 'var(--text-sm)',
+                  fontWeight: 500,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                }}
+              >
+                Download manifest JSON
+              </a>
+            )}
             {summary.videoUrl && (
               <a
                 href={summary.videoUrl}
@@ -218,6 +238,12 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
           {renderStatus === 'failed' && summary.renderError && (
             <div className={`${styles.statusBanner} ${styles.statusError}`}>
               Render failed: {summary.renderError}
+              {summary.manifestUrl && (
+                <>
+                  {' '}— you can download the manifest above and render locally with{' '}
+                  <code>npm run remotion:render -- --props=&lt;file&gt;</code>.
+                </>
+              )}
             </div>
           )}
 
