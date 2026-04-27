@@ -15,9 +15,9 @@ const HEIGHT = 1080
  * bundled sample manifest so the template is always renderable.
  *
  * We require() at module load instead of dynamic-importing async because
- * Remotion's <Composition> needs `durationInFrames` synchronously.
+ * Composition.defaultProps must resolve synchronously.
  */
-function loadManifest(): Manifest {
+function loadDefaultManifest(): Manifest {
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const data = require('../manifest.json') as unknown
@@ -30,20 +30,28 @@ function loadManifest(): Manifest {
   return SAMPLE_MANIFEST
 }
 
-const manifest = loadManifest()
-const durationInFrames = Math.max(1, totalDurationInFrames(manifest, FPS))
+const defaultManifest = loadDefaultManifest()
 
+/**
+ * The durationInFrames depends on the manifest in inputProps, which the
+ * server passes per-render. `calculateMetadata` is Remotion's hook for
+ * deriving metadata from props at render time — without it, every server
+ * render would inherit the local manifest.json's duration, which is wrong.
+ */
 export const RemotionRoot: React.FC = () => {
   return (
     <>
       <Composition
         id="MarketingVideo"
         component={MarketingVideo}
-        durationInFrames={durationInFrames}
+        durationInFrames={Math.max(1, totalDurationInFrames(defaultManifest, FPS))}
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
-        defaultProps={{ manifest }}
+        defaultProps={{ manifest: defaultManifest }}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: Math.max(1, totalDurationInFrames(props.manifest, FPS)),
+        })}
       />
     </>
   )

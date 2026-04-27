@@ -210,19 +210,19 @@ export async function generateMarketingVideoForRun(
 }
 
 /** Where the pre-bundled Remotion site lives. Resolution order:
- *  1. REMOTION_SERVE_URL env (set per-deploy in Vercel) — production path.
- *  2. PUBLIC_APP_URL + /remotion-bundle — when the bundle is shipped as a
- *     static asset of the main Doclee deploy.
- *  3. Throw — without a serve URL the video-service has nothing to render
- *     from, so we fail loudly instead of pretending. */
+ *  1. REMOTION_SERVE_URL env — escape hatch when the bundle is hosted
+ *     somewhere other than the main Doclee deploy (rare).
+ *  2. PUBLIC_APP_URL + /remotion-bundle — the default. The `prebuild` npm
+ *     script bundles Remotion into `public/remotion-bundle/` so Vite
+ *     ships it as a static asset on every Vercel deploy. Zero config.
+ *  3. Throw — neither env var set, can't render. */
 function resolveRemotionServeUrl(): string {
   const explicit = process.env.REMOTION_SERVE_URL
   if (explicit && explicit.length > 0) return explicit
   const publicAppUrl = process.env.PUBLIC_APP_URL
   if (publicAppUrl) return `${publicAppUrl.replace(/\/+$/, '')}/remotion-bundle`
   throw new Error(
-    'No Remotion serve URL configured. Set REMOTION_SERVE_URL (recommended) or PUBLIC_APP_URL. ' +
-      'See remotion/README.md → "Distributing the bundle".',
+    'No Remotion serve URL configured. Set PUBLIC_APP_URL (recommended — the bundle ships with the main deploy via the `prebuild` script) or REMOTION_SERVE_URL.',
   )
 }
 

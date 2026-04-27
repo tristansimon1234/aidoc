@@ -437,4 +437,75 @@ app.post('/mux', async (req, res) => {
   }
 })
 
+/**
+ * POST /render-marketing-video
+ * Render a Remotion composition to MP4. Doclee owns the trigger + the
+ * compositions (shipped as a pre-bundled site at `remotionServeUrl`); we
+ * just run Chromium + the Remotion renderer here because Vercel functions
+ * can't host Chromium.
+ *
+ * Request:  { runId, manifestUrl, remotionServeUrl, compositionId, fps, widthPx, heightPx }
+ * Response: { videoPath: "runs/<runId>/marketing.mp4" }
+ *
+ * The first call after a cold start downloads Chromium to /tmp via
+ * `ensureBrowser()` (~150 MB, one-shot). Subsequent calls reuse it.
+ */
+app.post('/render-marketing-video', async (req, res) => {
+  const start = Date.now()
+  try {
+    const { runId, manifestUrl, remotionServeUrl, compositionId, fps, widthPx, heightPx } = req.body
+    if (!runId || !manifestUrl || !remotionServeUrl) {
+      return res.status(400).json({ error: 'runId, manifestUrl and remotionServeUrl required' })
+    }
+
+    const supabase = getSupabase(req.body)
+
+    // Fetch the manifest the Doclee backend uploaded earlier — it carries
+    // the script, screenshot URLs, branding, and voice-over URL the
+    // composition reads as inputProps.
+    const manifestRes = await fetch(manifestUrl)
+    if (!manifestRes.ok) throw new Error(`Manifest fetch failed: ${manifestRes.status}`)
+    const manifest = await manifestRes.json()
+
+    // Lazy-load the renderer so a video-service instance that never gets
+    // a marketing-video request doesn't pay the import cost. ensureBrowser
+    // also lazily downloads Chromium to ~/.remotion the first time.
+    const { ensureBrowser, selectComposition, renderMedia } = await import('@remotion/renderer')
+    await ensureBrowser()
+
+    const composition = await selectComposition({
+      serveUrl: remotionServeUrl,
+      id: compositionId || 'MarketingVideo',
+      inputProps: { manifest },
+    })
+
+    const tmpOut = join(tmpdir(), `marketing-${runId}-${Date.now()}.mp4`)
+    await renderMedia({
+      composition,
+      serveUrl: remotionServeUrl,
+      codec: 'h264',
+      outputLocation: tmpOut,
+      inputProps: { manifest },
+      // Concurrency null = let Remotion pick (cores - 1). On a 2-vCPU box
+      // a 60s 1080p render lands in ~2-5 min; on 4-vCPU it's closer to 90s.
+      concurrency: null,
+      // Override fps/dimensions only when Doclee passed explicit values —
+      // otherwise the values from <Composition> in the bundle apply.
+      ...(fps ? { } : {}),
+    })
+
+    const videoBuffer = readFileSync(tmpOut)
+    const videoPath = `runs/${runId}/marketing.mp4`
+    await uploadFile(supabase, videoPath, videoBuffer, 'video/mp4')
+
+    try { unlinkSync(tmpOut) } catch {}
+
+    console.log(`[render-marketing] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${videoPath} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+    res.json({ videoPath })
+  } catch (err) {
+    console.error('[render-marketing] Error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
 app.listen(PORT, () => console.log(`Video service running on port ${PORT}`))

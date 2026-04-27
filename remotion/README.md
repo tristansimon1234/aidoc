@@ -59,27 +59,31 @@ renders go through the standalone video-service that already runs ffmpeg
 jobs. Doclee calls it via `renderMarketingVideo()` in
 `src/shared/video/video.client.ts`.
 
-### Distributing the bundle
+### Distributing the bundle (automatic)
 
-The video-service needs the **same** Remotion compositions Doclee shipped.
-Build them with:
+The Vercel `build` script ships the Remotion bundle as a static asset
+automatically, so the video-service can fetch it from the same domain as
+the Doclee app. Wired via:
 
-```bash
-npm run remotion:bundle
-# → dist/remotion-bundle/
+```jsonc
+// package.json
+"scripts": {
+  "prebuild": "npm run remotion:bundle && node scripts/copy-remotion-bundle.mjs",
+  "build": "tsc && vite build"
+}
 ```
 
-Then expose that directory over HTTP. Three options, pick whichever fits:
+That runs on every `vercel build`:
 
-| Option | How | Pros | Cons |
-| --- | --- | --- | --- |
-| Vercel public asset | Copy `dist/remotion-bundle/` into `public/` before `vercel build`; serve at `${PUBLIC_APP_URL}/remotion-bundle/` | Single deploy, no extra infra | Bundle re-deploys with Doclee app |
-| Supabase Storage | Upload bundle to a public bucket; video-service downloads + unzips on demand | Decoupled deploys, cacheable | Extra plumbing, cold-start cost |
-| Bake into Docker image | `COPY` into the video-service image at build time | Fastest renders | Doclee + video-service deploys coupled |
+1. `remotion:bundle` produces `dist/remotion-bundle/`
+2. `copy-remotion-bundle.mjs` mirrors it into `public/remotion-bundle/`
+3. Vite picks it up and ships it inside `dist/client/remotion-bundle/`
+4. Once deployed, it's served at `${PUBLIC_APP_URL}/remotion-bundle/`
 
-Set the resulting URL in `REMOTION_SERVE_URL` on the Doclee env (Vercel
-project settings). The service falls back to `${PUBLIC_APP_URL}/remotion-bundle`
-when the explicit var is missing.
+The marketing-video service uses that URL by default — no env var needed
+beyond `PUBLIC_APP_URL` which you already set. To host the bundle
+elsewhere (separate CDN, baked into the video-service image, etc.) set
+`REMOTION_SERVE_URL` and Doclee picks that instead.
 
 ### Video-service contract
 

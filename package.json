@@ -4,6 +4,7 @@
   "description": "Doclee — AI documentation platform",
   "type": "module",
   "scripts": {
+    "prebuild": "npm run remotion:bundle && node scripts/copy-remotion-bundle.mjs",
     "build": "tsc && vite build",
     "dev:server": "node --loader ts-node/esm src/server.ts",
     "dev:client": "vite",
@@ -16,7 +17,7 @@
     "marketing:preview": "node --loader ts-node/esm scripts/marketing-video.ts",
     "remotion:preview": "remotion preview remotion/src/index.ts",
     "remotion:render": "remotion render remotion/src/index.ts MarketingVideo out/marketing.mp4",
-    "remotion:bundle": "node --loader ts-node/esm scripts/bundle-remotion.ts"
+    "remotion:bundle": "node scripts/bundle-remotion.mjs"
   },
   "repository": {
     "type": "git",
