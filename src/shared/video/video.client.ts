@@ -11,7 +11,12 @@ export function isVideoServiceConfigured(): boolean {
 
 async function callService<T>(endpoint: string, body: Record<string, unknown>): Promise<T> {
   const url = `${getBaseUrl()}${endpoint}`
-  console.log(`[video-service] POST ${endpoint}`)
+  // Log non-secret payload keys so we can see what we sent if the service
+  // returns a cryptic error. Skip supabase keys obviously.
+  const visibleBody = Object.fromEntries(
+    Object.entries(body).filter(([k]) => k !== 'serviceKey' && k !== 'supabaseUrl'),
+  )
+  console.log(`[video-service] POST ${endpoint} payload:`, JSON.stringify(visibleBody))
 
   const res = await fetch(url, {
     method: 'POST',
@@ -23,12 +28,40 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>): 
     }),
   })
 
+  // Read the body once as text — when the service returns a cryptic error
+  // like "Unexpected token '<'" we want the full payload visible in logs,
+  // not just the parsed `error` field. Same pattern works for both ok and
+  // non-ok responses; we parse JSON ourselves below.
+  const rawText = await res.text()
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
-    throw new Error(`Video service error: ${err.error ?? res.statusText}`)
+    let parsed: { error?: string; details?: unknown } = {}
+    try {
+      parsed = JSON.parse(rawText)
+    } catch {
+      // Body wasn't JSON — fall through with rawText preview as the error.
+    }
+    const preview = rawText.replace(/\s+/g, ' ').slice(0, 400)
+    console.error(
+      `[video-service] ${endpoint} failed (${res.status} ${res.statusText}). Body: ${preview}`,
+    )
+    const detail = parsed.error
+      ? `${parsed.error}${parsed.details ? ` (details: ${JSON.stringify(parsed.details).slice(0, 200)})` : ''}`
+      : `HTTP ${res.status} ${res.statusText} — body: ${preview}`
+    throw new Error(`Video service error: ${detail}`)
   }
 
-  return res.json() as Promise<T>
+  try {
+    return JSON.parse(rawText) as T
+  } catch (err) {
+    const preview = rawText.replace(/\s+/g, ' ').slice(0, 400)
+    console.error(
+      `[video-service] ${endpoint} returned non-JSON body despite 200 OK. First 400 chars: ${preview}`,
+    )
+    throw new Error(
+      `Video service returned non-JSON success response: ${(err as Error).message}. Body preview: "${preview}"`,
+    )
+  }
 }
 
 /** Convert video to MP4. Returns the new path in Supabase storage. */
