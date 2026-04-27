@@ -249,11 +249,15 @@ async function preflightRemotionBundle(serveUrl: string): Promise<void> {
 }
 
 /**
- * GET the manifest URL and verify it's JSON. Same rationale as
- * preflightRemotionBundle — an HTML body here surfaces only as the
- * video-service's downstream "Unexpected token '<'".
+ * GET the manifest URL, verify it's JSON, and return the parsed object.
+ *
+ * Same rationale as preflightRemotionBundle for the verification — an
+ * HTML body here surfaces only as the video-service's downstream
+ * "Unexpected token '<'". Returning the parsed manifest lets us also
+ * ship the content inline to the service so it can skip its own fetch
+ * if/when the service contract is updated to read it.
  */
-async function preflightManifest(manifestUrl: string): Promise<void> {
+async function preflightManifest(manifestUrl: string): Promise<MarketingManifest> {
   let res: Response
   try {
     res = await fetch(manifestUrl, { redirect: 'follow' })
@@ -274,7 +278,7 @@ async function preflightManifest(manifestUrl: string): Promise<void> {
     )
   }
   try {
-    JSON.parse(body)
+    return JSON.parse(body) as MarketingManifest
   } catch (err) {
     throw new Error(`Manifest at ${manifestUrl} is not valid JSON: ${(err as Error).message}`)
   }
@@ -353,11 +357,17 @@ export async function renderMarketingVideoForRun(
     // own JSON.parse failure. Fail here with a clear, actionable error.
     console.log(`[marketing-video] Pre-flight: bundle=${remotionServeUrl} manifest=${existing.manifestUrl}`)
     await preflightRemotionBundle(remotionServeUrl)
-    await preflightManifest(existing.manifestUrl)
+    const manifestContent = await preflightManifest(existing.manifestUrl)
 
     const videoPath = await renderMarketingVideo({
       runId,
       manifestUrl: existing.manifestUrl,
+      // Ship the verified manifest content inline so a service-side
+      // update can skip its own fetch (which is the most likely source
+      // of the cryptic "Unexpected token '<'" the service has been
+      // returning). Today's service may ignore this field — that's
+      // fine, it's purely additive.
+      manifest: manifestContent,
       remotionServeUrl,
     })
 

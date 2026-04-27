@@ -158,6 +158,11 @@ export async function muxVideoWithAudio(
 export async function renderMarketingVideo(input: {
   runId: string
   manifestUrl: string
+  /** Verified manifest content. Sent inline alongside the URL so a
+   *  service-side update can use it as `inputProps` directly without
+   *  re-fetching — eliminates the most likely cause of the service's
+   *  "Unexpected token '<'" failures. Optional for backwards-compat. */
+  manifest?: unknown
   remotionServeUrl: string
   compositionId?: string
   fps?: number
@@ -167,6 +172,7 @@ export async function renderMarketingVideo(input: {
   const result = await callService<{ videoPath: string }>('/render-marketing-video', {
     runId: input.runId,
     manifestUrl: input.manifestUrl,
+    ...(input.manifest !== undefined ? { manifest: input.manifest } : {}),
     compositionId: input.compositionId ?? 'MarketingVideo',
     remotionServeUrl: input.remotionServeUrl,
     fps: input.fps ?? 30,
