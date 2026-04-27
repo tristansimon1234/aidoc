@@ -102,6 +102,50 @@ export interface RunDTO {
   updatedAt: string
 }
 
+export type MarketingRenderStatusDTO = 'idle' | 'rendering' | 'ready' | 'failed'
+
+export interface MarketingSceneDTO {
+  voiceover: string
+  headline: string
+  subhead?: string
+  screenshotIndex: number | null
+  durationSeconds: number
+}
+
+export interface MarketingScriptDTO {
+  hook: { voiceover: string; headline: string; durationSeconds: number }
+  scenes: MarketingSceneDTO[]
+  cta: { voiceover: string; headline: string; buttonLabel: string; durationSeconds: number }
+  totalDurationSeconds: number
+  language: string
+}
+
+export interface MarketingManifestDTO {
+  runId: string
+  generatedAt: string
+  script: MarketingScriptDTO
+  screenshots: { url: string; caption: string }[]
+  branding: {
+    productName: string
+    accentColor: string
+    bgColor: string
+    textColor: string
+    fontFamily: string
+    logoUrl: string | null
+  }
+  voiceoverUrl: string | null
+  voiceoverPath: string | null
+}
+
+export interface MarketingVideoSummaryDTO {
+  manifest: MarketingManifestDTO
+  manifestUrl: string | null
+  videoUrl: string | null
+  videoPath: string | null
+  renderStatus: MarketingRenderStatusDTO
+  renderError: string | null
+}
+
 export interface RunStepDTO {
   id: string
   runId: string
@@ -558,6 +602,23 @@ export const api = {
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),
     questions: (id: string): Promise<QuestionDTO[]> => request(`/runs/${id}/questions`),
     doc: (id: string): Promise<GeneratedDocDTO> => request(`/runs/${id}/doc`),
+    marketingVideo: {
+      get: (id: string): Promise<MarketingVideoSummaryDTO | null> =>
+        request<MarketingVideoSummaryDTO>(`/runs/${id}/marketing-video`).catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) return null
+          throw err
+        }),
+      generate: (
+        id: string,
+        opts?: { userPrompt?: string; withVoiceover?: boolean; voiceId?: string },
+      ): Promise<MarketingVideoSummaryDTO> =>
+        request(`/runs/${id}/marketing-video`, {
+          method: 'POST',
+          body: JSON.stringify(opts ?? {}),
+        }),
+      render: (id: string): Promise<MarketingVideoSummaryDTO> =>
+        request(`/runs/${id}/marketing-video/render`, { method: 'POST' }),
+    },
   },
   questions: {
     answer: (runId: string, qid: string, answer: string): Promise<QuestionDTO> =>

@@ -20,6 +20,7 @@ import { VideoTimeline } from '../components/VideoTimeline.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
 import { PreflightPanel } from '../components/PreflightPanel.js'
+import { MarketingVideoPanel } from '../components/MarketingVideoPanel.js'
 import styles from './PageView.module.css'
 
 interface PageContext {
@@ -57,7 +58,7 @@ function PageViewInner(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(hasRunningTest ? (initialTestJob.liveUrl ?? null) : null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test'>(hasRunningTest ? 'test' : 'doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test' | 'marketing'>(hasRunningTest ? 'test' : 'doc')
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
@@ -386,6 +387,9 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                 styles.tabDotPartial
               }`} />
             )}
+          </button>
+          <button className={`${styles.tab} ${activeTab === 'marketing' ? styles.tabActive : ''}`} onClick={() => setActiveTab('marketing')}>
+            Marketing
           </button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
@@ -1077,6 +1081,20 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               activeStep={0}
             />
           )}
+        </div>
+      )}
+
+      {/* ===== MARKETING TAB ===== */}
+      {activeTab === 'marketing' && latestRunId && (
+        <div className={styles.tabContent}>
+          <MarketingVideoPanel runId={latestRunId} />
+        </div>
+      )}
+      {activeTab === 'marketing' && !latestRunId && (
+        <div className={styles.tabContent}>
+          <p style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--text-sm)' }}>
+            Generate or upload a video for this page first — the marketing video pulls its screenshots from the run's steps.
+          </p>
         </div>
       )}
     </div>
