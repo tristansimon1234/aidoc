@@ -34,6 +34,13 @@ export interface VoiceoverSegment {
   text: string
 }
 
+/** Silence prepended to the concatenated voice-over so the very first phoneme
+ *  of the intro is not clipped. Without it, browser audio-element startup
+ *  latency + MP3 decoder priming eat the first ~100-300 ms of speech when the
+ *  user clicks play, and users perceive the intro as "cut off". 400 ms is
+ *  enough to absorb both effects without feeling like dead air. */
+export const INTRO_LEAD_IN_SECONDS = 0.4
+
 export interface VoiceoverResult {
   audioPath: string
   audioUrl: string
@@ -174,7 +181,8 @@ export async function generateVoiceover(
     const endTime = startTime + estimatedDuration
     console.log(`[voiceover] Segment ${i}: ${(buffer.length / 1024).toFixed(0)}KB, ~${estimatedDuration.toFixed(1)}s/${slotDuration.toFixed(0)}s slot, ${startTime.toFixed(1)}→${endTime.toFixed(1)}s`)
 
-    segmentPaths.push({ audioPath: segPath, targetStartTime: startTime })
+    const targetStartTime = i === 0 ? INTRO_LEAD_IN_SECONDS : startTime
+    segmentPaths.push({ audioPath: segPath, targetStartTime })
     segments.push({ stepIndex: steps[i]!.stepIndex, startTime, endTime, text })
   }
 

@@ -399,12 +399,16 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
       let mainAudioPath = ''
 
       if (isVideoServiceConfigured()) {
-        const concatSegments = updatedSegments
-          .sort((a, b) => (a.stepIndex as number) - (b.stepIndex as number))
-          .map((s) => ({
-            audioPath: (s.audioPath as string) ?? `runs/${params.data.id}/voiceover-seg-${s.stepIndex as number}.mp3`,
-            targetStartTime: Math.max(0, (s.startTime as number) - 1.5),
-          }))
+        const { INTRO_LEAD_IN_SECONDS } = await import('../documentation/voiceover.service.js')
+        const sortedSegments = [...updatedSegments].sort(
+          (a, b) => (a.stepIndex as number) - (b.stepIndex as number),
+        )
+        const concatSegments = sortedSegments.map((s, i) => ({
+          audioPath: (s.audioPath as string) ?? `runs/${params.data.id}/voiceover-seg-${s.stepIndex as number}.mp3`,
+          targetStartTime: i === 0
+            ? INTRO_LEAD_IN_SECONDS
+            : Math.max(INTRO_LEAD_IN_SECONDS, (s.startTime as number) - 1.5),
+        }))
         mainAudioPath = await concatAudio(params.data.id, concatSegments)
         mainAudioUrl = `${getPublicUrl('artifacts', mainAudioPath) ?? ''}?v=${Date.now()}`
       }
