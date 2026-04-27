@@ -485,7 +485,7 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     console.log(`[video] Gemini returned ${analysis.steps.length} steps (raw):`)
     for (const s of analysis.steps) {
-      console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction}`)
+      console.log(`  [act ${s.actionAt.toFixed(1)}s | res ${s.resultAt.toFixed(1)}s | ${s.screenshotIntent}] ${s.userAction}`)
     }
 
     if (analysis.steps.length === 0) {
@@ -506,14 +506,26 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     }
 
     const correctedSteps = correctTimestamps(analysis.steps, videoDuration)
-    const sortedSteps = [...correctedSteps].sort((a, b) => a.timestamp - b.timestamp)
+    const sortedSteps = [...correctedSteps].sort((a, b) => a.actionAt - b.actionAt)
+
+    // The screenshot timestamp is intent-driven: 'action' frames capture the
+    // cursor on the target (good for "click here" steps), 'result' frames
+    // capture the page after any loading completes (good for "now you see X"
+    // steps). This is what stops Gemini-picked frames from landing inside a
+    // loading spinner during slow loads.
+    const screenshotTimestamps = sortedSteps.map((s) =>
+      s.screenshotIntent === 'action' ? s.actionAt : s.resultAt,
+    )
+    // Voice-over uses these as section boundaries — keep the result-biased
+    // semantic the previous `timestamp` field had so narration timing doesn't
+    // shift unexpectedly for existing runs.
+    const narrationTimestamps = sortedSteps.map((s) => s.resultAt)
 
     console.log(`[video] Final ${sortedSteps.length} steps:`)
-    for (const s of sortedSteps) {
-      console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction}`)
+    for (let i = 0; i < sortedSteps.length; i++) {
+      const s = sortedSteps[i]!
+      console.log(`  [${screenshotTimestamps[i]!.toFixed(1)}s · shot=${s.screenshotIntent}] ${s.userAction}`)
     }
-
-    const timestamps = sortedSteps.map((s) => s.timestamp)
 
     // --- Step 4: Extract frames via video microservice ---
     let framesExtracted = false
@@ -521,7 +533,7 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
 
     if (isVideoServiceConfigured()) {
       try {
-        framePaths = await extractFramesRemote(playerVideoPath, runId, timestamps)
+        framePaths = await extractFramesRemote(playerVideoPath, runId, screenshotTimestamps)
         framesExtracted = framePaths.some((p) => p !== null)
       } catch (err) {
         console.warn(`[video] Frame extraction failed: ${(err as Error).message}`)
@@ -544,6 +556,15 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     }
 
     // --- Step 6: Summary ---
+    // stepFrames lets the timeline UI later toggle action↔result without
+    // re-running the whole Gemini pass — the alternate frame's timestamp is
+    // already on file.
+    const stepFrames = sortedSteps.map((s) => ({
+      actionAt: s.actionAt,
+      resultAt: s.resultAt,
+      screenshotIntent: s.screenshotIntent,
+    }))
+
     await runRepo.updateRunSummary(runId, {
       sections: [{
         url: 'video',
@@ -554,12 +575,13 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
       blockers: [],
       agentMessage: analysis.summary,
       videoPath: playerVideoPath,
-      stepTimestamps: timestamps,
+      stepTimestamps: narrationTimestamps,
+      stepFrames,
     })
 
     await runRepo.updateRunStatus(runId, 'completed')
 
-    return { timestamps, framesExtracted }
+    return { timestamps: narrationTimestamps, framesExtracted }
   } catch (err) {
     console.error(`[video] Analysis failed for run ${runId}:`, err)
     await runRepo.updateRunStatus(runId, 'failed')

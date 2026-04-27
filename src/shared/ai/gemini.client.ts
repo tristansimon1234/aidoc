@@ -149,11 +149,39 @@ export async function embedText(text: string): Promise<number[]> {
   return results[0]!
 }
 
+/**
+ * Each step exposes two timestamps so the doc generator can pick the most
+ * pedagogically useful frame:
+ *  - actionAt: cursor on the element / moment of the click. Use when the
+ *    screenshot's job is "show where to click".
+ *  - resultAt: page settled after any loading. Use when the screenshot's
+ *    job is "show what changed". Equal to actionAt for synchronous steps
+ *    (no loading, no transition).
+ *  - screenshotIntent: Gemini's call on which frame illustrates this step
+ *    best. The doc generator extracts the frame at the corresponding ts.
+ *
+ * Backwards-compat: if Gemini returns the legacy `timestamp` field only
+ * (prompt drift, cached cassette), we fan it out to both fields with
+ * intent='result' to match the previous result-biased behavior.
+ */
 const VideoStepSchema = z.object({
-  timestamp: z.number(),
+  actionAt: z.number().optional(),
+  resultAt: z.number().optional(),
+  screenshotIntent: z.enum(['action', 'result']).default('result'),
+  timestamp: z.number().optional(),
   screenDescription: z.string(),
   userAction: z.string(),
   narration: z.string().nullable(),
+}).transform((s) => {
+  const fallback = s.timestamp ?? s.actionAt ?? s.resultAt ?? 0
+  return {
+    actionAt: s.actionAt ?? fallback,
+    resultAt: s.resultAt ?? fallback,
+    screenshotIntent: s.screenshotIntent,
+    screenDescription: s.screenDescription,
+    userAction: s.userAction,
+    narration: s.narration,
+  }
 })
 
 const VideoAnalysisSchema = z.object({
@@ -168,41 +196,38 @@ export type VideoStep = z.infer<typeof VideoStepSchema>
 /**
  * Detect and correct Gemini's MM:SS concatenation bug.
  * Gemini sometimes returns "127" meaning 1:27 (87s), not 127 seconds.
- * We detect this by comparing max timestamp against actual video duration.
+ * Applies the correction symmetrically to both actionAt and resultAt so the
+ * intent-based frame picking stays consistent.
  */
 export function correctTimestamps(steps: VideoStep[], videoDurationSeconds: number): VideoStep[] {
   if (steps.length === 0) return steps
-
-  // If duration is unknown/infinite, skip correction
   if (!isFinite(videoDurationSeconds) || videoDurationSeconds <= 0) return steps
 
-  const maxTimestamp = Math.max(...steps.map((s) => s.timestamp))
+  const maxTimestamp = Math.max(...steps.flatMap((s) => [s.actionAt, s.resultAt]))
 
-  // Detect M.SS decimal format: all timestamps clustered in a tiny range
-  // relative to video duration (e.g. 0.0-1.2 for a 106s video)
+  // M.SS decimal format: all timestamps clustered way below video duration
   if (steps.length >= 3 && maxTimestamp < videoDurationSeconds * 0.05) {
     console.log(`[gemini] Detected M.SS decimal timestamps (max ${maxTimestamp}s << video ${videoDurationSeconds.toFixed(1)}s). Converting...`)
-    return steps.map((s) => {
-      const minutes = Math.floor(s.timestamp)
-      const seconds = Math.round((s.timestamp - minutes) * 100)
-      const corrected = minutes * 60 + seconds
-      return { ...s, timestamp: Math.min(corrected, videoDurationSeconds - 1) }
-    })
+    const fix = (t: number): number => {
+      const minutes = Math.floor(t)
+      const seconds = Math.round((t - minutes) * 100)
+      return Math.min(minutes * 60 + seconds, videoDurationSeconds - 1)
+    }
+    return steps.map((s) => ({ ...s, actionAt: fix(s.actionAt), resultAt: fix(s.resultAt) }))
   }
 
-  // If max timestamp is within video duration (+10% tolerance), timestamps are fine
   if (maxTimestamp <= videoDurationSeconds * 1.1) return steps
 
-  // Timestamps likely in MM:SS concatenated format — convert
+  // MM:SS concatenated format
   console.log(`[gemini] Detected MM:SS timestamps (max ${maxTimestamp}s > video ${videoDurationSeconds.toFixed(1)}s). Correcting...`)
-  return steps.map((s) => {
-    if (s.timestamp < 60) return s // sub-60 already correct
-    const minutes = Math.floor(s.timestamp / 100)
-    const seconds = s.timestamp % 100
-    if (seconds >= 60) return s // not MM:SS format
-    const corrected = minutes * 60 + seconds
-    return { ...s, timestamp: corrected }
-  })
+  const fix = (t: number): number => {
+    if (t < 60) return t
+    const minutes = Math.floor(t / 100)
+    const seconds = t % 100
+    if (seconds >= 60) return t
+    return minutes * 60 + seconds
+  }
+  return steps.map((s) => ({ ...s, actionAt: fix(s.actionAt), resultAt: fix(s.resultAt) }))
 }
 
 export function isGeminiAvailable(): boolean {
@@ -276,36 +301,43 @@ GROUPING RULES:
 - Aim for 5-10 steps for a typical 1-3 minute video. More only if the video covers many truly different features.
 - Each step should represent a meaningful state change or user accomplishment
 
-For each step:
-1. Provide the timestamp as a NUMBER OF SECONDS (integer or decimal). You MUST convert minutes to seconds:
-   - 45 seconds → 45
-   - 1 minute 27 seconds → 87 (= 1×60 + 27), NOT 127
-   - 2 minutes 8 seconds → 128 (= 2×60 + 8), NOT 208
-   The timestamp MUST be the moment AFTER the action completes, showing the RESULT on screen.
-2. Describe what's visible on screen AFTER the action (UI elements, page layout, text)
-3. Describe what the user accomplished (not each individual click — the outcome)
-4. If there's narration/voiceover, transcribe what's being said at that moment
+For each step you MUST return TWO timestamps and an intent — this lets us pick the most useful frame for the documentation screenshot:
+1. "actionAt": NUMBER OF SECONDS at the moment of the action itself (cursor on the element being clicked, key being pressed, dropdown opening). This is the "show where to click" moment.
+2. "resultAt": NUMBER OF SECONDS once the page is settled AFTER any loading/transition has completed. This is the "show what happened" moment. If the action is synchronous (no loading, no transition), set resultAt = actionAt.
+3. "screenshotIntent": "action" or "result" — your call on which frame illustrates this step best:
+   - "action" when the pedagogical value is in showing WHERE the user clicks (e.g. "click the small Settings gear icon in the top-right" — the user needs to see the cursor on the gear).
+   - "result" when the pedagogical value is in showing WHAT the action produced (e.g. "now your dashboard shows the new project" — the screenshot must show the new project, not a spinner).
+
+Convert minutes to seconds correctly: 1 minute 27 seconds → 87 (= 1×60 + 27), NOT 127. Timestamps are in SECONDS.
+
+4. Describe what's visible on screen at the resultAt moment (UI elements, page layout, text)
+5. Describe what the user accomplished (the outcome, not each individual click)
+6. If there's narration/voiceover, transcribe what's being said around this step
 
 IMPORTANT:
-- Steps MUST be in chronological order (timestamps ascending)
-- Each timestamp should show the RESULT state, not the initial state
-- Add 0.5-1 second after a click/navigation to capture the loaded result
+- Steps MUST be in chronological order (actionAt ascending)
+- resultAt MUST be >= actionAt
+- If a step has any loading/transition, resultAt should be AFTER it fully completes — not while a spinner or skeleton is still on screen.
 - Skip idle moments or pauses where nothing changes
-- Timestamps are in SECONDS — convert from MM:SS to seconds (e.g. 2:30 = 150, not 230)
+- Timestamps are in SECONDS (e.g. 2:30 = 150, not 230)
 
 Return ONLY valid JSON (no markdown fences):
 {
   "steps": [
     {
-      "timestamp": 3,
-      "screenDescription": "The dashboard with a list of projects and a 'New Project' button",
-      "userAction": "User navigated to the dashboard after logging in",
+      "actionAt": 12,
+      "resultAt": 12,
+      "screenshotIntent": "action",
+      "screenDescription": "Cursor hovering over the 'New Project' button in the top-right of the dashboard",
+      "userAction": "User clicks New Project to start creating a project",
       "narration": null
     },
     {
-      "timestamp": 15,
-      "screenDescription": "Project creation form with name and URL fields filled in",
-      "userAction": "User created a new project by entering the name and URL",
+      "actionAt": 14,
+      "resultAt": 17,
+      "screenshotIntent": "result",
+      "screenDescription": "Project creation modal fully loaded with empty Name and URL fields",
+      "userAction": "User opens the project creation form",
       "narration": null
     }
   ],
@@ -313,7 +345,7 @@ Return ONLY valid JSON (no markdown fences):
   "summary": "2-3 sentence summary of what this recording covers"
 }
 
-Remember: fewer, more meaningful steps is better than many granular ones.`,
+Remember: fewer, more meaningful steps is better than many granular ones. Pick screenshotIntent thoughtfully — wrong intent means a screenshot of a spinner or a screenshot of the result without context for where to click.`,
     },
   ]))
 
@@ -336,11 +368,11 @@ Remember: fewer, more meaningful steps is better than many granular ones.`,
   }
 
   // Fix Gemini returning timestamps as MM:SS or M:SS instead of seconds
-  jsonStr = jsonStr.replace(/"timestamp"\s*:\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\b/g, (_match, p1, p2, p3) => {
+  jsonStr = jsonStr.replace(/"(timestamp|actionAt|resultAt)"\s*:\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\b/g, (_match, key, p1, p2, p3) => {
     const mins = parseInt(p1 as string, 10)
     const secs = parseInt(p2 as string, 10)
     const hundredths = p3 ? parseInt(p3 as string, 10) : 0
-    return `"timestamp": ${mins * 60 + secs + hundredths / 100}`
+    return `"${key as string}": ${mins * 60 + secs + hundredths / 100}`
   })
 
   let parsed
