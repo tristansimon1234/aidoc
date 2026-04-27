@@ -16,6 +16,7 @@
     "format:check": "prettier --check 'src/**/*.ts'",
     "marketing:preview": "node --loader ts-node/esm scripts/marketing-video.ts",
     "remotion:preview": "remotion preview remotion/src/index.ts",
+    "remotion:preview:run": "remotion preview remotion/src/index.ts --props=remotion/manifest.json",
     "remotion:render": "remotion render remotion/src/index.ts MarketingVideo out/marketing.mp4",
     "remotion:bundle": "node scripts/bundle-remotion.mjs"
   },

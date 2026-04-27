@@ -64,8 +64,9 @@ async function main(): Promise<void> {
   console.log(`[marketing-cli] Manifest stored at ${summary.manifestUrl ?? '(no public URL)'}`)
   console.log('')
   console.log('Next steps:')
-  console.log('  Preview:  npx remotion preview remotion/src/index.ts')
-  console.log('  Render:   npx remotion render remotion/src/index.ts MarketingVideo out/marketing.mp4')
+  console.log('  Preview real data: npm run remotion:preview:run')
+  console.log('  Preview sample:    npm run remotion:preview')
+  console.log('  Render to MP4:     npm run remotion:render')
 }
 
 main().catch((err: unknown) => {
