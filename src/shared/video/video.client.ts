@@ -92,3 +92,54 @@ export async function muxVideoWithAudio(
   console.log(`[video-service] Muxed video+audio → ${result.muxedPath}`)
   return result.muxedPath
 }
+
+/**
+ * Render a Remotion marketing-video composition to MP4. Vercel serverless
+ * functions can't host Chromium (Remotion needs ~170 MB), so this work is
+ * delegated to the standalone video-service that already runs ffmpeg-heavy
+ * jobs.
+ *
+ * Expected server contract (to implement on the video-service side):
+ *   POST /render-marketing-video
+ *   body: {
+ *     runId: string,
+ *     manifestUrl: string,        // public JSON manifest produced by Doclee
+ *     compositionId: "MarketingVideo",
+ *     remotionServeUrl: string,   // pre-bundled Remotion site, see
+ *                                 //   `npm run remotion:bundle` + the
+ *                                 //   distribution notes in remotion/README.md
+ *     fps: 30,
+ *     widthPx: 1920,
+ *     heightPx: 1080,
+ *   }
+ *   -> { videoPath: "runs/<runId>/marketing.mp4" }
+ *
+ * Server-side implementation hints:
+ *   - Fetch the manifest, pass it as `inputProps` to selectComposition + renderMedia.
+ *   - Use @remotion/renderer with codec h264 and a sane concurrency.
+ *   - Upload the MP4 back to the artifacts bucket and return the path —
+ *     same pattern as convertToMp4 / muxVideoWithAudio.
+ *   - Cap render time (60s × 30fps = 1800 frames is well within 5 min on a
+ *     2-vCPU box; alert if it goes over so we know to scale up).
+ */
+export async function renderMarketingVideo(input: {
+  runId: string
+  manifestUrl: string
+  remotionServeUrl: string
+  compositionId?: string
+  fps?: number
+  widthPx?: number
+  heightPx?: number
+}): Promise<string> {
+  const result = await callService<{ videoPath: string }>('/render-marketing-video', {
+    runId: input.runId,
+    manifestUrl: input.manifestUrl,
+    compositionId: input.compositionId ?? 'MarketingVideo',
+    remotionServeUrl: input.remotionServeUrl,
+    fps: input.fps ?? 30,
+    widthPx: input.widthPx ?? 1920,
+    heightPx: input.heightPx ?? 1080,
+  })
+  console.log(`[video-service] Rendered marketing video → ${result.videoPath}`)
+  return result.videoPath
+}

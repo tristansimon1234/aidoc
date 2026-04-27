@@ -200,8 +200,93 @@ export async function generateMarketingVideoForRun(
     manifest,
     manifestUrl,
     videoUrl: null,
+    videoPath: null,
+    renderStatus: 'idle',
+    renderError: null,
   }
 
   await saveMarketingVideo(runId, summary)
   return summary
+}
+
+/** Where the pre-bundled Remotion site lives. Resolution order:
+ *  1. REMOTION_SERVE_URL env (set per-deploy in Vercel) — production path.
+ *  2. PUBLIC_APP_URL + /remotion-bundle — when the bundle is shipped as a
+ *     static asset of the main Doclee deploy.
+ *  3. Throw — without a serve URL the video-service has nothing to render
+ *     from, so we fail loudly instead of pretending. */
+function resolveRemotionServeUrl(): string {
+  const explicit = process.env.REMOTION_SERVE_URL
+  if (explicit && explicit.length > 0) return explicit
+  const publicAppUrl = process.env.PUBLIC_APP_URL
+  if (publicAppUrl) return `${publicAppUrl.replace(/\/+$/, '')}/remotion-bundle`
+  throw new Error(
+    'No Remotion serve URL configured. Set REMOTION_SERVE_URL (recommended) or PUBLIC_APP_URL. ' +
+      'See remotion/README.md → "Distributing the bundle".',
+  )
+}
+
+/**
+ * Trigger a render of the persisted manifest. Calls the standalone
+ * video-service (which has Chromium + Remotion) and updates the run summary
+ * when the MP4 lands.
+ *
+ * Synchronous against the video-service today — for a 60s 1080p render that
+ * lands in ~2-5 min, well inside Vercel's 300s function cap. If we ever
+ * blow past that, switch to the existing job pattern in run/job.repository
+ * and have the video-service post back.
+ */
+export async function renderMarketingVideoForRun(
+  runId: string,
+): Promise<MarketingVideoSummary> {
+  const { findMarketingVideoByRunId } = await import('./marketing-video.repository.js')
+  const existing = await findMarketingVideoByRunId(runId)
+  if (!existing) {
+    throw new Error(
+      'No marketing-video manifest for this run. Generate one first via POST /marketing-video.',
+    )
+  }
+  if (!existing.manifestUrl) {
+    throw new Error('Manifest exists in DB but has no public URL — cannot render without it.')
+  }
+
+  const { isVideoServiceConfigured, renderMarketingVideo } = await import('../../shared/video/video.client.js')
+  if (!isVideoServiceConfigured()) {
+    throw new Error('VIDEO_SERVICE_URL is not configured — cannot render marketing video.')
+  }
+
+  // Mark rendering immediately so concurrent reads see the in-flight state.
+  await saveMarketingVideo(runId, {
+    ...existing,
+    renderStatus: 'rendering',
+    renderError: null,
+  })
+
+  try {
+    const remotionServeUrl = resolveRemotionServeUrl()
+    const videoPath = await renderMarketingVideo({
+      runId,
+      manifestUrl: existing.manifestUrl,
+      remotionServeUrl,
+    })
+
+    const videoUrl = `${getPublicUrl('artifacts', videoPath) ?? ''}?v=${Date.now()}`
+    const ready: MarketingVideoSummary = {
+      ...existing,
+      videoPath,
+      videoUrl,
+      renderStatus: 'ready',
+      renderError: null,
+    }
+    await saveMarketingVideo(runId, ready)
+    return ready
+  } catch (err) {
+    const failed: MarketingVideoSummary = {
+      ...existing,
+      renderStatus: 'failed',
+      renderError: (err as Error).message,
+    }
+    await saveMarketingVideo(runId, failed)
+    throw err
+  }
 }

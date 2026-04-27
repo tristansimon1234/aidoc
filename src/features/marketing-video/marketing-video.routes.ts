@@ -6,7 +6,10 @@ import { GenerateMarketingVideoOptionsSchema } from './marketing-video.schema.js
 import {
   findMarketingVideoByRunId,
 } from './marketing-video.repository.js'
-import { generateMarketingVideoForRun } from './marketing-video.service.js'
+import {
+  generateMarketingVideoForRun,
+  renderMarketingVideoForRun,
+} from './marketing-video.service.js'
 
 export const marketingVideoRouter = Router()
 
@@ -29,6 +32,30 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
       if (!opts.success) throw new ValidationError(opts.error.flatten())
 
       const summary = await generateMarketingVideoForRun(params.data.id, opts.data)
+      res.status(200).json(summary)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+/**
+ * POST /runs/:id/marketing-video/render
+ * Trigger a render of the existing manifest via the video-service. Use
+ * after iterating on the script — separate endpoint so you don't burn a
+ * render every time you tweak the manifest.
+ *
+ * Synchronous: returns once the MP4 is uploaded (or the render fails and
+ * the summary is marked accordingly). Vercel's 300s function cap is the
+ * outer bound; a 60s 1080p video typically takes 2-5 min.
+ */
+marketingVideoRouter.post('/:id/marketing-video/render', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const summary = await renderMarketingVideoForRun(params.data.id)
       res.status(200).json(summary)
     } catch (err) {
       next(err)

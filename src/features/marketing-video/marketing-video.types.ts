@@ -84,15 +84,28 @@ export interface MarketingManifest {
   voiceoverPath: string | null
 }
 
+/** Render lifecycle of the MP4. The manifest can exist without a render
+ *  (script + voice-over only), or with a render in any of these states. */
+export type MarketingVideoRenderStatus = 'idle' | 'rendering' | 'ready' | 'failed'
+
 export interface MarketingVideoSummary {
   manifest: MarketingManifest
-  /** URL to the manifest JSON in artifacts storage — what Remotion fetches
-   *  when running outside of a checked-out manifest.json (e.g. cloud render
-   *  later). Null when the manifest hasn't been persisted to storage yet. */
+  /** URL to the manifest JSON in artifacts storage — what the video-service
+   *  fetches when rendering. Null when the manifest hasn't been persisted to
+   *  storage yet. */
   manifestUrl: string | null
-  /** URL to the rendered MP4 once a render lands. Null in the MVP — render
-   *  pipeline is a follow-up PR. */
+  /** URL to the rendered MP4 once a render lands. Null while the manifest
+   *  exists but no render has been triggered, or while rendering is in
+   *  flight. */
   videoUrl: string | null
+  /** Storage path to the rendered MP4. Mirrors videoUrl but lets the
+   *  video-service mux the marketing video into other artifacts later
+   *  without re-resolving from a public URL. */
+  videoPath: string | null
+  renderStatus: MarketingVideoRenderStatus
+  /** Failure reason when renderStatus is 'failed'. Surface to the user so
+   *  they can act (e.g. video-service down, bundle URL stale). */
+  renderError: string | null
 }
 
 export interface GenerateMarketingVideoOptions {

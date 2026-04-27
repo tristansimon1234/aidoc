@@ -15,7 +15,8 @@
     "format:check": "prettier --check 'src/**/*.ts'",
     "marketing:preview": "node --loader ts-node/esm scripts/marketing-video.ts",
     "remotion:preview": "remotion preview remotion/src/index.ts",
-    "remotion:render": "remotion render remotion/src/index.ts MarketingVideo out/marketing.mp4"
+    "remotion:render": "remotion render remotion/src/index.ts MarketingVideo out/marketing.mp4",
+    "remotion:bundle": "node --loader ts-node/esm scripts/bundle-remotion.ts"
   },
   "repository": {
     "type": "git",
@@ -34,6 +35,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@google/generative-ai": "^0.24.1",
+    "@remotion/bundler": "^4.0.0",
     "@remotion/cli": "^4.0.0",
     "@remotion/renderer": "^4.0.0",
     "@supabase/ssr": "^0.9.0",
