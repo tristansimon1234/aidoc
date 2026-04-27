@@ -1,5 +1,5 @@
 {
-  "buildCommand": "vite build",
+  "buildCommand": "node scripts/bundle-remotion.mjs && node scripts/copy-remotion-bundle.mjs && vite build",
   "outputDirectory": "dist/client",
   "framework": "vite",
   "functions": {
