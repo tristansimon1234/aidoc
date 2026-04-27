@@ -1,0 +1,33 @@
+import { z } from 'zod'
+
+/** Zod for what Gemini returns as the marketing script. Field names mirror
+ *  MarketingScript so the parsed output drops straight into the service. */
+export const MarketingSceneSchema = z.object({
+  voiceover: z.string().min(1),
+  headline: z.string().min(1),
+  subhead: z.string().optional(),
+  screenshotIndex: z.number().int().nullable(),
+  durationSeconds: z.number().positive(),
+})
+
+export const MarketingScriptSchema = z.object({
+  hook: z.object({
+    voiceover: z.string().min(1),
+    headline: z.string().min(1),
+    durationSeconds: z.number().positive(),
+  }),
+  scenes: z.array(MarketingSceneSchema).min(1).max(6),
+  cta: z.object({
+    voiceover: z.string().min(1),
+    headline: z.string().min(1),
+    buttonLabel: z.string().min(1).max(40),
+    durationSeconds: z.number().positive(),
+  }),
+  totalDurationSeconds: z.number().positive(),
+  language: z.string().default('en'),
+})
+
+export const GenerateMarketingVideoOptionsSchema = z.object({
+  withVoiceover: z.boolean().optional(),
+  voiceId: z.string().optional(),
+})

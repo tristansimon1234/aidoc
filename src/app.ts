@@ -19,6 +19,7 @@ import { publicDocsRouter } from './features/page/public-docs.routes.js'
 import { analyticsRouter } from './features/analytics/analytics.routes.js'
 import { teamRouter, invitePublicRouter } from './features/team/team.routes.js'
 import { exportRouter } from './features/export/export.routes.js'
+import { marketingVideoRouter } from './features/marketing-video/marketing-video.routes.js'
 import { errorHandler } from './shared/middleware/error.middleware.js'
 
 export const app = express()
@@ -55,6 +56,7 @@ app.use('/projects/:projectId/analytics', analyticsRouter)
 app.use('/runs', runRouter)
 app.use('/runs', questionsRouter)
 app.use('/runs', documentationRouter)
+app.use('/runs', marketingVideoRouter)
 
 // Error handler
 app.use(errorHandler)
