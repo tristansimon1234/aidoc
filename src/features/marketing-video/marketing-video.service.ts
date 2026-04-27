@@ -143,6 +143,7 @@ export async function generateMarketingVideoForRun(
     availableScreenshots: screenshots.length,
     screenshotCaptions: screenshots.map((s) => s.caption),
     language,
+    userPrompt: options.userPrompt,
   })
 
   console.log(`[marketing-video] Script: ${script.scenes.length} scenes, ${script.totalDurationSeconds}s total`)

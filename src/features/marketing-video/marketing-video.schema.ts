@@ -30,4 +30,5 @@ export const MarketingScriptSchema = z.object({
 export const GenerateMarketingVideoOptionsSchema = z.object({
   withVoiceover: z.boolean().optional(),
   voiceId: z.string().optional(),
+  userPrompt: z.string().max(800).optional(),
 })

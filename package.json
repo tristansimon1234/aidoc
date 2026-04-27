@@ -12,7 +12,10 @@
     "eval": "vitest run evals/",
     "lint": "eslint src/",
     "format": "prettier --write 'src/**/*.ts'",
-    "format:check": "prettier --check 'src/**/*.ts'"
+    "format:check": "prettier --check 'src/**/*.ts'",
+    "marketing:preview": "node --loader ts-node/esm scripts/marketing-video.ts",
+    "remotion:preview": "remotion preview remotion/src/index.ts",
+    "remotion:render": "remotion render remotion/src/index.ts MarketingVideo out/marketing.mp4"
   },
   "repository": {
     "type": "git",
@@ -31,6 +34,8 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@google/generative-ai": "^0.24.1",
+    "@remotion/cli": "^4.0.0",
+    "@remotion/renderer": "^4.0.0",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.100.0",
     "@types/react": "^19.2.14",
@@ -45,6 +50,7 @@
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.2",
+    "remotion": "^4.0.0",
     "rrweb": "^2.0.0-alpha.4",
     "rrweb-player": "^1.0.0-alpha.4",
     "typescript": "5.9.3",

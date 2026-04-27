@@ -102,4 +102,11 @@ export interface GenerateMarketingVideoOptions {
   withVoiceover?: boolean
   /** Override the ElevenLabs voice. Defaults to the marketing-tone voice. */
   voiceId?: string
+  /** Free-form steering from the user — tells Gemini what angle to take,
+   *  who the target audience is, which feature to emphasize, what tone
+   *  shift to apply. The doc remains the content source-of-truth; this is
+   *  purely a creative brief layered on top.
+   *  Example: "Focus on the AI agent that tests your docs. Audience is
+   *  technical PMs in B2B SaaS. Tone: confident, slightly cheeky."  */
+  userPrompt?: string
 }

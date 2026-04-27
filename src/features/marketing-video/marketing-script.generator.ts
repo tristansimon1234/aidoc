@@ -15,6 +15,11 @@ interface GenerateMarketingScriptInput {
   /** Target language inferred from the doc — Gemini stays in this language
    *  even if the surrounding UI / metadata uses something else. */
   language: string
+  /** Optional creative brief from the user: angle, audience, feature to
+   *  emphasize, tone shift. NOT a content source — the doc remains the
+   *  factual ground truth, this just steers framing. Trimmed and clamped
+   *  upstream by Zod. */
+  userPrompt?: string
 }
 
 /**
@@ -34,6 +39,10 @@ export async function generateMarketingScript(
     .map((c, i) => `  [${i}] ${c}`)
     .join('\n')
 
+  const briefBlock = input.userPrompt?.trim()
+    ? `\n## Creative brief from the user (HIGHEST PRIORITY for framing — but never overrides the documentation as factual ground truth)\n\n${input.userPrompt.trim()}\n\nRespect this brief: pick the angle, audience, tone shift, and which capabilities to emphasize from it. If the brief asks for something the documentation doesn't support, stay grounded in the docs and pivot the framing — don't invent features to satisfy the brief.\n`
+    : ''
+
   const userPrompt = `You are writing a 60-second marketing video script for a SaaS product feature.
 
 The video has THREE acts:
@@ -50,6 +59,7 @@ Feature page: ${input.pageTitle}
 
 Markdown content (use as the ONLY source of truth — don't invent features):
 ${input.pageMarkdown.slice(0, 6000)}
+${briefBlock}
 
 ## Available screenshots (from the same doc)
 
@@ -113,9 +123,10 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
   // Clamp screenshotIndex into a valid range — Gemini sometimes references
   // an index that doesn't exist.
   const max = input.availableScreenshots - 1
+  const validated = parsed.data as MarketingScript
   const clamped: MarketingScript = {
-    ...parsed.data,
-    scenes: parsed.data.scenes.map((s) => ({
+    ...validated,
+    scenes: validated.scenes.map((s) => ({
       ...s,
       screenshotIndex:
         s.screenshotIndex == null
