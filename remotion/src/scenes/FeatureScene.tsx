@@ -1,6 +1,7 @@
 import React from 'react'
 import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
 import type { Branding, Scene, Screenshot } from '../manifest.js'
+import { BrandWatermark } from './BrandWatermark.js'
 
 interface FeatureSceneProps {
   scene: Scene
@@ -41,6 +42,7 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
 
   return (
     <AbsoluteFill style={{ backgroundColor: branding.bgColor, overflow: 'hidden' }}>
+      <BrandWatermark branding={branding} position="top-right" size={56} />
       <AbsoluteFill
         style={{
           background: `radial-gradient(ellipse at 80% 50%, ${branding.accentColor}22 0%, transparent 65%)`,

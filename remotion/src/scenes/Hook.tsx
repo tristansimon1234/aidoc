@@ -1,6 +1,7 @@
 import React from 'react'
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
 import type { Branding } from '../manifest.js'
+import { BrandWatermark } from './BrandWatermark.js'
 
 interface HookProps {
   headline: string
@@ -34,6 +35,7 @@ export const Hook: React.FC<HookProps> = ({ headline, branding }) => {
 
   return (
     <AbsoluteFill style={{ backgroundColor: branding.bgColor, overflow: 'hidden' }}>
+      <BrandWatermark branding={branding} position="top-right" size={64} />
       <AbsoluteFill
         style={{
           background: `radial-gradient(circle at 50% 50%, ${branding.accentColor}33 0%, transparent 60%)`,

@@ -1,5 +1,5 @@
 import React from 'react'
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
+import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
 import type { Branding } from '../manifest.js'
 
 interface CtaProps {
@@ -18,8 +18,9 @@ export const Cta: React.FC<CtaProps> = ({ headline, buttonLabel, branding }) => 
   const frame = useCurrentFrame()
   const { fps, durationInFrames } = useVideoConfig()
 
-  const headlineSpring = spring({ frame, fps, config: { damping: 16, stiffness: 100 } })
-  const buttonSpring = spring({ frame: frame - 14, fps, config: { damping: 14, stiffness: 110 } })
+  const logoSpring = spring({ frame, fps, config: { damping: 18, stiffness: 110 } })
+  const headlineSpring = spring({ frame: frame - 6, fps, config: { damping: 16, stiffness: 100 } })
+  const buttonSpring = spring({ frame: frame - 18, fps, config: { damping: 14, stiffness: 110 } })
 
   const fadeOut = interpolate(
     frame,
@@ -30,6 +31,9 @@ export const Cta: React.FC<CtaProps> = ({ headline, buttonLabel, branding }) => 
 
   const headlineY = interpolate(headlineSpring, [0, 1], [40, 0])
   const headlineOpacity = interpolate(headlineSpring, [0, 1], [0, 1]) * fadeOut
+
+  const logoScale = interpolate(logoSpring, [0, 1], [0.7, 1])
+  const logoOpacity = interpolate(logoSpring, [0, 1], [0, 1]) * fadeOut
 
   const buttonScale = interpolate(buttonSpring, [0, 1], [0.85, 1])
   const buttonOpacity = interpolate(buttonSpring, [0, 1], [0, 1]) * fadeOut
@@ -49,10 +53,23 @@ export const Cta: React.FC<CtaProps> = ({ headline, buttonLabel, branding }) => 
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 56,
+          gap: 48,
           padding: '0 120px',
         }}
       >
+        {branding.logoUrl && (
+          <Img
+            src={branding.logoUrl}
+            style={{
+              height: 140,
+              width: 'auto',
+              maxWidth: 600,
+              objectFit: 'contain',
+              opacity: logoOpacity,
+              transform: `scale(${logoScale})`,
+            }}
+          />
+        )}
         <h1
           style={{
             color: branding.textColor,
