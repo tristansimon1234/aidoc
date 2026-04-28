@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Button, Spinner, Badge, ProgressLoader } from '../../../design-system/components/index.js'
+import { useEffect, useState } from 'react'
+import { Button, Spinner, Badge } from '../../../design-system/components/index.js'
 import { api, ApiError } from '../../../shared/api/client.js'
 import type { MarketingVideoSummaryDTO } from '../../../shared/api/client.js'
+import { useJobs } from '../../../shared/jobs/JobContext.js'
 import styles from './MarketingVideoPanel.module.css'
 
 interface MarketingVideoPanelProps {
   runId: string
+  /** Required so the global JobTracker (bottom-right floating panel) can
+   *  link the in-progress card back to this page. */
+  pageId: string
+  pageTitle: string
 }
 
 type VoiceTone = 'punchy' | 'calm' | 'playful' | 'serious'
@@ -18,17 +23,6 @@ const TONE_LABELS: Record<VoiceTone, string> = {
   serious: 'Serious — authoritative, monotone',
 }
 
-/** Estimated seconds per pipeline stage. ProgressLoader uses these to
- *  pace its waveform fill — they don't have to be precise, just in the
- *  right ballpark so the bar moves at a believable rate. */
-const STAGE_TIMINGS = {
-  script: 12,        // Gemini call, ~6-15s for 45s of text
-  voice: 18,         // ElevenLabs synth, ~10-25s for ~100 words
-  musicPreset: 1,    // Just resolves a URL — instant
-  musicUpload: 1,    // Just resolves a URL — instant
-  musicAi: 45,       // ElevenLabs Music compose, the long pole
-  render: 120,       // Remotion render via video service
-} as const
 
 /**
  * In-app surface for the marketing-video feature. One button, one
@@ -50,12 +44,11 @@ const STAGE_TIMINGS = {
  * which made the user think about pipeline stages they shouldn't care
  * about.
  */
-export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.ReactElement {
+export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideoPanelProps): React.ReactElement {
+  const { addJob, updateJob, failJob } = useJobs()
   const [summary, setSummary] = useState<MarketingVideoSummaryDTO | null>(null)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
-  const [activeStep, setActiveStep] = useState(0)
-  const [pipelineDone, setPipelineDone] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [withVoiceover, setWithVoiceover] = useState(true)
   const [voiceId, setVoiceId] = useState<string>('')
@@ -117,42 +110,18 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
     }
   }
 
-  /** Build the ProgressLoader steps based on current options — only the
-   *  stages that will actually run are surfaced. Stable across renders
-   *  via useMemo so the loader doesn't reset its internal timer when an
-   *  unrelated state changes. */
-  const pipelineSteps = useMemo(() => {
-    const steps: { label: string; estimatedSeconds: number }[] = [
-      { label: 'Writing the script', estimatedSeconds: STAGE_TIMINGS.script },
-    ]
-    if (withVoiceover) {
-      steps.push({ label: 'Recording the voice-over', estimatedSeconds: STAGE_TIMINGS.voice })
-    }
-    if (musicChoice === 'ai') {
-      steps.push({ label: 'Composing AI music', estimatedSeconds: STAGE_TIMINGS.musicAi })
-    } else if (musicChoice !== 'none') {
-      steps.push({ label: 'Adding music', estimatedSeconds: musicChoice === 'upload' ? STAGE_TIMINGS.musicUpload : STAGE_TIMINGS.musicPreset })
-    }
-    steps.push({ label: 'Rendering the video', estimatedSeconds: STAGE_TIMINGS.render })
-    return steps
-  }, [withVoiceover, musicChoice])
-
   /**
    * Run the full pipeline: generate (script + voice + music) → render.
-   * The backend folds steps 1-3 into one call (/marketing-video) and
-   * step 4 into a separate call (/render). We bump activeStep at known
-   * boundaries; the ProgressLoader auto-advances the bar between them
-   * based on estimatedSeconds so the user sees continuous motion.
+   * Backend folds the first three into one call; render is a second.
+   * Progress is shown via the global JobTracker (bottom-right floating
+   * card, same as doc-gen / voiceover / try-doc) so the user can
+   * navigate elsewhere in the app while it runs.
    */
   const handleGenerateAndRender = async (): Promise<void> => {
     setError(null)
-    setActiveStep(0)
-    setPipelineDone(false)
     setWorking(true)
 
-    // The /marketing-video call covers steps 0..lastNonRenderIndex; the
-    // /render call is the final step.
-    const renderStepIndex = pipelineSteps.length - 1
+    addJob({ runId, pageId, pageTitle, type: 'marketing-video', status: 'running' })
 
     try {
       const musicOpts: {
@@ -183,13 +152,13 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
       })
       setSummary(generated)
 
-      // Manifest stages done → flip the loader to the render stage.
-      setActiveStep(renderStepIndex)
       const rendered = await api.runs.marketingVideo.render(runId)
       setSummary(rendered)
-      setPipelineDone(true)
+      updateJob(runId, { status: 'completed' })
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : (err as Error).message)
+      const message = err instanceof ApiError ? err.message : (err as Error).message
+      setError(message)
+      failJob(runId, message, err instanceof ApiError ? err.code ?? null : null)
     } finally {
       setWorking(false)
     }
@@ -458,17 +427,6 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
           {working ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
         </Button>
       </div>
-
-      {(working || pipelineDone) && (
-        <div style={{ margin: '8px 0 24px' }}>
-          <ProgressLoader
-            steps={pipelineSteps}
-            activeStep={activeStep}
-            done={pipelineDone}
-            onExited={() => setPipelineDone(false)}
-          />
-        </div>
-      )}
 
       {hasManifest && summary && !working && (
         <>

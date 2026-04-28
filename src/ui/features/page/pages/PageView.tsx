@@ -1085,9 +1085,9 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
       )}
 
       {/* ===== MARKETING TAB ===== */}
-      {activeTab === 'marketing' && latestRunId && (
+      {activeTab === 'marketing' && latestRunId && pageId && (
         <div className={styles.tabContent}>
-          <MarketingVideoPanel runId={latestRunId} />
+          <MarketingVideoPanel runId={latestRunId} pageId={pageId} pageTitle={page.title} />
         </div>
       )}
       {activeTab === 'marketing' && !latestRunId && (
