@@ -194,7 +194,7 @@ const TextBlock: React.FC<TextBlockProps> = ({ scene, branding, alignment, headl
           borderRadius: 999,
           background: `${branding.accentColor}25`,
           color: branding.accentColor,
-          fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
+          fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
           fontSize: 22,
           fontWeight: 600,
           letterSpacing: '0.04em',
@@ -206,7 +206,7 @@ const TextBlock: React.FC<TextBlockProps> = ({ scene, branding, alignment, headl
       <h2
         style={{
           color: branding.textColor,
-          fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
+          fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
           fontSize: headlineSize,
           fontWeight: 700,
           lineHeight: 1.05,
@@ -220,7 +220,7 @@ const TextBlock: React.FC<TextBlockProps> = ({ scene, branding, alignment, headl
         <p
           style={{
             color: `${branding.textColor}B0`,
-            fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
+            fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
             fontSize: 30,
             fontWeight: 400,
             lineHeight: 1.35,
