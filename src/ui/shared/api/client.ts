@@ -626,6 +626,14 @@ export const api = {
         }),
       render: (id: string): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video/render`, { method: 'POST' }),
+      updateVoice: (
+        id: string,
+        opts: { voiceId?: string; tone?: 'punchy' | 'calm' | 'playful' | 'serious' },
+      ): Promise<MarketingVideoSummaryDTO> =>
+        request(`/runs/${id}/marketing-video/voiceover`, {
+          method: 'POST',
+          body: JSON.stringify(opts),
+        }),
       voices: (): Promise<{ voices: Array<{ voiceId: string; name: string; category: string; labels: Record<string, string> }> }> =>
         request(`/runs/marketing-video/voices`),
       musicPresets: (): Promise<{ presets: Array<{ id: string; name: string; url: string; mood?: string }> }> =>

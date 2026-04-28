@@ -2,15 +2,22 @@ import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { RunIdParamSchema } from '../run/run.schema.js'
-import { GenerateMarketingVideoOptionsSchema } from './marketing-video.schema.js'
+import { z } from 'zod'
+import { GenerateMarketingVideoOptionsSchema, VoiceTonePresetSchema } from './marketing-video.schema.js'
 import {
   findMarketingVideoByRunId,
 } from './marketing-video.repository.js'
 import {
   generateMarketingVideoForRun,
   renderMarketingVideoForRun,
+  updateMarketingVoiceoverForRun,
   MUSIC_PRESETS,
 } from './marketing-video.service.js'
+
+const UpdateVoiceoverBodySchema = z.object({
+  voiceId: z.string().optional(),
+  tone: VoiceTonePresetSchema.optional(),
+})
 import { getAvailableVoices, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 
 export const marketingVideoRouter = Router()
@@ -85,6 +92,29 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
  * the summary is marked accordingly). Vercel's 300s function cap is the
  * outer bound; a 60s 1080p video typically takes 2-5 min.
  */
+/**
+ * POST /runs/:id/marketing-video/voiceover
+ * Re-synthesize JUST the voice-over with a new voice / tone, leaving
+ * the script + screenshots + music untouched. Resets render status to
+ * 'idle' so the UI prompts a fresh render.
+ */
+marketingVideoRouter.post('/:id/marketing-video/voiceover', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const body = UpdateVoiceoverBodySchema.safeParse(req.body ?? {})
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const summary = await updateMarketingVoiceoverForRun(params.data.id, body.data)
+      res.status(200).json(summary)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 marketingVideoRouter.post('/:id/marketing-video/render', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {

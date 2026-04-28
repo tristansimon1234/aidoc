@@ -126,6 +126,40 @@ async function collectScreenshots(runId: string): Promise<MarketingScreenshot[]>
  * marketing video has no fixed timestamps to sync to — Remotion adapts scene
  * durations to the audio it gets, not the other way around.
  */
+/**
+ * Synthesize the marketing voice-over via ElevenLabs and upload to storage.
+ * Pulled out of generateMarketingVideoForRun so the
+ * /update-voiceover endpoint can re-run JUST the synthesis without touching
+ * the script — when the user picks a different voice or tone post-generation.
+ */
+async function synthesizeMarketingVoiceover(
+  runId: string,
+  script: import('./marketing-video.types.js').MarketingScript,
+  options: GenerateMarketingVideoOptions,
+): Promise<{ voiceoverPath: string; voiceoverUrl: string }> {
+  if (!isElevenLabsConfigured()) {
+    throw new Error('ELEVENLABS_API_KEY is required for voice-over.')
+  }
+  const narration = flattenScriptToNarration(script)
+  const tone = options.tone ?? 'punchy'
+  const settings = TONE_PRESETS[tone]
+  console.log(`[marketing-video] Voice settings: tone=${tone}, voice=${options.voiceId ?? 'default'}`)
+  const buffer = await synthesizeSpeech(narration, {
+    voiceId: options.voiceId,
+    stability: settings.stability,
+    style: settings.style,
+    similarityBoost: settings.similarityBoost,
+  })
+  const voiceoverPath = `runs/${runId}/marketing-voiceover.mp3`
+  await uploadToStorage('artifacts', voiceoverPath, buffer, 'audio/mpeg')
+  // Cache-bust query so Remotion / browsers don't serve a stale MP3 after
+  // a voice change. Storage write is overwrite (upsert) so the path is the
+  // same; only the ?v= query differs.
+  const voiceoverUrl = `${getPublicUrl('artifacts', voiceoverPath) ?? ''}?v=${Date.now()}`
+  console.log(`[marketing-video] Voice-over uploaded: ${voiceoverUrl}`)
+  return { voiceoverPath, voiceoverUrl }
+}
+
 function flattenScriptToNarration(script: import('./marketing-video.types.js').MarketingScript): string {
   const parts: string[] = [script.hook.voiceover]
   for (const scene of script.scenes) parts.push(scene.voiceover)
@@ -191,23 +225,9 @@ export async function generateMarketingVideoForRun(
   let voiceoverUrl: string | null = null
 
   if (withVoiceover) {
-    if (!isElevenLabsConfigured()) {
-      throw new Error('ELEVENLABS_API_KEY is required for voice-over. Re-run with withVoiceover=false to skip.')
-    }
-    const narration = flattenScriptToNarration(script)
-    const tone = options.tone ?? 'punchy'
-    const settings = TONE_PRESETS[tone]
-    console.log(`[marketing-video] Voice settings: tone=${tone}, voice=${options.voiceId ?? 'default'}`)
-    const buffer = await synthesizeSpeech(narration, {
-      voiceId: options.voiceId,
-      stability: settings.stability,
-      style: settings.style,
-      similarityBoost: settings.similarityBoost,
-    })
-    voiceoverPath = `runs/${runId}/marketing-voiceover.mp3`
-    await uploadToStorage('artifacts', voiceoverPath, buffer, 'audio/mpeg')
-    voiceoverUrl = `${getPublicUrl('artifacts', voiceoverPath) ?? ''}?v=${Date.now()}`
-    console.log(`[marketing-video] Voice-over uploaded: ${voiceoverUrl}`)
+    const result = await synthesizeMarketingVoiceover(runId, script, options)
+    voiceoverPath = result.voiceoverPath
+    voiceoverUrl = result.voiceoverUrl
   }
 
   // Resolve background music. Priority: explicit upload > preset by id >
@@ -339,6 +359,66 @@ async function preflightManifest(manifestUrl: string): Promise<MarketingManifest
   } catch (err) {
     throw new Error(`Manifest at ${manifestUrl} is not valid JSON: ${(err as Error).message}`)
   }
+}
+
+/**
+ * Re-synthesize the voice-over on an existing manifest with a new
+ * voice / tone, without touching the script, screenshots, music or
+ * branding. Persists the updated manifest (uploads the new JSON to
+ * storage so the public URL reflects the change) and returns the
+ * fresh summary so the UI can refresh.
+ *
+ * Use case: user generated, listened, didn't like the voice — they
+ * change the picker + tone and click "Update voice" instead of
+ * regenerating the whole script (which would burn another Gemini call
+ * and could change wording).
+ */
+export async function updateMarketingVoiceoverForRun(
+  runId: string,
+  options: { voiceId?: string; tone?: import('./marketing-video.types.js').VoiceTone },
+): Promise<MarketingVideoSummary> {
+  const { findMarketingVideoByRunId } = await import('./marketing-video.repository.js')
+  const existing = await findMarketingVideoByRunId(runId)
+  if (!existing) throw new Error('No marketing-video manifest for this run yet — generate one first.')
+
+  const { voiceoverPath, voiceoverUrl } = await synthesizeMarketingVoiceover(
+    runId,
+    existing.manifest.script,
+    { voiceId: options.voiceId, tone: options.tone },
+  )
+
+  const updatedManifest: MarketingManifest = {
+    ...existing.manifest,
+    voiceoverUrl,
+    voiceoverPath,
+    generatedAt: new Date().toISOString(),
+  }
+
+  // Re-upload the manifest JSON so the URL the video-service fetches
+  // reflects the new voice-over. Same path → overwrite, only the ?v=
+  // changes.
+  const manifestPath = `runs/${runId}/marketing-manifest.json`
+  await uploadToStorage(
+    'artifacts',
+    manifestPath,
+    Buffer.from(JSON.stringify(updatedManifest, null, 2), 'utf-8'),
+    'application/json',
+  )
+  const manifestUrl = `${getPublicUrl('artifacts', manifestPath) ?? ''}?v=${Date.now()}`
+
+  const updated: MarketingVideoSummary = {
+    ...existing,
+    manifest: updatedManifest,
+    manifestUrl,
+    // Voice changed → existing MP4 is stale. Reset render status so the
+    // UI prompts the user to re-render.
+    videoUrl: null,
+    videoPath: null,
+    renderStatus: 'idle',
+    renderError: null,
+  }
+  await saveMarketingVideo(runId, updated)
+  return updated
 }
 
 /** Where the pre-bundled Remotion site lives. Resolution order:

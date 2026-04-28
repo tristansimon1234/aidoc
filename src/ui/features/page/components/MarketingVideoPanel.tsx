@@ -36,6 +36,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [rendering, setRendering] = useState(false)
+  const [updatingVoice, setUpdatingVoice] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [withVoiceover, setWithVoiceover] = useState(true)
   const [voiceId, setVoiceId] = useState<string>('')
@@ -122,6 +123,22 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
       setError(err instanceof ApiError ? err.message : (err as Error).message)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  const handleUpdateVoice = async (): Promise<void> => {
+    setError(null)
+    setUpdatingVoice(true)
+    try {
+      const result = await api.runs.marketingVideo.updateVoice(runId, {
+        voiceId: voiceId || undefined,
+        tone,
+      })
+      setSummary(result)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : (err as Error).message)
+    } finally {
+      setUpdatingVoice(false)
     }
   }
 
@@ -240,6 +257,21 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
               ))}
             </select>
           </label>
+        </div>
+      )}
+
+      {withVoiceover && hasManifest && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 24px', fontSize: 'var(--text-sm)' }}>
+          <Button
+            variant="secondary"
+            onClick={handleUpdateVoice}
+            disabled={updatingVoice || generating}
+          >
+            {updatingVoice ? 'Re-synthesizing…' : 'Update voice-over'}
+          </Button>
+          <span style={{ color: 'var(--color-muted-fg)' }}>
+            Re-runs ElevenLabs with the current voice + tone, keeps the script. Resets the MP4 — re-render after.
+          </span>
         </div>
       )}
 
