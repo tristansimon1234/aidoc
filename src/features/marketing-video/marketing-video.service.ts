@@ -179,12 +179,16 @@ async function synthesizeMarketingVoiceover(
   const voiceoverPath = `runs/${runId}/marketing-voiceover.mp3`
   await uploadToStorage('artifacts', voiceoverPath, buffer, 'audio/mpeg')
   const voiceoverUrl = `${getPublicUrl('artifacts', voiceoverPath) ?? ''}?v=${Date.now()}`
-  // ElevenLabs MP3 at the default bitrate is ~128 kbps = 16000 bytes/sec.
-  // Same heuristic the doc-voiceover service uses. Off by a few %
-  // depending on audio tags / silence — good enough for setting the
-  // composition duration so the voice never gets cut off.
-  const voiceoverDurationSeconds = Math.max(1, buffer.length / 16000)
-  console.log(`[marketing-video] Voice-over uploaded: ${voiceoverUrl} (~${voiceoverDurationSeconds.toFixed(1)}s)`)
+
+  // Probe the MP3 properly via music-metadata. The previous heuristic
+  // (buffer.length / 16000) systematically overestimated by ~5-10%
+  // because it ignored MP3 frame headers and VBR; the composition then
+  // ran longer than the script asked for. music-metadata reads frame
+  // counts directly so the value is accurate within ~50ms.
+  const { parseBuffer } = await import('music-metadata')
+  const meta = await parseBuffer(buffer, { mimeType: 'audio/mpeg' }, { duration: true })
+  const voiceoverDurationSeconds = meta.format.duration ?? Math.max(1, buffer.length / 16000)
+  console.log(`[marketing-video] Voice-over uploaded: ${voiceoverUrl} (${voiceoverDurationSeconds.toFixed(2)}s)`)
   return { voiceoverPath, voiceoverUrl, voiceoverDurationSeconds }
 }
 

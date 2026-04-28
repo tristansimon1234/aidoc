@@ -298,7 +298,7 @@ The video has THREE acts:
 
 Total duration MUST be EXACTLY 45 seconds. Allocate the budget like this:
   hook + sum(scenes) + cta = 45.0 (±0.5 OK, NOT more).
-Keep voice-over CONCISE — at ~2.3 words/second, 45s ≈ 100 words total across all parts. Short punchy sentences. Sentence fragments are OK ("Built for speed."). Active verbs. No filler ("Don't forget that…", "It's also worth noting…" → cut).
+Keep voice-over CONCISE — target **85 words total** across all parts (NOT 100; audio tags + em-dashes + ellipses each add real silence at synthesis time, so the spoken duration consistently exceeds the word-count estimate). Short punchy sentences. Sentence fragments are OK ("Built for speed."). Active verbs. No filler ("Don't forget that…", "It's also worth noting…" → cut). Better to be slightly under 45s than over.
 
 ## Source documentation
 

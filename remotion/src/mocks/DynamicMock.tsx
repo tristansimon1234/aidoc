@@ -29,6 +29,19 @@ export const DynamicMock: React.FC<DynamicMockProps> = ({ mock, branding, width 
   const frameTone = mock.frame?.tone ?? 'light'
   const surface = frameSurface(frameTone)
 
+  // Auto-stagger: Gemini routinely omits per-element `delay` despite the
+  // prompt asking for it. Without staggers every element fades in at
+  // frame 0 and the mock looks instant / static. Enforce a minimum
+  // stagger of 0.25s × index when the LLM left delay undefined, capped
+  // so a 12-element mock doesn't end up animating for 3 seconds.
+  const STAGGER_PER_INDEX = 0.25
+  const STAGGER_CAP = 3.0
+  const enrichedElements = mock.elements.map((el, i) => {
+    if ('delay' in el && el.delay !== undefined) return el
+    if (el.type === 'spacer') return el
+    return { ...el, delay: Math.min(i * STAGGER_PER_INDEX, STAGGER_CAP) } as typeof el
+  })
+
   const inner = (
     <div
       style={{
@@ -42,7 +55,7 @@ export const DynamicMock: React.FC<DynamicMockProps> = ({ mock, branding, width 
         fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
       }}
     >
-      {mock.elements.map((el, i) => (
+      {enrichedElements.map((el, i) => (
         <ElementRouter key={i} element={el} branding={branding} frameTone={frameTone} />
       ))}
     </div>
@@ -103,23 +116,31 @@ const ElementRouter: React.FC<RouterProps> = ({ element, branding, frameTone }) 
   }
 }
 
-const FADE_FRAMES = 10
+// Bumped from 10 → 18 frames (≈0.6s @ 30fps) so the entry animation
+// reads as motion rather than a flicker. Slide bumped from 8 → 18 px
+// for the same reason; staggered with the auto-delay (0.25s/element)
+// the result is a clear "elements typing in" feel.
+const FADE_FRAMES = 18
+const SLIDE_PX = 18
 
-/** Hook: stagger fade-in + 8px slide based on `delay` (seconds). Top-level
- *  in every leaf — never called inside a conditional. */
-function useEntry(delay: number | undefined): { opacity: number; y: number } {
+/** Hook: stagger fade-in + slide-up + tiny scale-in based on `delay`
+ *  (seconds). Top-level in every leaf — never called inside a
+ *  conditional. */
+function useEntry(delay: number | undefined): { opacity: number; y: number; scale: number } {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const startFrame = Math.round((delay ?? 0) * fps)
-  const opacity = interpolate(frame, [startFrame, startFrame + FADE_FRAMES], [0, 1], {
+  const t = interpolate(frame, [startFrame, startFrame + FADE_FRAMES], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   })
-  const y = interpolate(frame, [startFrame, startFrame + FADE_FRAMES], [8, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  })
-  return { opacity, y }
+  // Eased so the motion settles instead of stopping abruptly.
+  const eased = 1 - Math.pow(1 - t, 3)
+  return {
+    opacity: t,
+    y: SLIDE_PX * (1 - eased),
+    scale: 0.96 + 0.04 * eased,
+  }
 }
 
 // --- Leaf components, one per element type. Each has hooks at the top. ---
@@ -128,7 +149,7 @@ interface ElProps<T> { element: T; branding: Branding; frameTone: 'light' | 'dar
 type Extract<T extends string> = Mock['elements'][number] extends infer U ? U extends { type: T } ? U : never : never
 
 const HeaderEl: React.FC<ElProps<Extract<'header'>>> = ({ element, branding, frameTone }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const surface = frameSurface(frameTone)
   const status = element.statusText
     ? resolveTone(element.statusTone ?? 'success', branding, frameTone)
@@ -139,7 +160,7 @@ const HeaderEl: React.FC<ElProps<Extract<'header'>>> = ({ element, branding, fra
         display: 'flex', alignItems: 'center', gap: 10,
         paddingBottom: 12,
         borderBottom: `1px solid ${surface.border}`,
-        opacity, transform: `translateY(${y}px)`,
+        opacity, transform: `translateY(${y}px) scale(${scale})`,
         fontSize: 13, fontWeight: 600,
         letterSpacing: '0.06em', textTransform: 'uppercase',
         color: surface.chromeFg,
@@ -167,13 +188,14 @@ const HeaderEl: React.FC<ElProps<Extract<'header'>>> = ({ element, branding, fra
 }
 
 const TerminalLineEl: React.FC<ElProps<Extract<'terminalLine'>>> = ({ element, branding, frameTone }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const surface = frameSurface(frameTone)
   const colors: ToneColors = resolveTone(element.tone, branding, frameTone)
   return (
     <div
       style={{
-        opacity, transform: `translateX(${(1 - opacity) * -8}px) translateY(${y}px)`,
+        opacity, transform: `translateX(${(1 - opacity) * -16}px) translateY(${y}px) scale(${scale})`,
+        transformOrigin: 'left center',
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
         fontSize: 14, color: colors.fg,
         paddingLeft: element.indent ? 16 : 0,
@@ -207,12 +229,12 @@ const BlinkingCursorEl: React.FC<{ element: Extract<'blinkingCursor'>; branding:
 }
 
 const CardEl: React.FC<ElProps<Extract<'card'>>> = ({ element, branding, frameTone }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const surface = frameSurface(frameTone)
   return (
     <div
       style={{
-        opacity, transform: `translateY(${y}px)`,
+        opacity, transform: `translateY(${y}px) scale(${scale})`,
         padding: 14, borderRadius: 10,
         background: frameTone === 'dark' ? '#FFFFFF06' : '#00000004',
         border: `1px solid ${surface.border}`,
@@ -246,12 +268,12 @@ const CardEl: React.FC<ElProps<Extract<'card'>>> = ({ element, branding, frameTo
 }
 
 const PillEl: React.FC<ElProps<Extract<'pill'>>> = ({ element, branding, frameTone }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const colors = resolveTone(element.tone, branding, frameTone)
   return (
     <span
       style={{
-        opacity, transform: `translateY(${y}px)`,
+        opacity, transform: `translateY(${y}px) scale(${scale})`,
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '4px 12px', borderRadius: 999,
         background: colors.bg, color: colors.fg,
@@ -284,12 +306,12 @@ const PulsingDotEl: React.FC<ElProps<Extract<'pulsingDot'>>> = ({ element, brand
 }
 
 const ButtonEl: React.FC<{ element: Extract<'button'>; branding: Branding }> = ({ element, branding }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const isPrimary = element.primary !== false
   return (
     <div
       style={{
-        opacity, transform: `translateY(${y}px)`,
+        opacity, transform: `translateY(${y}px) scale(${scale})`,
         alignSelf: 'flex-start',
         padding: '10px 22px', borderRadius: 8,
         background: isPrimary ? branding.accentColor : 'transparent',
@@ -306,13 +328,13 @@ const ButtonEl: React.FC<{ element: Extract<'button'>; branding: Branding }> = (
 }
 
 const InputEl: React.FC<ElProps<Extract<'input'>>> = ({ element, branding, frameTone }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const surface = frameSurface(frameTone)
   const filled = !!element.value
   return (
     <div
       style={{
-        opacity, transform: `translateY(${y}px)`,
+        opacity, transform: `translateY(${y}px) scale(${scale})`,
         padding: '10px 14px', borderRadius: 8,
         background: frameTone === 'dark' ? '#FFFFFF08' : '#FFFFFF',
         border: `1px solid ${element.focused ? branding.accentColor : surface.border}`,
@@ -326,12 +348,12 @@ const InputEl: React.FC<ElProps<Extract<'input'>>> = ({ element, branding, frame
 }
 
 const TextEl: React.FC<ElProps<Extract<'text'>>> = ({ element, branding, frameTone }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const colors = resolveTone(element.tone, branding, frameTone)
   const sizeMap = { xs: 11, sm: 13, md: 15, lg: 18, xl: 22 } as const
   return (
     <div style={{
-      opacity, transform: `translateY(${y}px)`,
+      opacity, transform: `translateY(${y}px) scale(${scale})`,
       fontSize: sizeMap[element.size ?? 'md'],
       fontWeight: element.weight === 'bold' ? 700 : 400,
       color: colors.fg,
@@ -343,7 +365,7 @@ const TextEl: React.FC<ElProps<Extract<'text'>>> = ({ element, branding, frameTo
 }
 
 const CounterEl: React.FC<{ element: Extract<'counter'>; branding: Branding }> = ({ element, branding }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const startFrame = Math.round((element.delay ?? 0) * fps)
@@ -355,7 +377,7 @@ const CounterEl: React.FC<{ element: Extract<'counter'>; branding: Branding }> =
   const value = Math.round(element.from + (element.to - element.from) * eased)
   return (
     <div style={{
-      opacity, transform: `translateY(${y}px)`,
+      opacity, transform: `translateY(${y}px) scale(${scale})`,
       fontSize: 32, fontWeight: 700, letterSpacing: '-0.02em',
       color: branding.accentColor,
       fontFeatureSettings: '"tnum"',
@@ -366,11 +388,11 @@ const CounterEl: React.FC<{ element: Extract<'counter'>; branding: Branding }> =
 }
 
 const AvatarEl: React.FC<ElProps<Extract<'avatar'>>> = ({ element, branding, frameTone }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const colors = resolveTone(element.tone, branding, frameTone)
   return (
     <span style={{
-      opacity, transform: `translateY(${y}px)`,
+      opacity, transform: `translateY(${y}px) scale(${scale})`,
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       width: 36, height: 36, borderRadius: '50%',
       background: colors.bg, color: colors.fg,
@@ -382,11 +404,11 @@ const AvatarEl: React.FC<ElProps<Extract<'avatar'>>> = ({ element, branding, fra
 }
 
 const CodeLineEl: React.FC<ElProps<Extract<'codeLine'>>> = ({ element, branding, frameTone }) => {
-  const { opacity, y } = useEntry(element.delay)
+  const { opacity, y, scale } = useEntry(element.delay)
   const surface = frameSurface(frameTone)
   return (
     <div style={{
-      opacity, transform: `translateY(${y}px)`,
+      opacity, transform: `translateY(${y}px) scale(${scale})`,
       fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       fontSize: 13, display: 'flex', gap: 14,
     }}>

@@ -84,19 +84,18 @@ export const MarketingVideo: React.FC<MarketingVideoProps> = ({ manifest }) => {
 }
 
 /**
- * Total composition duration in frames. Takes the MAX of:
- *  - the script's planned duration (sum of hook + scenes + cta)
- *  - the actual voice-over MP3 duration (when known)
+ * Total composition duration in frames = the script's planned duration.
  *
- * The actual MP3 is typically longer than the script asked for because
- * ElevenLabs adds real silence for [short pause] / em-dashes /
- * ellipses. Using the max means the voice-over is never clipped — the
- * last scene just lingers for an extra second or two if needed.
+ * Earlier this took max(script, voiceoverDuration) so a voice-over that
+ * ran long wouldn't get clipped. In practice the result was a video
+ * that lingered awkwardly past its visible end while the music had
+ * already stopped — worse than a tightly cut audio. Now we trust the
+ * script duration; if the synthesized MP3 overshoots by a fraction of
+ * a second, the tail is clipped (acceptable). The script generator is
+ * already nudged to leave room for audio-tag silence so this is rare.
  */
 export function totalDurationInFrames(manifest: Manifest, fps: number): number {
   const { hook, scenes, cta } = manifest.script
   const scriptSec = hook.durationSeconds + scenes.reduce((a, s) => a + s.durationSeconds, 0) + cta.durationSeconds
-  const voiceSec = manifest.voiceoverDurationSeconds ?? 0
-  const targetSec = Math.max(scriptSec, voiceSec)
-  return Math.max(1, Math.round(targetSec * fps))
+  return Math.max(1, Math.round(scriptSec * fps))
 }
