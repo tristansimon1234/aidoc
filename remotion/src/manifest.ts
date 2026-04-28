@@ -196,6 +196,12 @@ export const ManifestSchema = z.object({
   branding: BrandingSchema,
   voiceoverUrl: z.string().nullable(),
   voiceoverPath: z.string().nullable(),
+  /** Approximate duration (seconds) of the voice-over MP3 as actually
+   *  synthesized — different from script.totalDurationSeconds because
+   *  ElevenLabs adds real time for [short pause] tags, ellipses, and
+   *  em-dashes. The composition uses max(script, voiceover) so the
+   *  audio never gets cut off. */
+  voiceoverDurationSeconds: z.number().positive().optional(),
   /** Optional background music track URL — mixed into the composition
    *  at low volume so it sits under the voice-over. Null = silent. */
   musicUrl: z.string().nullable().optional(),

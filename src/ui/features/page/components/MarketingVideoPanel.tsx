@@ -9,6 +9,7 @@ interface MarketingVideoPanelProps {
 }
 
 type VoiceTone = 'punchy' | 'calm' | 'playful' | 'serious'
+type VisualMode = 'screenshots' | 'mocks'
 
 const TONE_LABELS: Record<VoiceTone, string> = {
   punchy: 'Punchy — energetic, marketing default',
@@ -59,6 +60,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
   const [withVoiceover, setWithVoiceover] = useState(true)
   const [voiceId, setVoiceId] = useState<string>('')
   const [tone, setTone] = useState<VoiceTone>('punchy')
+  const [visualMode, setVisualMode] = useState<VisualMode>('screenshots')
   const [voices, setVoices] = useState<Array<{ voiceId: string; name: string; category: string }>>([])
   const [musicPresets, setMusicPresets] = useState<Array<{ id: string; name: string; mood?: string }>>([])
   const [musicChoice, setMusicChoice] = useState<string>('none')
@@ -176,6 +178,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
         withVoiceover,
         voiceId: voiceId || undefined,
         tone,
+        visualMode,
         ...musicOpts,
       })
       setSummary(generated)
@@ -301,6 +304,48 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
           </label>
         </div>
       )}
+
+      <div style={{ margin: '0 0 24px' }}>
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', marginBottom: 8 }}>
+          Visual style
+        </div>
+        <div role="radiogroup" style={{ display: 'flex', gap: 8 }}>
+          {([
+            { id: 'screenshots' as const, title: 'Real screenshots', subtitle: 'Grounded in your product UI' },
+            { id: 'mocks' as const,       title: 'Designed mocks',    subtitle: 'AI-designed animated UI panels' },
+          ]).map((opt) => {
+            const selected = visualMode === opt.id
+            return (
+              <button
+                key={opt.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setVisualMode(opt.id)}
+                disabled={working}
+                style={{
+                  flex: 1,
+                  padding: '12px 14px',
+                  borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${selected ? 'var(--color-fg)' : 'var(--color-border)'}`,
+                  background: selected ? 'var(--color-fg)' : 'transparent',
+                  color: selected ? 'var(--color-bg)' : 'var(--color-fg)',
+                  cursor: working ? 'not-allowed' : 'pointer',
+                  textAlign: 'left',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 2,
+                  fontSize: 'var(--text-sm)',
+                  transition: 'background 0.15s, border-color 0.15s',
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>{opt.title}</span>
+                <span style={{ fontSize: 'var(--text-xs)', opacity: 0.7 }}>{opt.subtitle}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
       <div
         style={{

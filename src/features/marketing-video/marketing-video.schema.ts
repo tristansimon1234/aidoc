@@ -88,10 +88,19 @@ export const MarketingScriptSchema = z.object({
 export const VoiceTonePresetSchema = z.enum(['punchy', 'calm', 'playful', 'serious'])
 export type VoiceTonePreset = z.infer<typeof VoiceTonePresetSchema>
 
+/** Visual style for the whole video. 'screenshots' uses real doc
+ *  screenshots in every scene (the "grounded in real product" path,
+ *  high credibility). 'mocks' uses LLM-designed animated UI mocks
+ *  in every scene (the "polished, designy" path). The user picks one
+ *  mode for the video — no per-scene hybrid. */
+export const VisualModeSchema = z.enum(['screenshots', 'mocks'])
+export type VisualMode = z.infer<typeof VisualModeSchema>
+
 export const GenerateMarketingVideoOptionsSchema = z.object({
   withVoiceover: z.boolean().optional(),
   voiceId: z.string().optional(),
   tone: VoiceTonePresetSchema.optional(),
+  visualMode: VisualModeSchema.optional(),
   // 'none' | '<presetId>' | 'ai' — special value 'ai' triggers ElevenLabs
   // Music generation. Mutually exclusive with musicUploadPath.
   musicTrackId: z.string().optional(),

@@ -144,6 +144,10 @@ interface GenerateMarketingScriptInput {
    *  [excited], calm → [short pause], etc.). Without this the script
    *  comes out flat and the voice reads it flat. */
   tone?: 'punchy' | 'calm' | 'playful' | 'serious'
+  /** Visual style — drives whether Gemini fills every scene with a real
+   *  screenshot (screenshotIndex set, no mock) or with a designed mock
+   *  (screenshotIndex=null, mock set). NOT mixed within a video. */
+  visualMode?: 'screenshots' | 'mocks'
   /** Optional creative brief from the user: angle, audience, feature to
    *  emphasize, tone shift. NOT a content source — the doc remains the
    *  factual ground truth, this just steers framing. Trimmed and clamped
@@ -308,21 +312,17 @@ ${captionList || '(no screenshots available — every scene MUST have screenshot
 
 You may set "screenshotIndex" to any integer between 0 and ${Math.max(0, input.availableScreenshots - 1)}, OR to null if a scene works better headline-only (e.g. the hook). Reuse a screenshot if the same view illustrates two benefits.
 
-## Visuals — screenshot OR designed mock (per scene)
+## Visuals — ${input.visualMode === 'mocks' ? 'designed mocks (every scene)' : 'real screenshots (every scene)'}
 
-Each scene picks ONE of two visual modes:
+${input.visualMode === 'mocks'
+  ? `**Mode = MOCKS.** Every scene MUST have a \`mock\` field set and \`screenshotIndex\` set to null. No exceptions. The whole video uses designed animated UI panels — no real screenshots. Make each scene visually distinct (different element mix, different frame tone, different layout) so the video doesn't feel repetitive.`
+  : `**Mode = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}) and MUST NOT include a \`mock\` field. The whole video uses real product screenshots. If a scene has no relevant screenshot you may set \`screenshotIndex: null\` and the renderer will show an accent gradient placeholder.`}
 
-A) **Screenshot** — set \`screenshotIndex\` to a real doc screenshot. Use this when the scene is showing the actual product UI the user is documenting (the "grounded in real product" path — high credibility).
+${input.visualMode === 'mocks' ? `### Mock DSL — REQUIRED for every scene
 
-B) **Designed mock** — set \`mock\` to a DSL object describing an animated UI panel. Use this when the scene illustrates a CONCEPT the screenshots can't (a chat conversation, a terminal command, a settings transformation, a stat counter, an integration with a third-party tool, etc.). Mocks are visually polished and feel like a designed product video instead of a slideshow.
+Set \`mock.elements\` to an array (max 12 elements) of small primitives. The renderer animates them in with a subtle stagger — set \`delay\` (seconds) per element to control timing (e.g. \`0\`, \`0.25\`, \`0.5\`, \`0.9\` for a "typing in" feel). Make EVERY scene's mock visually distinct from its neighbours: alternate between dark/light frame, alternate layout (terminal vs dashboard vs chat vs settings), don't repeat the same icon twice in a row.
 
-A scene MUST have ONE: either a real \`screenshotIndex\` (0..${Math.max(0, input.availableScreenshots - 1)}) or a \`mock\`. Aim for a 50/50 mix when the content allows — alternating real screens and designed mocks gives the video a great editorial rhythm. Pure-screenshot videos feel slideshow-y; pure-mock videos lose product credibility.
-
-### Mock DSL
-
-Set \`mock.elements\` to an array (max 12 elements) of small primitives. The renderer animates them in with a subtle stagger — set \`delay\` (seconds) per element to control timing (e.g. \`0\`, \`0.25\`, \`0.5\` for a "typing in" feel).
-
-Optional \`mock.frame\`: \`{ url, tone }\` wraps the mock in a browser chrome with a URL bar. Use \`tone: "dark"\` for terminal/code mocks, \`"light"\` for product-UI mocks. Skip \`frame\` for floating mocks (e.g. a chat widget overlay).
+\`mock.frame\` { url, tone } wraps the mock in a browser chrome. Use \`tone: "dark"\` for terminal/code/integration mocks, \`"light"\` for product-UI/dashboard mocks. Skip \`frame\` for "floating" mocks (e.g. a chat widget overlay, a notification toast).
 
 Available element types (\`type\`) and their fields. ALL fields are optional unless noted; tone enum: \`default | muted | accent | success | warning | danger\`.
 
@@ -384,7 +384,7 @@ Example mock — a stat dashboard scene:
 }
 \`\`\`
 
-Pick mock vs screenshot per scene as fits — don't force mocks where a real screenshot is more telling.
+Stagger every element with a non-zero delay (except the very first one). Without staggers, the mock pops in all at once and feels flat.` : ''}
 
 ## Language
 

@@ -84,16 +84,19 @@ export const MarketingVideo: React.FC<MarketingVideoProps> = ({ manifest }) => {
 }
 
 /**
- * Total composition duration in frames given a manifest. We deliberately
- * use the naive sum of scene durations (NOT subtracting transition
- * overlaps) so that the rendered video matches the 45s the user asked
- * Gemini for. TransitionSeries overlaps adjacent sequences during the
- * transition, but the Composition's outer duration determines how long
- * the audio plays — and that's what the viewer experiences as "the video
- * length". The voice-over is paced to fill this same naive duration.
+ * Total composition duration in frames. Takes the MAX of:
+ *  - the script's planned duration (sum of hook + scenes + cta)
+ *  - the actual voice-over MP3 duration (when known)
+ *
+ * The actual MP3 is typically longer than the script asked for because
+ * ElevenLabs adds real silence for [short pause] / em-dashes /
+ * ellipses. Using the max means the voice-over is never clipped — the
+ * last scene just lingers for an extra second or two if needed.
  */
 export function totalDurationInFrames(manifest: Manifest, fps: number): number {
   const { hook, scenes, cta } = manifest.script
-  const naiveSec = hook.durationSeconds + scenes.reduce((a, s) => a + s.durationSeconds, 0) + cta.durationSeconds
-  return Math.max(1, Math.round(naiveSec * fps))
+  const scriptSec = hook.durationSeconds + scenes.reduce((a, s) => a + s.durationSeconds, 0) + cta.durationSeconds
+  const voiceSec = manifest.voiceoverDurationSeconds ?? 0
+  const targetSec = Math.max(scriptSec, voiceSec)
+  return Math.max(1, Math.round(targetSec * fps))
 }

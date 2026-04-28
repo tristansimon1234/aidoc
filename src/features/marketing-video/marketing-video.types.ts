@@ -123,6 +123,11 @@ export interface MarketingManifest {
   /** Storage path under the artifacts bucket (for re-hosting / debugging).
    *  Null when there's no voice-over. */
   voiceoverPath: string | null
+  /** Actual duration of the synthesized voice-over MP3 in seconds.
+   *  Diverges from script.totalDurationSeconds because ElevenLabs adds
+   *  real time for [short pause] / em-dashes / ellipses. The composition
+   *  uses max(script, voiceover) so the audio is never cut off. */
+  voiceoverDurationSeconds?: number
   /** Optional URL of a background music track to mix under the voice-over.
    *  Null = silent. Sourced from a preset library or a user upload. */
   musicUrl?: string | null
@@ -178,6 +183,10 @@ export interface GenerateMarketingVideoOptions {
   /** Tone preset for the voice-over. Defaults to "punchy" (the previous
    *  hardcoded values). */
   tone?: VoiceTone
+  /** Visual style for the whole video — every scene is either a real
+   *  screenshot or an LLM-designed animated mock, NOT mixed. Defaults
+   *  to 'screenshots'. */
+  visualMode?: 'screenshots' | 'mocks'
   /** Background music track ID — picked from MUSIC_PRESETS. Mutually
    *  exclusive with `musicUploadPath`. Use 'none' to explicitly disable.
    *  Special value 'ai' triggers ElevenLabs Music generation, optionally

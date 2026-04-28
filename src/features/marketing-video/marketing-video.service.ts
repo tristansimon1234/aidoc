@@ -162,7 +162,7 @@ async function synthesizeMarketingVoiceover(
   runId: string,
   script: import('./marketing-video.types.js').MarketingScript,
   options: GenerateMarketingVideoOptions,
-): Promise<{ voiceoverPath: string; voiceoverUrl: string }> {
+): Promise<{ voiceoverPath: string; voiceoverUrl: string; voiceoverDurationSeconds: number }> {
   if (!isElevenLabsConfigured()) {
     throw new Error('ELEVENLABS_API_KEY is required for voice-over.')
   }
@@ -178,12 +178,14 @@ async function synthesizeMarketingVoiceover(
   })
   const voiceoverPath = `runs/${runId}/marketing-voiceover.mp3`
   await uploadToStorage('artifacts', voiceoverPath, buffer, 'audio/mpeg')
-  // Cache-bust query so Remotion / browsers don't serve a stale MP3 after
-  // a voice change. Storage write is overwrite (upsert) so the path is the
-  // same; only the ?v= query differs.
   const voiceoverUrl = `${getPublicUrl('artifacts', voiceoverPath) ?? ''}?v=${Date.now()}`
-  console.log(`[marketing-video] Voice-over uploaded: ${voiceoverUrl}`)
-  return { voiceoverPath, voiceoverUrl }
+  // ElevenLabs MP3 at the default bitrate is ~128 kbps = 16000 bytes/sec.
+  // Same heuristic the doc-voiceover service uses. Off by a few %
+  // depending on audio tags / silence — good enough for setting the
+  // composition duration so the voice never gets cut off.
+  const voiceoverDurationSeconds = Math.max(1, buffer.length / 16000)
+  console.log(`[marketing-video] Voice-over uploaded: ${voiceoverUrl} (~${voiceoverDurationSeconds.toFixed(1)}s)`)
+  return { voiceoverPath, voiceoverUrl, voiceoverDurationSeconds }
 }
 
 function flattenScriptToNarration(script: import('./marketing-video.types.js').MarketingScript): string {
@@ -242,6 +244,7 @@ export async function generateMarketingVideoForRun(
     // the voice (ElevenLabs settings). Without this the script comes out
     // flat and even an expressive voice setting reads it flat.
     tone: options.tone ?? 'punchy',
+    visualMode: options.visualMode ?? 'screenshots',
     userPrompt: options.userPrompt,
   })
 
@@ -253,11 +256,13 @@ export async function generateMarketingVideoForRun(
   const withVoiceover = options.withVoiceover ?? true
   let voiceoverPath: string | null = null
   let voiceoverUrl: string | null = null
+  let voiceoverDurationSeconds: number | undefined
 
   if (withVoiceover) {
     const result = await synthesizeMarketingVoiceover(runId, script, options)
     voiceoverPath = result.voiceoverPath
     voiceoverUrl = result.voiceoverUrl
+    voiceoverDurationSeconds = result.voiceoverDurationSeconds
   }
 
   // Resolve background music. Priority: explicit upload > AI generation
@@ -319,6 +324,7 @@ export async function generateMarketingVideoForRun(
     branding,
     voiceoverUrl,
     voiceoverPath,
+    voiceoverDurationSeconds,
     musicUrl,
     musicPath,
     musicVolume,
@@ -444,7 +450,7 @@ export async function updateMarketingVoiceoverForRun(
   const existing = await findMarketingVideoByRunId(runId)
   if (!existing) throw new Error('No marketing-video manifest for this run yet — generate one first.')
 
-  const { voiceoverPath, voiceoverUrl } = await synthesizeMarketingVoiceover(
+  const { voiceoverPath, voiceoverUrl, voiceoverDurationSeconds } = await synthesizeMarketingVoiceover(
     runId,
     existing.manifest.script,
     { voiceId: options.voiceId, tone: options.tone },
@@ -454,6 +460,7 @@ export async function updateMarketingVoiceoverForRun(
     ...existing.manifest,
     voiceoverUrl,
     voiceoverPath,
+    voiceoverDurationSeconds,
     generatedAt: new Date().toISOString(),
   }
 

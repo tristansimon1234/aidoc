@@ -7,24 +7,23 @@ import { resolveTone, frameSurface, type ToneColors } from './tones.js'
 interface DynamicMockProps {
   mock: Mock
   branding: Branding
-  /** Width/height of the rendered surface. The FeatureScene's mock slot
-   *  is the default. */
   width?: number
   height?: number
 }
 
 /**
  * Renders a Mock DSL description into a Remotion-compatible animated UI.
- * Frame-driven via interpolate(), so it composes with renderMedia's
- * per-frame rendering.
  *
- * Each top-level element gets staggered in with a fade + slight
- * translate, controlled by its `delay` field (seconds) plus an 8-frame
- * fade window. Looping animations (blinking cursor, pulsing dot) loop
- * via `frame % cycle`.
+ * IMPORTANT: each element type has its OWN component below, with hooks
+ * at the top of that component. The previous version called hooks
+ * inside switch-case branches, which is a Rules-of-Hooks violation —
+ * React silently bails on stale animation values, so the mock looked
+ * static even though `useCurrentFrame()` was being read.
  *
- * The DSL recurses through `group` elements so the LLM can compose row /
- * column layouts as needed.
+ * Pattern: ElementRouter receives a tagged element, dispatches to the
+ * correct component, no hooks of its own. Each leaf component reads
+ * the frame + delay and applies fade-in / blink / pulse / counter as
+ * appropriate.
  */
 export const DynamicMock: React.FC<DynamicMockProps> = ({ mock, branding, width = 920, height = 580 }) => {
   const frameTone = mock.frame?.tone ?? 'light'
@@ -44,7 +43,7 @@ export const DynamicMock: React.FC<DynamicMockProps> = ({ mock, branding, width 
       }}
     >
       {mock.elements.map((el, i) => (
-        <ElementRenderer key={i} element={el} branding={branding} frameTone={frameTone} />
+        <ElementRouter key={i} element={el} branding={branding} frameTone={frameTone} />
       ))}
     </div>
   )
@@ -74,15 +73,40 @@ export const DynamicMock: React.FC<DynamicMockProps> = ({ mock, branding, width 
   )
 }
 
-interface RendererProps {
+interface RouterProps {
   element: Mock['elements'][number]
   branding: Branding
   frameTone: 'light' | 'dark'
 }
 
+/**
+ * Pure dispatcher — NO hooks. Routes the tagged element to the right
+ * leaf component. Keeping hooks out of here is what guarantees React
+ * sees a consistent hook order in DynamicMock's render.
+ */
+const ElementRouter: React.FC<RouterProps> = ({ element, branding, frameTone }) => {
+  switch (element.type) {
+    case 'header':         return <HeaderEl element={element} branding={branding} frameTone={frameTone} />
+    case 'terminalLine':   return <TerminalLineEl element={element} branding={branding} frameTone={frameTone} />
+    case 'blinkingCursor': return <BlinkingCursorEl element={element} branding={branding} />
+    case 'card':           return <CardEl element={element} branding={branding} frameTone={frameTone} />
+    case 'pill':           return <PillEl element={element} branding={branding} frameTone={frameTone} />
+    case 'pulsingDot':     return <PulsingDotEl element={element} branding={branding} frameTone={frameTone} />
+    case 'button':         return <ButtonEl element={element} branding={branding} />
+    case 'input':          return <InputEl element={element} branding={branding} frameTone={frameTone} />
+    case 'spacer':         return <div style={{ height: element.height ?? 12 }} />
+    case 'text':           return <TextEl element={element} branding={branding} frameTone={frameTone} />
+    case 'counter':        return <CounterEl element={element} branding={branding} />
+    case 'avatar':         return <AvatarEl element={element} branding={branding} frameTone={frameTone} />
+    case 'codeLine':       return <CodeLineEl element={element} branding={branding} frameTone={frameTone} />
+    default:               return null
+  }
+}
+
 const FADE_FRAMES = 10
 
-/** Stagger fade-in + 8px slide based on `delay` (seconds). */
+/** Hook: stagger fade-in + 8px slide based on `delay` (seconds). Top-level
+ *  in every leaf — never called inside a conditional. */
 function useEntry(delay: number | undefined): { opacity: number; y: number } {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
@@ -98,321 +122,291 @@ function useEntry(delay: number | undefined): { opacity: number; y: number } {
   return { opacity, y }
 }
 
-const ElementRenderer: React.FC<RendererProps> = ({ element, branding, frameTone }) => {
-  const tone = (e: { tone?: Parameters<typeof resolveTone>[0] }): ToneColors =>
-    resolveTone(e.tone, branding, frameTone)
-  const surface = frameSurface(frameTone)
+// --- Leaf components, one per element type. Each has hooks at the top. ---
 
-  switch (element.type) {
-    case 'header': {
-      const { opacity, y } = useEntry(element.delay)
-      const status = element.statusText
-        ? resolveTone(element.statusTone ?? 'success', branding, frameTone)
-        : null
-      return (
-        <div
-          style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            paddingBottom: 12,
-            borderBottom: `1px solid ${surface.border}`,
-            opacity, transform: `translateY(${y}px)`,
-            fontSize: 13,
-            fontWeight: 600,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            color: surface.chromeFg,
-          }}
-        >
-          {element.icon && <IconGlyph name={element.icon} color={branding.accentColor} />}
-          <span>{element.label}</span>
-          {status && (
-            <span
-              style={{
-                marginLeft: 'auto',
-                display: 'inline-flex', alignItems: 'center', gap: 6,
-                padding: '4px 10px',
-                borderRadius: 999,
-                background: status.bg,
-                color: status.fg,
-                fontSize: 11,
-                fontWeight: 700,
-                textTransform: 'none',
-                letterSpacing: 0,
-              }}
-            >
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: status.fg }} />
-              {element.statusText}
-            </span>
-          )}
-        </div>
-      )
-    }
-    case 'terminalLine': {
-      const { opacity, y } = useEntry(element.delay)
-      const colors = tone(element)
-      return (
-        <div
-          style={{
-            opacity, transform: `translateX(${(1 - opacity) * -8}px) translateY(${y}px)`,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-            fontSize: 14,
-            color: colors.fg,
-            paddingLeft: element.indent ? 16 : 0,
-          }}
-        >
-          {element.prefix && (
-            <span style={{ marginRight: 8, color: surface.chromeFg, opacity: 0.5 }}>{element.prefix}</span>
-          )}
-          {element.text}
-          {element.trailingHighlight && (
-            <span style={{ color: resolveTone('success', branding, frameTone).fg, marginLeft: 6 }}>
-              {element.trailingHighlight}
-            </span>
-          )}
-        </div>
-      )
-    }
-    case 'blinkingCursor': {
-      const frame = useCurrentFrame()
-      const { fps } = useVideoConfig()
-      const delayFrames = Math.round((element.delay ?? 0) * fps)
-      const phase = ((frame - delayFrames) % Math.round(0.9 * fps)) / Math.round(0.9 * fps)
-      const opacity = frame < delayFrames ? 0 : phase < 0.5 ? 1 : 0
-      return (
-        <div style={{ height: 16, display: 'flex', alignItems: 'center' }}>
-          <span style={{ width: 2, height: 14, background: branding.accentColor, opacity }} />
-        </div>
-      )
-    }
-    case 'card': {
-      const { opacity, y } = useEntry(element.delay)
-      return (
-        <div
-          style={{
-            opacity, transform: `translateY(${y}px)`,
-            padding: 14,
-            borderRadius: 10,
-            background: frameTone === 'dark' ? '#FFFFFF06' : '#00000004',
-            border: `1px solid ${surface.border}`,
-          }}
-        >
-          {element.title && (
-            <div style={{
-              fontSize: 11, fontWeight: 700, letterSpacing: '0.06em',
-              textTransform: 'uppercase', color: surface.chromeFg,
-              marginBottom: 10,
-            }}>
-              {element.title}
-            </div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {element.rows.map((r, i) => {
-              const c = resolveTone(r.tone, branding, frameTone)
-              return (
-                <div key={i} style={{
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  fontSize: 14,
-                }}>
-                  <span style={{ color: surface.chromeFg }}>{r.left}</span>
-                  {r.right && <span style={{ color: c.fg, fontWeight: 600 }}>{r.right}</span>}
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )
-    }
-    case 'pill': {
-      const { opacity, y } = useEntry(element.delay)
-      const colors = tone(element)
-      return (
+interface ElProps<T> { element: T; branding: Branding; frameTone: 'light' | 'dark' }
+type Extract<T extends string> = Mock['elements'][number] extends infer U ? U extends { type: T } ? U : never : never
+
+const HeaderEl: React.FC<ElProps<Extract<'header'>>> = ({ element, branding, frameTone }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const surface = frameSurface(frameTone)
+  const status = element.statusText
+    ? resolveTone(element.statusTone ?? 'success', branding, frameTone)
+    : null
+  return (
+    <div
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        paddingBottom: 12,
+        borderBottom: `1px solid ${surface.border}`,
+        opacity, transform: `translateY(${y}px)`,
+        fontSize: 13, fontWeight: 600,
+        letterSpacing: '0.06em', textTransform: 'uppercase',
+        color: surface.chromeFg,
+      }}
+    >
+      {element.icon && <IconGlyph name={element.icon} color={branding.accentColor} />}
+      <span>{element.label}</span>
+      {status && (
         <span
           style={{
-            opacity, transform: `translateY(${y}px)`,
+            marginLeft: 'auto',
             display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '4px 12px',
-            borderRadius: 999,
-            background: colors.bg,
-            color: colors.fg,
-            fontSize: 12,
-            fontWeight: 700,
-            alignSelf: 'flex-start',
+            padding: '4px 10px', borderRadius: 999,
+            background: status.bg, color: status.fg,
+            fontSize: 11, fontWeight: 700,
+            textTransform: 'none', letterSpacing: 0,
           }}
         >
-          {element.text}
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: status.fg }} />
+          {element.statusText}
         </span>
-      )
-    }
-    case 'pulsingDot': {
-      const frame = useCurrentFrame()
-      const { fps } = useVideoConfig()
-      const colors = tone(element)
-      const cycle = Math.round(1.4 * fps)
-      const phase = (frame % cycle) / cycle
-      const pulseOpacity = interpolate(phase, [0, 0.5, 1], [1, 0.35, 1])
-      const size = element.size ?? 10
-      return (
-        <span style={{
-          display: 'inline-block',
-          width: size, height: size,
-          borderRadius: '50%',
-          background: colors.fg,
-          opacity: pulseOpacity,
-        }} />
-      )
-    }
-    case 'button': {
-      const { opacity, y } = useEntry(element.delay)
-      const isPrimary = element.primary !== false
-      return (
-        <div
-          style={{
-            opacity, transform: `translateY(${y}px)`,
-            alignSelf: 'flex-start',
-            padding: '10px 22px',
-            borderRadius: 8,
-            background: isPrimary ? branding.accentColor : 'transparent',
-            color: isPrimary ? '#FFFFFF' : branding.accentColor,
-            border: isPrimary ? 'none' : `1px solid ${branding.accentColor}`,
-            fontSize: 14,
-            fontWeight: 600,
-            letterSpacing: '-0.005em',
-            boxShadow: isPrimary ? `0 6px 16px ${branding.accentColor}40` : 'none',
-          }}
-        >
-          {element.label}
-        </div>
-      )
-    }
-    case 'input': {
-      const { opacity, y } = useEntry(element.delay)
-      const filled = !!element.value
-      return (
-        <div
-          style={{
-            opacity, transform: `translateY(${y}px)`,
-            padding: '10px 14px',
-            borderRadius: 8,
-            background: frameTone === 'dark' ? '#FFFFFF08' : '#FFFFFF',
-            border: `1px solid ${element.focused ? branding.accentColor : surface.border}`,
-            boxShadow: element.focused ? `0 0 0 3px ${branding.accentColor}25` : 'none',
-            fontSize: 14,
-            color: filled ? surface.chromeFg : `${surface.chromeFg}80`,
-          }}
-        >
-          {filled ? element.value : element.placeholder}
-        </div>
-      )
-    }
-    case 'spacer': {
-      return <div style={{ height: element.height ?? 12 }} />
-    }
-    case 'text': {
-      const { opacity, y } = useEntry(element.delay)
-      const colors = tone(element)
-      const sizeMap = { xs: 11, sm: 13, md: 15, lg: 18, xl: 22 } as const
-      return (
-        <div style={{
-          opacity, transform: `translateY(${y}px)`,
-          fontSize: sizeMap[element.size ?? 'md'],
-          fontWeight: element.weight === 'bold' ? 700 : 400,
-          color: colors.fg,
-          lineHeight: 1.4,
-        }}>
-          {element.text}
-        </div>
-      )
-    }
-    case 'counter': {
-      const { opacity, y } = useEntry(element.delay)
-      const frame = useCurrentFrame()
-      const { fps } = useVideoConfig()
-      const startFrame = Math.round((element.delay ?? 0) * fps)
-      const animFrames = Math.round(1.2 * fps)
-      const t = interpolate(frame, [startFrame, startFrame + animFrames], [0, 1], {
-        extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
-      })
-      const eased = 1 - Math.pow(1 - t, 3)
-      const value = Math.round(element.from + (element.to - element.from) * eased)
-      return (
-        <div style={{
-          opacity, transform: `translateY(${y}px)`,
-          fontSize: 32, fontWeight: 700, letterSpacing: '-0.02em',
-          color: branding.accentColor,
-          fontFeatureSettings: '"tnum"',
-        }}>
-          {element.prefix}{value.toLocaleString()}{element.suffix}
-        </div>
-      )
-    }
-    case 'avatar': {
-      const { opacity, y } = useEntry(element.delay)
-      const colors = tone(element)
-      return (
-        <span style={{
-          opacity, transform: `translateY(${y}px)`,
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: 36, height: 36,
-          borderRadius: '50%',
-          background: colors.bg,
-          color: colors.fg,
-          fontSize: 13, fontWeight: 700,
-        }}>
-          {element.initials}
-        </span>
-      )
-    }
-    case 'codeLine': {
-      const { opacity, y } = useEntry(element.delay)
-      return (
-        <div style={{
-          opacity, transform: `translateY(${y}px)`,
-          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-          fontSize: 13,
-          display: 'flex', gap: 14,
-        }}>
-          {element.lineNumber !== undefined && (
-            <span style={{ color: surface.chromeFg, opacity: 0.4, width: 24, textAlign: 'right' }}>
-              {element.lineNumber}
-            </span>
-          )}
-          <span>
-            {element.tokens.map((tk, i) => {
-              const c = resolveTone(tk.tone, branding, frameTone)
-              return <span key={i} style={{ color: c.fg }}>{tk.text}</span>
-            })}
-          </span>
-        </div>
-      )
-    }
-    case 'group': {
-      const { opacity, y } = useEntry(element.delay)
-      return (
-        <div
-          style={{
-            opacity, transform: `translateY(${y}px)`,
-            display: 'flex',
-            flexDirection: element.layout === 'row' ? 'row' : 'column',
-            gap: element.gap ?? 8,
-            alignItems: element.align === 'between' ? 'stretch' : (element.align ?? 'start'),
-            justifyContent: element.align === 'between' ? 'space-between' : 'flex-start',
-            width: '100%',
-          }}
-        >
-          {element.children.map((child, i) => (
-            <ElementRenderer key={i} element={child} branding={branding} frameTone={frameTone} />
-          ))}
-        </div>
-      )
-    }
-    default:
-      return null
-  }
+      )}
+    </div>
+  )
 }
 
-/** Dead-simple inline glyph for header icons. SVG paths for the few names
- *  the LLM might pick. Anything unknown just renders a small dot so we
- *  never break the layout. */
+const TerminalLineEl: React.FC<ElProps<Extract<'terminalLine'>>> = ({ element, branding, frameTone }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const surface = frameSurface(frameTone)
+  const colors: ToneColors = resolveTone(element.tone, branding, frameTone)
+  return (
+    <div
+      style={{
+        opacity, transform: `translateX(${(1 - opacity) * -8}px) translateY(${y}px)`,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: 14, color: colors.fg,
+        paddingLeft: element.indent ? 16 : 0,
+      }}
+    >
+      {element.prefix && (
+        <span style={{ marginRight: 8, color: surface.chromeFg, opacity: 0.5 }}>{element.prefix}</span>
+      )}
+      {element.text}
+      {element.trailingHighlight && (
+        <span style={{ color: resolveTone('success', branding, frameTone).fg, marginLeft: 6 }}>
+          {element.trailingHighlight}
+        </span>
+      )}
+    </div>
+  )
+}
+
+const BlinkingCursorEl: React.FC<{ element: Extract<'blinkingCursor'>; branding: Branding }> = ({ element, branding }) => {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const delayFrames = Math.round((element.delay ?? 0) * fps)
+  const cycleFrames = Math.round(0.9 * fps)
+  const phase = ((frame - delayFrames) % cycleFrames) / cycleFrames
+  const opacity = frame < delayFrames ? 0 : phase < 0.5 ? 1 : 0
+  return (
+    <div style={{ height: 16, display: 'flex', alignItems: 'center' }}>
+      <span style={{ width: 2, height: 14, background: branding.accentColor, opacity }} />
+    </div>
+  )
+}
+
+const CardEl: React.FC<ElProps<Extract<'card'>>> = ({ element, branding, frameTone }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const surface = frameSurface(frameTone)
+  return (
+    <div
+      style={{
+        opacity, transform: `translateY(${y}px)`,
+        padding: 14, borderRadius: 10,
+        background: frameTone === 'dark' ? '#FFFFFF06' : '#00000004',
+        border: `1px solid ${surface.border}`,
+      }}
+    >
+      {element.title && (
+        <div style={{
+          fontSize: 11, fontWeight: 700, letterSpacing: '0.06em',
+          textTransform: 'uppercase', color: surface.chromeFg,
+          marginBottom: 10,
+        }}>
+          {element.title}
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {element.rows.map((r, i) => {
+          const c = resolveTone(r.tone, branding, frameTone)
+          return (
+            <div key={i} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              fontSize: 14,
+            }}>
+              <span style={{ color: surface.chromeFg }}>{r.left}</span>
+              {r.right && <span style={{ color: c.fg, fontWeight: 600 }}>{r.right}</span>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+const PillEl: React.FC<ElProps<Extract<'pill'>>> = ({ element, branding, frameTone }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const colors = resolveTone(element.tone, branding, frameTone)
+  return (
+    <span
+      style={{
+        opacity, transform: `translateY(${y}px)`,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '4px 12px', borderRadius: 999,
+        background: colors.bg, color: colors.fg,
+        fontSize: 12, fontWeight: 700,
+        alignSelf: 'flex-start',
+      }}
+    >
+      {element.text}
+    </span>
+  )
+}
+
+const PulsingDotEl: React.FC<ElProps<Extract<'pulsingDot'>>> = ({ element, branding, frameTone }) => {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const colors = resolveTone(element.tone, branding, frameTone)
+  const cycle = Math.round(1.4 * fps)
+  const phase = (frame % cycle) / cycle
+  const pulseOpacity = interpolate(phase, [0, 0.5, 1], [1, 0.35, 1])
+  const size = element.size ?? 10
+  return (
+    <span style={{
+      display: 'inline-block',
+      width: size, height: size,
+      borderRadius: '50%',
+      background: colors.fg,
+      opacity: pulseOpacity,
+    }} />
+  )
+}
+
+const ButtonEl: React.FC<{ element: Extract<'button'>; branding: Branding }> = ({ element, branding }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const isPrimary = element.primary !== false
+  return (
+    <div
+      style={{
+        opacity, transform: `translateY(${y}px)`,
+        alignSelf: 'flex-start',
+        padding: '10px 22px', borderRadius: 8,
+        background: isPrimary ? branding.accentColor : 'transparent',
+        color: isPrimary ? '#FFFFFF' : branding.accentColor,
+        border: isPrimary ? 'none' : `1px solid ${branding.accentColor}`,
+        fontSize: 14, fontWeight: 600,
+        letterSpacing: '-0.005em',
+        boxShadow: isPrimary ? `0 6px 16px ${branding.accentColor}40` : 'none',
+      }}
+    >
+      {element.label}
+    </div>
+  )
+}
+
+const InputEl: React.FC<ElProps<Extract<'input'>>> = ({ element, branding, frameTone }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const surface = frameSurface(frameTone)
+  const filled = !!element.value
+  return (
+    <div
+      style={{
+        opacity, transform: `translateY(${y}px)`,
+        padding: '10px 14px', borderRadius: 8,
+        background: frameTone === 'dark' ? '#FFFFFF08' : '#FFFFFF',
+        border: `1px solid ${element.focused ? branding.accentColor : surface.border}`,
+        boxShadow: element.focused ? `0 0 0 3px ${branding.accentColor}25` : 'none',
+        fontSize: 14, color: filled ? surface.chromeFg : `${surface.chromeFg}80`,
+      }}
+    >
+      {filled ? element.value : element.placeholder}
+    </div>
+  )
+}
+
+const TextEl: React.FC<ElProps<Extract<'text'>>> = ({ element, branding, frameTone }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const colors = resolveTone(element.tone, branding, frameTone)
+  const sizeMap = { xs: 11, sm: 13, md: 15, lg: 18, xl: 22 } as const
+  return (
+    <div style={{
+      opacity, transform: `translateY(${y}px)`,
+      fontSize: sizeMap[element.size ?? 'md'],
+      fontWeight: element.weight === 'bold' ? 700 : 400,
+      color: colors.fg,
+      lineHeight: 1.4,
+    }}>
+      {element.text}
+    </div>
+  )
+}
+
+const CounterEl: React.FC<{ element: Extract<'counter'>; branding: Branding }> = ({ element, branding }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const startFrame = Math.round((element.delay ?? 0) * fps)
+  const animFrames = Math.round(1.2 * fps)
+  const t = interpolate(frame, [startFrame, startFrame + animFrames], [0, 1], {
+    extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
+  })
+  const eased = 1 - Math.pow(1 - t, 3)
+  const value = Math.round(element.from + (element.to - element.from) * eased)
+  return (
+    <div style={{
+      opacity, transform: `translateY(${y}px)`,
+      fontSize: 32, fontWeight: 700, letterSpacing: '-0.02em',
+      color: branding.accentColor,
+      fontFeatureSettings: '"tnum"',
+    }}>
+      {element.prefix}{value.toLocaleString()}{element.suffix}
+    </div>
+  )
+}
+
+const AvatarEl: React.FC<ElProps<Extract<'avatar'>>> = ({ element, branding, frameTone }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const colors = resolveTone(element.tone, branding, frameTone)
+  return (
+    <span style={{
+      opacity, transform: `translateY(${y}px)`,
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: 36, height: 36, borderRadius: '50%',
+      background: colors.bg, color: colors.fg,
+      fontSize: 13, fontWeight: 700,
+    }}>
+      {element.initials}
+    </span>
+  )
+}
+
+const CodeLineEl: React.FC<ElProps<Extract<'codeLine'>>> = ({ element, branding, frameTone }) => {
+  const { opacity, y } = useEntry(element.delay)
+  const surface = frameSurface(frameTone)
+  return (
+    <div style={{
+      opacity, transform: `translateY(${y}px)`,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+      fontSize: 13, display: 'flex', gap: 14,
+    }}>
+      {element.lineNumber !== undefined && (
+        <span style={{ color: surface.chromeFg, opacity: 0.4, width: 24, textAlign: 'right' }}>
+          {element.lineNumber}
+        </span>
+      )}
+      <span>
+        {element.tokens.map((tk, i) => {
+          const c = resolveTone(tk.tone, branding, frameTone)
+          return <span key={i} style={{ color: c.fg }}>{tk.text}</span>
+        })}
+      </span>
+    </div>
+  )
+}
+
+/** Inline glyph for header icons. Anything unknown renders a small dot
+ *  so a typo from the LLM doesn't break the layout. */
 const IconGlyph: React.FC<{ name: string; color: string }> = ({ name, color }) => {
   const size = 14
   const stroke = color

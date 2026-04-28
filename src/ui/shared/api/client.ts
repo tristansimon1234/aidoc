@@ -622,6 +622,7 @@ export const api = {
           withVoiceover?: boolean
           voiceId?: string
           tone?: 'punchy' | 'calm' | 'playful' | 'serious'
+          visualMode?: 'screenshots' | 'mocks'
           musicTrackId?: string
           musicUploadPath?: string
           musicVolume?: number
