@@ -45,7 +45,7 @@ const TONE_LABELS: Record<VoiceTone, string> = {
  * about.
  */
 export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideoPanelProps): React.ReactElement {
-  const { jobs, addJob, updateJob, failJob } = useJobs()
+  const { jobs, addJob, failJob } = useJobs()
   const [summary, setSummary] = useState<MarketingVideoSummaryDTO | null>(null)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
@@ -128,17 +128,14 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
   }
 
   /**
-   * Run the full pipeline (script → voice → music → render) as a
-   * single synchronous HTTP request. Blocks for ~2-3 min — the
-   * /api function has maxDuration: 300s in vercel.json which covers
-   * it. The JobTracker bottom-right card shows progress for the
-   * duration; on resolution we mark it completed.
+   * Kick off the pipeline as a fire-and-forget background job. Returns
+   * 202 in <1s; Vercel's `waitUntil` keeps the function alive past the
+   * response so the 2-3 min pipeline completes server-side. Completion
+   * arrives via Supabase Realtime on the jobs table (useJobRealtime
+   * subscribes elsewhere) and useEffect below refetches the summary.
    *
-   * Why sync rather than fire-and-forget: Vercel kills the serverless
-   * function after the response is sent, so a `void background()`
-   * promise doesn't reliably finish for a 2-3 min pipeline — the
-   * jobs row would never get updated and the card would spin forever.
-   * Sync is dumber but actually works.
+   * The user can close the tab, navigate, refresh — work continues
+   * server-side and the result is durable in storage + DB.
    */
   const handleGenerateAndRender = async (): Promise<void> => {
     setError(null)
@@ -165,7 +162,10 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
         musicOpts.musicVolume = musicVolume
       }
 
-      const finalSummary = await api.runs.marketingVideo.generate(runId, {
+      // Fire-and-forget: 202 returns in ~1s, pipeline finishes in the
+      // background. JobTracker card stays running until Realtime flips
+      // it to completed/failed.
+      await api.runs.marketingVideo.generate(runId, {
         userPrompt: userPrompt.trim() || undefined,
         withVoiceover,
         voiceId: voiceId || undefined,
@@ -173,13 +173,16 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
         visualMode,
         ...musicOpts,
       })
-      setSummary(finalSummary)
-      updateJob(runId, { status: 'completed' })
     } catch (err) {
+      // Synchronous-side failures: validation errors (400), already-
+      // running conflict (409), backend not reachable. Pipeline-side
+      // failures arrive via Realtime → useJobRealtime later.
       const message = err instanceof ApiError ? err.message : (err as Error).message
       setError(message)
       failJob(runId, message, err instanceof ApiError ? err.code ?? null : null)
     } finally {
+      // Free the form quickly — user can adjust options for the next
+      // run while this one is still finishing in the background.
       setWorking(false)
     }
   }

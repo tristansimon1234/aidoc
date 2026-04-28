@@ -59,20 +59,21 @@ marketingVideoRouter.get('/marketing-video/voices', (_req: Request, res: Respons
 /**
  * POST /runs/:id/marketing-video
  *
- * Synchronous end-to-end pipeline (script → voice → music → render).
- * The full request blocks for ~2-3 min — well within the
- * `maxDuration: 300` configured for the API function in vercel.json.
+ * Two modes:
+ *  - `?async=1` (UI default) — write a row to `jobs` table, respond 202
+ *    immediately, run the pipeline in the background. Vercel's
+ *    `waitUntil` keeps the function alive past the response so the
+ *    pipeline finishes reliably (a plain `void background()` promise
+ *    gets killed when the function evicts). The frontend's JobTracker
+ *    subscribes to the jobs row via Supabase Realtime and updates when
+ *    status flips. User can close the tab / navigate / refresh — the
+ *    work continues, the row records the result.
+ *  - default (sync) — block the request until the pipeline finishes.
+ *    Used by tests / MCP / the marketing CLI script which want a
+ *    direct response.
  *
- * Why sync, not background-with-202: Vercel kills serverless functions
- * after the response is sent. A `void background()` promise sometimes
- * runs to completion, but for a 2-3 min pipeline it doesn't. The
- * "fire-and-forget + jobs table + Realtime" pattern only works
- * reliably with @vercel/functions waitUntil or an external worker —
- * neither is in scope here.
- *
- * Frontend-side, the JobContext addJob/updateJob/failJob still
- * provides the bottom-right card; it's just driven by the synchronous
- * request completing rather than a Realtime push.
+ * waitUntil is bound to the Vercel function's `maxDuration` (300s
+ * here) — comfortably covers the typical 2-3 min pipeline.
  */
 marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
@@ -83,15 +84,75 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
       const opts = GenerateMarketingVideoOptionsSchema.safeParse(req.body ?? {})
       if (!opts.success) throw new ValidationError(opts.error.flatten())
 
-      // Step 1: build the manifest (Gemini + ElevenLabs + maybe music).
-      await generateMarketingVideoForRun(params.data.id, opts.data)
+      const isAsync = req.query.async === '1'
 
-      // Step 2: render to MP4 via the video-service. This is the long
-      // pole (60-180s) — chained inside the same HTTP request so the
-      // frontend gets a single complete response.
-      const summary = await renderMarketingVideoForRun(params.data.id)
+      if (!isAsync) {
+        // Sync mode: block the request, return the final summary.
+        await generateMarketingVideoForRun(params.data.id, opts.data)
+        const summary = await renderMarketingVideoForRun(params.data.id)
+        res.status(200).json(summary)
+        return
+      }
 
-      res.status(200).json(summary)
+      // Async mode: track via the jobs table so Realtime can push the
+      // result to the frontend even if the user closes the tab.
+      const { findRunById } = await import('../run/run.repository.js')
+      const { findPageById } = await import('../page/page.repository.js')
+      const { createJob, updateJobStatus } = await import('../run/job.repository.js')
+
+      const run = await findRunById(params.data.id)
+      if (!run) {
+        res.status(404).json({ error: 'Run not found', code: 'RUN_NOT_FOUND' })
+        return
+      }
+      if (!run.docPageId) {
+        res.status(400).json({ error: 'Run has no doc page — cannot track marketing video job', code: 'NO_DOC_PAGE' })
+        return
+      }
+      const page = await findPageById(run.docPageId)
+      if (!page) {
+        res.status(404).json({ error: 'Doc page not found', code: 'PAGE_NOT_FOUND' })
+        return
+      }
+
+      let jobId: string | null = null
+      try {
+        const job = await createJob({
+          runId: params.data.id,
+          pageId: run.docPageId,
+          projectId: page.projectId,
+          type: 'marketing-video',
+        })
+        jobId = job.id
+      } catch (err) {
+        // Most common cause: a marketing-video job is already running for
+        // this page (unique index on page_id+type WHERE status='running').
+        res.status(409).json({
+          error: 'A marketing-video generation is already running for this page.',
+          code: 'JOB_ALREADY_RUNNING',
+          details: (err as Error).message,
+        })
+        return
+      }
+
+      res.status(202).json({ runId: params.data.id, jobId, status: 'running' })
+
+      // Critical: register the background promise with Vercel's
+      // `waitUntil` so the function stays alive until the pipeline
+      // completes. Without this the function gets evicted right after
+      // res.json() and the work dies in the middle.
+      const { waitUntil } = await import('@vercel/functions')
+      waitUntil((async () => {
+        try {
+          await generateMarketingVideoForRun(params.data.id, opts.data)
+          await renderMarketingVideoForRun(params.data.id)
+          if (jobId) await updateJobStatus(jobId, 'completed').catch(() => {})
+        } catch (err) {
+          const message = (err as Error).message
+          console.error(`[marketing-video] Background pipeline failed for ${params.data.id}: ${message}`)
+          if (jobId) await updateJobStatus(jobId, 'failed', message).catch(() => {})
+        }
+      })())
     } catch (err) {
       next(err)
     }
