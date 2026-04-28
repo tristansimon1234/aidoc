@@ -172,7 +172,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
       <div className={styles.header}>
         <h2 className={styles.title}>Marketing video</h2>
         <p className={styles.subtitle}>
-          Turn this page into a 60s 16:9 marketing video. Gemini writes the script grounded in the doc, ElevenLabs voices it, Remotion renders it.
+          Turn this page into a 45-second marketing video. We write the script straight from your documentation, voice it, and render the final MP4 — all in one pass.
         </p>
       </div>
 
