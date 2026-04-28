@@ -8,6 +8,40 @@
  * infra.
  */
 
+/** Tone label that maps to a brand-aware color in the renderer. We keep
+ *  this as an enum (vs hex codes from the LLM) so mocks always respect
+ *  the project's branding + frame contrast. */
+export type MockTone = 'default' | 'muted' | 'accent' | 'success' | 'warning' | 'danger'
+
+/** Single primitive in the mock DSL. The Remotion-side renderer maps each
+ *  one-to-one to a frame-driven React component. Recursive `group` is
+ *  intentionally NOT exposed to the LLM (Gemini's responseSchema can't
+ *  represent recursion); the layout can be controlled via the top-level
+ *  `Mock.layout`. */
+export type MockElement =
+  | { type: 'header'; label: string; icon?: string; statusText?: string; statusTone?: MockTone; delay?: number }
+  | { type: 'terminalLine'; prefix?: string; text: string; tone?: MockTone; indent?: boolean; trailingHighlight?: string; delay?: number }
+  | { type: 'blinkingCursor'; delay?: number }
+  | { type: 'card'; title?: string; rows: { left: string; right?: string; tone?: MockTone }[]; delay?: number }
+  | { type: 'pill'; text: string; tone?: MockTone; delay?: number }
+  | { type: 'pulsingDot'; tone?: MockTone; size?: number; delay?: number }
+  | { type: 'button'; label: string; primary?: boolean; delay?: number }
+  | { type: 'input'; placeholder?: string; value?: string; focused?: boolean; delay?: number }
+  | { type: 'spacer'; height?: number }
+  | { type: 'text'; text: string; size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'; tone?: MockTone; weight?: 'normal' | 'bold'; delay?: number }
+  | { type: 'counter'; from: number; to: number; prefix?: string; suffix?: string; delay?: number }
+  | { type: 'avatar'; initials: string; tone?: MockTone; delay?: number }
+  | { type: 'codeLine'; lineNumber?: number; tokens: { text: string; tone?: MockTone }[]; delay?: number }
+
+export interface MarketingMock {
+  frame?: {
+    url?: string
+    tone?: 'light' | 'dark'
+  }
+  layout?: 'row' | 'column'
+  elements: MockElement[]
+}
+
 export type MarketingScene = {
   /** Plain text the narrator says during this scene. ElevenLabs reads this
    *  verbatim — keep it short, punchy, no audio tags (the marketing voice
@@ -18,11 +52,18 @@ export type MarketingScene = {
   /** Optional supporting line under the headline (8-15 words). */
   subhead?: string
   /** Index into manifest.screenshots — which doc screenshot to feature in
-   *  this scene. Null = no screenshot, headline-only scene. */
+   *  this scene. Null = no screenshot, headline-only scene. Ignored when
+   *  `mock` is set. */
   screenshotIndex: number | null
   /** Duration of this scene in seconds. The Remotion composition uses these
    *  to compute frame ranges so scene timings line up with the voice-over. */
   durationSeconds: number
+  /** Optional animated UI mock — replaces the screenshot with a designed
+   *  layout assembled from the primitive library. Per-scene choice: the
+   *  LLM picks mock for "designy" beats (a chat conversation, an MCP
+   *  terminal, a settings panel) and screenshot for "real product"
+   *  beats (the actual UI the user is documenting). */
+  mock?: MarketingMock
 }
 
 export interface MarketingScript {

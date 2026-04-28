@@ -1,5 +1,59 @@
 import { z } from 'zod'
 
+/** Mirrors MockTone from marketing-video.types.ts. Kept in sync manually. */
+const MockToneSchema = z.enum(['default', 'muted', 'accent', 'success', 'warning', 'danger'])
+
+/** Single primitive in the mock DSL. Matches MockElement union — Gemini
+ *  emits objects with discriminator `type` and a flat set of
+ *  type-specific fields. We keep this permissive on missing fields
+ *  (rather than discriminated-union strict) because Gemini's
+ *  responseSchema can't model discriminated unions and unknown LLM
+ *  behaviour is better handled with a soft schema + drop-on-fail. */
+const MockElementSchema = z.object({
+  type: z.string(),
+  label: z.string().optional(),
+  icon: z.string().optional(),
+  statusText: z.string().optional(),
+  statusTone: MockToneSchema.optional(),
+  prefix: z.string().optional(),
+  text: z.string().optional(),
+  tone: MockToneSchema.optional(),
+  indent: z.boolean().optional(),
+  trailingHighlight: z.string().optional(),
+  title: z.string().optional(),
+  rows: z.array(z.object({
+    left: z.string(),
+    right: z.string().optional(),
+    tone: MockToneSchema.optional(),
+  })).optional(),
+  primary: z.boolean().optional(),
+  placeholder: z.string().optional(),
+  value: z.string().optional(),
+  focused: z.boolean().optional(),
+  height: z.number().optional(),
+  size: z.enum(['xs', 'sm', 'md', 'lg', 'xl']).optional(),
+  weight: z.enum(['normal', 'bold']).optional(),
+  from: z.number().optional(),
+  to: z.number().optional(),
+  suffix: z.string().optional(),
+  initials: z.string().optional(),
+  lineNumber: z.number().optional(),
+  tokens: z.array(z.object({
+    text: z.string(),
+    tone: MockToneSchema.optional(),
+  })).optional(),
+  delay: z.number().min(0).max(20).optional(),
+})
+
+const MarketingMockSchema = z.object({
+  frame: z.object({
+    url: z.string().max(80).optional(),
+    tone: z.enum(['light', 'dark']).optional(),
+  }).optional(),
+  layout: z.enum(['row', 'column']).optional(),
+  elements: z.array(MockElementSchema).max(20),
+})
+
 /** Zod for what Gemini returns as the marketing script. Field names mirror
  *  MarketingScript so the parsed output drops straight into the service. */
 export const MarketingSceneSchema = z.object({
@@ -8,6 +62,7 @@ export const MarketingSceneSchema = z.object({
   subhead: z.string().optional(),
   screenshotIndex: z.number().int().nullable(),
   durationSeconds: z.number().positive(),
+  mock: MarketingMockSchema.optional(),
 })
 
 export const MarketingScriptSchema = z.object({

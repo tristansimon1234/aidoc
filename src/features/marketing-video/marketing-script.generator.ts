@@ -32,6 +32,80 @@ const RESPONSE_SCHEMA: ResponseSchema = {
           subhead: { type: SchemaType.STRING },
           screenshotIndex: { type: SchemaType.INTEGER, nullable: true },
           durationSeconds: { type: SchemaType.NUMBER },
+          // Mock DSL — optional per scene. The shape mirrors MockElement
+          // but flattens type-specific fields so Gemini's responseSchema
+          // (which can't represent discriminated unions or recursion)
+          // still constrains the output. Zod re-validates on parse.
+          mock: {
+            type: SchemaType.OBJECT,
+            properties: {
+              frame: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  url: { type: SchemaType.STRING },
+                  tone: { type: SchemaType.STRING },
+                },
+              },
+              layout: { type: SchemaType.STRING },
+              elements: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    type: { type: SchemaType.STRING },
+                    label: { type: SchemaType.STRING },
+                    icon: { type: SchemaType.STRING },
+                    statusText: { type: SchemaType.STRING },
+                    statusTone: { type: SchemaType.STRING },
+                    prefix: { type: SchemaType.STRING },
+                    text: { type: SchemaType.STRING },
+                    tone: { type: SchemaType.STRING },
+                    indent: { type: SchemaType.BOOLEAN },
+                    trailingHighlight: { type: SchemaType.STRING },
+                    title: { type: SchemaType.STRING },
+                    rows: {
+                      type: SchemaType.ARRAY,
+                      items: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                          left: { type: SchemaType.STRING },
+                          right: { type: SchemaType.STRING },
+                          tone: { type: SchemaType.STRING },
+                        },
+                        required: ['left'],
+                      },
+                    },
+                    primary: { type: SchemaType.BOOLEAN },
+                    placeholder: { type: SchemaType.STRING },
+                    value: { type: SchemaType.STRING },
+                    focused: { type: SchemaType.BOOLEAN },
+                    height: { type: SchemaType.NUMBER },
+                    size: { type: SchemaType.STRING },
+                    weight: { type: SchemaType.STRING },
+                    from: { type: SchemaType.NUMBER },
+                    to: { type: SchemaType.NUMBER },
+                    suffix: { type: SchemaType.STRING },
+                    initials: { type: SchemaType.STRING },
+                    lineNumber: { type: SchemaType.NUMBER },
+                    tokens: {
+                      type: SchemaType.ARRAY,
+                      items: {
+                        type: SchemaType.OBJECT,
+                        properties: {
+                          text: { type: SchemaType.STRING },
+                          tone: { type: SchemaType.STRING },
+                        },
+                        required: ['text'],
+                      },
+                    },
+                    delay: { type: SchemaType.NUMBER },
+                  },
+                  required: ['type'],
+                },
+              },
+            },
+            required: ['elements'],
+          },
         },
         required: ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds'],
       },
@@ -233,6 +307,84 @@ ${briefBlock}
 ${captionList || '(no screenshots available — every scene MUST have screenshotIndex: null)'}
 
 You may set "screenshotIndex" to any integer between 0 and ${Math.max(0, input.availableScreenshots - 1)}, OR to null if a scene works better headline-only (e.g. the hook). Reuse a screenshot if the same view illustrates two benefits.
+
+## Visuals — screenshot OR designed mock (per scene)
+
+Each scene picks ONE of two visual modes:
+
+A) **Screenshot** — set \`screenshotIndex\` to a real doc screenshot. Use this when the scene is showing the actual product UI the user is documenting (the "grounded in real product" path — high credibility).
+
+B) **Designed mock** — set \`mock\` to a DSL object describing an animated UI panel. Use this when the scene illustrates a CONCEPT the screenshots can't (a chat conversation, a terminal command, a settings transformation, a stat counter, an integration with a third-party tool, etc.). Mocks are visually polished and feel like a designed product video instead of a slideshow.
+
+A scene MUST have ONE: either a real \`screenshotIndex\` (0..${Math.max(0, input.availableScreenshots - 1)}) or a \`mock\`. Aim for a 50/50 mix when the content allows — alternating real screens and designed mocks gives the video a great editorial rhythm. Pure-screenshot videos feel slideshow-y; pure-mock videos lose product credibility.
+
+### Mock DSL
+
+Set \`mock.elements\` to an array (max 12 elements) of small primitives. The renderer animates them in with a subtle stagger — set \`delay\` (seconds) per element to control timing (e.g. \`0\`, \`0.25\`, \`0.5\` for a "typing in" feel).
+
+Optional \`mock.frame\`: \`{ url, tone }\` wraps the mock in a browser chrome with a URL bar. Use \`tone: "dark"\` for terminal/code mocks, \`"light"\` for product-UI mocks. Skip \`frame\` for floating mocks (e.g. a chat widget overlay).
+
+Available element types (\`type\`) and their fields. ALL fields are optional unless noted; tone enum: \`default | muted | accent | success | warning | danger\`.
+
+- \`header\`         { label*, icon, statusText, statusTone }
+   Top bar with an icon + label + optional right-aligned pill ("connected").
+   icons: plug, mic, check, message, search, zap, code, settings.
+- \`terminalLine\`   { prefix, text*, tone, indent, trailingHighlight }
+   A single line in a terminal/log. Prefix is shown muted ("\$", ">", "↳").
+- \`blinkingCursor\` {}
+   Add at the bottom of a terminal block.
+- \`card\`           { title, rows: [{ left*, right, tone }] }
+   Stat cards / settings rows. Right value is colored by tone (good for KPIs).
+- \`pill\`           { text*, tone }
+   Inline badge ("Pro plan", "10x faster", "AI-powered").
+- \`pulsingDot\`     { tone, size }
+   Live-indicator dot (use with text near it).
+- \`button\`         { label*, primary }
+   Primary uses brand accent + shadow; non-primary is outlined.
+- \`input\`          { placeholder, value, focused }
+   Text field; \`focused: true\` adds an accent ring.
+- \`text\`           { text*, size: xs|sm|md|lg|xl, tone, weight: normal|bold }
+   Plain text line. Use for prompts ("Ask anything"), subtitles, taglines.
+- \`counter\`        { from*, to*, prefix, suffix }
+   Big animated number that ticks from \`from\` to \`to\` over 1.2s. Great for "+340 docs" / "98% uptime".
+- \`avatar\`         { initials*, tone }
+   Round badge with 1-3 letters. Use for chat-style mocks.
+- \`codeLine\`       { lineNumber, tokens: [{ text*, tone }] }
+   One line of pseudo syntax-highlighted code. Use \`tone: accent\` for keywords, \`muted\` for comments.
+- \`spacer\`         { height }
+   Vertical gap (default 12px).
+
+Example mock — a Claude/MCP terminal scene:
+\`\`\`json
+{
+  "frame": { "url": "claude · mcp.${input.productName.toLowerCase().replace(/\s+/g, '-')}.com", "tone": "dark" },
+  "elements": [
+    { "type": "header", "icon": "plug", "label": "Claude · MCP", "statusText": "connected", "statusTone": "success", "delay": 0 },
+    { "type": "terminalLine", "prefix": ">", "text": "docs.search", "tone": "muted", "delay": 0.3 },
+    { "type": "terminalLine", "indent": true, "text": "query: 'connect stripe'", "tone": "accent", "delay": 0.5 },
+    { "type": "terminalLine", "prefix": "↳", "text": "found 3 pages", "trailingHighlight": "200 ok", "delay": 0.9 },
+    { "type": "blinkingCursor", "delay": 1.4 }
+  ]
+}
+\`\`\`
+
+Example mock — a stat dashboard scene:
+\`\`\`json
+{
+  "frame": { "url": "${input.productName.toLowerCase()}.app/dashboard", "tone": "light" },
+  "elements": [
+    { "type": "header", "icon": "zap", "label": "This week", "delay": 0 },
+    { "type": "counter", "from": 0, "to": 1247, "suffix": " docs read", "delay": 0.2 },
+    { "type": "card", "title": "Top pages", "rows": [
+      { "left": "Quick start", "right": "+412", "tone": "success" },
+      { "left": "API reference", "right": "+318", "tone": "success" },
+      { "left": "Migration guide", "right": "+287", "tone": "accent" }
+    ], "delay": 0.6 }
+  ]
+}
+\`\`\`
+
+Pick mock vs screenshot per scene as fits — don't force mocks where a real screenshot is more telling.
 
 ## Language
 

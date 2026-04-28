@@ -2,6 +2,7 @@ import React from 'react'
 import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
 import type { Branding, Scene, Screenshot } from '../manifest.js'
 import { BrandWatermark } from './BrandWatermark.js'
+import { DynamicMock } from '../mocks/DynamicMock.js'
 
 interface FeatureSceneProps {
   scene: Scene
@@ -62,7 +63,12 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
 
   const layout: LayoutVariant = LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
 
-  const screenshotElement = (
+  // Mock takes priority over screenshot when both are present — the mock
+  // is the "polished" path designed to illustrate the scene, while the
+  // screenshot is the "grounded in real product" fallback.
+  const visualElement = scene.mock ? (
+    <DynamicMock mock={scene.mock} branding={branding} width={920} height={580} />
+  ) : (
     <ScreenshotFrame
       screenshot={screenshot}
       branding={branding}
@@ -93,7 +99,7 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
             {textBlock('left')}
           </div>
           <div style={{ position: 'absolute', right: 100, top: '50%', width: 920, height: 580, marginTop: -290, opacity: imgOpacity, transform: `translateX(${interpolate(imgIn, [0, 1], [80, 0])}px)` }}>
-            {screenshotElement}
+            {visualElement}
           </div>
         </>
       )}
@@ -105,7 +111,7 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
             {textBlock('right')}
           </div>
           <div style={{ position: 'absolute', left: 100, top: '50%', width: 920, height: 580, marginTop: -290, opacity: imgOpacity, transform: `translateX(${interpolate(imgIn, [0, 1], [-80, 0])}px)` }}>
-            {screenshotElement}
+            {visualElement}
           </div>
         </>
       )}
@@ -117,7 +123,7 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
               underlying image colors. */}
           <AbsoluteFill style={{ opacity: imgOpacity, padding: 80 }}>
             <div style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 24, overflow: 'hidden' }}>
-              {screenshotElement}
+              {visualElement}
             </div>
           </AbsoluteFill>
           <div
@@ -159,7 +165,7 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
               transform: `translateY(${interpolate(imgIn, [0, 1], [60, 0])}px)`,
             }}
           >
-            {screenshotElement}
+            {visualElement}
           </div>
         </>
       )}
