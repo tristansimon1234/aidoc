@@ -490,81 +490,6 @@ function MockScene({ branding }) {
 }
 \`\`\`
 
-#### Reference example B — light chat (typing prompt + AI reply, Tailwind)
-
-\`\`\`tsx
-function MockScene({ branding }) {
-  const f = Remotion.useCurrentFrame()
-  const { fps } = Remotion.useVideoConfig()
-  const q = 'How do I connect Stripe?'
-  const chars = Math.floor(Remotion.interpolate(f, [10, 50], [0, q.length], { extrapolateRight: 'clamp' }))
-  const replyT = Remotion.spring({ frame: f - 60, fps, config: { damping: 14, stiffness: 90 } })
-  const replyOp = Remotion.interpolate(replyT, [0, 1], [0, 1])
-  const replyY = Remotion.interpolate(replyT, [0, 1], [16, 0])
-  const blink = (f % 30) < 15
-  return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
-      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={520} />
-      <Remotion.MockFrame url='claude.ai/chat' tone='light'>
-        <div className='p-6 flex flex-col gap-4'>
-          <div className='flex items-center gap-2.5'>
-            <Remotion.Icons.Sparkles size={14} color={branding.accentColor} />
-            <span className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>Claude · Doclee</span>
-            <span className='ml-auto'><Remotion.Pill tone='accent' accentColor={branding.accentColor} dot>connected</Remotion.Pill></span>
-          </div>
-          <div className='self-end max-w-[80%] rounded-2xl rounded-br-sm px-4 py-2.5 text-[14px] text-white' style={{ background: branding.accentColor }}>
-            {q.slice(0, chars)}<span className='inline-block w-[2px] h-[12px] ml-[2px] align-middle bg-white' style={{ opacity: blink ? 1 : 0 }} />
-          </div>
-          <div className='flex gap-3 items-start' style={{ opacity: replyOp, transform: \`translateY(\${replyY}px)\` }}>
-            <div className='w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold text-white' style={{ background: branding.accentColor }}>AI</div>
-            <div className='flex-1 max-w-[75%] rounded-2xl rounded-tl-sm px-4 py-2.5 bg-zinc-100 border border-zinc-200/70 text-[14px] text-zinc-800'>
-              Open <span className='font-mono text-[13px] px-1.5 py-0.5 rounded bg-white border border-zinc-200'>Settings → Integrations</span>, paste your key, hit save.
-            </div>
-          </div>
-        </div>
-      </Remotion.MockFrame>
-    </Remotion.AbsoluteFill>
-  )
-}
-\`\`\`
-
-#### Reference example C — cursor flies in + clicks centered "Create token"
-
-The button is flex-centered inside the MockFrame interior. Cursor's terminal coords (50, 55) match the button's center → cursor lands on button. ALWAYS use this pattern. Never put cursor on off-center elements.
-
-\`\`\`tsx
-function MockScene({ branding }) {
-  const f = Remotion.useCurrentFrame()
-  const { fps } = Remotion.useVideoConfig()
-  const btnT = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 90 } })
-  const btnOp = Remotion.interpolate(btnT, [0, 1], [0, 1])
-  const btnScale = Remotion.interpolate(btnT, [0, 1], [0.96, 1])
-  const curT = Remotion.spring({ frame: f - 18, fps, config: { damping: 16, stiffness: 70 } })
-  // Start top-right, land at panel center (50, 55) where the flex-centered button sits.
-  const curL = Remotion.interpolate(curT, [0, 1], [82, 50])
-  const curTp = Remotion.interpolate(curT, [0, 1], [15, 55])
-  const click = f >= 56 && f < 64
-  const ripple = Remotion.interpolate(f, [56, 80], [0, 70], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  const rippleOp = Remotion.interpolate(f, [56, 80], [0.55, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  const press = click ? 0.96 : 1
-  return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
-      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={520} />
-      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/settings/tokens\`} tone='light'>
-        <div className='h-full flex flex-col items-center justify-center gap-3 p-8'>
-          <Remotion.Icons.Lock size={28} color={branding.accentColor} />
-          <div className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>API Tokens</div>
-          <div className='text-2xl font-bold text-zinc-900 tracking-tight'>Connect your LLM</div>
-          <div className='text-sm text-zinc-500 mb-2'>Generate a secure token to authorize Claude.</div>
-          <button className='px-7 py-3.5 rounded-xl text-white text-base font-bold shadow-xl' style={{ background: branding.accentColor, boxShadow: \`0 14px 32px \${branding.accentColor}55\`, opacity: btnOp, transform: \`scale(\${btnScale * press})\` }}>Create token</button>
-        </div>
-      </Remotion.MockFrame>
-      <Remotion.AnimatedCursor leftPct={curL} topPct={curTp} ripple={click} rippleRadius={ripple} rippleOpacity={rippleOp} accentColor={branding.accentColor} />
-    </Remotion.AbsoluteFill>
-  )
-}
-\`\`\`
-
 #### Reference example D — chart drawing in via Recharts
 
 Use this pattern for any "stats / metrics / growth" scene. The data array is computed each frame from \`Remotion.interpolate\` so the chart appears to "draw" left-to-right.
@@ -609,7 +534,111 @@ function MockScene({ branding }) {
 }
 \`\`\`
 
-These four examples are your baseline. EVERY scene must:
+#### Reference example E — abstract flow diagram (NO frame, motion-graphic feel)
+
+Three connected nodes representing a process. NO browser frame — pure motion graphic. Use for "how it works" / "Doc → AI → Answer" / "before-during-after" type beats. Way more expressive than a UI screenshot of the same idea.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
+  const nodes = [
+    { label: 'Your docs',   icon: 'Code',     delay: 0 },
+    { label: 'AI reads',    icon: 'Sparkles', delay: 18, accent: true },
+    { label: 'Better answers', icon: 'Check', delay: 36 },
+  ]
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12 overflow-hidden'>
+      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={500} />
+      <div className='relative flex items-center gap-3'>
+        {nodes.map((n, i) => {
+          const t = ease(n.delay)
+          const op = Remotion.interpolate(t, [0, 1], [0, 1])
+          const sc = Remotion.interpolate(t, [0, 1], [0.85, 1])
+          const Ico = Remotion.Icons[n.icon]
+          const arrowT = i < nodes.length - 1 ? ease(n.delay + 8) : null
+          const arrowOp = arrowT !== null ? Remotion.interpolate(arrowT, [0, 1], [0, 1]) : 0
+          return (
+            <React.Fragment key={i}>
+              <div className={\`w-[160px] h-[160px] rounded-3xl flex flex-col items-center justify-center gap-3 \${n.accent ? '' : 'bg-white border border-zinc-200/70'}\`} style={{ opacity: op, transform: \`scale(\${sc})\`, boxShadow: n.accent ? \`0 1px 2px rgba(0,0,0,0.06), 0 24px 48px -8px \${branding.accentColor}55\` : '0 1px 2px rgba(0,0,0,0.04), 0 12px 32px -8px rgba(0,0,0,0.10)', background: n.accent ? \`linear-gradient(135deg, \${branding.accentColor}, \${branding.accentColor}CC)\` : undefined }}>
+                <Ico size={36} color={n.accent ? '#FFFFFF' : branding.accentColor} />
+                <div className={\`text-[14px] font-bold tracking-tight \${n.accent ? 'text-white' : 'text-zinc-900'}\`}>{n.label}</div>
+              </div>
+              {arrowT !== null && (
+                <div className='flex items-center' style={{ opacity: arrowOp }}>
+                  <div className='h-[2px] w-12 rounded' style={{ background: branding.accentColor }} />
+                  <Remotion.Icons.ArrowRight size={20} color={branding.accentColor} />
+                </div>
+              )}
+            </React.Fragment>
+          )
+        })}
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example F — headline-burst (word-by-word reveal, NO frame)
+
+Maximum visual punch with minimum content. NO frame, NO UI — just words springing in with stagger over an accent gradient. Use for the hook scene, CTA-style beats, or any "make a strong claim" moment.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const words = ['Docs', 'that', 'answer', 'for', 'you']
+  const accentIdx = 2
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center overflow-hidden' style={{ background: \`radial-gradient(ellipse at 50% 50%, \${branding.accentColor}12, transparent 65%)\` }}>
+      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={620} />
+      <div className='relative flex items-baseline gap-3 flex-wrap justify-center px-12'>
+        {words.map((w, i) => {
+          const t = Remotion.spring({ frame: f - (8 + i * 6), fps, config: { damping: 14, stiffness: 90 } })
+          const op = Remotion.interpolate(t, [0, 1], [0, 1])
+          const y = Remotion.interpolate(t, [0, 1], [40, 0])
+          const isAccent = i === accentIdx
+          return (
+            <span key={i} className='text-[88px] font-black leading-none tracking-tight' style={{ color: isAccent ? branding.accentColor : '#0B0B0F', opacity: op, transform: \`translateY(\${y}px)\`, textShadow: isAccent ? \`0 8px 32px \${branding.accentColor}44\` : 'none' }}>{w}</span>
+          )
+        })}
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example G — icon-hero (one giant icon, NO frame)
+
+A single oversized lucide icon, gradient-filled, with a short tagline below and a soft accent glow behind. NO browser frame. Use for "secure / fast / smart" beats — moments where the idea is best carried by a symbol, not a UI.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const iconT = Remotion.spring({ frame: f, fps, config: { damping: 14, stiffness: 90 } })
+  const textT = Remotion.spring({ frame: f - 14, fps, config: { damping: 16, stiffness: 90 } })
+  const iconOp = Remotion.interpolate(iconT, [0, 1], [0, 1])
+  const iconSc = Remotion.interpolate(iconT, [0, 1], [0.7, 1])
+  const textOp = Remotion.interpolate(textT, [0, 1], [0, 1])
+  const textY = Remotion.interpolate(textT, [0, 1], [24, 0])
+  return (
+    <Remotion.AbsoluteFill className='flex flex-col items-center justify-center gap-8 overflow-hidden'>
+      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={620} />
+      <div className='relative w-[180px] h-[180px] rounded-[40px] flex items-center justify-center' style={{ opacity: iconOp, transform: \`scale(\${iconSc})\`, background: \`linear-gradient(135deg, \${branding.accentColor}, \${branding.accentColor}AA)\`, boxShadow: \`0 32px 64px -12px \${branding.accentColor}66, inset 0 1px 0 rgba(255,255,255,0.25)\` }}>
+        <Remotion.Icons.Sparkles size={92} color='#FFFFFF' />
+      </div>
+      <div className='flex flex-col items-center gap-3' style={{ opacity: textOp, transform: \`translateY(\${textY}px)\` }}>
+        <div className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>{branding.productName}</div>
+        <div className='text-[44px] font-bold tracking-tight text-zinc-900'>Smarter answers, instantly.</div>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+These seven examples are your baseline. EVERY scene must:
 1. Use \`<Remotion.MockFrame tone='light'>\` (light, never dark).
 2. Have NO outer background — the AbsoluteFill is transparent.
 3. Use Tailwind \`className\` for static styling, \`style={{...}}\` only for animated values.
@@ -619,14 +648,22 @@ These four examples are your baseline. EVERY scene must:
    - **MAXIMUM ONE \`<Remotion.MockFrame>\` per scene.** Never nest or stack two MockFrames (e.g. a chat frame fading into a dashboard frame). Pick one product surface per scene; the next scene gets the next surface. Stacked frames read as a render glitch.
 5. **Typography — Geist by default, NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\` or any other stack — that overrides our config and the result looks like a 2014 system-monospace dump. Use the className \`font-mono\` ONLY for actual code, URLs, or terminal lines. NEVER use mono for prose, chat bubbles, button labels, or headings.
 6. **Type at scale — make it feel modern.** Headlines \`text-[32px]\` to \`text-[44px]\` (\`font-bold tracking-tight\`). Big numbers / counters \`text-[64px]\` to \`text-[96px]\` (\`tabular-nums tracking-tight\`). Body / chat text \`text-[15px]\` to \`text-[18px]\`. Labels / status pills \`text-[11px] font-bold tracking-widest uppercase\`. Tight letter-spacing on big text is what makes typography feel premium vs. dated.
-7. **Vary scene MODES — REQUIRED, no repeats.** Across the 3-4 scenes, each one MUST use a DIFFERENT mode from this list:
-   - **hero-stat**     — example A. NO browser frame, giant accent number, eyebrow + subhead. Use when the scene is about a single big idea / metric / value prop.
-   - **bento**         — example B. Browser frame WITH perspective tilt, mixed-size grid (col-span-2 + smaller cards), one accent-tinted hero card.
-   - **chat**          — typing prompt + AI reply pair, accent message bubble on the right, neutral reply on the left, optional avatar.
-   - **cursor-click**  — example C. Browser frame, ONLY a centered button as content, cursor flies in and clicks. NO surrounding text or icons.
+7. **Vary scene MODES — REQUIRED, no repeats. Mix UI scenes with ABSTRACT scenes.**
+   The video should NOT be 4 product-UI screenshots in a row. Modern marketing videos (Linear, Vercel, Stripe, Cursor) alternate UI moments with abstract motion-graphics — typography reveals, flow diagrams, icon hero shots. Pick from these modes, each scene MUST be different:
+
+   **UI modes** (browser frame inside):
+   - **bento**         — example B. Browser frame WITH perspective tilt, mixed-size grid, one accent-tinted hero card.
+   - **chat**          — typing prompt + AI reply pair.
    - **chart**         — example D (Recharts). Browser frame, area/line/bar chart with frame-driven data sweep.
-   At least ONE scene MUST be hero-stat OR bento (so the video has a "wow" moment instead of four product UIs in a row).
-   NEVER produce two scenes of the same mode in one video.
+   - **cursor-click**  — example C. Browser frame, ONLY a centered button as content. Use SPARINGLY (alignment is fragile).
+
+   **Abstract modes** (NO browser frame, the canvas IS the content) — more cinematic, less "settings page":
+   - **hero-stat**       — example A. Giant accent-colored number / metric, eyebrow label, subhead.
+   - **flow-diagram**    — example E. 3 connected nodes ("Your docs" → "AI sees them" → "Better answers"), animated arrows between them.
+   - **headline-burst**  — example F. Word-by-word reveal of a 3-6 word tagline, each word springs in, accent gradient backdrop.
+   - **icon-hero**       — example G below. ONE huge gradient-filled lucide icon (60-100px), tagline below, accent glow behind.
+
+   **Hard rule: at LEAST 2 of the 3-4 scenes MUST be abstract modes (no browser frame).** A wall of UI screenshots reads as "settings page tour", which is exactly the failure mode the user keeps flagging. Abstract scenes are what make the video feel designed instead of utilitarian.
 
 Use these as the visual baseline. Each scene picks ONE of these patterns (or a sibling — counter, progress bar, code line typing, notification toast, stat cards) and adapts the copy to the scene's headline. Don't downgrade — match this level of polish.
 
