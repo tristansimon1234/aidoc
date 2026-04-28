@@ -231,6 +231,9 @@ const BlinkingCursorEl: React.FC<{ element: Extract<'blinkingCursor'>; branding:
 const CardEl: React.FC<ElProps<Extract<'card'>>> = ({ element, branding, frameTone }) => {
   const { opacity, y, scale } = useEntry(element.delay)
   const surface = frameSurface(frameTone)
+  // Gemini sometimes omits `rows` even though we require it. Defensive
+  // default keeps the render alive — the card just shows its title.
+  const rows = element.rows ?? []
   return (
     <div
       style={{
@@ -250,7 +253,7 @@ const CardEl: React.FC<ElProps<Extract<'card'>>> = ({ element, branding, frameTo
         </div>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {element.rows.map((r, i) => {
+        {rows.map((r, i) => {
           const c = resolveTone(r.tone, branding, frameTone)
           return (
             <div key={i} style={{
@@ -374,7 +377,11 @@ const CounterEl: React.FC<{ element: Extract<'counter'>; branding: Branding }> =
     extrapolateLeft: 'clamp', extrapolateRight: 'clamp',
   })
   const eased = 1 - Math.pow(1 - t, 3)
-  const value = Math.round(element.from + (element.to - element.from) * eased)
+  // Defensive: Gemini sometimes drops from/to. Default to 0 → 100 so
+  // the counter still ticks meaningfully instead of rendering NaN.
+  const from = typeof element.from === 'number' ? element.from : 0
+  const to = typeof element.to === 'number' ? element.to : 100
+  const value = Math.round(from + (to - from) * eased)
   return (
     <div style={{
       opacity, transform: `translateY(${y}px) scale(${scale})`,
@@ -382,7 +389,7 @@ const CounterEl: React.FC<{ element: Extract<'counter'>; branding: Branding }> =
       color: branding.accentColor,
       fontFeatureSettings: '"tnum"',
     }}>
-      {element.prefix}{value.toLocaleString()}{element.suffix}
+      {element.prefix ?? ''}{value.toLocaleString()}{element.suffix ?? ''}
     </div>
   )
 }
@@ -406,6 +413,8 @@ const AvatarEl: React.FC<ElProps<Extract<'avatar'>>> = ({ element, branding, fra
 const CodeLineEl: React.FC<ElProps<Extract<'codeLine'>>> = ({ element, branding, frameTone }) => {
   const { opacity, y, scale } = useEntry(element.delay)
   const surface = frameSurface(frameTone)
+  // Defensive: Gemini may emit a codeLine without tokens.
+  const tokens = element.tokens ?? []
   return (
     <div style={{
       opacity, transform: `translateY(${y}px) scale(${scale})`,
@@ -418,7 +427,7 @@ const CodeLineEl: React.FC<ElProps<Extract<'codeLine'>>> = ({ element, branding,
         </span>
       )}
       <span>
-        {element.tokens.map((tk, i) => {
+        {tokens.map((tk, i) => {
           const c = resolveTone(tk.tone, branding, frameTone)
           return <span key={i} style={{ color: c.fg }}>{tk.text}</span>
         })}
