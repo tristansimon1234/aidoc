@@ -49,6 +49,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
   const [musicUploadName, setMusicUploadName] = useState<string | null>(null)
   const [musicUploading, setMusicUploading] = useState(false)
   const [musicVolume, setMusicVolume] = useState(0.15)
+  const [aiMusicPrompt, setAiMusicPrompt] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -103,10 +104,19 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
     setError(null)
     setGenerating(true)
     try {
-      const musicOpts: { musicTrackId?: string; musicUploadPath?: string; musicVolume?: number } = {}
+      const musicOpts: {
+        musicTrackId?: string
+        musicUploadPath?: string
+        musicVolume?: number
+        aiMusicPrompt?: string
+      } = {}
       if (musicChoice === 'upload' && musicUploadPath) {
         musicOpts.musicUploadPath = musicUploadPath
         musicOpts.musicVolume = musicVolume
+      } else if (musicChoice === 'ai') {
+        musicOpts.musicTrackId = 'ai'
+        musicOpts.musicVolume = musicVolume
+        if (aiMusicPrompt.trim()) musicOpts.aiMusicPrompt = aiMusicPrompt.trim()
       } else if (musicChoice !== 'none' && musicChoice !== 'upload') {
         musicOpts.musicTrackId = musicChoice
         musicOpts.musicVolume = musicVolume
@@ -305,6 +315,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
                 {p.name}{p.mood ? ` · ${p.mood}` : ''}
               </option>
             ))}
+            <option value="ai">Generate AI music (~30s extra, ~€0.10)</option>
             <option value="upload">Upload custom MP3…</option>
           </select>
         </label>
@@ -324,6 +335,32 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
           </label>
         )}
       </div>
+
+      {musicChoice === 'ai' && (
+        <div style={{ margin: '0 0 24px' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
+            <span style={{ color: 'var(--color-muted-fg)' }}>
+              Music style (optional) — base prompt is derived from your tone choice; this fine-tunes it.
+            </span>
+            <input
+              type="text"
+              value={aiMusicPrompt}
+              onChange={(e) => setAiMusicPrompt(e.target.value)}
+              placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
+              maxLength={300}
+              disabled={generating}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-bg)',
+                color: 'var(--color-fg)',
+                fontSize: 'var(--text-sm)',
+              }}
+            />
+          </label>
+        </div>
+      )}
 
       {musicChoice === 'upload' && (
         <div

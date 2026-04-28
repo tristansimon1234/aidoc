@@ -618,6 +618,7 @@ export const api = {
           musicTrackId?: string
           musicUploadPath?: string
           musicVolume?: number
+          aiMusicPrompt?: string
         },
       ): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video`, {

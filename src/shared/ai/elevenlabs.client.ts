@@ -77,6 +77,50 @@ export async function synthesizeSpeech(
 }
 
 /**
+ * Generate background music via ElevenLabs Music API.
+ *
+ * Returns an MP3 buffer. Latency is significant (30–60s for a 45s track)
+ * because the model composes from scratch — show a long-form spinner in
+ * the UI when calling. Cost is roughly €0.05–0.10 per 45s track depending
+ * on the account plan; not all plans expose the Music API.
+ *
+ * The prompt is free-form: "upbeat electronic marketing music with driving
+ * rhythm" / "calm ambient piano background" / etc. Keep it short and
+ * descriptive — long prompts don't produce richer music, just confused
+ * output.
+ */
+export async function generateMusic(
+  prompt: string,
+  options?: { durationMs?: number },
+): Promise<Buffer> {
+  const apiKey = getApiKey()
+  const durationMs = options?.durationMs ?? 45_000
+
+  console.log(`[elevenlabs] Generating music: durationMs=${durationMs}, prompt="${prompt.slice(0, 100)}"`)
+
+  const response = await fetch(`${BASE_URL}/music/compose`, {
+    method: 'POST',
+    headers: {
+      'xi-api-key': apiKey,
+      'Content-Type': 'application/json',
+      Accept: 'audio/mpeg',
+    },
+    body: JSON.stringify({
+      prompt,
+      music_length_ms: durationMs,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => 'Unknown error')
+    throw new Error(`ElevenLabs Music failed (${response.status}): ${errorBody}`)
+  }
+
+  const arrayBuffer = await response.arrayBuffer()
+  return Buffer.from(arrayBuffer)
+}
+
+/**
  * Get available voices from ElevenLabs.
  */
 export async function getAvailableVoices(): Promise<Voice[]> {

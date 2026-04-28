@@ -3,7 +3,7 @@ import { findStepsByRunId } from '../run/run.repository.js'
 import { findPageById } from '../page/page.repository.js'
 import { findProjectById } from '../project/project.repository.js'
 import { getPublicUrl, uploadToStorage } from '../../shared/db/storage.repository.js'
-import { synthesizeSpeech, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
+import { synthesizeSpeech, generateMusic, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 import { generateMarketingScript } from './marketing-script.generator.js'
 import { saveMarketingVideo } from './marketing-video.repository.js'
 import type {
@@ -34,6 +34,28 @@ export const MUSIC_PRESETS: Array<{ id: string; name: string; url: string; mood?
 ]
 
 const DEFAULT_MUSIC_VOLUME = 0.15
+
+/** Music style brief per voice tone. Used as the base prompt for ElevenLabs
+ *  Music generation, optionally extended with the user's own steering text.
+ *  Kept short and concrete — long prompts produce muddier output. */
+const TONE_TO_MUSIC_PROMPT: Record<import('./marketing-video.types.js').VoiceTone, string> = {
+  punchy:  'Energetic upbeat marketing music, electronic, driving rhythm, modern, confident',
+  calm:    'Calm ambient background music, minimal piano, professional, soft pads',
+  playful: 'Fun upbeat marketing music, playful melodies, light percussion, optimistic',
+  serious: 'Subtle cinematic background music, building tension, professional, restrained',
+}
+
+function buildMusicPrompt(
+  tone: import('./marketing-video.types.js').VoiceTone,
+  userBrief: string | undefined,
+  productName: string,
+): string {
+  const base = TONE_TO_MUSIC_PROMPT[tone]
+  const extended = userBrief?.trim() ? `${base}, ${userBrief.trim()}` : base
+  // Keep it under ElevenLabs' practical prompt window. The product name
+  // anchors the generation slightly without forcing a literal mention.
+  return `${extended}. Background music for a ${productName} marketing video. Instrumental, no vocals.`
+}
 
 /** ElevenLabs voice_settings tuned per tone. The triplet maps to:
  *  - stability: lower = more dynamic delivery (variable pitch / pace),
@@ -234,14 +256,31 @@ export async function generateMarketingVideoForRun(
     voiceoverUrl = result.voiceoverUrl
   }
 
-  // Resolve background music. Priority: explicit upload > preset by id >
-  // none. Either path resolves to a public URL Remotion can <Audio src>.
+  // Resolve background music. Priority: explicit upload > AI generation
+  // > preset by id > none. Either path resolves to a public URL Remotion
+  // can <Audio src>.
   let musicUrl: string | null = null
   let musicPath: string | null = null
   if (options.musicUploadPath) {
     musicPath = options.musicUploadPath
     musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
     console.log(`[marketing-video] Music: uploaded path=${musicPath}`)
+  } else if (options.musicTrackId === 'ai') {
+    if (!isElevenLabsConfigured()) {
+      throw new Error('ELEVENLABS_API_KEY is required for AI music generation.')
+    }
+    const tone = options.tone ?? 'punchy'
+    const musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
+    // Pace the track to the script's planned duration so the music doesn't
+    // outlast the video. ElevenLabs returns a buffer roughly matching the
+    // requested length.
+    const durationMs = Math.round(script.totalDurationSeconds * 1000)
+    console.log(`[marketing-video] Music: AI-generating, durationMs=${durationMs}`)
+    const buffer = await generateMusic(musicPrompt, { durationMs })
+    musicPath = `runs/${runId}/marketing-music-ai.mp3`
+    await uploadToStorage('artifacts', musicPath, buffer, 'audio/mpeg')
+    musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
+    console.log(`[marketing-video] Music: AI track uploaded → ${musicUrl}`)
   } else if (options.musicTrackId && options.musicTrackId !== 'none') {
     const preset = MUSIC_PRESETS.find((p) => p.id === options.musicTrackId)
     if (preset) {

@@ -132,13 +132,18 @@ export interface GenerateMarketingVideoOptions {
    *  hardcoded values). */
   tone?: VoiceTone
   /** Background music track ID — picked from MUSIC_PRESETS. Mutually
-   *  exclusive with `musicUploadPath`. Use 'none' to explicitly disable. */
+   *  exclusive with `musicUploadPath`. Use 'none' to explicitly disable.
+   *  Special value 'ai' triggers ElevenLabs Music generation, optionally
+   *  steered by aiMusicPrompt. */
   musicTrackId?: string
   /** Storage path (in artifacts bucket) of a music file the user uploaded
    *  via the signed-upload endpoint. Mutually exclusive with musicTrackId. */
   musicUploadPath?: string
   /** Linear 0–1 volume for the music. Defaults to 0.15. */
   musicVolume?: number
+  /** Free-form music style brief used only when musicTrackId === 'ai'.
+   *  e.g. "trap drums and synth bass" / "minimal piano, no drums". */
+  aiMusicPrompt?: string
   /** Free-form steering from the user — tells Gemini what angle to take,
    *  who the target audience is, which feature to emphasize, what tone
    *  shift to apply. The doc remains the content source-of-truth; this is

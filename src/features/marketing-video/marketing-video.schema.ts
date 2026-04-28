@@ -37,8 +37,14 @@ export const GenerateMarketingVideoOptionsSchema = z.object({
   withVoiceover: z.boolean().optional(),
   voiceId: z.string().optional(),
   tone: VoiceTonePresetSchema.optional(),
+  // 'none' | '<presetId>' | 'ai' — special value 'ai' triggers ElevenLabs
+  // Music generation. Mutually exclusive with musicUploadPath.
   musicTrackId: z.string().optional(),
   musicUploadPath: z.string().optional(),
   musicVolume: z.number().min(0).max(1).optional(),
+  /** Free-form steering for AI music generation. Only used when
+   *  musicTrackId === 'ai'. Concatenated with a tone-derived base
+   *  prompt by the service. */
+  aiMusicPrompt: z.string().max(300).optional(),
   userPrompt: z.string().max(800).optional(),
 })
