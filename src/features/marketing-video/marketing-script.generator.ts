@@ -111,6 +111,71 @@ scenes[1].voiceover: "An embedded AI chat widget answers user questions from you
 cta.voiceover: "Stop losing users to bad docs. [short pause] Start today."`,
 }
 
+/**
+ * Best-effort repair for a truncated JSON string. Walks backwards from
+ * the end looking for the deepest position we can cut at and produce
+ * valid JSON by appending the missing closing brackets/braces.
+ *
+ * Strategy: at every position `i` from the end, treat `jsonStr.slice(0, i)`
+ * as the candidate, drop any trailing comma + whitespace, count
+ * unbalanced `{[` and append the matching `]}` count. Try to parse. The
+ * first candidate that parses wins. Bounded to prevent pathological
+ * walks on huge inputs.
+ *
+ * Crucially handles the case the naive repair misses: truncation mid-
+ * empty-object (`..., {`). The walk backs the cursor up past the bare
+ * `{` to the previous valid position.
+ */
+function repairTruncatedJson(jsonStr: string): string | null {
+  // Don't bother on inputs that don't even look like a JSON object.
+  if (!jsonStr.trimStart().startsWith('{')) return null
+  const minLen = Math.max(50, Math.floor(jsonStr.length * 0.1))
+  // Walk back in larger steps initially, then refine — typical Gemini
+  // truncation is at the END, so we don't need single-char precision
+  // most of the time.
+  for (let step of [1, 4, 16, 64]) {
+    for (let i = jsonStr.length; i >= minLen; i -= step) {
+      let candidate = jsonStr.slice(0, i)
+      // Strip dangling comma, partial property, partial string literal.
+      candidate = candidate.replace(/[\s,]+$/, '')
+      // If we cut mid-string (open quote not closed), back up to just
+      // before that open quote.
+      const lastOpenQuote = candidate.lastIndexOf('"')
+      if (lastOpenQuote !== -1) {
+        const beforeQuote = candidate.slice(0, lastOpenQuote)
+        const quotesBeforeIt = (beforeQuote.match(/(?<!\\)"/g) ?? []).length
+        if (quotesBeforeIt % 2 === 0) {
+          // The last quote opens a string we can't finish — back up.
+          candidate = beforeQuote.replace(/[\s,:]+$/, '')
+        }
+      }
+      // Same idea for trailing partial property "key":
+      candidate = candidate.replace(/,?\s*"[^"]*"\s*:\s*$/, '')
+      // Drop a bare trailing `{` or `[` — they signal a started but
+      // empty container we can't reasonably close.
+      candidate = candidate.replace(/[,\s]*[\{\[]\s*$/, '')
+      // Now count unbalanced openers and append the matching closers.
+      const openBraces = (candidate.match(/\{/g) ?? []).length
+      const closeBraces = (candidate.match(/\}/g) ?? []).length
+      const openBrackets = (candidate.match(/\[/g) ?? []).length
+      const closeBrackets = (candidate.match(/\]/g) ?? []).length
+      const needBrackets = openBrackets - closeBrackets
+      const needBraces = openBraces - closeBraces
+      if (needBrackets < 0 || needBraces < 0) continue
+      const closed = candidate + ']'.repeat(needBrackets) + '}'.repeat(needBraces)
+      try {
+        JSON.parse(closed)
+        return closed
+      } catch {
+        continue
+      }
+    }
+    // If a coarse step found something, the inner loop already returned.
+    // Otherwise fall through to a finer step.
+  }
+  return null
+}
+
 /** Strip half-open ElevenLabs tags Gemini sometimes produces (e.g.
  *  "[excite" or trailing "["). Without this the TTS reads the bracket out
  *  loud or drops the segment. Mirrors the helper in voiceover.service.ts. */
@@ -242,9 +307,11 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
 
   const result = await generateText({
     userPrompt,
-    // Bumped from 2048: a 5-scene script with brief subheads in a verbose
-    // language (FR/DE) was occasionally truncating mid-JSON.
-    maxTokens: 4096,
+    // Bumped to 8192: with audio tags + emphasis + 4 scenes the response
+    // can run long, and a truncated JSON puts us in the repair-or-die
+    // path. 8192 gives enough headroom to never truncate a 45s script
+    // even in the most verbose tones / languages.
+    maxTokens: 8192,
     temperature: 0.6,
     json: true,
     responseSchema: RESPONSE_SCHEMA,
@@ -278,21 +345,21 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
   try {
     parsedJson = JSON.parse(jsonStr)
   } catch (err) {
-    // Last-ditch repair — close any unbalanced brackets/braces. Gemini
-    // occasionally truncates mid-output or emits unescaped chars.
-    // With `responseSchema` set the API normally guarantees valid JSON,
-    // but defence in depth.
-    let repaired = jsonStr.replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
-    const openBraces = (repaired.match(/\{/g) ?? []).length
-    const closeBraces = (repaired.match(/\}/g) ?? []).length
-    const openBrackets = (repaired.match(/\[/g) ?? []).length
-    const closeBrackets = (repaired.match(/\]/g) ?? []).length
-    repaired += ']'.repeat(Math.max(0, openBrackets - closeBrackets))
-    repaired += '}'.repeat(Math.max(0, openBraces - closeBraces))
-    try {
-      parsedJson = JSON.parse(repaired)
-      console.warn('[marketing-script] JSON repaired after parse error:', (err as Error).message)
-    } catch {
+    // Truncation repair: walk backwards looking for the last syntactically
+    // balanced point we can close cleanly. Handles cases the naive
+    // "append closing brackets" repair misses — e.g. truncation mid-
+    // partial-object (`{scene1}, {`) where appending `]}` produces
+    // `{scene1}, {]}` which is invalid.
+    const repaired = repairTruncatedJson(jsonStr)
+    if (repaired !== null) {
+      try {
+        parsedJson = JSON.parse(repaired)
+        console.warn('[marketing-script] JSON repaired after parse error:', (err as Error).message)
+      } catch {
+        console.error('[marketing-script] JSON parse failed. First 500 chars:', jsonStr.slice(0, 500))
+        throw new Error(`Marketing script JSON parse failed: ${(err as Error).message}`)
+      }
+    } else {
       console.error('[marketing-script] JSON parse failed. First 500 chars:', jsonStr.slice(0, 500))
       throw new Error(`Marketing script JSON parse failed: ${(err as Error).message}`)
     }
