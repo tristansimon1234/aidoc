@@ -65,11 +65,38 @@ interface GenerateMarketingScriptInput {
   /** Target language inferred from the doc — Gemini stays in this language
    *  even if the surrounding UI / metadata uses something else. */
   language: string
+  /** Voice tone preset selected by the user — drives which ElevenLabs
+   *  audio tags Gemini should embed in the voice-over lines (punchy →
+   *  [excited], calm → [short pause], etc.). Without this the script
+   *  comes out flat and the voice reads it flat. */
+  tone?: 'punchy' | 'calm' | 'playful' | 'serious'
   /** Optional creative brief from the user: angle, audience, feature to
    *  emphasize, tone shift. NOT a content source — the doc remains the
    *  factual ground truth, this just steers framing. Trimmed and clamped
    *  upstream by Zod. */
   userPrompt?: string
+}
+
+/** Per-tone ElevenLabs audio-tag direction. Punchy/playful want
+ *  expressive tags, calm/serious want pacing tags. Length matters: 2-3
+ *  tags per 45-second script is the sweet spot — more and it sounds
+ *  performative, fewer and it reads flat. */
+const TONE_TAG_DIRECTION: Record<NonNullable<GenerateMarketingScriptInput['tone']>, string> = {
+  punchy:  'Lean expressive: [excited], [happy gasp], [laughs] sparingly. Use CAPS for one or two key words. Em-dashes (—) for punchy beats. 2-3 audio tags total across the script.',
+  calm:    'Lean restrained: [short pause] for breathing room, occasional [calm] or [whispers]. Ellipses (...) once or twice MAX (they add real silence). 1-2 audio tags total.',
+  playful: 'Lean cheeky: [laughs], [giggles], [whispers], occasional [sarcastic]. Use rising intonation (questions OK here, sparingly). 2-3 audio tags total.',
+  serious: 'Lean understated: [short pause] for emphasis, no exclamation tags. CAPS only for one critical word. No [laughs] or [excited]. 1-2 audio tags total.',
+}
+
+/** Strip half-open ElevenLabs tags Gemini sometimes produces (e.g.
+ *  "[excite" or trailing "["). Without this the TTS reads the bracket out
+ *  loud or drops the segment. Mirrors the helper in voiceover.service.ts. */
+export function stripBrokenAudioTags(text: string): string {
+  let cleaned = text
+  cleaned = cleaned.replace(/\s*\[[^\]]*$/g, '').trim()
+  cleaned = cleaned.replace(/\[\s*\]/g, '').replace(/(?:^|\s)[\[\]](?=\s|$)/g, '').trim()
+  if (cleaned && !/[.!?…]$/.test(cleaned)) cleaned = cleaned + '.'
+  return cleaned
 }
 
 /**
@@ -125,7 +152,31 @@ Write the entire script in **${input.language}**. Do not switch languages mid-sc
 
 ## Tone
 
-Confident, specific, benefit-driven. No buzzwords ("revolutionary", "next-gen", "game-changer" → all banned). No questions to the viewer. Active voice. Concrete verbs.
+Confident, specific, benefit-driven. No buzzwords ("revolutionary", "next-gen", "game-changer" → all banned). Active voice. Concrete verbs.
+
+## Voice-over delivery — ElevenLabs v3 formatting (CRITICAL)
+
+The voiceover strings in the JSON output will be fed to ElevenLabs v3 TTS as a single concatenated narration. Without delivery cues the read comes out flat regardless of voice settings. Bake in the cues:
+
+**Punctuation drives delivery:**
+- Em dash (—) creates a short, punchy pause. Use it for emphasis or beat changes.
+- Ellipsis (...) creates trailing silence — uses real seconds, so use SPARINGLY (max once across the whole script).
+- CAPS for one or two key words signal vocal stress (NOT whole sentences).
+- Questions (with ?) create natural rising intonation; only use if the tone allows.
+
+**Audio tags are stage directions** — place them BETWEEN sentences, never mid-sentence:
+Emotional: [excited], [happy], [calm]
+Reactions: [laughs], [giggles], [happy gasp], [sighs]
+Delivery: [whispers], [cheerfully], [sarcastic]
+Pacing: [short pause]
+
+Tags go inside the relevant voiceover string (hook.voiceover / scenes[i].voiceover / cta.voiceover). They count as 0 spoken words for the word-count budget.
+
+### Direction for the selected voice tone (${input.tone ?? 'punchy'})
+
+${TONE_TAG_DIRECTION[input.tone ?? 'punchy']}
+
+Don't go heavier than the direction says — over-tagging reads as cringe. The point is to give the voice 2-3 moments of texture across 45 seconds, not to performance-act every sentence.
 
 ## Output
 
@@ -252,18 +303,29 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
   }
 
   // Clamp screenshotIndex into a valid range — Gemini sometimes references
-  // an index that doesn't exist.
+  // an index that doesn't exist. Also strip any half-open ElevenLabs audio
+  // tags Gemini may have left behind (e.g. "[excite" with no closing
+  // bracket) — those break the TTS read.
   const max = input.availableScreenshots - 1
   const validated = parsed.data as MarketingScript
   const clamped: MarketingScript = {
     ...validated,
+    hook: {
+      ...validated.hook,
+      voiceover: stripBrokenAudioTags(validated.hook.voiceover),
+    },
     scenes: validated.scenes.map((s) => ({
       ...s,
+      voiceover: stripBrokenAudioTags(s.voiceover),
       screenshotIndex:
         s.screenshotIndex == null
           ? null
           : Math.max(0, Math.min(max, s.screenshotIndex)),
     })),
+    cta: {
+      ...validated.cta,
+      voiceover: stripBrokenAudioTags(validated.cta.voiceover),
+    },
   }
 
   return clamped

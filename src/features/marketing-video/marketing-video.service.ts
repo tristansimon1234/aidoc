@@ -238,6 +238,10 @@ export async function generateMarketingVideoForRun(
     availableScreenshots: screenshots.length,
     screenshotCaptions: screenshots.map((s) => s.caption),
     language,
+    // Same tone drives both the script (which audio tags to embed) and
+    // the voice (ElevenLabs settings). Without this the script comes out
+    // flat and even an expressive voice setting reads it flat.
+    tone: options.tone ?? 'punchy',
     userPrompt: options.userPrompt,
   })
 
