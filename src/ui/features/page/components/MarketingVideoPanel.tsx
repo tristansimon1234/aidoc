@@ -45,7 +45,7 @@ const TONE_LABELS: Record<VoiceTone, string> = {
  * about.
  */
 export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideoPanelProps): React.ReactElement {
-  const { addJob, updateJob, failJob } = useJobs()
+  const { jobs, addJob, failJob } = useJobs()
   const [summary, setSummary] = useState<MarketingVideoSummaryDTO | null>(null)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
@@ -87,6 +87,23 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
     return () => { cancelled = true }
   }, [runId])
 
+  // When the marketing-video job for this run completes (via Realtime),
+  // refetch the summary so the panel surfaces the fresh manifest + MP4.
+  // Tracking by the job's status as it transitions to non-running.
+  const ourJob = jobs.find((j) => j.runId === runId && j.type === 'marketing-video')
+  const ourJobStatus = ourJob?.status
+  useEffect(() => {
+    if (ourJobStatus !== 'completed' && ourJobStatus !== 'failed') return
+    let cancelled = false
+    void (async () => {
+      try {
+        const fresh = await api.runs.marketingVideo.get(runId)
+        if (!cancelled) setSummary(fresh)
+      } catch { /* keep stale summary; banner will show if there was an error */ }
+    })()
+    return () => { cancelled = true }
+  }, [runId, ourJobStatus])
+
   const handleMusicUpload = async (file: File): Promise<void> => {
     setError(null)
     setMusicUploading(true)
@@ -111,11 +128,14 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
   }
 
   /**
-   * Run the full pipeline: generate (script + voice + music) → render.
-   * Backend folds the first three into one call; render is a second.
-   * Progress is shown via the global JobTracker (bottom-right floating
-   * card, same as doc-gen / voiceover / try-doc) so the user can
-   * navigate elsewhere in the app while it runs.
+   * Kick off the full pipeline (script → voice → music → render) as
+   * a background job on the server. Returns 202 in <1s, the heavy
+   * lifting runs server-side, completion arrives via Supabase Realtime
+   * on the jobs table — same pattern as doc-gen / voiceover / try-doc.
+   *
+   * The user can close the tab, navigate to another page, refresh —
+   * the job survives. The bottom-right JobTracker card shows progress
+   * from anywhere in the app.
    */
   const handleGenerateAndRender = async (): Promise<void> => {
     setError(null)
@@ -142,7 +162,10 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
         musicOpts.musicVolume = musicVolume
       }
 
-      const generated = await api.runs.marketingVideo.generate(runId, {
+      // Fire-and-forget: backend returns 202, runs the pipeline in
+      // background, updates the jobs table when done. useJobRealtime
+      // flips the JobTracker card to "ready" or shows the failure.
+      await api.runs.marketingVideo.generate(runId, {
         userPrompt: userPrompt.trim() || undefined,
         withVoiceover,
         voiceId: voiceId || undefined,
@@ -150,16 +173,15 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
         visualMode,
         ...musicOpts,
       })
-      setSummary(generated)
-
-      const rendered = await api.runs.marketingVideo.render(runId)
-      setSummary(rendered)
-      updateJob(runId, { status: 'completed' })
     } catch (err) {
+      // Only the synchronous-side errors (validation, 409 already-running)
+      // land here. Pipeline failures arrive via Realtime → useJobRealtime.
       const message = err instanceof ApiError ? err.message : (err as Error).message
       setError(message)
       failJob(runId, message, err instanceof ApiError ? err.code ?? null : null)
     } finally {
+      // Re-enable the form quickly — the user can adjust options for the
+      // next run while the current one finishes in the background.
       setWorking(false)
     }
   }

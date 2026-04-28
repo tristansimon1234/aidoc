@@ -628,8 +628,12 @@ export const api = {
           musicVolume?: number
           aiMusicPrompt?: string
         },
-      ): Promise<MarketingVideoSummaryDTO> =>
-        request(`/runs/${id}/marketing-video`, {
+      ): Promise<{ runId: string; jobId: string; status: 'running' }> =>
+        // async=1 → backend writes a job row, returns 202 immediately, runs
+        // the full pipeline (script → voice → music → render) in the
+        // background. Frontend tracks completion via Supabase Realtime on
+        // the jobs table (same path as doc-gen / voiceover / try-doc).
+        request(`/runs/${id}/marketing-video?async=1`, {
           method: 'POST',
           body: JSON.stringify(opts ?? {}),
         }),
