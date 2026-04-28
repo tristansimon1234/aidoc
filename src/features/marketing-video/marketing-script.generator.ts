@@ -32,83 +32,12 @@ const RESPONSE_SCHEMA: ResponseSchema = {
           subhead: { type: SchemaType.STRING },
           screenshotIndex: { type: SchemaType.INTEGER, nullable: true },
           durationSeconds: { type: SchemaType.NUMBER },
-          // Mock DSL — optional per scene. The shape mirrors MockElement
-          // but flattens type-specific fields so Gemini's responseSchema
-          // (which can't represent discriminated unions or recursion)
-          // still constrains the output. Zod re-validates on parse.
-          mock: {
-            type: SchemaType.OBJECT,
-            properties: {
-              frame: {
-                type: SchemaType.OBJECT,
-                properties: {
-                  url: { type: SchemaType.STRING },
-                  tone: { type: SchemaType.STRING },
-                },
-              },
-              // `layout` intentionally omitted from the LLM-facing schema:
-              // Gemini was emitting freeform names ("dashboard", "terminal")
-              // instead of the documented "row"|"column" enum, which broke
-              // strict Zod parsing. The renderer defaults to column anyway.
-              elements: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    type: { type: SchemaType.STRING },
-                    label: { type: SchemaType.STRING },
-                    icon: { type: SchemaType.STRING },
-                    statusText: { type: SchemaType.STRING },
-                    statusTone: { type: SchemaType.STRING },
-                    prefix: { type: SchemaType.STRING },
-                    text: { type: SchemaType.STRING },
-                    tone: { type: SchemaType.STRING },
-                    indent: { type: SchemaType.BOOLEAN },
-                    trailingHighlight: { type: SchemaType.STRING },
-                    title: { type: SchemaType.STRING },
-                    rows: {
-                      type: SchemaType.ARRAY,
-                      items: {
-                        type: SchemaType.OBJECT,
-                        properties: {
-                          left: { type: SchemaType.STRING },
-                          right: { type: SchemaType.STRING },
-                          tone: { type: SchemaType.STRING },
-                        },
-                        required: ['left'],
-                      },
-                    },
-                    primary: { type: SchemaType.BOOLEAN },
-                    placeholder: { type: SchemaType.STRING },
-                    value: { type: SchemaType.STRING },
-                    focused: { type: SchemaType.BOOLEAN },
-                    height: { type: SchemaType.NUMBER },
-                    size: { type: SchemaType.STRING },
-                    weight: { type: SchemaType.STRING },
-                    from: { type: SchemaType.NUMBER },
-                    to: { type: SchemaType.NUMBER },
-                    suffix: { type: SchemaType.STRING },
-                    initials: { type: SchemaType.STRING },
-                    lineNumber: { type: SchemaType.NUMBER },
-                    tokens: {
-                      type: SchemaType.ARRAY,
-                      items: {
-                        type: SchemaType.OBJECT,
-                        properties: {
-                          text: { type: SchemaType.STRING },
-                          tone: { type: SchemaType.STRING },
-                        },
-                        required: ['text'],
-                      },
-                    },
-                    delay: { type: SchemaType.NUMBER },
-                  },
-                  required: ['type'],
-                },
-              },
-            },
-            required: ['elements'],
-          },
+          // mockCode: TSX source the LLM writes for this scene's
+          // animation. The backend compiles it via esbuild + bundles
+          // it server-side; Remotion runs the compiled JS at render
+          // time. Just a string in the response schema — Gemini emits
+          // it as plain code, no nested structure to constrain.
+          mockCode: { type: SchemaType.STRING },
         },
         required: ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds'],
       },
@@ -315,79 +244,114 @@ ${captionList || '(no screenshots available — every scene MUST have screenshot
 
 You may set "screenshotIndex" to any integer between 0 and ${Math.max(0, input.availableScreenshots - 1)}, OR to null if a scene works better headline-only (e.g. the hook). Reuse a screenshot if the same view illustrates two benefits.
 
-## Visuals — ${input.visualMode === 'mocks' ? 'designed mocks (every scene)' : 'real screenshots (every scene)'}
+## Visuals — ${input.visualMode === 'mocks' ? 'TSX animations you write (every scene)' : 'real screenshots (every scene)'}
 
 ${input.visualMode === 'mocks'
-  ? `**Mode = MOCKS.** Every scene MUST have a \`mock\` field set and \`screenshotIndex\` set to null. No exceptions. The whole video uses designed animated UI panels — no real screenshots. Make each scene visually distinct (different element mix, different frame tone, different layout) so the video doesn't feel repetitive.`
-  : `**Mode = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}) and MUST NOT include a \`mock\` field. The whole video uses real product screenshots. If a scene has no relevant screenshot you may set \`screenshotIndex: null\` and the renderer will show an accent gradient placeholder.`}
+  ? `**Mode = MOCKS.** For every scene you write a small TSX component in the field \`mockCode\`. The component renders an ANIMATED illustration of the scene's idea — a cursor moving and clicking a button, text typing into a prompt, a progress bar filling, a notification toast popping in, a chat bubble appearing, a code line being highlighted. Compose freely; you control the visuals. Always set \`screenshotIndex: null\` in this mode. DO NOT also fill the legacy \`mock\` field.`
+  : `**Mode = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}) and MUST NOT include \`mock\` or \`mockCode\`. If a scene has no relevant screenshot you may set \`screenshotIndex: null\` and the renderer will show an accent gradient placeholder.`}
 
-${input.visualMode === 'mocks' ? `### Mock DSL — REQUIRED for every scene
+${input.visualMode === 'mocks' ? `### Mock code — REQUIRED for every scene
 
-Set \`mock.elements\` to an array (max 12 elements) of small primitives. The renderer animates them in with a subtle stagger — set \`delay\` (seconds) per element to control timing (e.g. \`0\`, \`0.25\`, \`0.5\`, \`0.9\` for a "typing in" feel). Make EVERY scene's mock visually distinct from its neighbours: alternate between dark/light frame, alternate layout (terminal vs dashboard vs chat vs settings), don't repeat the same icon twice in a row.
+For each scene you write a small TSX component as the value of \`mockCode\`. The component receives the project branding via props and uses Remotion's frame-based animation API to draw an animated illustration of what the scene is talking about.
 
-\`mock.frame\` { url, tone } wraps the mock in a browser chrome. Use \`tone: "dark"\` for terminal/code/integration mocks, \`"light"\` for product-UI/dashboard mocks. Skip \`frame\` for "floating" mocks (e.g. a chat widget overlay, a notification toast).
+#### Hard constraints (non-negotiable — your code is sandboxed)
 
-Available element types (\`type\`) and their fields. ALL fields are optional unless noted; tone enum: \`default | muted | accent | success | warning | danger\`.
+- Define a function (or const arrow) named exactly \`MockScene\` that takes \`{ branding }\` as its only prop. The component returns a single root element.
+- DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters; everything you need lives on those.
+- Available React: \`React.useMemo\`, \`React.useEffect\` will not work usefully (frames re-render fresh) — for animation use Remotion only.
+- Available Remotion namespace (use as \`Remotion.foo\`):
+  - \`Remotion.useCurrentFrame()\` → number, the current frame within the scene's sub-timeline (NOT the whole video). Frame 0 is the start of THIS scene.
+  - \`Remotion.useVideoConfig()\` → \`{ fps, durationInFrames, width, height }\`.
+  - \`Remotion.interpolate(input, [in1, in2, …], [out1, out2, …], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })\` — the workhorse for animation.
+  - \`Remotion.spring({ frame, fps, config: { damping, stiffness, mass } })\` — natural easing.
+  - \`Remotion.AbsoluteFill\` (component) — fills its parent.
+  - \`Remotion.Img\` (component) — for remote images, use sparingly.
+- Inline styles ONLY. NO Tailwind class names, NO \`className\`, NO external CSS. Everything goes through \`style={{...}}\`.
+- NO event handlers (\`onClick\`, \`onMouseMove\`, …). The output is rendered server-side, no interaction.
+- NO network access (\`fetch\`, \`XMLHttpRequest\`). NO timers (\`setTimeout\`, \`setInterval\`).
+- Code length: under ~3 KB. Pithy > sprawling.
+- Scene duration in seconds is given as \`durationSeconds\` per scene. The frame range for your component is \`0 .. fps × durationSeconds\`.
 
-- \`header\`         { label*, icon, statusText, statusTone }
-   Top bar with an icon + label + optional right-aligned pill ("connected").
-   icons: plug, mic, check, message, search, zap, code, settings.
-- \`terminalLine\`   { prefix, text*, tone, indent, trailingHighlight }
-   A single line in a terminal/log. Prefix is shown muted ("\$", ">", "↳").
-- \`blinkingCursor\` {}
-   Add at the bottom of a terminal block.
-- \`card\`           { title, rows: [{ left*, right, tone }] }
-   Stat cards / settings rows. Right value is colored by tone (good for KPIs).
-- \`pill\`           { text*, tone }
-   Inline badge ("Pro plan", "10x faster", "AI-powered").
-- \`pulsingDot\`     { tone, size }
-   Live-indicator dot (use with text near it).
-- \`button\`         { label*, primary }
-   Primary uses brand accent + shadow; non-primary is outlined.
-- \`input\`          { placeholder, value, focused }
-   Text field; \`focused: true\` adds an accent ring.
-- \`text\`           { text*, size: xs|sm|md|lg|xl, tone, weight: normal|bold }
-   Plain text line. Use for prompts ("Ask anything"), subtitles, taglines.
-- \`counter\`        { from*, to*, prefix, suffix }
-   Big animated number that ticks from \`from\` to \`to\` over 1.2s. Great for "+340 docs" / "98% uptime".
-- \`avatar\`         { initials*, tone }
-   Round badge with 1-3 letters. Use for chat-style mocks.
-- \`codeLine\`       { lineNumber, tokens: [{ text*, tone }] }
-   One line of pseudo syntax-highlighted code. Use \`tone: accent\` for keywords, \`muted\` for comments.
-- \`spacer\`         { height }
-   Vertical gap (default 12px).
+#### Branding object you receive
 
-Example mock — a Claude/MCP terminal scene:
-\`\`\`json
-{
-  "frame": { "url": "claude · mcp.${input.productName.toLowerCase().replace(/\s+/g, '-')}.com", "tone": "dark" },
-  "elements": [
-    { "type": "header", "icon": "plug", "label": "Claude · MCP", "statusText": "connected", "statusTone": "success", "delay": 0 },
-    { "type": "terminalLine", "prefix": ">", "text": "docs.search", "tone": "muted", "delay": 0.3 },
-    { "type": "terminalLine", "indent": true, "text": "query: 'connect stripe'", "tone": "accent", "delay": 0.5 },
-    { "type": "terminalLine", "prefix": "↳", "text": "found 3 pages", "trailingHighlight": "200 ok", "delay": 0.9 },
-    { "type": "blinkingCursor", "delay": 1.4 }
-  ]
+\`\`\`ts
+branding: {
+  productName: string   // "${input.productName}"
+  accentColor: string   // hex e.g. "#9755ce"
+  bgColor: string       // hex
+  textColor: string     // hex
+  fontFamily: string    // CSS font stack
+  logoUrl: string | null
 }
 \`\`\`
 
-Example mock — a stat dashboard scene:
-\`\`\`json
-{
-  "frame": { "url": "${input.productName.toLowerCase()}.app/dashboard", "tone": "light" },
-  "elements": [
-    { "type": "header", "icon": "zap", "label": "This week", "delay": 0 },
-    { "type": "counter", "from": 0, "to": 1247, "suffix": " docs read", "delay": 0.2 },
-    { "type": "card", "title": "Top pages", "rows": [
-      { "left": "Quick start", "right": "+412", "tone": "success" },
-      { "left": "API reference", "right": "+318", "tone": "success" },
-      { "left": "Migration guide", "right": "+287", "tone": "accent" }
-    ], "delay": 0.6 }
-  ]
+Use \`branding.accentColor\` for highlights, \`branding.textColor\` for prose, \`branding.fontFamily\` (chained with system-ui fallback) for typography.
+
+#### Animation idioms (steal these)
+
+- Stagger fade + slide for entries:
+  \`const opacity = Remotion.interpolate(frame, [start, start+12], [0, 1], { extrapolateRight: 'clamp' })\`
+- Type-on text:
+  \`const charsShown = Math.floor(Remotion.interpolate(frame, [0, 60], [0, fullText.length], { extrapolateRight: 'clamp' }))\`
+  then render \`fullText.slice(0, charsShown)\`.
+- Cursor sliding to a target:
+  \`const cursorProgress = Remotion.spring({ frame: frame - 12, fps, config: { damping: 18 } })\`
+  \`const cursorX = Remotion.interpolate(cursorProgress, [0, 1], [800, targetX])\`
+- Pulse / blink:
+  \`const blink = (frame % 30) < 15 ? 1 : 0\`
+- Click ripple: an absolute-positioned circle whose radius interpolates outward + opacity fades (e.g. \`r = interpolate(frame, [clickFrame, clickFrame+18], [0, 60])\`).
+
+#### Concrete example — cursor clicks a button (paste-as-template)
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const frame = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+
+  const cursorProgress = Remotion.spring({ frame: frame - 12, fps, config: { damping: 18, stiffness: 90 } })
+  const cursorX = Remotion.interpolate(cursorProgress, [0, 1], [780, 460])
+  const cursorY = Remotion.interpolate(cursorProgress, [0, 1], [120, 360])
+  const clickFrame = 36
+  const ripple = Remotion.interpolate(frame, [clickFrame, clickFrame + 18], [0, 80], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const rippleOpacity = Remotion.interpolate(frame, [clickFrame, clickFrame + 18], [0.6, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const buttonPress = frame >= clickFrame && frame < clickFrame + 6 ? 0.97 : 1
+
+  return (
+    <Remotion.AbsoluteFill style={{ background: branding.bgColor, color: branding.textColor, fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\` }}>
+      <div style={{ position: 'absolute', top: 320, left: 380, width: 200, height: 64, borderRadius: 12, background: branding.accentColor, color: '#fff', fontWeight: 600, fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: \`scale(\${buttonPress})\`, boxShadow: \`0 12px 32px \${branding.accentColor}55\` }}>
+        Create token
+      </div>
+      <div style={{ position: 'absolute', left: cursorX, top: cursorY, width: 24, height: 24, pointerEvents: 'none' }}>
+        <svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 2l8 18 2-8 8-2z" fill="#fff" stroke="#000" strokeWidth="1.5" /></svg>
+      </div>
+      <div style={{ position: 'absolute', left: cursorX - ripple, top: cursorY - ripple, width: ripple * 2, height: ripple * 2, borderRadius: '50%', border: \`2px solid \${branding.accentColor}\`, opacity: rippleOpacity }} />
+    </Remotion.AbsoluteFill>
+  )
 }
 \`\`\`
 
-Stagger every element with a non-zero delay (except the very first one). Without staggers, the mock pops in all at once and feels flat.` : ''}
+#### Concrete example — type a prompt to an LLM (paste-as-template)
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const frame = Remotion.useCurrentFrame()
+  const fullText = "Connect Stripe to Doclee"
+  const chars = Math.floor(Remotion.interpolate(frame, [12, 90], [0, fullText.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }))
+  const blink = (frame % 30) < 15
+  return (
+    <Remotion.AbsoluteFill style={{ background: branding.bgColor, color: branding.textColor, fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\`, alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 720, padding: '20px 28px', borderRadius: 999, background: '#FFFFFF', border: \`1px solid \${branding.textColor}22\`, boxShadow: '0 12px 32px rgba(0,0,0,0.10)', fontSize: 24, color: branding.textColor }}>
+        {fullText.slice(0, chars)}<span style={{ opacity: blink ? 1 : 0, marginLeft: 2, color: branding.accentColor }}>|</span>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+Pick a different idea per scene — cursor click, typing, progress, toast, chat bubble, counter, code-typing, sliding cards, etc. Don't repeat the same idea twice.
+
+End of TSX section.
+` : ''}
 
 ## Language
 
@@ -444,7 +408,10 @@ Return ONLY valid JSON matching this exact shape, no markdown fences, no preambl
       "voiceover": "Narration for scene 1 with a concrete benefit. [short pause] A second sentence for context.",
       "headline": "On-screen headline scene 1",
       "subhead": "Optional supporting line under headline",
-      "screenshotIndex": 0,
+${input.visualMode === 'mocks'
+  ? `      "screenshotIndex": null,
+      "mockCode": "<full TSX defining function MockScene({ branding }), see the 'Mock code' section above for two paste-as-template examples>",`
+  : `      "screenshotIndex": 0,`}
       "durationSeconds": 10
     }
   ],

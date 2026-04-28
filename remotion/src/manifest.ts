@@ -150,11 +150,14 @@ export const SceneSchema = z.object({
   subhead: z.string().optional(),
   screenshotIndex: z.number().nullable(),
   durationSeconds: z.number().positive(),
-  /** Optional animated UI mock — replaces the screenshot with a designed
-   *  layout assembled from the primitive library. Wins over screenshot
-   *  when both present (mock is the "polished" path; screenshot is the
-   *  "grounded in real product" path). */
+  /** Legacy DSL mock kept for backwards-compat with persisted manifests. */
   mock: MockSchema.optional(),
+  /** Raw TSX written by the LLM. Diagnostics only — bundle runs
+   *  `mockCompiledCode`. */
+  mockCode: z.string().optional(),
+  /** esbuild output of mockCode. The bundle's <DynamicScene>
+   *  evaluates this with React + Remotion + branding bound. */
+  mockCompiledCode: z.string().optional(),
 })
 
 export const ScriptSchema = z.object({

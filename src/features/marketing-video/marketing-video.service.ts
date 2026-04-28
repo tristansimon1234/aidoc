@@ -254,6 +254,27 @@ export async function generateMarketingVideoForRun(
 
   console.log(`[marketing-video] Script: ${script.scenes.length} scenes, ${script.totalDurationSeconds}s total`)
 
+  // Compile any TSX mockCode the LLM emitted. Failures are isolated:
+  // a scene that fails to compile drops mockCode silently and falls
+  // through to its screenshot — better than killing the whole run.
+  if (options.visualMode === 'mocks') {
+    const { compileMockCode } = await import('./mock-code.compiler.js')
+    for (const scene of script.scenes) {
+      if (!scene.mockCode || scene.mockCode.trim().length === 0) continue
+      try {
+        const { compiled } = await compileMockCode(scene.mockCode)
+        scene.mockCompiledCode = compiled
+      } catch (err) {
+        console.warn(`[marketing-video] mockCode compile failed for scene "${scene.headline}": ${(err as Error).message}`)
+        // Drop the field so the renderer falls back to screenshot /
+        // accent gradient. Keep the raw source for diagnostics.
+        delete scene.mockCompiledCode
+      }
+    }
+    const compiled = script.scenes.filter((s) => s.mockCompiledCode).length
+    console.log(`[marketing-video] Compiled ${compiled}/${script.scenes.length} scene mocks`)
+  }
+
   // Voice-over (optional). Default true — we want the BIM. Skipping is for
   // template iteration where you don't want to burn ElevenLabs credits on
   // every preview tweak.

@@ -48,6 +48,7 @@
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.37.0",
     "cors": "^2.8.6",
+    "esbuild": "^0.28.0",
     "express": "^5.2.1",
     "jszip": "^3.10.1",
     "marked": "^15.0.0",

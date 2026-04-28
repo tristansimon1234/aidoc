@@ -3,6 +3,7 @@ import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig
 import type { Branding, Scene, Screenshot } from '../manifest.js'
 import { BrandWatermark } from './BrandWatermark.js'
 import { DynamicMock } from '../mocks/DynamicMock.js'
+import { DynamicScene } from './DynamicScene.js'
 
 interface FeatureSceneProps {
   scene: Scene
@@ -63,10 +64,19 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
 
   const layout: LayoutVariant = LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
 
-  // Mock takes priority over screenshot when both are present — the mock
-  // is the "polished" path designed to illustrate the scene, while the
-  // screenshot is the "grounded in real product" fallback.
-  const visualElement = scene.mock ? (
+  // Visual priority for the scene:
+  //   1. mockCompiledCode → run the LLM-generated TSX animation
+  //   2. mock (legacy DSL) → static-ish primitive composition
+  //   3. screenshot → real product UI with Ken Burns
+  // Whichever is set wins; only one renders.
+  const visualElement = scene.mockCompiledCode ? (
+    <DynamicScene
+      mockCompiledCode={scene.mockCompiledCode}
+      branding={branding}
+      width={920}
+      height={580}
+    />
+  ) : scene.mock ? (
     <DynamicMock mock={scene.mock} branding={branding} width={920} height={580} />
   ) : (
     <ScreenshotFrame

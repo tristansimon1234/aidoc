@@ -53,17 +53,21 @@ export type MarketingScene = {
   subhead?: string
   /** Index into manifest.screenshots — which doc screenshot to feature in
    *  this scene. Null = no screenshot, headline-only scene. Ignored when
-   *  `mock` is set. */
+   *  `mockCode` (or the legacy `mock` DSL) is set. */
   screenshotIndex: number | null
   /** Duration of this scene in seconds. The Remotion composition uses these
    *  to compute frame ranges so scene timings line up with the voice-over. */
   durationSeconds: number
-  /** Optional animated UI mock — replaces the screenshot with a designed
-   *  layout assembled from the primitive library. Per-scene choice: the
-   *  LLM picks mock for "designy" beats (a chat conversation, an MCP
-   *  terminal, a settings panel) and screenshot for "real product"
-   *  beats (the actual UI the user is documenting). */
+  /** Legacy DSL mock (header / card / terminalLine / etc.) — kept for
+   *  backwards-compat with persisted manifests. New flow uses mockCode. */
   mock?: MarketingMock
+  /** Raw TSX the LLM wrote for this scene's animation. Diagnostics
+   *  only — Remotion runs `mockCompiledCode`. */
+  mockCode?: string
+  /** esbuild output of mockCode. Remotion's `<DynamicScene>` wraps it
+   *  in a `new Function(...)` with React + Remotion + branding bound,
+   *  evaluates, and renders the resulting component. */
+  mockCompiledCode?: string
 }
 
 export interface MarketingScript {
