@@ -23,7 +23,7 @@ interface MarketingVideoProps {
  */
 export const MarketingVideo: React.FC<MarketingVideoProps> = ({ manifest }) => {
   const { fps } = useVideoConfig()
-  const { script, screenshots, branding, voiceoverUrl } = manifest
+  const { script, screenshots, branding, voiceoverUrl, musicUrl, musicVolume } = manifest
 
   let cursorFrames = 0
   const sceneSegments: { from: number; durationInFrames: number; element: React.ReactNode }[] = []
@@ -63,6 +63,7 @@ export const MarketingVideo: React.FC<MarketingVideoProps> = ({ manifest }) => {
         </Sequence>
       ))}
       {voiceoverUrl && <Audio src={voiceoverUrl} />}
+      {musicUrl && <Audio src={musicUrl} volume={musicVolume ?? 0.15} />}
     </AbsoluteFill>
   )
 }

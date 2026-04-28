@@ -41,21 +41,30 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
   const [voiceId, setVoiceId] = useState<string>('')
   const [tone, setTone] = useState<VoiceTone>('punchy')
   const [voices, setVoices] = useState<Array<{ voiceId: string; name: string; category: string }>>([])
+  const [musicPresets, setMusicPresets] = useState<Array<{ id: string; name: string; mood?: string }>>([])
+  // 'none' (silent), '<presetId>' (bundled), or 'upload' (custom upload).
+  const [musicChoice, setMusicChoice] = useState<string>('none')
+  const [musicUploadPath, setMusicUploadPath] = useState<string | null>(null)
+  const [musicUploadName, setMusicUploadName] = useState<string | null>(null)
+  const [musicUploading, setMusicUploading] = useState(false)
+  const [musicVolume, setMusicVolume] = useState(0.15)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const [result, voicesResult] = await Promise.all([
+        const [result, voicesResult, presetsResult] = await Promise.all([
           api.runs.marketingVideo.get(runId),
           // Voices fetch is best-effort: ElevenLabs may be unconfigured or
           // hit a transient error. UI falls back to the default voice silently.
           api.runs.marketingVideo.voices().catch(() => ({ voices: [] })),
+          api.runs.marketingVideo.musicPresets().catch(() => ({ presets: [] })),
         ])
         if (!cancelled) {
           setSummary(result)
           setVoices(voicesResult.voices)
+          setMusicPresets(presetsResult.presets)
         }
       } catch (err) {
         if (!cancelled) setError((err as Error).message)
@@ -66,15 +75,47 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
     return () => { cancelled = true }
   }, [runId])
 
+  const handleMusicUpload = async (file: File): Promise<void> => {
+    setError(null)
+    setMusicUploading(true)
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'mp3'
+      const path = `runs/${runId}/marketing-music.${ext}`
+      const { signedUrl } = await api.runs.getSignedUploadUrl(runId, path)
+      const uploadRes = await fetch(signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'audio/mpeg' },
+        body: file,
+      })
+      if (!uploadRes.ok) throw new Error(`Upload failed: ${uploadRes.status}`)
+      setMusicUploadPath(path)
+      setMusicUploadName(file.name)
+      setMusicChoice('upload')
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setMusicUploading(false)
+    }
+  }
+
   const handleGenerate = async (): Promise<void> => {
     setError(null)
     setGenerating(true)
     try {
+      const musicOpts: { musicTrackId?: string; musicUploadPath?: string; musicVolume?: number } = {}
+      if (musicChoice === 'upload' && musicUploadPath) {
+        musicOpts.musicUploadPath = musicUploadPath
+        musicOpts.musicVolume = musicVolume
+      } else if (musicChoice !== 'none' && musicChoice !== 'upload') {
+        musicOpts.musicTrackId = musicChoice
+        musicOpts.musicVolume = musicVolume
+      }
       const result = await api.runs.marketingVideo.generate(runId, {
         userPrompt: userPrompt.trim() || undefined,
         withVoiceover,
         voiceId: voiceId || undefined,
         tone,
+        ...musicOpts,
       })
       setSummary(result)
     } catch (err) {
@@ -202,11 +243,86 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
         </div>
       )}
 
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: musicChoice === 'none' ? '1fr' : '2fr 1fr',
+          gap: 16,
+          margin: '0 0 24px',
+          alignItems: 'end',
+        }}
+      >
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
+          <span style={{ color: 'var(--color-muted-fg)' }}>Background music</span>
+          <select
+            value={musicChoice}
+            onChange={(e) => setMusicChoice(e.target.value)}
+            disabled={generating}
+            style={{
+              padding: '8px 10px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--color-border)',
+              background: 'var(--color-bg)',
+              color: 'var(--color-fg)',
+              fontSize: 'var(--text-sm)',
+            }}
+          >
+            <option value="none">None — voice-over only</option>
+            {musicPresets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}{p.mood ? ` · ${p.mood}` : ''}
+              </option>
+            ))}
+            <option value="upload">Upload custom MP3…</option>
+          </select>
+        </label>
+        {musicChoice !== 'none' && (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
+            <span style={{ color: 'var(--color-muted-fg)' }}>Volume {Math.round(musicVolume * 100)}%</span>
+            <input
+              type="range"
+              min={0}
+              max={0.5}
+              step={0.01}
+              value={musicVolume}
+              onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+              disabled={generating}
+              title="0–50% — kept low so the voice-over stays audible"
+            />
+          </label>
+        )}
+      </div>
+
+      {musicChoice === 'upload' && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            margin: '0 0 24px',
+            fontSize: 'var(--text-sm)',
+            color: 'var(--color-muted-fg)',
+          }}
+        >
+          <input
+            type="file"
+            accept="audio/mpeg,audio/mp3,audio/wav,audio/x-m4a"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void handleMusicUpload(file)
+            }}
+            disabled={musicUploading || generating}
+          />
+          {musicUploading && <Spinner size="sm" />}
+          {musicUploadName && !musicUploading && <span>✓ {musicUploadName}</span>}
+        </div>
+      )}
+
       <div className={styles.actions}>
         <Button
           variant="primary"
           onClick={handleGenerate}
-          disabled={generating}
+          disabled={generating || (musicChoice === 'upload' && !musicUploadPath)}
         >
           {generating ? 'Generating…' : hasManifest ? 'Regenerate script' : 'Generate marketing video'}
         </Button>

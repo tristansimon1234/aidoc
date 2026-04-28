@@ -37,5 +37,8 @@ export const GenerateMarketingVideoOptionsSchema = z.object({
   withVoiceover: z.boolean().optional(),
   voiceId: z.string().optional(),
   tone: VoiceTonePresetSchema.optional(),
+  musicTrackId: z.string().optional(),
+  musicUploadPath: z.string().optional(),
+  musicVolume: z.number().min(0).max(1).optional(),
   userPrompt: z.string().max(800).optional(),
 })

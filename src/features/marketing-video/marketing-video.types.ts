@@ -82,6 +82,15 @@ export interface MarketingManifest {
   /** Storage path under the artifacts bucket (for re-hosting / debugging).
    *  Null when there's no voice-over. */
   voiceoverPath: string | null
+  /** Optional URL of a background music track to mix under the voice-over.
+   *  Null = silent. Sourced from a preset library or a user upload. */
+  musicUrl?: string | null
+  /** Storage path of an uploaded music file (relative to artifacts bucket).
+   *  Distinct from musicUrl: a preset has a URL but no path, an upload has
+   *  both. Lets us keep the signed URL fresh on re-render. */
+  musicPath?: string | null
+  /** Linear volume 0–1 for the music. Defaults to 0.15. */
+  musicVolume?: number
 }
 
 /** Render lifecycle of the MP4. The manifest can exist without a render
@@ -122,6 +131,14 @@ export interface GenerateMarketingVideoOptions {
   /** Tone preset for the voice-over. Defaults to "punchy" (the previous
    *  hardcoded values). */
   tone?: VoiceTone
+  /** Background music track ID — picked from MUSIC_PRESETS. Mutually
+   *  exclusive with `musicUploadPath`. Use 'none' to explicitly disable. */
+  musicTrackId?: string
+  /** Storage path (in artifacts bucket) of a music file the user uploaded
+   *  via the signed-upload endpoint. Mutually exclusive with musicTrackId. */
+  musicUploadPath?: string
+  /** Linear 0–1 volume for the music. Defaults to 0.15. */
+  musicVolume?: number
   /** Free-form steering from the user — tells Gemini what angle to take,
    *  who the target audience is, which feature to emphasize, what tone
    *  shift to apply. The doc remains the content source-of-truth; this is

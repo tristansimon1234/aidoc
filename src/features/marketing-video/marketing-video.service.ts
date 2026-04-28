@@ -14,6 +14,27 @@ import type {
   MarketingVideoSummary,
 } from './marketing-video.types.js'
 
+/** Background-music presets. Empty by default — drop royalty-free MP3s into
+ *  any public CDN (Pixabay, Free Music Archive, your own Supabase bucket)
+ *  and add an entry here. The UI exposes whatever is in this list as a
+ *  picker. Users can also upload their own track which bypasses this list
+ *  entirely (musicUploadPath in the generate options).
+ *
+ *  Required fields per entry:
+ *    id      — short stable string, sent in API requests
+ *    name    — shown in the picker
+ *    url     — direct mp3 URL fetchable by Remotion at render time
+ *    mood    — optional one-word tag the picker groups by
+ *
+ *  Add tracks here:
+ */
+export const MUSIC_PRESETS: Array<{ id: string; name: string; url: string; mood?: string }> = [
+  // { id: 'upbeat-corporate', name: 'Upbeat Corporate', mood: 'Energetic',
+  //   url: 'https://your-cdn/upbeat-corporate.mp3' },
+]
+
+const DEFAULT_MUSIC_VOLUME = 0.15
+
 /** ElevenLabs voice_settings tuned per tone. The triplet maps to:
  *  - stability: lower = more dynamic delivery (variable pitch / pace),
  *    higher = monotone, robotic.
@@ -189,6 +210,25 @@ export async function generateMarketingVideoForRun(
     console.log(`[marketing-video] Voice-over uploaded: ${voiceoverUrl}`)
   }
 
+  // Resolve background music. Priority: explicit upload > preset by id >
+  // none. Either path resolves to a public URL Remotion can <Audio src>.
+  let musicUrl: string | null = null
+  let musicPath: string | null = null
+  if (options.musicUploadPath) {
+    musicPath = options.musicUploadPath
+    musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
+    console.log(`[marketing-video] Music: uploaded path=${musicPath}`)
+  } else if (options.musicTrackId && options.musicTrackId !== 'none') {
+    const preset = MUSIC_PRESETS.find((p) => p.id === options.musicTrackId)
+    if (preset) {
+      musicUrl = preset.url
+      console.log(`[marketing-video] Music: preset ${preset.id} (${preset.name})`)
+    } else {
+      console.warn(`[marketing-video] Music: preset id "${options.musicTrackId}" not found in MUSIC_PRESETS, skipping`)
+    }
+  }
+  const musicVolume = options.musicVolume ?? DEFAULT_MUSIC_VOLUME
+
   const manifest: MarketingManifest = {
     runId,
     generatedAt: new Date().toISOString(),
@@ -197,6 +237,9 @@ export async function generateMarketingVideoForRun(
     branding,
     voiceoverUrl,
     voiceoverPath,
+    musicUrl,
+    musicPath,
+    musicVolume,
   }
 
   // Persist the manifest itself in artifacts storage. Remotion (or a future

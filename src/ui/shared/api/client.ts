@@ -615,6 +615,9 @@ export const api = {
           withVoiceover?: boolean
           voiceId?: string
           tone?: 'punchy' | 'calm' | 'playful' | 'serious'
+          musicTrackId?: string
+          musicUploadPath?: string
+          musicVolume?: number
         },
       ): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video`, {
@@ -625,6 +628,8 @@ export const api = {
         request(`/runs/${id}/marketing-video/render`, { method: 'POST' }),
       voices: (): Promise<{ voices: Array<{ voiceId: string; name: string; category: string; labels: Record<string, string> }> }> =>
         request(`/runs/marketing-video/voices`),
+      musicPresets: (): Promise<{ presets: Array<{ id: string; name: string; url: string; mood?: string }> }> =>
+        request(`/runs/marketing-video/music-presets`),
     },
   },
   questions: {

@@ -56,6 +56,12 @@ export const ManifestSchema = z.object({
   branding: BrandingSchema,
   voiceoverUrl: z.string().nullable(),
   voiceoverPath: z.string().nullable(),
+  /** Optional background music track URL — mixed into the composition
+   *  at low volume so it sits under the voice-over. Null = silent. */
+  musicUrl: z.string().nullable().optional(),
+  /** Linear volume 0–1 for the music track. Defaults to 0.15 (subtle).
+   *  Bumped down further automatically inside scenes if needed. */
+  musicVolume: z.number().min(0).max(1).optional(),
 })
 
 export type Manifest = z.infer<typeof ManifestSchema>

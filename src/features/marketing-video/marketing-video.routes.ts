@@ -9,6 +9,7 @@ import {
 import {
   generateMarketingVideoForRun,
   renderMarketingVideoForRun,
+  MUSIC_PRESETS,
 } from './marketing-video.service.js'
 import { getAvailableVoices, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 
@@ -20,6 +21,19 @@ export const marketingVideoRouter = Router()
  * can render a picker. Returns an empty array (not 500) when ElevenLabs isn't
  * configured — the UI falls back to the default voice silently.
  */
+/**
+ * GET /marketing-video/music-presets
+ * Returns the configured background-music tracks the UI can offer as a
+ * picker. Empty array when no presets are configured (the user can still
+ * upload a custom track in that case).
+ */
+marketingVideoRouter.get('/marketing-video/music-presets', (_req: Request, res: Response, _next: NextFunction) => {
+  // Strip nothing — these are public CDN URLs by design (Remotion fetches
+  // them from the video-service). Adding tracks doesn't require a
+  // migration; the constant is the schema.
+  res.status(200).json({ presets: MUSIC_PRESETS })
+})
+
 marketingVideoRouter.get('/marketing-video/voices', (_req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
