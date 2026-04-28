@@ -15,21 +15,26 @@ interface FeatureSceneProps {
 }
 
 /**
- * Mid-act scene. Four layout variants cycle by sceneIndex so a 4-scene
- * video doesn't feel like the same shot four times. The text-block and
- * screenshot-block are extracted into shared sub-components — the layout
+ * Mid-act scene. Three layout variants cycle by sceneIndex so a 4-scene
+ * video doesn't feel like the same shot repeated. The text-block and
+ * visual-block are extracted into shared sub-components — the layout
  * is just where we position them.
  *
- *   index % 4 === 0 → split-left      (text left, screenshot right)
- *   index % 4 === 1 → fullscreen      (screenshot fills frame, text bottom-left overlay)
- *   index % 4 === 2 → split-right     (mirrored: text right, screenshot left)
- *   index % 4 === 3 → stacked         (headline top huge, screenshot below)
+ *   index % 3 === 0 → split-left   (text left, visual right)
+ *   index % 3 === 1 → split-right  (mirrored: text right, visual left)
+ *   index % 3 === 2 → stacked      (headline top, visual below)
+ *
+ * The previous "fullscreen" variant (visual fills the canvas, text in
+ * a backdrop-blur card on top) is dropped — overlaying a glass card on
+ * a busy product screenshot produced a visually cluttered result the
+ * user described as "horrible". The three remaining layouts all
+ * cleanly separate text from visual.
  *
  * The screenshot can be null; layouts gracefully fall back to a tinted
  * accent panel so the structure doesn't collapse.
  */
-type LayoutVariant = 'split-left' | 'fullscreen' | 'split-right' | 'stacked'
-const LAYOUT_CYCLE: LayoutVariant[] = ['split-left', 'fullscreen', 'split-right', 'stacked']
+type LayoutVariant = 'split-left' | 'split-right' | 'stacked'
+const LAYOUT_CYCLE: LayoutVariant[] = ['split-left', 'split-right', 'stacked']
 
 export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, branding, sceneIndex }) => {
   const frame = useCurrentFrame()
@@ -128,37 +133,6 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
           </div>
           <div style={{ position: 'absolute', left: 100, top: '50%', width: 920, height: 580, marginTop: -290, opacity: imgOpacity, transform: `translateX(${interpolate(imgIn, [0, 1], [-80, 0])}px)` }}>
             {visualElement}
-          </div>
-        </>
-      )}
-
-      {layout === 'fullscreen' && (
-        <>
-          {/* Screenshot fills the frame; the text sits bottom-left over a
-              backdrop-blur scrim so it stays legible regardless of the
-              underlying image colors. */}
-          <AbsoluteFill style={{ opacity: imgOpacity, padding: 80 }}>
-            <div style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 24, overflow: 'hidden' }}>
-              {visualElement}
-            </div>
-          </AbsoluteFill>
-          <div
-            style={{
-              position: 'absolute',
-              left: 120,
-              right: 120,
-              bottom: 120,
-              maxWidth: 1100,
-              padding: '36px 44px',
-              borderRadius: 20,
-              background: `${branding.bgColor}D9`,
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              border: `1px solid ${branding.textColor}1A`,
-              boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
-            }}
-          >
-            {textBlock('left')}
           </div>
         </>
       )}
