@@ -7,19 +7,29 @@ interface FeatureSceneProps {
   scene: Scene
   screenshot: Screenshot | null
   branding: Branding
+  /** 0-based index of this scene in the script. Drives layout variation
+   *  so consecutive scenes don't all look the same. */
+  sceneIndex: number
 }
 
 /**
- * Mid-act scenes — one benefit, one screenshot, one headline.
- * Layout: headline + subhead in a left rail, screenshot floating right with
- * a subtle parallax + accent-color glow. Both elements animate in offset by
- * a few frames so the eye lands on the headline first, then the visual.
+ * Mid-act scene. Four layout variants cycle by sceneIndex so a 4-scene
+ * video doesn't feel like the same shot four times. The text-block and
+ * screenshot-block are extracted into shared sub-components — the layout
+ * is just where we position them.
  *
- * The screenshot can be null (e.g. for scenes that the script generator
- * decided to keep headline-only); falls back to a tinted accent panel so
- * the layout doesn't collapse.
+ *   index % 4 === 0 → split-left      (text left, screenshot right)
+ *   index % 4 === 1 → fullscreen      (screenshot fills frame, text bottom-left overlay)
+ *   index % 4 === 2 → split-right     (mirrored: text right, screenshot left)
+ *   index % 4 === 3 → stacked         (headline top huge, screenshot below)
+ *
+ * The screenshot can be null; layouts gracefully fall back to a tinted
+ * accent panel so the structure doesn't collapse.
  */
-export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, branding }) => {
+type LayoutVariant = 'split-left' | 'fullscreen' | 'split-right' | 'stacked'
+const LAYOUT_CYCLE: LayoutVariant[] = ['split-left', 'fullscreen', 'split-right', 'stacked']
+
+export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, branding, sceneIndex }) => {
   const frame = useCurrentFrame()
   const { fps, durationInFrames } = useVideoConfig()
 
@@ -35,15 +45,10 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
 
   const headlineY = interpolate(textIn, [0, 1], [30, 0])
   const headlineOpacity = interpolate(textIn, [0, 1], [0, 1]) * fadeOut
-
-  const imgX = interpolate(imgIn, [0, 1], [80, 0])
   const imgOpacity = interpolate(imgIn, [0, 1], [0, 1]) * fadeOut
-  const imgFloat = Math.sin(frame / 30) * 6
 
-  // Ken Burns — slow zoom + diagonal pan over the scene's lifetime so the
-  // screenshot feels alive instead of static. Direction varies per scene
-  // (deterministic hash of the headline) so a 4-scene video doesn't pan
-  // the same way 4 times in a row.
+  // Ken Burns — slow zoom + diagonal pan. Direction varies per scene so
+  // a 4-scene video doesn't pan the same way 4 times in a row.
   const kbProgress = interpolate(frame, [0, durationInFrames], [0, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
@@ -52,138 +57,239 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   const headlineHash = scene.headline.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
   const kbDirX = (headlineHash % 2 === 0 ? 1 : -1)
   const kbDirY = (Math.floor(headlineHash / 2) % 2 === 0 ? 1 : -1)
-  // Max pan ~3% of the screenshot frame on each axis. Subtle.
   const kbPanX = interpolate(kbProgress, [0, 1], [0, 28 * kbDirX])
   const kbPanY = interpolate(kbProgress, [0, 1], [0, 16 * kbDirY])
+
+  const layout: LayoutVariant = LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
+
+  const screenshotElement = (
+    <ScreenshotFrame
+      screenshot={screenshot}
+      branding={branding}
+      kbScale={kbScale}
+      kbPanX={kbPanX}
+      kbPanY={kbPanY}
+    />
+  )
+
+  const textBlock = (alignment: 'left' | 'right' | 'center') => (
+    <TextBlock
+      scene={scene}
+      branding={branding}
+      alignment={alignment}
+      headlineY={headlineY}
+      headlineOpacity={headlineOpacity}
+    />
+  )
 
   return (
     <AbsoluteFill style={{ backgroundColor: branding.bgColor, overflow: 'hidden' }}>
       <BrandWatermark branding={branding} position="top-right" size={56} />
-      <AbsoluteFill
+
+      {layout === 'split-left' && (
+        <>
+          <AbsoluteFill style={{ background: `radial-gradient(ellipse at 80% 50%, ${branding.accentColor}22 0%, transparent 65%)`, opacity: fadeOut }} />
+          <div style={{ position: 'absolute', left: 100, top: 0, bottom: 0, width: 720, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            {textBlock('left')}
+          </div>
+          <div style={{ position: 'absolute', right: 100, top: '50%', width: 920, height: 580, marginTop: -290, opacity: imgOpacity, transform: `translateX(${interpolate(imgIn, [0, 1], [80, 0])}px)` }}>
+            {screenshotElement}
+          </div>
+        </>
+      )}
+
+      {layout === 'split-right' && (
+        <>
+          <AbsoluteFill style={{ background: `radial-gradient(ellipse at 20% 50%, ${branding.accentColor}22 0%, transparent 65%)`, opacity: fadeOut }} />
+          <div style={{ position: 'absolute', right: 100, top: 0, bottom: 0, width: 720, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            {textBlock('right')}
+          </div>
+          <div style={{ position: 'absolute', left: 100, top: '50%', width: 920, height: 580, marginTop: -290, opacity: imgOpacity, transform: `translateX(${interpolate(imgIn, [0, 1], [-80, 0])}px)` }}>
+            {screenshotElement}
+          </div>
+        </>
+      )}
+
+      {layout === 'fullscreen' && (
+        <>
+          {/* Screenshot fills the frame; the text sits bottom-left over a
+              backdrop-blur scrim so it stays legible regardless of the
+              underlying image colors. */}
+          <AbsoluteFill style={{ opacity: imgOpacity, padding: 80 }}>
+            <div style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 24, overflow: 'hidden' }}>
+              {screenshotElement}
+            </div>
+          </AbsoluteFill>
+          <div
+            style={{
+              position: 'absolute',
+              left: 120,
+              right: 120,
+              bottom: 120,
+              maxWidth: 1100,
+              padding: '36px 44px',
+              borderRadius: 20,
+              background: `${branding.bgColor}D9`,
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              border: `1px solid ${branding.textColor}1A`,
+              boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+            }}
+          >
+            {textBlock('left')}
+          </div>
+        </>
+      )}
+
+      {layout === 'stacked' && (
+        <>
+          <AbsoluteFill style={{ background: `radial-gradient(ellipse at 50% 0%, ${branding.accentColor}22 0%, transparent 60%)`, opacity: fadeOut }} />
+          <div style={{ position: 'absolute', top: 80, left: 120, right: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            {textBlock('center')}
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              left: '50%',
+              bottom: 80,
+              width: 1280,
+              height: 580,
+              marginLeft: -640,
+              opacity: imgOpacity,
+              transform: `translateY(${interpolate(imgIn, [0, 1], [60, 0])}px)`,
+            }}
+          >
+            {screenshotElement}
+          </div>
+        </>
+      )}
+    </AbsoluteFill>
+  )
+}
+
+interface TextBlockProps {
+  scene: Scene
+  branding: Branding
+  alignment: 'left' | 'right' | 'center'
+  headlineY: number
+  headlineOpacity: number
+}
+
+const TextBlock: React.FC<TextBlockProps> = ({ scene, branding, alignment, headlineY, headlineOpacity }) => {
+  // Centered layouts use a smaller headline so a long line wraps nicely
+  // inside the canvas instead of bleeding off the sides.
+  const headlineSize = alignment === 'center' ? 84 : 92
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: alignment === 'right' ? 'flex-end' : alignment === 'center' ? 'center' : 'flex-start',
+        gap: 20,
+        opacity: headlineOpacity,
+        transform: `translateY(${headlineY}px)`,
+        textAlign: alignment,
+        width: '100%',
+      }}
+    >
+      <div
         style={{
-          background: `radial-gradient(ellipse at 80% 50%, ${branding.accentColor}22 0%, transparent 65%)`,
-          opacity: fadeOut,
+          padding: '6px 14px',
+          borderRadius: 999,
+          background: `${branding.accentColor}25`,
+          color: branding.accentColor,
+          fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
+          fontSize: 22,
+          fontWeight: 600,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+        }}
+      >
+        {branding.productName}
+      </div>
+      <h2
+        style={{
+          color: branding.textColor,
+          fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
+          fontSize: headlineSize,
+          fontWeight: 700,
+          lineHeight: 1.05,
+          letterSpacing: '-0.025em',
+          margin: 0,
+        }}
+      >
+        {scene.headline}
+      </h2>
+      {scene.subhead && (
+        <p
+          style={{
+            color: `${branding.textColor}B0`,
+            fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
+            fontSize: 30,
+            fontWeight: 400,
+            lineHeight: 1.35,
+            letterSpacing: '-0.005em',
+            margin: 0,
+            maxWidth: alignment === 'center' ? 1100 : 680,
+          }}
+        >
+          {scene.subhead}
+        </p>
+      )}
+    </div>
+  )
+}
+
+interface ScreenshotFrameProps {
+  screenshot: Screenshot | null
+  branding: Branding
+  kbScale: number
+  kbPanX: number
+  kbPanY: number
+}
+
+const ScreenshotFrame: React.FC<ScreenshotFrameProps> = ({ screenshot, branding, kbScale, kbPanX, kbPanY }) => {
+  return (
+    <>
+      <div
+        style={{
+          position: 'absolute',
+          inset: -20,
+          borderRadius: 28,
+          background: `linear-gradient(135deg, ${branding.accentColor}66, transparent)`,
+          filter: 'blur(40px)',
         }}
       />
       <div
         style={{
-          position: 'absolute',
-          left: 100,
-          top: 0,
-          bottom: 0,
-          width: 720,
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'center',
-          gap: 24,
-          opacity: headlineOpacity,
-          transform: `translateY(${headlineY}px)`,
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          borderRadius: 18,
+          overflow: 'hidden',
+          border: `1px solid ${branding.textColor}22`,
+          boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
+          background: `${branding.textColor}08`,
         }}
       >
-        <div
-          style={{
-            display: 'inline-block',
-            padding: '6px 14px',
-            borderRadius: 999,
-            background: `${branding.accentColor}25`,
-            color: branding.accentColor,
-            fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
-            fontSize: 22,
-            fontWeight: 600,
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            alignSelf: 'flex-start',
-          }}
-        >
-          {branding.productName}
-        </div>
-        <h2
-          style={{
-            color: branding.textColor,
-            fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
-            fontSize: 92,
-            fontWeight: 700,
-            lineHeight: 1.05,
-            letterSpacing: '-0.025em',
-            margin: 0,
-          }}
-        >
-          {scene.headline}
-        </h2>
-        {scene.subhead && (
-          <p
+        {screenshot ? (
+          <Img
+            src={screenshot.url}
             style={{
-              color: `${branding.textColor}B0`,
-              fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
-              fontSize: 32,
-              fontWeight: 400,
-              lineHeight: 1.35,
-              letterSpacing: '-0.005em',
-              margin: 0,
-              maxWidth: 680,
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              transform: `scale(${kbScale}) translate(${kbPanX}px, ${kbPanY}px)`,
+              transformOrigin: 'center center',
+              willChange: 'transform',
             }}
-          >
-            {scene.subhead}
-          </p>
+          />
+        ) : (
+          <AbsoluteFill
+            style={{ background: `linear-gradient(135deg, ${branding.accentColor}55, ${branding.bgColor})` }}
+          />
         )}
       </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: 100,
-          top: '50%',
-          width: 920,
-          height: 580,
-          marginTop: -290,
-          opacity: imgOpacity,
-          transform: `translate(${imgX}px, ${imgFloat}px)`,
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            inset: -20,
-            borderRadius: 28,
-            background: `linear-gradient(135deg, ${branding.accentColor}66, transparent)`,
-            filter: 'blur(40px)',
-          }}
-        />
-        <div
-          style={{
-            position: 'relative',
-            width: '100%',
-            height: '100%',
-            borderRadius: 18,
-            overflow: 'hidden',
-            border: `1px solid ${branding.textColor}22`,
-            boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
-            background: `${branding.textColor}08`,
-          }}
-        >
-          {screenshot ? (
-            <Img
-              src={screenshot.url}
-              style={{
-                width: '100%',
-                height: '100%',
-                objectFit: 'cover',
-                // Ken Burns. transform-origin centered so the zoom feels natural;
-                // willChange hints the compositor to dedicate a layer.
-                transform: `scale(${kbScale}) translate(${kbPanX}px, ${kbPanY}px)`,
-                transformOrigin: 'center center',
-                willChange: 'transform',
-              }}
-            />
-          ) : (
-            <AbsoluteFill
-              style={{
-                background: `linear-gradient(135deg, ${branding.accentColor}55, ${branding.bgColor})`,
-              }}
-            />
-          )}
-        </div>
-      </div>
-    </AbsoluteFill>
+    </>
   )
 }
