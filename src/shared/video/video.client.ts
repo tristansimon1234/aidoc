@@ -35,7 +35,7 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>): 
   const rawText = await res.text()
 
   if (!res.ok) {
-    let parsed: { error?: string; details?: unknown } = {}
+    let parsed: { error?: string; details?: unknown; stack?: string } = {}
     try {
       parsed = JSON.parse(rawText)
     } catch {
@@ -45,8 +45,11 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>): 
     console.error(
       `[video-service] ${endpoint} failed (${res.status} ${res.statusText}). Body: ${preview}`,
     )
+    if (parsed.stack) console.error(`[video-service] Remote stack: ${parsed.stack}`)
+    const stackSuffix = parsed.stack ? ` [remote stack: ${parsed.stack}]` : ''
+    const detailsSuffix = parsed.details ? ` (details: ${JSON.stringify(parsed.details).slice(0, 200)})` : ''
     const detail = parsed.error
-      ? `${parsed.error}${parsed.details ? ` (details: ${JSON.stringify(parsed.details).slice(0, 200)})` : ''}`
+      ? `${parsed.error}${detailsSuffix}${stackSuffix}`
       : `HTTP ${res.status} ${res.statusText} — body: ${preview}`
     throw new Error(`Video service error: ${detail}`)
   }
