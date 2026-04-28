@@ -14,6 +14,20 @@ import type {
   MarketingVideoSummary,
 } from './marketing-video.types.js'
 
+/** ElevenLabs voice_settings tuned per tone. The triplet maps to:
+ *  - stability: lower = more dynamic delivery (variable pitch / pace),
+ *    higher = monotone, robotic.
+ *  - style: higher = more stylistic exaggeration (good for punchy /
+ *    playful), lower = neutral read.
+ *  - similarityBoost: how tightly to stick to the source voice timbre.
+ *  These were picked by ear, not science — adjust to taste. */
+const TONE_PRESETS = {
+  punchy:  { stability: 0.35, style: 0.70, similarityBoost: 0.80 },
+  calm:    { stability: 0.65, style: 0.30, similarityBoost: 0.75 },
+  playful: { stability: 0.30, style: 0.85, similarityBoost: 0.70 },
+  serious: { stability: 0.70, style: 0.20, similarityBoost: 0.80 },
+} as const
+
 /** Default branding when the project has no custom design saved. Picked to
  *  produce a usable marketing video out of the box rather than a blank
  *  black-on-white render that looks unfinished. */
@@ -160,14 +174,14 @@ export async function generateMarketingVideoForRun(
       throw new Error('ELEVENLABS_API_KEY is required for voice-over. Re-run with withVoiceover=false to skip.')
     }
     const narration = flattenScriptToNarration(script)
+    const tone = options.tone ?? 'punchy'
+    const settings = TONE_PRESETS[tone]
+    console.log(`[marketing-video] Voice settings: tone=${tone}, voice=${options.voiceId ?? 'default'}`)
     const buffer = await synthesizeSpeech(narration, {
       voiceId: options.voiceId,
-      // Marketing tone = punchy, expressive. Lower stability = more
-      // dynamic delivery; higher style = more variation. These are louder
-      // settings than the tutorial voice-over on purpose.
-      stability: 0.35,
-      style: 0.7,
-      similarityBoost: 0.8,
+      stability: settings.stability,
+      style: settings.style,
+      similarityBoost: settings.similarityBoost,
     })
     voiceoverPath = `runs/${runId}/marketing-voiceover.mp3`
     await uploadToStorage('artifacts', voiceoverPath, buffer, 'audio/mpeg')

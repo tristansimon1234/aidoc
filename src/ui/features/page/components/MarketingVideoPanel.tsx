@@ -8,6 +8,15 @@ interface MarketingVideoPanelProps {
   runId: string
 }
 
+type VoiceTone = 'punchy' | 'calm' | 'playful' | 'serious'
+
+const TONE_LABELS: Record<VoiceTone, string> = {
+  punchy: 'Punchy — energetic, marketing default',
+  calm: 'Calm — measured, professional',
+  playful: 'Playful — expressive, casual',
+  serious: 'Serious — authoritative, monotone',
+}
+
 /**
  * In-app surface for the marketing-video feature. Three states it walks
  * the user through:
@@ -29,14 +38,25 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
   const [rendering, setRendering] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [withVoiceover, setWithVoiceover] = useState(true)
+  const [voiceId, setVoiceId] = useState<string>('')
+  const [tone, setTone] = useState<VoiceTone>('punchy')
+  const [voices, setVoices] = useState<Array<{ voiceId: string; name: string; category: string }>>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const result = await api.runs.marketingVideo.get(runId)
-        if (!cancelled) setSummary(result)
+        const [result, voicesResult] = await Promise.all([
+          api.runs.marketingVideo.get(runId),
+          // Voices fetch is best-effort: ElevenLabs may be unconfigured or
+          // hit a transient error. UI falls back to the default voice silently.
+          api.runs.marketingVideo.voices().catch(() => ({ voices: [] })),
+        ])
+        if (!cancelled) {
+          setSummary(result)
+          setVoices(voicesResult.voices)
+        }
       } catch (err) {
         if (!cancelled) setError((err as Error).message)
       } finally {
@@ -53,6 +73,8 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
       const result = await api.runs.marketingVideo.generate(runId, {
         userPrompt: userPrompt.trim() || undefined,
         withVoiceover,
+        voiceId: voiceId || undefined,
+        tone,
       })
       setSummary(result)
     } catch (err) {
@@ -122,6 +144,63 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
           Generate voice-over (~€0.30 / generation)
         </label>
       </div>
+
+      {withVoiceover && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: voices.length > 0 ? '1fr 1fr' : '1fr',
+            gap: 16,
+            margin: '0 0 24px',
+          }}
+        >
+          {voices.length > 0 && (
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
+              <span style={{ color: 'var(--color-muted-fg)' }}>Voice</span>
+              <select
+                value={voiceId}
+                onChange={(e) => setVoiceId(e.target.value)}
+                disabled={generating}
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-bg)',
+                  color: 'var(--color-fg)',
+                  fontSize: 'var(--text-sm)',
+                }}
+              >
+                <option value="">Default (Sarah — clear, professional)</option>
+                {voices.map((v) => (
+                  <option key={v.voiceId} value={v.voiceId}>
+                    {v.name} {v.category ? `· ${v.category}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
+            <span style={{ color: 'var(--color-muted-fg)' }}>Tone</span>
+            <select
+              value={tone}
+              onChange={(e) => setTone(e.target.value as VoiceTone)}
+              disabled={generating}
+              style={{
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-bg)',
+                color: 'var(--color-fg)',
+                fontSize: 'var(--text-sm)',
+              }}
+            >
+              {(Object.keys(TONE_LABELS) as VoiceTone[]).map((t) => (
+                <option key={t} value={t}>{TONE_LABELS[t]}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       <div className={styles.actions}>
         <Button

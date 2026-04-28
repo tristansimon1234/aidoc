@@ -10,8 +10,30 @@ import {
   generateMarketingVideoForRun,
   renderMarketingVideoForRun,
 } from './marketing-video.service.js'
+import { getAvailableVoices, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 
 export const marketingVideoRouter = Router()
+
+/**
+ * GET /marketing-video/voices
+ * List the ElevenLabs voices available to the configured account so the UI
+ * can render a picker. Returns an empty array (not 500) when ElevenLabs isn't
+ * configured — the UI falls back to the default voice silently.
+ */
+marketingVideoRouter.get('/marketing-video/voices', (_req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      if (!isElevenLabsConfigured()) {
+        res.status(200).json({ voices: [] })
+        return
+      }
+      const voices = await getAvailableVoices()
+      res.status(200).json({ voices })
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
 
 /**
  * POST /runs/:id/marketing-video

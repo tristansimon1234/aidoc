@@ -108,6 +108,10 @@ export interface MarketingVideoSummary {
   renderError: string | null
 }
 
+/** Tone preset name. Maps to a tuned (stability, style, similarityBoost)
+ *  triplet — see TONE_PRESETS in marketing-video.service.ts for the values. */
+export type VoiceTone = 'punchy' | 'calm' | 'playful' | 'serious'
+
 export interface GenerateMarketingVideoOptions {
   /** When false, skip ElevenLabs synthesis. The manifest still includes the
    *  script so Remotion can render a silent preview. Saves €€ during
@@ -115,6 +119,9 @@ export interface GenerateMarketingVideoOptions {
   withVoiceover?: boolean
   /** Override the ElevenLabs voice. Defaults to the marketing-tone voice. */
   voiceId?: string
+  /** Tone preset for the voice-over. Defaults to "punchy" (the previous
+   *  hardcoded values). */
+  tone?: VoiceTone
   /** Free-form steering from the user — tells Gemini what angle to take,
    *  who the target audience is, which feature to emphasize, what tone
    *  shift to apply. The doc remains the content source-of-truth; this is

@@ -610,7 +610,12 @@ export const api = {
         }),
       generate: (
         id: string,
-        opts?: { userPrompt?: string; withVoiceover?: boolean; voiceId?: string },
+        opts?: {
+          userPrompt?: string
+          withVoiceover?: boolean
+          voiceId?: string
+          tone?: 'punchy' | 'calm' | 'playful' | 'serious'
+        },
       ): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video`, {
           method: 'POST',
@@ -618,6 +623,8 @@ export const api = {
         }),
       render: (id: string): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video/render`, { method: 'POST' }),
+      voices: (): Promise<{ voices: Array<{ voiceId: string; name: string; category: string; labels: Record<string, string> }> }> =>
+        request(`/runs/marketing-video/voices`),
     },
   },
   questions: {
