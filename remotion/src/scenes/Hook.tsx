@@ -55,7 +55,7 @@ export const Hook: React.FC<HookProps> = ({ headline, branding }) => {
         <h1
           style={{
             color: branding.textColor,
-            fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
+            fontFamily: `${branding.fontFamily}, 'Geist', system-ui, sans-serif`,
             fontSize: 130,
             fontWeight: 700,
             lineHeight: 1.05,

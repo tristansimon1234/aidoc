@@ -109,8 +109,18 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   // raw screenshot has none).
   const usingMock = !!(scene.mockCompiledCode || scene.mock)
 
+  // Expose the project's font as a CSS custom property so Twind's
+  // font-sans utility (used by every Tailwind text-* className inside
+  // LLM-generated mocks) resolves to it first. Geist remains the
+  // webfont fallback if the project didn't set a custom stack.
+  const outerStyle: React.CSSProperties = {
+    backgroundColor: branding.bgColor,
+    overflow: 'hidden',
+    ...({ '--brand-font': branding.fontFamily } as Record<string, string>),
+  }
+
   return (
-    <AbsoluteFill style={{ backgroundColor: branding.bgColor, overflow: 'hidden' }}>
+    <AbsoluteFill style={outerStyle}>
       <BrandWatermark branding={branding} position="top-right" size={56} />
 
       {layout === 'split-left' && (
@@ -194,7 +204,7 @@ const TextBlock: React.FC<TextBlockProps> = ({ scene, branding, alignment, headl
           borderRadius: 999,
           background: `${branding.accentColor}25`,
           color: branding.accentColor,
-          fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
+          fontFamily: `${branding.fontFamily}, 'Geist', system-ui, sans-serif`,
           fontSize: 22,
           fontWeight: 600,
           letterSpacing: '0.04em',
@@ -206,7 +216,7 @@ const TextBlock: React.FC<TextBlockProps> = ({ scene, branding, alignment, headl
       <h2
         style={{
           color: branding.textColor,
-          fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
+          fontFamily: `${branding.fontFamily}, 'Geist', system-ui, sans-serif`,
           fontSize: headlineSize,
           fontWeight: 700,
           lineHeight: 1.05,
@@ -220,7 +230,7 @@ const TextBlock: React.FC<TextBlockProps> = ({ scene, branding, alignment, headl
         <p
           style={{
             color: `${branding.textColor}B0`,
-            fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
+            fontFamily: `${branding.fontFamily}, 'Geist', system-ui, sans-serif`,
             fontSize: 30,
             fontWeight: 400,
             lineHeight: 1.35,

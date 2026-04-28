@@ -73,7 +73,7 @@ export const Cta: React.FC<CtaProps> = ({ headline, buttonLabel, branding }) => 
         <h1
           style={{
             color: branding.textColor,
-            fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
+            fontFamily: `${branding.fontFamily}, 'Geist', system-ui, sans-serif`,
             fontSize: 130,
             fontWeight: 700,
             lineHeight: 1.05,
@@ -95,7 +95,7 @@ export const Cta: React.FC<CtaProps> = ({ headline, buttonLabel, branding }) => 
             borderRadius: 16,
             background: branding.accentColor,
             color: '#FFFFFF',
-            fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
+            fontFamily: `${branding.fontFamily}, 'Geist', system-ui, sans-serif`,
             fontSize: 44,
             fontWeight: 600,
             letterSpacing: '-0.01em',

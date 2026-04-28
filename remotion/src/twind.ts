@@ -22,9 +22,14 @@ install({
   theme: {
     extend: {
       fontFamily: {
-        sans:  ['Geist',      'Inter',          'system-ui',                            'sans-serif'],
-        mono:  ['Geist Mono',  'JetBrains Mono', 'ui-monospace', 'SFMono-Regular',        'monospace'],
-        serif: ['ui-serif',    'Georgia',                                                'serif'],
+        // Reads the project's --brand-font CSS variable set by FeatureScene
+        // per-render (so Tailwind's font-sans / default text-* classes
+        // honour the project's branding.fontFamily). Falls through to
+        // Geist (loaded webfont) → Inter → system-ui if the project
+        // didn't set a custom font.
+        sans:  ['var(--brand-font)', 'Geist',       'Inter',          'system-ui',                            'sans-serif'],
+        mono:  ['Geist Mono',         'JetBrains Mono', 'ui-monospace', 'SFMono-Regular',                      'monospace'],
+        serif: ['ui-serif',           'Georgia',                                                              'serif'],
       },
     },
   },

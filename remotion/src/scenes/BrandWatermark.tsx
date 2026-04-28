@@ -61,7 +61,7 @@ export const BrandWatermark: React.FC<BrandWatermarkProps> = ({
       ) : (
         <span
           style={{
-            fontFamily: `'Geist', ${branding.fontFamily}, system-ui, sans-serif`,
+            fontFamily: `${branding.fontFamily}, 'Geist', system-ui, sans-serif`,
             color: branding.textColor,
             fontSize: size * 0.5,
             fontWeight: 700,
