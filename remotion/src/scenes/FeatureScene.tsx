@@ -86,20 +86,10 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
     />
   )
 
-  // When a mock is present, force the canvas to dark so the mock's
-  // own dark background blends in and there's no surrounding white
-  // halo. The text colors are inverted via TextBlock's branding
-  // override below.
-  const usingMock = !!(scene.mockCompiledCode || scene.mock)
-  const canvasBg = usingMock ? '#0B0B0F' : branding.bgColor
-  const effectiveBranding = usingMock
-    ? { ...branding, bgColor: '#0B0B0F', textColor: '#F5F5F7' }
-    : branding
-
   const textBlock = (alignment: 'left' | 'right' | 'center') => (
     <TextBlock
       scene={scene}
-      branding={effectiveBranding}
+      branding={branding}
       alignment={alignment}
       headlineY={headlineY}
       headlineOpacity={headlineOpacity}
@@ -107,8 +97,8 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   )
 
   return (
-    <AbsoluteFill style={{ backgroundColor: canvasBg, overflow: 'hidden' }}>
-      <BrandWatermark branding={effectiveBranding} position="top-right" size={56} />
+    <AbsoluteFill style={{ backgroundColor: branding.bgColor, overflow: 'hidden' }}>
+      <BrandWatermark branding={branding} position="top-right" size={56} />
 
       {layout === 'split-left' && (
         <>

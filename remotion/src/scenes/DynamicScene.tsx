@@ -64,21 +64,11 @@ const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, bran
     return Component
   }, [mockCompiledCode])
 
-  // Wrap in a panel-styled card matching the screenshot frame so mock-
-  // and screenshot-mode scenes have the same on-canvas footprint.
-  // overflow: hidden clips any LLM mistake (an element placed outside
-  // 920×580) instead of bleeding onto the text panel.
+  // The mock provides its own browser-frame chrome (per the prompt's
+  // strict requirement). We just need a positioned container that
+  // clips any LLM overflow at the panel boundary.
   return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100%',
-        height: '100%',
-        borderRadius: 18,
-        overflow: 'hidden',
-        boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
-      }}
-    >
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
       <MockScene branding={branding} />
     </div>
   )
