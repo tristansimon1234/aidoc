@@ -17,8 +17,6 @@ interface DynamicSceneProps {
    *  branding are passed in as parameters. */
   mockCompiledCode: string
   branding: Branding
-  width?: number
-  height?: number
 }
 
 /**
@@ -38,20 +36,15 @@ interface DynamicSceneProps {
  * minimal "scene unavailable" placeholder rather than crashing the
  * whole render.
  */
-export const DynamicScene: React.FC<DynamicSceneProps> = ({ mockCompiledCode, branding, width = 920, height = 580 }) => {
+export const DynamicScene: React.FC<DynamicSceneProps> = ({ mockCompiledCode, branding }) => {
   return (
-    <SafeMockBoundary fallback={<SceneFallback branding={branding} width={width} height={height} />}>
-      <DynamicSceneInner
-        mockCompiledCode={mockCompiledCode}
-        branding={branding}
-        width={width}
-        height={height}
-      />
+    <SafeMockBoundary fallback={<SceneFallback branding={branding} />}>
+      <DynamicSceneInner mockCompiledCode={mockCompiledCode} branding={branding} />
     </SafeMockBoundary>
   )
 }
 
-const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, branding, width = 920, height = 580 }) => {
+const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, branding }) => {
   // Build the component once per (compiledCode) — instantiating Function
   // is the expensive bit. React.useMemo keeps it stable across frames.
   const MockScene = React.useMemo<React.FC<{ branding: Branding }>>(() => {
@@ -71,23 +64,10 @@ const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, bran
     return Component
   }, [mockCompiledCode])
 
-  return (
-    <div
-      style={{
-        position: 'relative',
-        width,
-        height,
-        borderRadius: 18,
-        overflow: 'hidden',
-        boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
-        background: '#0B0B0F',
-        color: '#FFFFFF',
-        fontFamily: `${branding.fontFamily}, system-ui, sans-serif`,
-      }}
-    >
-      <MockScene branding={branding} />
-    </div>
-  )
+  // No card chrome. Each LLM mock is responsible for its own full-bleed
+  // background (the prompt explicitly asks for it). Wrapping in a card
+  // here painted a useless border around the mock.
+  return <MockScene branding={branding} />
 }
 
 interface BoundaryState { error: Error | null }
@@ -109,17 +89,11 @@ class SafeMockBoundary extends React.Component<
   }
 }
 
-const SceneFallback: React.FC<{ branding: Branding; width: number; height: number }> = ({ branding, width, height }) => {
+const SceneFallback: React.FC<{ branding: Branding }> = ({ branding }) => {
   return (
-    <div
+    <AbsoluteFill
       style={{
-        position: 'relative',
-        width,
-        height,
-        borderRadius: 18,
-        overflow: 'hidden',
-        background: `linear-gradient(135deg, ${branding.accentColor}55, ${branding.bgColor})`,
-        border: `1px solid ${branding.textColor}22`,
+        background: `linear-gradient(135deg, ${branding.accentColor}55, #0B0B0F)`,
       }}
     />
   )

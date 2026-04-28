@@ -270,8 +270,20 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 - Inline styles ONLY. NO Tailwind class names, NO \`className\`, NO external CSS. Everything goes through \`style={{...}}\`.
 - NO event handlers (\`onClick\`, \`onMouseMove\`, …). The output is rendered server-side, no interaction.
 - NO network access (\`fetch\`, \`XMLHttpRequest\`). NO timers (\`setTimeout\`, \`setInterval\`).
-- Code length: HARD CAP **1200 characters per mockCode value, including whitespace**. A 4-scene video with 1500-char mocks each will overflow the response token budget, the JSON gets truncated mid-string, and the whole script fails to parse. Stay tight — terse animation > verbose-but-truncated.
+- Code length: HARD CAP **2500 characters per mockCode value**. Enough room for layered backgrounds + 2-3 animated elements + a striking treatment, but tight enough to fit four rich scenes in the response token budget.
 - Minify-friendly style: prefer one-liners with semicolons over multi-line bodies. The compiler runs esbuild on it anyway.
+
+#### Visual style (this is the "wahou" — DO follow)
+
+These are MARKETING video frames, not wireframes. Every scene should make a viewer pause. Concrete recipe:
+
+- **Big bold canvas first.** Always start with a full-bleed \`Remotion.AbsoluteFill\` background. Prefer dark backgrounds (\`#0B0B0F\`, \`#0E0E12\`) — accent colors pop harder against dark. Use the project's \`branding.bgColor\` only when it's already dark; otherwise override.
+- **Accent glow.** Behind every focal element, place a large blurred circle in \`branding.accentColor\` (\`width: 500-700, height: 500-700, borderRadius: '50%', filter: 'blur(120px)', opacity: 0.4-0.6\`). Pulses with \`Math.sin(frame/12)\`. This is what makes scenes feel cinematic instead of flat.
+- **Type at scale.** Hero headlines at \`fontSize: 80-120, fontWeight: 700-800, letterSpacing: '-0.03em'\`. Inline a few words in \`branding.accentColor\` for emphasis. Never use \`fontSize\` under 24 unless it's body text in a UI mock.
+- **Spring easing.** Prefer \`Remotion.spring({ frame: frame - delay, fps, config: { damping: 14-18, stiffness: 80-110 } })\` over plain interpolate for entries — it lands with weight instead of stopping cold.
+- **Layer depth.** Backgrounds blurred (\`filter: 'blur(100px)'\`), middle layer with gradient borders or scrim, sharp foreground. Shadows: \`boxShadow: '0 24px 80px rgba(0,0,0,0.4)'\`.
+- **Glassmorphism for floating UI.** Pills / cards that sit over the bg use \`backdropFilter: 'blur(24px)'\` + \`background: '#FFFFFF14'\` + \`border: '1px solid #FFFFFF22'\`.
+- **Big elements, not tiny ones.** Cursors should fly across half the canvas, buttons should be 220-360px wide, text inputs 600-800px. Tiny widgets feel like wireframes.
 - Scene duration in seconds is given as \`durationSeconds\` per scene. The frame range for your component is \`0 .. fps × durationSeconds\`.
 
 #### Branding object you receive
@@ -303,54 +315,108 @@ Use \`branding.accentColor\` for highlights, \`branding.textColor\` for prose, \
   \`const blink = (frame % 30) < 15 ? 1 : 0\`
 - Click ripple: an absolute-positioned circle whose radius interpolates outward + opacity fades (e.g. \`r = interpolate(frame, [clickFrame, clickFrame+18], [0, 60])\`).
 
-#### Concrete example — cursor clicks a button (paste-as-template)
+#### Reference example A — hero headline reveal with accent glow
 
 \`\`\`tsx
 function MockScene({ branding }) {
-  const frame = Remotion.useCurrentFrame()
+  const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
-
-  const cursorProgress = Remotion.spring({ frame: frame - 12, fps, config: { damping: 18, stiffness: 90 } })
-  const cursorX = Remotion.interpolate(cursorProgress, [0, 1], [780, 460])
-  const cursorY = Remotion.interpolate(cursorProgress, [0, 1], [120, 360])
-  const clickFrame = 36
-  const ripple = Remotion.interpolate(frame, [clickFrame, clickFrame + 18], [0, 80], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  const rippleOpacity = Remotion.interpolate(frame, [clickFrame, clickFrame + 18], [0.6, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  const buttonPress = frame >= clickFrame && frame < clickFrame + 6 ? 0.97 : 1
-
+  const t = Remotion.spring({ frame: f, fps, config: { damping: 14, stiffness: 90 } })
+  const slide = Remotion.interpolate(t, [0, 1], [60, 0])
+  const opacity = Remotion.interpolate(t, [0, 1], [0, 1])
+  const glowOp = 0.45 + 0.20 * Math.sin(f / 14)
   return (
-    <Remotion.AbsoluteFill style={{ background: branding.bgColor, color: branding.textColor, fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\` }}>
-      <div style={{ position: 'absolute', top: 320, left: 380, width: 200, height: 64, borderRadius: 12, background: branding.accentColor, color: '#fff', fontWeight: 600, fontSize: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: \`scale(\${buttonPress})\`, boxShadow: \`0 12px 32px \${branding.accentColor}55\` }}>
-        Create token
+    <Remotion.AbsoluteFill style={{ background: '#0B0B0F', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', width: 700, height: 700, borderRadius: '50%', background: branding.accentColor, filter: 'blur(140px)', opacity: glowOp }} />
+      <div style={{ position: 'relative', opacity, transform: \`translateY(\${slide}px)\`, fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\`, fontSize: 110, fontWeight: 800, letterSpacing: '-0.03em', color: '#FFFFFF', textAlign: 'center', lineHeight: 1.05 }}>
+        Ship docs that <span style={{ color: branding.accentColor }}>convert</span>
       </div>
-      <div style={{ position: 'absolute', left: cursorX, top: cursorY, width: 24, height: 24, pointerEvents: 'none' }}>
-        <svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 2l8 18 2-8 8-2z" fill="#fff" stroke="#000" strokeWidth="1.5" /></svg>
-      </div>
-      <div style={{ position: 'absolute', left: cursorX - ripple, top: cursorY - ripple, width: ripple * 2, height: ripple * 2, borderRadius: '50%', border: \`2px solid \${branding.accentColor}\`, opacity: rippleOpacity }} />
     </Remotion.AbsoluteFill>
   )
 }
 \`\`\`
 
-#### Concrete example — type a prompt to an LLM (paste-as-template)
+#### Reference example B — big counter ticking up
 
 \`\`\`tsx
 function MockScene({ branding }) {
-  const frame = Remotion.useCurrentFrame()
-  const fullText = "Connect Stripe to Doclee"
-  const chars = Math.floor(Remotion.interpolate(frame, [12, 90], [0, fullText.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }))
-  const blink = (frame % 30) < 15
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const ease = 1 - Math.pow(1 - Remotion.interpolate(f, [12, 12 + fps * 1.6], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }), 3)
+  const value = Math.round(0 + (12_847 - 0) * ease)
+  const labelT = Remotion.spring({ frame: f - 24, fps, config: { damping: 18, stiffness: 100 } })
+  const labelOp = Remotion.interpolate(labelT, [0, 1], [0, 1])
+  const glowOp = 0.5 + 0.2 * Math.sin(f / 12)
   return (
-    <Remotion.AbsoluteFill style={{ background: branding.bgColor, color: branding.textColor, fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\`, alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 720, padding: '20px 28px', borderRadius: 999, background: '#FFFFFF', border: \`1px solid \${branding.textColor}22\`, boxShadow: '0 12px 32px rgba(0,0,0,0.10)', fontSize: 24, color: branding.textColor }}>
-        {fullText.slice(0, chars)}<span style={{ opacity: blink ? 1 : 0, marginLeft: 2, color: branding.accentColor }}>|</span>
+    <Remotion.AbsoluteFill style={{ background: '#0B0B0F', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', width: 600, height: 600, borderRadius: '50%', background: branding.accentColor, filter: 'blur(120px)', opacity: glowOp }} />
+      <div style={{ position: 'relative', textAlign: 'center', fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\` }}>
+        <div style={{ fontSize: 200, fontWeight: 800, letterSpacing: '-0.04em', color: '#FFFFFF', fontFeatureSettings: '"tnum"', lineHeight: 1 }}>{value.toLocaleString()}</div>
+        <div style={{ marginTop: 24, opacity: labelOp, fontSize: 28, fontWeight: 500, color: '#FFFFFFB0', letterSpacing: '0.02em' }}>docs read this month</div>
       </div>
     </Remotion.AbsoluteFill>
   )
 }
 \`\`\`
 
-Pick a different idea per scene — cursor click, typing, progress, toast, chat bubble, counter, code-typing, sliding cards, etc. Don't repeat the same idea twice.
+#### Reference example C — cursor flies in and clicks a glass button
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const glow = 0.4 + 0.2 * Math.sin(f / 14)
+  const buttonT = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 90 } })
+  const buttonOp = Remotion.interpolate(buttonT, [0, 1], [0, 1])
+  const buttonScale = Remotion.interpolate(buttonT, [0, 1], [0.92, 1])
+  const cursorT = Remotion.spring({ frame: f - 18, fps, config: { damping: 16, stiffness: 70 } })
+  const cx = Remotion.interpolate(cursorT, [0, 1], [840, 480])
+  const cy = Remotion.interpolate(cursorT, [0, 1], [120, 320])
+  const click = f >= 60 && f < 70
+  const ripple = Remotion.interpolate(f, [60, 86], [0, 110], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const rippleOp = Remotion.interpolate(f, [60, 86], [0.55, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const press = click ? 0.96 : 1
+  return (
+    <Remotion.AbsoluteFill style={{ background: '#0B0B0F', overflow: 'hidden', fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\` }}>
+      <div style={{ position: 'absolute', left: 240, top: 100, width: 600, height: 600, borderRadius: '50%', background: branding.accentColor, filter: 'blur(140px)', opacity: glow }} />
+      <div style={{ position: 'absolute', left: 380, top: 280, width: 320, height: 96, borderRadius: 18, background: branding.accentColor, color: '#FFFFFF', fontSize: 28, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', transform: \`scale(\${buttonScale * press})\`, opacity: buttonOp, boxShadow: \`0 24px 80px \${branding.accentColor}66\`, letterSpacing: '-0.01em' }}>Create token</div>
+      <div style={{ position: 'absolute', left: cx - ripple, top: cy + 20 - ripple, width: ripple * 2, height: ripple * 2, borderRadius: '50%', border: \`3px solid \${branding.accentColor}\`, opacity: rippleOp, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', left: cx, top: cy, width: 32, height: 32, pointerEvents: 'none', filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.5))' }}>
+        <svg width='32' height='32' viewBox='0 0 24 24'><path d='M3 2l8 18 2-8 8-2z' fill='#FFFFFF' stroke='#000000' strokeWidth='1.4' /></svg>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example D — type a prompt with floating chat bubble reply
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const txt = 'Generate the migration script'
+  const chars = Math.floor(Remotion.interpolate(f, [10, 60], [0, txt.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }))
+  const blink = (f % 30) < 15
+  const replyT = Remotion.spring({ frame: f - 75, fps, config: { damping: 14, stiffness: 100 } })
+  const replyOp = Remotion.interpolate(replyT, [0, 1], [0, 1])
+  const replyY = Remotion.interpolate(replyT, [0, 1], [20, 0])
+  const glow = 0.35 + 0.15 * Math.sin(f / 16)
+  return (
+    <Remotion.AbsoluteFill style={{ background: '#0B0B0F', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\` }}>
+      <div style={{ position: 'absolute', width: 700, height: 700, borderRadius: '50%', background: branding.accentColor, filter: 'blur(140px)', opacity: glow }} />
+      <div style={{ position: 'relative', width: 760, padding: '20px 28px', borderRadius: 999, background: '#FFFFFF14', backdropFilter: 'blur(20px)', border: '1px solid #FFFFFF22', color: '#FFFFFF', fontSize: 26, boxShadow: '0 24px 80px rgba(0,0,0,0.4)' }}>
+        {txt.slice(0, chars)}<span style={{ opacity: blink ? 1 : 0, marginLeft: 2, color: branding.accentColor }}>|</span>
+      </div>
+      <div style={{ position: 'relative', maxWidth: 720, padding: '18px 24px', borderRadius: 18, background: branding.accentColor, color: '#FFFFFF', fontSize: 22, opacity: replyOp, transform: \`translateY(\${replyY}px)\`, boxShadow: \`0 16px 60px \${branding.accentColor}55\`, alignSelf: 'flex-start' }}>
+        Done — 3 files updated. Want me to push?
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+Use these as the visual baseline. Each scene picks ONE of these patterns (or a sibling — counter, progress bar, code line typing, notification toast, stat cards) and adapts the copy to the scene's headline. Don't downgrade — match this level of polish.
 
 End of TSX section.
 ` : ''}

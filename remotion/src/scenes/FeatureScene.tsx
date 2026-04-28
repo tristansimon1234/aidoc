@@ -65,18 +65,20 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   const layout: LayoutVariant = LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
 
   // Visual priority for the scene:
-  //   1. mockCompiledCode → run the LLM-generated TSX animation
-  //   2. mock (legacy DSL) → static-ish primitive composition
-  //   3. screenshot → real product UI with Ken Burns
-  // Whichever is set wins; only one renders.
-  const visualElement = scene.mockCompiledCode ? (
-    <DynamicScene
-      mockCompiledCode={scene.mockCompiledCode}
-      branding={branding}
-      width={920}
-      height={580}
-    />
-  ) : scene.mock ? (
+  //   1. mockCompiledCode → run the LLM-generated TSX as a full-bleed
+  //      cinematic frame (no surrounding text panel, no card chrome).
+  //      The mock is responsible for its own background + headline copy.
+  //   2. mock (legacy DSL) → static-ish primitive composition in a card.
+  //   3. screenshot → real product UI with Ken Burns + side-text layout.
+  if (scene.mockCompiledCode) {
+    return (
+      <AbsoluteFill style={{ backgroundColor: '#0B0B0F', overflow: 'hidden' }}>
+        <DynamicScene mockCompiledCode={scene.mockCompiledCode} branding={branding} />
+      </AbsoluteFill>
+    )
+  }
+
+  const visualElement = scene.mock ? (
     <DynamicMock mock={scene.mock} branding={branding} width={920} height={580} />
   ) : (
     <ScreenshotFrame
