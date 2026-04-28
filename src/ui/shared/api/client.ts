@@ -628,12 +628,12 @@ export const api = {
           musicVolume?: number
           aiMusicPrompt?: string
         },
-      ): Promise<{ runId: string; jobId: string; status: 'running' }> =>
-        // async=1 → backend writes a job row, returns 202 immediately, runs
-        // the full pipeline (script → voice → music → render) in the
-        // background. Frontend tracks completion via Supabase Realtime on
-        // the jobs table (same path as doc-gen / voiceover / try-doc).
-        request(`/runs/${id}/marketing-video?async=1`, {
+      ): Promise<MarketingVideoSummaryDTO> =>
+        // Synchronous end-to-end (script → voice → music → render) —
+        // ~2-3 min request. The Vercel function maxDuration is 300s,
+        // covers it. The JobTracker on the UI gets the visual loading
+        // state; this call returns the completed summary.
+        request(`/runs/${id}/marketing-video`, {
           method: 'POST',
           body: JSON.stringify(opts ?? {}),
         }),
