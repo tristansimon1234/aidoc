@@ -40,6 +40,22 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   const imgOpacity = interpolate(imgIn, [0, 1], [0, 1]) * fadeOut
   const imgFloat = Math.sin(frame / 30) * 6
 
+  // Ken Burns — slow zoom + diagonal pan over the scene's lifetime so the
+  // screenshot feels alive instead of static. Direction varies per scene
+  // (deterministic hash of the headline) so a 4-scene video doesn't pan
+  // the same way 4 times in a row.
+  const kbProgress = interpolate(frame, [0, durationInFrames], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  })
+  const kbScale = interpolate(kbProgress, [0, 1], [1.0, 1.08])
+  const headlineHash = scene.headline.split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+  const kbDirX = (headlineHash % 2 === 0 ? 1 : -1)
+  const kbDirY = (Math.floor(headlineHash / 2) % 2 === 0 ? 1 : -1)
+  // Max pan ~3% of the screenshot frame on each axis. Subtle.
+  const kbPanX = interpolate(kbProgress, [0, 1], [0, 28 * kbDirX])
+  const kbPanY = interpolate(kbProgress, [0, 1], [0, 16 * kbDirY])
+
   return (
     <AbsoluteFill style={{ backgroundColor: branding.bgColor, overflow: 'hidden' }}>
       <BrandWatermark branding={branding} position="top-right" size={56} />
@@ -148,7 +164,16 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
           {screenshot ? (
             <Img
               src={screenshot.url}
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                // Ken Burns. transform-origin centered so the zoom feels natural;
+                // willChange hints the compositor to dedicate a layer.
+                transform: `scale(${kbScale}) translate(${kbPanX}px, ${kbPanY}px)`,
+                transformOrigin: 'center center',
+                willChange: 'transform',
+              }}
             />
           ) : (
             <AbsoluteFill
