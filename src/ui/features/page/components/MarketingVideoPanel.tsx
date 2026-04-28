@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Button, Spinner, Badge } from '../../../design-system/components/index.js'
+import { useEffect, useMemo, useState } from 'react'
+import { Button, Spinner, Badge, ProgressLoader } from '../../../design-system/components/index.js'
 import { api, ApiError } from '../../../shared/api/client.js'
 import type { MarketingVideoSummaryDTO } from '../../../shared/api/client.js'
 import styles from './MarketingVideoPanel.module.css'
@@ -17,33 +17,50 @@ const TONE_LABELS: Record<VoiceTone, string> = {
   serious: 'Serious — authoritative, monotone',
 }
 
+/** Estimated seconds per pipeline stage. ProgressLoader uses these to
+ *  pace its waveform fill — they don't have to be precise, just in the
+ *  right ballpark so the bar moves at a believable rate. */
+const STAGE_TIMINGS = {
+  script: 12,        // Gemini call, ~6-15s for 45s of text
+  voice: 18,         // ElevenLabs synth, ~10-25s for ~100 words
+  musicPreset: 1,    // Just resolves a URL — instant
+  musicUpload: 1,    // Just resolves a URL — instant
+  musicAi: 45,       // ElevenLabs Music compose, the long pole
+  render: 120,       // Remotion render via video service
+} as const
+
 /**
- * In-app surface for the marketing-video feature. Three states it walks
- * the user through:
- *   1. Empty — no manifest yet. User writes a creative brief, hits Generate.
- *      Hits POST /marketing-video which calls Gemini + ElevenLabs.
- *   2. Manifest ready, no MP4 — script + voice-over in hand, ready to render.
- *      User can preview the script, listen to the narration, then hit Render.
- *      Hits POST /marketing-video/render which delegates to the video-service.
- *   3. Render done — embedded MP4 + download.
+ * In-app surface for the marketing-video feature. One button, one
+ * pipeline:
  *
- * Re-generating wipes the existing manifest (same endpoint, fresh Gemini
- * call). Re-rendering keeps the manifest and just swaps the MP4 — handy
- * after the user swaps a scene's headline by hand later.
+ *   Pick options → click "Generate" → backend chains
+ *     1. Gemini writes the script (and the audio tags inside the voice-over)
+ *     2. ElevenLabs synthesizes the voice-over
+ *     3. Optional: ElevenLabs Music composes a background track
+ *     4. Video-service renders the final MP4
+ *
+ * The four steps run inside two HTTP calls (steps 1-3 in /marketing-video,
+ * step 4 in /marketing-video/render). The UI shows them as four distinct
+ * bullets so the user sees what's happening rather than staring at a
+ * monolithic spinner.
+ *
+ * Re-clicking the button re-runs the whole chain — simpler than the
+ * previous "regenerate script" / "update voice-over" / "render" trio
+ * which made the user think about pipeline stages they shouldn't care
+ * about.
  */
 export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.ReactElement {
   const [summary, setSummary] = useState<MarketingVideoSummaryDTO | null>(null)
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
-  const [rendering, setRendering] = useState(false)
-  const [updatingVoice, setUpdatingVoice] = useState(false)
+  const [working, setWorking] = useState(false)
+  const [activeStep, setActiveStep] = useState(0)
+  const [pipelineDone, setPipelineDone] = useState(false)
   const [userPrompt, setUserPrompt] = useState('')
   const [withVoiceover, setWithVoiceover] = useState(true)
   const [voiceId, setVoiceId] = useState<string>('')
   const [tone, setTone] = useState<VoiceTone>('punchy')
   const [voices, setVoices] = useState<Array<{ voiceId: string; name: string; category: string }>>([])
   const [musicPresets, setMusicPresets] = useState<Array<{ id: string; name: string; mood?: string }>>([])
-  // 'none' (silent), '<presetId>' (bundled), or 'upload' (custom upload).
   const [musicChoice, setMusicChoice] = useState<string>('none')
   const [musicUploadPath, setMusicUploadPath] = useState<string | null>(null)
   const [musicUploadName, setMusicUploadName] = useState<string | null>(null)
@@ -58,8 +75,6 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
       try {
         const [result, voicesResult, presetsResult] = await Promise.all([
           api.runs.marketingVideo.get(runId),
-          // Voices fetch is best-effort: ElevenLabs may be unconfigured or
-          // hit a transient error. UI falls back to the default voice silently.
           api.runs.marketingVideo.voices().catch(() => ({ voices: [] })),
           api.runs.marketingVideo.musicPresets().catch(() => ({ presets: [] })),
         ])
@@ -100,9 +115,43 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
     }
   }
 
-  const handleGenerate = async (): Promise<void> => {
+  /** Build the ProgressLoader steps based on current options — only the
+   *  stages that will actually run are surfaced. Stable across renders
+   *  via useMemo so the loader doesn't reset its internal timer when an
+   *  unrelated state changes. */
+  const pipelineSteps = useMemo(() => {
+    const steps: { label: string; estimatedSeconds: number }[] = [
+      { label: 'Writing the script', estimatedSeconds: STAGE_TIMINGS.script },
+    ]
+    if (withVoiceover) {
+      steps.push({ label: 'Recording the voice-over', estimatedSeconds: STAGE_TIMINGS.voice })
+    }
+    if (musicChoice === 'ai') {
+      steps.push({ label: 'Composing AI music', estimatedSeconds: STAGE_TIMINGS.musicAi })
+    } else if (musicChoice !== 'none') {
+      steps.push({ label: 'Adding music', estimatedSeconds: musicChoice === 'upload' ? STAGE_TIMINGS.musicUpload : STAGE_TIMINGS.musicPreset })
+    }
+    steps.push({ label: 'Rendering the video', estimatedSeconds: STAGE_TIMINGS.render })
+    return steps
+  }, [withVoiceover, musicChoice])
+
+  /**
+   * Run the full pipeline: generate (script + voice + music) → render.
+   * The backend folds steps 1-3 into one call (/marketing-video) and
+   * step 4 into a separate call (/render). We bump activeStep at known
+   * boundaries; the ProgressLoader auto-advances the bar between them
+   * based on estimatedSeconds so the user sees continuous motion.
+   */
+  const handleGenerateAndRender = async (): Promise<void> => {
     setError(null)
-    setGenerating(true)
+    setActiveStep(0)
+    setPipelineDone(false)
+    setWorking(true)
+
+    // The /marketing-video call covers steps 0..lastNonRenderIndex; the
+    // /render call is the final step.
+    const renderStepIndex = pipelineSteps.length - 1
+
     try {
       const musicOpts: {
         musicTrackId?: string
@@ -121,47 +170,25 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
         musicOpts.musicTrackId = musicChoice
         musicOpts.musicVolume = musicVolume
       }
-      const result = await api.runs.marketingVideo.generate(runId, {
+
+      const generated = await api.runs.marketingVideo.generate(runId, {
         userPrompt: userPrompt.trim() || undefined,
         withVoiceover,
         voiceId: voiceId || undefined,
         tone,
         ...musicOpts,
       })
-      setSummary(result)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : (err as Error).message)
-    } finally {
-      setGenerating(false)
-    }
-  }
+      setSummary(generated)
 
-  const handleUpdateVoice = async (): Promise<void> => {
-    setError(null)
-    setUpdatingVoice(true)
-    try {
-      const result = await api.runs.marketingVideo.updateVoice(runId, {
-        voiceId: voiceId || undefined,
-        tone,
-      })
-      setSummary(result)
+      // Manifest stages done → flip the loader to the render stage.
+      setActiveStep(renderStepIndex)
+      const rendered = await api.runs.marketingVideo.render(runId)
+      setSummary(rendered)
+      setPipelineDone(true)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : (err as Error).message)
     } finally {
-      setUpdatingVoice(false)
-    }
-  }
-
-  const handleRender = async (): Promise<void> => {
-    setError(null)
-    setRendering(true)
-    try {
-      const result = await api.runs.marketingVideo.render(runId)
-      setSummary(result)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : (err as Error).message)
-    } finally {
-      setRendering(false)
+      setWorking(false)
     }
   }
 
@@ -175,14 +202,13 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
 
   const hasManifest = summary !== null
   const renderStatus = summary?.renderStatus ?? 'idle'
-  const isRendering = rendering || renderStatus === 'rendering'
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
         <h2 className={styles.title}>Marketing video</h2>
         <p className={styles.subtitle}>
-          Turn this page into a 45-second marketing video. We write the script straight from your documentation, voice it, and render the final MP4 — all in one pass.
+          Turn this page into a 45-second marketing video. Pick your settings, click Generate — we handle the script, voice, music, and final MP4 in one pass.
         </p>
       </div>
 
@@ -197,7 +223,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
           onChange={(e) => setUserPrompt(e.target.value)}
           placeholder="e.g. Focus on the AI agent. Audience: B2B PMs. Tone: confident, slightly cheeky."
           maxLength={800}
-          disabled={generating}
+          disabled={working}
         />
       </div>
 
@@ -207,7 +233,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
             type="checkbox"
             checked={withVoiceover}
             onChange={(e) => setWithVoiceover(e.target.checked)}
-            disabled={generating}
+            disabled={working}
           />
           Generate voice-over (~€0.30 / generation)
         </label>
@@ -228,7 +254,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
               <select
                 value={voiceId}
                 onChange={(e) => setVoiceId(e.target.value)}
-                disabled={generating}
+                disabled={working}
                 style={{
                   padding: '8px 10px',
                   borderRadius: 'var(--radius-md)',
@@ -252,7 +278,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
             <select
               value={tone}
               onChange={(e) => setTone(e.target.value as VoiceTone)}
-              disabled={generating}
+              disabled={working}
               style={{
                 padding: '8px 10px',
                 borderRadius: 'var(--radius-md)',
@@ -270,21 +296,6 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
         </div>
       )}
 
-      {withVoiceover && hasManifest && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 24px', fontSize: 'var(--text-sm)' }}>
-          <Button
-            variant="secondary"
-            onClick={handleUpdateVoice}
-            disabled={updatingVoice || generating}
-          >
-            {updatingVoice ? 'Re-synthesizing…' : 'Update voice-over'}
-          </Button>
-          <span style={{ color: 'var(--color-muted-fg)' }}>
-            Re-runs ElevenLabs with the current voice + tone, keeps the script. Resets the MP4 — re-render after.
-          </span>
-        </div>
-      )}
-
       <div
         style={{
           display: 'grid',
@@ -299,7 +310,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
           <select
             value={musicChoice}
             onChange={(e) => setMusicChoice(e.target.value)}
-            disabled={generating}
+            disabled={working}
             style={{
               padding: '8px 10px',
               borderRadius: 'var(--radius-md)',
@@ -329,7 +340,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
               step={0.01}
               value={musicVolume}
               onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-              disabled={generating}
+              disabled={working}
               title="0–50% — kept low so the voice-over stays audible"
             />
           </label>
@@ -348,7 +359,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
               onChange={(e) => setAiMusicPrompt(e.target.value)}
               placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
               maxLength={300}
-              disabled={generating}
+              disabled={working}
               style={{
                 padding: '8px 10px',
                 borderRadius: 'var(--radius-md)',
@@ -380,7 +391,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
               const file = e.target.files?.[0]
               if (file) void handleMusicUpload(file)
             }}
-            disabled={musicUploading || generating}
+            disabled={musicUploading || working}
           />
           {musicUploading && <Spinner size="sm" />}
           {musicUploadName && !musicUploading && <span>✓ {musicUploadName}</span>}
@@ -390,14 +401,25 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
       <div className={styles.actions}>
         <Button
           variant="primary"
-          onClick={handleGenerate}
-          disabled={generating || (musicChoice === 'upload' && !musicUploadPath)}
+          onClick={handleGenerateAndRender}
+          disabled={working || (musicChoice === 'upload' && !musicUploadPath)}
         >
-          {generating ? 'Generating…' : hasManifest ? 'Regenerate script' : 'Generate marketing video'}
+          {working ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
         </Button>
       </div>
 
-      {hasManifest && summary && (
+      {(working || pipelineDone) && (
+        <div style={{ margin: '8px 0 24px' }}>
+          <ProgressLoader
+            steps={pipelineSteps}
+            activeStep={activeStep}
+            done={pipelineDone}
+            onExited={() => setPipelineDone(false)}
+          />
+        </div>
+      )}
+
+      {hasManifest && summary && !working && (
         <>
           <div className={styles.scriptCard}>
             <div className={styles.scriptSection}>
@@ -440,18 +462,16 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
             )}
           </div>
 
+          {summary.videoUrl && renderStatus === 'ready' && (
+            <video
+              className={styles.videoPlayer}
+              controls
+              src={summary.videoUrl}
+              preload="metadata"
+            />
+          )}
+
           <div className={styles.actions}>
-            <Button
-              variant="primary"
-              onClick={handleRender}
-              disabled={isRendering}
-            >
-              {isRendering
-                ? 'Rendering…'
-                : renderStatus === 'ready'
-                  ? 'Re-render to MP4'
-                  : 'Render to MP4'}
-            </Button>
             {summary.manifestUrl && (
               <a
                 href={summary.manifestUrl}
@@ -493,13 +513,7 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
             )}
           </div>
 
-          {renderStatus === 'rendering' && (
-            <div className={`${styles.statusBanner} ${styles.statusInfo}`}>
-              <Spinner size="sm" /> Rendering in progress — typically 2-5 min for a 60s 1080p video.
-            </div>
-          )}
-
-          {renderStatus === 'failed' && summary.renderError && (
+          {renderStatus === 'failed' && summary.renderError && !working && (
             <div className={`${styles.statusBanner} ${styles.statusError}`}>
               Render failed: {summary.renderError}
               {summary.manifestUrl && (
@@ -510,17 +524,9 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
               )}
             </div>
           )}
-
-          {summary.videoUrl && renderStatus === 'ready' && (
-            <video
-              className={styles.videoPlayer}
-              controls
-              src={summary.videoUrl}
-              preload="metadata"
-            />
-          )}
         </>
       )}
     </div>
   )
 }
+
