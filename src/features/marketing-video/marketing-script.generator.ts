@@ -258,9 +258,17 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 
 - Define a function (or const arrow) named exactly \`MockScene\` that takes \`{ branding }\` as its only prop. The component returns a single root element.
 - DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters; everything you need lives on those.
-- **Use SINGLE QUOTES \`'\` for every string literal in the TSX, including JSX attribute values (\`fill='#fff'\`, not \`fill="#fff"\`). Use backticks \` \` only for template literals when you need interpolation. NEVER use double quotes inside the mockCode value. Reason: the mockCode is delivered as a JSON string, so unescaped \`"\` inside it would break the JSON envelope.**
-- **Tailwind CSS is available via className.** The bundle ships Twind (runtime Tailwind) + lucide icons + recharts. Use \`className='rounded-2xl bg-zinc-950 shadow-2xl backdrop-blur-md p-6'\` etc. — far more concise than inline styles AND visually superior. Mix className with style={{}} when you need dynamic interpolated values (opacity, transform).
-- **Webfonts loaded:** Geist (default), Geist Mono (code/terminal), Inter (fallback), JetBrains Mono. Use via \`fontFamily: 'Geist'\` etc., or rely on \`branding.fontFamily\` which the project sets.
+#### Hard rules — non-negotiable, the previous render had ALL of these wrong
+
+1. **Light mode ONLY** — use \`<Remotion.MockFrame tone='light'>\`. No \`tone='dark'\`. Even for terminal-style scenes, use a light-on-dark INSIDE block, not a dark frame. The video lives on a white canvas; dark frames look like glued-on cards.
+2. **Outer AbsoluteFill has NO background.** Use \`<Remotion.AbsoluteFill style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>\`. NO \`background:\` property at all. The FeatureScene canvas (white, branded) shows through.
+3. **Use Tailwind className for static styling.** Inline \`style={{}}\` ONLY for dynamic interpolated values (opacity, transform, computed colors). Everything static (padding, rounded corners, shadows, layout, colors that don't depend on frame) → \`className='rounded-2xl p-6 bg-white shadow-2xl ...'\`. Twind is installed; every Tailwind utility works at runtime.
+4. **Cursor alignment recipe — STRICT.**
+   When you put a cursor on a target:
+   - Place the target with FLEX CENTERING, not absolute coords. e.g. inside the MockFrame: \`<div className='flex items-center justify-center h-full'><button className='...'>Click</button></div>\`. The button's center is now at the parent's center.
+   - The cursor's terminal coordinates MUST match the button's center. If the button is in a flex-centered parent that fills the MockFrame interior, that center in panel-relative coords is approximately leftPct=50, topPct=55 (50% horizontal, slightly below center because the chrome bar takes ~6% of the height).
+   - Use \`<Remotion.AnimatedCursor leftPct={cursorLeft} topPct={cursorTop} ... />\` with leftPct/topPct interpolated from a starting position (e.g. 80, 15) to the target (50, 55).
+   - DON'T put cursors on off-center elements (like a Copy button next to an input). Either center the target or skip the cursor.
 - Available React: \`React.useMemo\`, \`React.useEffect\` will not work usefully (frames re-render fresh) — for animation use Remotion only.
 - Available Remotion namespace (use as \`Remotion.foo\`):
   - \`Remotion.useCurrentFrame()\` → number, the current frame within the scene's sub-timeline (NOT the whole video). Frame 0 is the start of THIS scene.
@@ -375,40 +383,38 @@ Use \`branding.accentColor\` for highlights, \`branding.textColor\` for prose, \
   \`const blink = (frame % 30) < 15 ? 1 : 0\`
 - Click ripple: an absolute-positioned circle whose radius interpolates outward + opacity fades (e.g. \`r = interpolate(frame, [clickFrame, clickFrame+18], [0, 60])\`).
 
-#### Reference example A — MCP/Claude terminal connector (dark interior, using helpers)
+#### Reference example A — light dashboard with stat cards (Tailwind-heavy)
 
 \`\`\`tsx
 function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
-  const lines = [
-    { pre: '>', body: 'docs.search' },
-    { pre: '', body: "query: 'connect stripe'", accent: true },
-    { pre: '↳', body: 'found 3 pages · ', tail: '200 ok' },
-    { pre: '>', body: "docs.read(slug: 'connect-stripe')" },
-    { pre: '', body: 'Returning 1,847 tokens…', muted: true },
+  const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
+  const cards = [
+    { label: 'Connected LLMs', value: 4, accent: true },
+    { label: 'Queries / day',  value: 1247 },
+    { label: 'Avg latency',    value: '180ms' },
   ]
   return (
-    <Remotion.AbsoluteFill style={{ background: branding.bgColor, padding: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={560} />
-      <Remotion.MockFrame url={\`claude · mcp.\${branding.productName.toLowerCase().replace(/\\s+/g, '-')}.com\`} tone='dark'>
-        <div style={{ padding: 22, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13, lineHeight: 1.7 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid #FFFFFF12' }}>
-            <Remotion.Icons.Plug size={14} color={branding.accentColor} />
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#FFFFFF80' }}>Claude · MCP</span>
-            <span style={{ marginLeft: 'auto' }}><Remotion.Pill tone='success' dot>connected</Remotion.Pill></span>
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
+      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={500} />
+      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/dashboard\`} tone='light'>
+        <div className='p-7 flex flex-col gap-5'>
+          <div className='flex items-center gap-2.5'>
+            <Remotion.Icons.Activity size={14} color={branding.accentColor} />
+            <span className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>This week</span>
+            <span className='ml-auto'><Remotion.Pill tone='success' dot>live</Remotion.Pill></span>
           </div>
-          {lines.map((ln, i) => {
-            const t = Remotion.spring({ frame: f - (16 + i * 8), fps, config: { damping: 18, stiffness: 100 } })
-            const op = Remotion.interpolate(t, [0, 1], [0, 1])
-            const x = Remotion.interpolate(t, [0, 1], [-8, 0])
-            const fg = ln.accent ? branding.accentColor : ln.muted ? '#FFFFFF50' : '#FFFFFFC0'
-            return <div key={i} style={{ opacity: op, transform: \`translateX(\${x}px)\`, color: fg, paddingLeft: ln.pre === '' ? 14 : 0 }}>
-              {ln.pre && <span style={{ marginRight: 8, color: '#FFFFFF40' }}>{ln.pre}</span>}{ln.body}{ln.tail && <span style={{ color: '#22C55E' }}> {ln.tail}</span>}
-            </div>
-          })}
-          <div style={{ marginTop: 6, height: 14 }}>
-            <span style={{ display: 'inline-block', width: 2, height: 12, background: branding.accentColor, opacity: f > 80 && (f % 30) < 15 ? 1 : 0 }} />
+          <div className='grid grid-cols-3 gap-3'>
+            {cards.map((c, i) => {
+              const t = ease(10 + i * 8)
+              const op = Remotion.interpolate(t, [0, 1], [0, 1])
+              const y = Remotion.interpolate(t, [0, 1], [12, 0])
+              return <div key={i} className='rounded-xl border border-zinc-200/70 bg-white p-4' style={{ opacity: op, transform: \`translateY(\${y}px)\` }}>
+                <div className='text-[11px] font-medium uppercase tracking-wider text-zinc-500 mb-2'>{c.label}</div>
+                <div className={\`text-2xl font-bold tabular-nums \${c.accent ? '' : 'text-zinc-900'}\`} style={c.accent ? { color: branding.accentColor } : undefined}>{c.value}</div>
+              </div>
+            })}
           </div>
         </div>
       </Remotion.MockFrame>
@@ -417,94 +423,131 @@ function MockScene({ branding }) {
 }
 \`\`\`
 
-#### Reference example B — product preview with REC indicator (light interior)
+#### Reference example B — light chat (typing prompt + AI reply, Tailwind)
 
 \`\`\`tsx
 function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
-  const glow = 0.30 + 0.15 * Math.sin(f / 14)
-  const enter = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 90 } })
-  const op = Remotion.interpolate(enter, [0, 1], [0, 1])
-  const slide = Remotion.interpolate(enter, [0, 1], [16, 0])
-  const sec = Math.floor(f / fps) % 180
-  const mm = String(Math.floor(sec / 60)).padStart(2, '0'), ss = String(sec % 60).padStart(2, '0')
+  const q = 'How do I connect Stripe?'
+  const chars = Math.floor(Remotion.interpolate(f, [10, 50], [0, q.length], { extrapolateRight: 'clamp' }))
+  const replyT = Remotion.spring({ frame: f - 60, fps, config: { damping: 14, stiffness: 90 } })
+  const replyOp = Remotion.interpolate(replyT, [0, 1], [0, 1])
+  const replyY = Remotion.interpolate(replyT, [0, 1], [16, 0])
+  const blink = (f % 30) < 15
   return (
-    <Remotion.AbsoluteFill style={{ background: branding.bgColor, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 540, height: 540, borderRadius: '50%', background: branding.accentColor, filter: 'blur(130px)', opacity: glow }} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: 760, borderRadius: 16, overflow: 'hidden', background: '#FFFFFF', border: '1px solid #00000012', boxShadow: '0 30px 80px rgba(0,0,0,0.20)', opacity: op, transform: \`translateY(\${slide}px)\` }}>
-        <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px', background: '#F8FAFC', borderBottom: '1px solid #00000010' }}>
-          <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#FF5F56' }} /><span style={{ width: 11, height: 11, borderRadius: '50%', background: '#FFBD2E' }} /><span style={{ width: 11, height: 11, borderRadius: '50%', background: '#27C93F' }} />
-          <div style={{ marginLeft: 16, padding: '4px 12px', borderRadius: 6, background: '#FFFFFF', border: '1px solid #00000012', color: '#52525B', fontSize: 12, fontFamily: 'ui-monospace, Menlo, monospace' }}>{branding.productName.toLowerCase()}.app/record</div>
-        </div>
-        <div style={{ position: 'relative', padding: 28, fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\`, color: '#1A1A1A' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#71717A', marginBottom: 14 }}>Your product · live preview</div>
-          <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: \`\${branding.accentColor}25\` }} />
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ height: 8, width: '70%', borderRadius: 4, background: '#E4E4E7' }} />
-              <div style={{ height: 8, width: '45%', borderRadius: 4, background: '#E4E4E7' }} />
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
+      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={520} />
+      <Remotion.MockFrame url='claude.ai/chat' tone='light'>
+        <div className='p-6 flex flex-col gap-4'>
+          <div className='flex items-center gap-2.5'>
+            <Remotion.Icons.Sparkles size={14} color={branding.accentColor} />
+            <span className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>Claude · Doclee</span>
+            <span className='ml-auto'><Remotion.Pill tone='accent' accentColor={branding.accentColor} dot>connected</Remotion.Pill></span>
+          </div>
+          <div className='self-end max-w-[80%] rounded-2xl rounded-br-sm px-4 py-2.5 text-[14px] text-white' style={{ background: branding.accentColor }}>
+            {q.slice(0, chars)}<span className='inline-block w-[2px] h-[12px] ml-[2px] align-middle bg-white' style={{ opacity: blink ? 1 : 0 }} />
+          </div>
+          <div className='flex gap-3 items-start' style={{ opacity: replyOp, transform: \`translateY(\${replyY}px)\` }}>
+            <div className='w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-bold text-white' style={{ background: branding.accentColor }}>AI</div>
+            <div className='flex-1 max-w-[75%] rounded-2xl rounded-tl-sm px-4 py-2.5 bg-zinc-100 border border-zinc-200/70 text-[14px] text-zinc-800'>
+              Open <span className='font-mono text-[13px] px-1.5 py-0.5 rounded bg-white border border-zinc-200'>Settings → Integrations</span>, paste your key, hit save.
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {[0, 1, 2].map((i) => <div key={i} style={{ flex: 1, height: 64, borderRadius: 8, background: '#F4F4F5' }} />)}
-          </div>
-          <div style={{ position: 'absolute', bottom: 14, left: 14, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 999, background: '#FFFFFF', border: '1px solid #00000012', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#EF4444', opacity: (f % 33) < 16 ? 1 : 0.3 }} />
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#1A1A1A' }}>REC</span>
-            <span style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 11, color: '#71717A' }}>{mm}:{ss}</span>
-          </div>
         </div>
-      </div>
+      </Remotion.MockFrame>
     </Remotion.AbsoluteFill>
   )
 }
 \`\`\`
 
-#### Reference example C — cursor enters frame + clicks "Create token"
+#### Reference example C — cursor flies in + clicks centered "Create token"
 
-Browser frame around a settings panel; cursor lands on the centered primary button. Trick: button positioned via \`marginLeft: 'auto', marginRight: 'auto'\` and cursor uses the SAME coordinates so they align.
+The button is flex-centered inside the MockFrame interior. Cursor's terminal coords (50, 55) match the button's center → cursor lands on button. ALWAYS use this pattern. Never put cursor on off-center elements.
 
 \`\`\`tsx
 function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
-  const glow = 0.30 + 0.15 * Math.sin(f / 14)
   const btnT = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 90 } })
   const btnOp = Remotion.interpolate(btnT, [0, 1], [0, 1])
   const btnScale = Remotion.interpolate(btnT, [0, 1], [0.96, 1])
-  const curT = Remotion.spring({ frame: f - 22, fps, config: { damping: 16, stiffness: 70 } })
-  const curL = Remotion.interpolate(curT, [0, 1], [85, 50])
-  const curT2 = Remotion.interpolate(curT, [0, 1], [10, 70])
-  const click = f >= 60 && f < 70
-  const ripple = Remotion.interpolate(f, [60, 84], [0, 60], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  const rippleOp = Remotion.interpolate(f, [60, 84], [0.55, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const curT = Remotion.spring({ frame: f - 18, fps, config: { damping: 16, stiffness: 70 } })
+  // Start top-right, land at panel center (50, 55) where the flex-centered button sits.
+  const curL = Remotion.interpolate(curT, [0, 1], [82, 50])
+  const curTp = Remotion.interpolate(curT, [0, 1], [15, 55])
+  const click = f >= 56 && f < 64
+  const ripple = Remotion.interpolate(f, [56, 80], [0, 70], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const rippleOp = Remotion.interpolate(f, [56, 80], [0.55, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const press = click ? 0.96 : 1
   return (
-    <Remotion.AbsoluteFill style={{ background: branding.bgColor, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, fontFamily: \`\${branding.fontFamily}, system-ui, sans-serif\` }}>
-      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 540, height: 540, borderRadius: '50%', background: branding.accentColor, filter: 'blur(130px)', opacity: glow }} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: 700, borderRadius: 16, overflow: 'hidden', background: '#FFFFFF', border: '1px solid #00000012', boxShadow: '0 30px 80px rgba(0,0,0,0.20)' }}>
-        <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px', background: '#F8FAFC', borderBottom: '1px solid #00000010' }}>
-          <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#FF5F56' }} /><span style={{ width: 11, height: 11, borderRadius: '50%', background: '#FFBD2E' }} /><span style={{ width: 11, height: 11, borderRadius: '50%', background: '#27C93F' }} />
-          <div style={{ marginLeft: 16, padding: '4px 12px', borderRadius: 6, background: '#FFFFFF', border: '1px solid #00000012', color: '#52525B', fontSize: 12, fontFamily: 'ui-monospace, Menlo, monospace' }}>{branding.productName.toLowerCase()}.app/settings/tokens</div>
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
+      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={520} />
+      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/settings/tokens\`} tone='light'>
+        <div className='h-full flex flex-col items-center justify-center gap-3 p-8'>
+          <Remotion.Icons.Lock size={28} color={branding.accentColor} />
+          <div className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>API Tokens</div>
+          <div className='text-2xl font-bold text-zinc-900 tracking-tight'>Connect your LLM</div>
+          <div className='text-sm text-zinc-500 mb-2'>Generate a secure token to authorize Claude.</div>
+          <button className='px-7 py-3.5 rounded-xl text-white text-base font-bold shadow-xl' style={{ background: branding.accentColor, boxShadow: \`0 14px 32px \${branding.accentColor}55\`, opacity: btnOp, transform: \`scale(\${btnScale * press})\` }}>Create token</button>
         </div>
-        <div style={{ padding: 30 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#71717A', marginBottom: 8 }}>API Tokens</div>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#1A1A1A', marginBottom: 18 }}>Connect your LLM</div>
-          <div style={{ height: 44, borderRadius: 10, background: '#F4F4F5', border: '1px solid #00000010', marginBottom: 12 }} />
-          <div style={{ height: 44, borderRadius: 10, background: '#F4F4F5', border: '1px solid #00000010', marginBottom: 18 }} />
-          <button style={{ display: 'block', marginLeft: 'auto', marginRight: 'auto', padding: '14px 28px', borderRadius: 10, background: branding.accentColor, color: '#FFFFFF', fontSize: 16, fontWeight: 700, border: 'none', boxShadow: \`0 12px 32px \${branding.accentColor}55\`, transform: \`scale(\${btnScale * (click ? 0.97 : 1)})\`, opacity: btnOp }}>Create token</button>
-        </div>
-      </div>
-      <div style={{ position: 'absolute', left: \`\${curL}%\`, top: \`\${curT2}%\`, transform: 'translate(-50%, -50%)', width: ripple * 2, height: ripple * 2, borderRadius: '50%', border: \`3px solid \${branding.accentColor}\`, opacity: rippleOp, pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', left: \`\${curL}%\`, top: \`\${curT2}%\`, transform: 'translate(-50%, -50%)', pointerEvents: 'none', filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.30))' }}>
-        <svg width='26' height='26' viewBox='0 0 24 24'><path d='M3 2l8 18 2-8 8-2z' fill='#FFFFFF' stroke='#000000' strokeWidth='1.4' /></svg>
-      </div>
+      </Remotion.MockFrame>
+      <Remotion.AnimatedCursor leftPct={curL} topPct={curTp} ripple={click} rippleRadius={ripple} rippleOpacity={rippleOp} accentColor={branding.accentColor} />
     </Remotion.AbsoluteFill>
   )
 }
 \`\`\`
 
-These three examples are your visual baseline. EVERY scene MUST have a browser-frame chrome (traffic lights + URL bar). Pick the interior style (dark / light), the layout (terminal lines / product preview / settings panel / chat / dashboard), and the action (typing / clicking / counting) per scene to keep variety. NEVER skip the browser chrome — without it, the mock looks like an unfinished sketch.
+#### Reference example D — chart drawing in via Recharts
+
+Use this pattern for any "stats / metrics / growth" scene. The data array is computed each frame from \`Remotion.interpolate\` so the chart appears to "draw" left-to-right.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const base = [120, 140, 175, 168, 220, 260, 245, 310, 360, 380, 420, 480]
+  const progress = Remotion.interpolate(f, [10, 90], [0, base.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const data = base.map((v, i) => ({ d: i + 1, v: i < progress ? v : null }))
+  const labelT = Remotion.spring({ frame: f - 24, fps, config: { damping: 16, stiffness: 100 } })
+  const labelOp = Remotion.interpolate(labelT, [0, 1], [0, 1])
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
+      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={500} />
+      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/analytics\`} tone='light'>
+        <div className='p-6 flex flex-col gap-3 h-full'>
+          <div className='flex items-center gap-2.5'>
+            <Remotion.Icons.Zap size={14} color={branding.accentColor} />
+            <span className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>Last 12 days</span>
+            <span className='ml-auto' style={{ opacity: labelOp }}><Remotion.Pill tone='success' dot>+38%</Remotion.Pill></span>
+          </div>
+          <div className='text-3xl font-bold tabular-nums tracking-tight' style={{ opacity: labelOp, color: branding.accentColor }}>4,820 queries</div>
+          <div className='flex-1 -mx-2'>
+            <Remotion.Charts.ResponsiveContainer width='100%' height='100%'>
+              <Remotion.Charts.AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
+                    <stop offset='0%' stopColor={branding.accentColor} stopOpacity={0.55} />
+                    <stop offset='100%' stopColor={branding.accentColor} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <Remotion.Charts.Area type='monotone' dataKey='v' stroke={branding.accentColor} strokeWidth={2.5} fill='url(#g)' isAnimationActive={false} />
+              </Remotion.Charts.AreaChart>
+            </Remotion.Charts.ResponsiveContainer>
+          </div>
+        </div>
+      </Remotion.MockFrame>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+These four examples are your baseline. EVERY scene must:
+1. Use \`<Remotion.MockFrame tone='light'>\` (light, never dark).
+2. Have NO outer background — the AbsoluteFill is transparent.
+3. Use Tailwind \`className\` for static styling, \`style={{...}}\` only for animated values.
+4. If using a cursor: target the panel center via flex-centering + cursor terminal coords (50, 55).
+5. Pick a different mode per scene — dashboard / chat / button-click / chart / etc. Don't repeat.
 
 Use these as the visual baseline. Each scene picks ONE of these patterns (or a sibling — counter, progress bar, code line typing, notification toast, stat cards) and adapts the copy to the scene's headline. Don't downgrade — match this level of polish.
 
