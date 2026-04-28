@@ -64,10 +64,24 @@ const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, bran
     return Component
   }, [mockCompiledCode])
 
-  // No card chrome. Each LLM mock is responsible for its own full-bleed
-  // background (the prompt explicitly asks for it). Wrapping in a card
-  // here painted a useless border around the mock.
-  return <MockScene branding={branding} />
+  // Wrap in a panel-styled card matching the screenshot frame so mock-
+  // and screenshot-mode scenes have the same on-canvas footprint.
+  // overflow: hidden clips any LLM mistake (an element placed outside
+  // 920×580) instead of bleeding onto the text panel.
+  return (
+    <div
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: '100%',
+        borderRadius: 18,
+        overflow: 'hidden',
+        boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
+      }}
+    >
+      <MockScene branding={branding} />
+    </div>
+  )
 }
 
 interface BoundaryState { error: Error | null }

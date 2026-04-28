@@ -65,20 +65,16 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   const layout: LayoutVariant = LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
 
   // Visual priority for the scene:
-  //   1. mockCompiledCode → run the LLM-generated TSX as a full-bleed
-  //      cinematic frame (no surrounding text panel, no card chrome).
-  //      The mock is responsible for its own background + headline copy.
-  //   2. mock (legacy DSL) → static-ish primitive composition in a card.
-  //   3. screenshot → real product UI with Ken Burns + side-text layout.
-  if (scene.mockCompiledCode) {
-    return (
-      <AbsoluteFill style={{ backgroundColor: '#0B0B0F', overflow: 'hidden' }}>
-        <DynamicScene mockCompiledCode={scene.mockCompiledCode} branding={branding} />
-      </AbsoluteFill>
-    )
-  }
-
-  const visualElement = scene.mock ? (
+  //   1. mockCompiledCode → run the LLM-generated TSX inside the
+  //      visual panel, side-by-side with the text block.
+  //   2. mock (legacy DSL) → static-ish primitive composition.
+  //   3. screenshot → real product UI with Ken Burns.
+  // The mock IS the visual element of whatever layout the scene uses
+  // (split-left / split-right / fullscreen / stacked). It does NOT
+  // consume the whole canvas — text panel always coexists.
+  const visualElement = scene.mockCompiledCode ? (
+    <DynamicScene mockCompiledCode={scene.mockCompiledCode} branding={branding} />
+  ) : scene.mock ? (
     <DynamicMock mock={scene.mock} branding={branding} width={920} height={580} />
   ) : (
     <ScreenshotFrame
@@ -90,10 +86,20 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
     />
   )
 
+  // When a mock is present, force the canvas to dark so the mock's
+  // own dark background blends in and there's no surrounding white
+  // halo. The text colors are inverted via TextBlock's branding
+  // override below.
+  const usingMock = !!(scene.mockCompiledCode || scene.mock)
+  const canvasBg = usingMock ? '#0B0B0F' : branding.bgColor
+  const effectiveBranding = usingMock
+    ? { ...branding, bgColor: '#0B0B0F', textColor: '#F5F5F7' }
+    : branding
+
   const textBlock = (alignment: 'left' | 'right' | 'center') => (
     <TextBlock
       scene={scene}
-      branding={branding}
+      branding={effectiveBranding}
       alignment={alignment}
       headlineY={headlineY}
       headlineOpacity={headlineOpacity}
@@ -101,8 +107,8 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   )
 
   return (
-    <AbsoluteFill style={{ backgroundColor: branding.bgColor, overflow: 'hidden' }}>
-      <BrandWatermark branding={branding} position="top-right" size={56} />
+    <AbsoluteFill style={{ backgroundColor: canvasBg, overflow: 'hidden' }}>
+      <BrandWatermark branding={effectiveBranding} position="top-right" size={56} />
 
       {layout === 'split-left' && (
         <>
