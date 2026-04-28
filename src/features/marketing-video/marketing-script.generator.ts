@@ -648,22 +648,22 @@ These seven examples are your baseline. EVERY scene must:
    - **MAXIMUM ONE \`<Remotion.MockFrame>\` per scene.** Never nest or stack two MockFrames (e.g. a chat frame fading into a dashboard frame). Pick one product surface per scene; the next scene gets the next surface. Stacked frames read as a render glitch.
 5. **Typography — Geist by default, NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\` or any other stack — that overrides our config and the result looks like a 2014 system-monospace dump. Use the className \`font-mono\` ONLY for actual code, URLs, or terminal lines. NEVER use mono for prose, chat bubbles, button labels, or headings.
 6. **Type at scale — make it feel modern.** Headlines \`text-[32px]\` to \`text-[44px]\` (\`font-bold tracking-tight\`). Big numbers / counters \`text-[64px]\` to \`text-[96px]\` (\`tabular-nums tracking-tight\`). Body / chat text \`text-[15px]\` to \`text-[18px]\`. Labels / status pills \`text-[11px] font-bold tracking-widest uppercase\`. Tight letter-spacing on big text is what makes typography feel premium vs. dated.
-7. **Vary scene MODES — REQUIRED, no repeats. Mix UI scenes with ABSTRACT scenes.**
-   The video should NOT be 4 product-UI screenshots in a row. Modern marketing videos (Linear, Vercel, Stripe, Cursor) alternate UI moments with abstract motion-graphics — typography reveals, flow diagrams, icon hero shots. Pick from these modes, each scene MUST be different:
+7. **Vary scene MODES — pick the most relevant per scene, never repeat the same mode.**
+   You have a palette of 8 modes below. For each scene, pick the ONE that best serves THAT scene's headline — don't force a quota of UI vs. abstract, just pick what's most pertinent. The only hard constraint: never use the same mode twice in one video. Variety alone is what stops it from feeling like a settings-page tour.
 
-   **UI modes** (browser frame inside):
+   **UI modes** (browser frame inside) — pick when the scene's value is "look, the product does X":
    - **bento**         — example B. Browser frame WITH perspective tilt, mixed-size grid, one accent-tinted hero card.
    - **chat**          — typing prompt + AI reply pair.
    - **chart**         — example D (Recharts). Browser frame, area/line/bar chart with frame-driven data sweep.
    - **cursor-click**  — example C. Browser frame, ONLY a centered button as content. Use SPARINGLY (alignment is fragile).
 
-   **Abstract modes** (NO browser frame, the canvas IS the content) — more cinematic, less "settings page":
+   **Abstract modes** (NO browser frame, the canvas IS the content) — pick when the scene's idea is bigger than any one screen (a claim, a process, a metric, a feeling):
    - **hero-stat**       — example A. Giant accent-colored number / metric, eyebrow label, subhead.
    - **flow-diagram**    — example E. 3 connected nodes ("Your docs" → "AI sees them" → "Better answers"), animated arrows between them.
    - **headline-burst**  — example F. Word-by-word reveal of a 3-6 word tagline, each word springs in, accent gradient backdrop.
-   - **icon-hero**       — example G below. ONE huge gradient-filled lucide icon (60-100px), tagline below, accent glow behind.
+   - **icon-hero**       — example G. ONE huge gradient-filled lucide icon (60-100px), tagline below, accent glow behind.
 
-   **Hard rule: at LEAST 2 of the 3-4 scenes MUST be abstract modes (no browser frame).** A wall of UI screenshots reads as "settings page tour", which is exactly the failure mode the user keeps flagging. Abstract scenes are what make the video feel designed instead of utilitarian.
+   Heuristic: a "we ship X feature" beat → UI mode. A "here's how it works" / "the result" / "the claim" beat → abstract mode. Pick scene-by-scene; the right answer depends on what the headline is actually saying.
 
 Use these as the visual baseline. Each scene picks ONE of these patterns (or a sibling — counter, progress bar, code line typing, notification toast, stat cards) and adapts the copy to the scene's headline. Don't downgrade — match this level of polish.
 
