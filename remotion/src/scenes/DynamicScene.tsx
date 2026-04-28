@@ -9,6 +9,7 @@ import {
   Audio,
 } from 'remotion'
 import type { Branding } from '../manifest.js'
+import { MockFrame, Pill, AccentGlow, AnimatedCursor, Icons } from './mock-helpers.js'
 
 interface DynamicSceneProps {
   /** esbuild-compiled JS that defines a function/const named MockScene.
@@ -48,7 +49,12 @@ const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, bran
   // Build the component once per (compiledCode) — instantiating Function
   // is the expensive bit. React.useMemo keeps it stable across frames.
   const MockScene = React.useMemo<React.FC<{ branding: Branding }>>(() => {
-    const Remotion = { interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio }
+    const Remotion = {
+      interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio,
+      // Designed helpers — let the LLM stop rewriting the same browser
+      // chrome / pill / glow / cursor every scene.
+      MockFrame, Pill, AccentGlow, AnimatedCursor, Icons,
+    }
     // The LLM is asked to define a function named MockScene. We append
     // `;return MockScene` to expose it to the caller.
     // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func

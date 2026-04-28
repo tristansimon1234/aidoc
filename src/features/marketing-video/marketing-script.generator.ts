@@ -267,6 +267,23 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
   - \`Remotion.spring({ frame, fps, config: { damping, stiffness, mass } })\` — natural easing.
   - \`Remotion.AbsoluteFill\` (component) — fills its parent.
   - \`Remotion.Img\` (component) — for remote images, use sparingly.
+
+  **Pre-built designed helpers (USE THESE — saves boilerplate, ensures consistency):**
+
+  - \`<Remotion.MockFrame url='app.example.com/path' tone='light' | 'dark' style={...}>{children}</Remotion.MockFrame>\`
+    Designed browser-window chrome with macOS traffic lights + URL bar + content area. THE OUTERMOST element of every mock — saves you ~30 lines of chrome boilerplate per scene. Children fill the area below the chrome bar. \`tone='dark'\` for terminal/code, \`'light'\` for product UI.
+
+  - \`<Remotion.Pill tone='success' | 'warning' | 'danger' | 'accent' | 'muted' dot accentColor={branding.accentColor}>connected</Remotion.Pill>\`
+    Status pill matching the MCPMock "connected" indicator. Dot prefix optional. accentColor is required when tone='accent'.
+
+  - \`<Remotion.AccentGlow color={branding.accentColor} frame={frame} size={540} position='center' />\`
+    Cinematic blurred-circle backdrop. Place AS A SIBLING of the MockFrame (in the outer container, BEHIND the frame). Pass \`frame\` to enable the breathing pulse, omit for static. Position can be center / top / bottom / left / right.
+
+  - \`<Remotion.AnimatedCursor leftPct={50} topPct={70} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
+    Animated mouse cursor SVG + optional click ripple. \`leftPct\` / \`topPct\` are percentages (0-100) of the parent. To align with a flex-centered button: set leftPct=50, topPct=50 (same coords as the button's center via translate -50% -50%) and the cursor lands ON the button.
+
+  - \`<Remotion.Icons.Plug size={14} color='currentColor' />\` — Lucide icons. Available names:
+    Plug, Mic, Check, Message, Search, Zap, Code, Settings, MousePointer, Send, Sparkles, Loader, Bell, User, Lock, Globe, ChevronRight, Plus, X, Copy, Play, Pause, Volume, Image, ArrowRight, Activity. They take \`size\` (px) and standard SVG props.
 - Inline styles ONLY. NO Tailwind class names, NO \`className\`, NO external CSS. Everything goes through \`style={{...}}\`.
 - NO event handlers (\`onClick\`, \`onMouseMove\`, …). The output is rendered server-side, no interaction.
 - NO network access (\`fetch\`, \`XMLHttpRequest\`). NO timers (\`setTimeout\`, \`setInterval\`).
@@ -348,30 +365,28 @@ Use \`branding.accentColor\` for highlights, \`branding.textColor\` for prose, \
   \`const blink = (frame % 30) < 15 ? 1 : 0\`
 - Click ripple: an absolute-positioned circle whose radius interpolates outward + opacity fades (e.g. \`r = interpolate(frame, [clickFrame, clickFrame+18], [0, 60])\`).
 
-#### Reference example A — MCP/Claude terminal connector (dark interior)
-
-This is the level. Browser frame + dark terminal panel + animated lines + connected pill + blinking cursor. Match this structure.
+#### Reference example A — MCP/Claude terminal connector (dark interior, using helpers)
 
 \`\`\`tsx
 function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
-  const glow = 0.35 + 0.15 * Math.sin(f / 16)
-  const lines = [{ pre: '>', body: 'docs.search', extra: '' },{ pre: '', body: "query: 'connect stripe'", extra: '', accent: true },{ pre: '↳', body: 'found 3 pages · ', extra: '200 ok' },{ pre: '>', body: 'docs.read(slug: \\'connect-stripe\\')', extra: '' },{ pre: '', body: 'Returning 1,847 tokens…', extra: '', muted: true }]
+  const lines = [
+    { pre: '>', body: 'docs.search' },
+    { pre: '', body: "query: 'connect stripe'", accent: true },
+    { pre: '↳', body: 'found 3 pages · ', tail: '200 ok' },
+    { pre: '>', body: "docs.read(slug: 'connect-stripe')" },
+    { pre: '', body: 'Returning 1,847 tokens…', muted: true },
+  ]
   return (
-    <Remotion.AbsoluteFill style={{ background: branding.bgColor, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
-      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', width: 560, height: 560, borderRadius: '50%', background: branding.accentColor, filter: 'blur(140px)', opacity: glow }} />
-      <div style={{ position: 'relative', width: '100%', maxWidth: 760, borderRadius: 16, overflow: 'hidden', background: '#0B0B0F', border: '1px solid #FFFFFF14', boxShadow: '0 30px 80px rgba(0,0,0,0.45)' }}>
-        <div style={{ height: 36, display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px', background: '#16161A', borderBottom: '1px solid #FFFFFF14' }}>
-          <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#FF5F56' }} /><span style={{ width: 11, height: 11, borderRadius: '50%', background: '#FFBD2E' }} /><span style={{ width: 11, height: 11, borderRadius: '50%', background: '#27C93F' }} />
-          <div style={{ marginLeft: 16, padding: '4px 12px', borderRadius: 6, background: '#FFFFFF10', border: '1px solid #FFFFFF14', color: '#FFFFFF80', fontSize: 12, fontFamily: 'ui-monospace, Menlo, monospace' }}>claude · mcp.{branding.productName.toLowerCase().replace(/\\s+/g, '-')}.com</div>
-        </div>
+    <Remotion.AbsoluteFill style={{ background: branding.bgColor, padding: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={560} />
+      <Remotion.MockFrame url={\`claude · mcp.\${branding.productName.toLowerCase().replace(/\\s+/g, '-')}.com\`} tone='dark'>
         <div style={{ padding: 22, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 13, lineHeight: 1.7 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid #FFFFFF12' }}>
+            <Remotion.Icons.Plug size={14} color={branding.accentColor} />
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#FFFFFF80' }}>Claude · MCP</span>
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 999, background: '#22C55E25', color: '#22C55E', fontSize: 11, fontWeight: 700 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E' }} />connected
-            </span>
+            <span style={{ marginLeft: 'auto' }}><Remotion.Pill tone='success' dot>connected</Remotion.Pill></span>
           </div>
           {lines.map((ln, i) => {
             const t = Remotion.spring({ frame: f - (16 + i * 8), fps, config: { damping: 18, stiffness: 100 } })
@@ -379,12 +394,14 @@ function MockScene({ branding }) {
             const x = Remotion.interpolate(t, [0, 1], [-8, 0])
             const fg = ln.accent ? branding.accentColor : ln.muted ? '#FFFFFF50' : '#FFFFFFC0'
             return <div key={i} style={{ opacity: op, transform: \`translateX(\${x}px)\`, color: fg, paddingLeft: ln.pre === '' ? 14 : 0 }}>
-              {ln.pre && <span style={{ marginRight: 8, color: '#FFFFFF40' }}>{ln.pre}</span>}{ln.body}{ln.extra && <span style={{ color: '#22C55E' }}> {ln.extra}</span>}
+              {ln.pre && <span style={{ marginRight: 8, color: '#FFFFFF40' }}>{ln.pre}</span>}{ln.body}{ln.tail && <span style={{ color: '#22C55E' }}> {ln.tail}</span>}
             </div>
           })}
-          <div style={{ marginTop: 6, height: 14, opacity: f > 80 ? 1 : 0 }}><span style={{ display: 'inline-block', width: 2, height: 12, background: branding.accentColor, opacity: (f % 30) < 15 ? 1 : 0 }} /></div>
+          <div style={{ marginTop: 6, height: 14 }}>
+            <span style={{ display: 'inline-block', width: 2, height: 12, background: branding.accentColor, opacity: f > 80 && (f % 30) < 15 ? 1 : 0 }} />
+          </div>
         </div>
-      </div>
+      </Remotion.MockFrame>
     </Remotion.AbsoluteFill>
   )
 }
