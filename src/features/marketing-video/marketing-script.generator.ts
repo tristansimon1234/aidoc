@@ -46,7 +46,10 @@ const RESPONSE_SCHEMA: ResponseSchema = {
                   tone: { type: SchemaType.STRING },
                 },
               },
-              layout: { type: SchemaType.STRING },
+              // `layout` intentionally omitted from the LLM-facing schema:
+              // Gemini was emitting freeform names ("dashboard", "terminal")
+              // instead of the documented "row"|"column" enum, which broke
+              // strict Zod parsing. The renderer defaults to column anyway.
               elements: {
                 type: SchemaType.ARRAY,
                 items: {

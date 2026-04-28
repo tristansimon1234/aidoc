@@ -1,7 +1,27 @@
 import { z } from 'zod'
 
-/** Mirrors MockTone from marketing-video.types.ts. Kept in sync manually. */
-const MockToneSchema = z.enum(['default', 'muted', 'accent', 'success', 'warning', 'danger'])
+/** Mirrors MockTone from marketing-video.types.ts. Wrapped in preprocess
+ *  so anything Gemini hallucinates ("primary", "highlight", a hex code,
+ *  …) becomes undefined instead of failing the whole script validation.
+ *  Same trick for frame.tone and mock.layout — defence in depth against
+ *  the LLM drifting from the documented enum. */
+const TONE_VALUES = ['default', 'muted', 'accent', 'success', 'warning', 'danger'] as const
+const MockToneSchema = z.preprocess(
+  (v) => (typeof v === 'string' && (TONE_VALUES as readonly string[]).includes(v) ? v : undefined),
+  z.enum(TONE_VALUES).optional(),
+)
+
+const FRAME_TONE_VALUES = ['light', 'dark'] as const
+const FrameToneSchema = z.preprocess(
+  (v) => (typeof v === 'string' && (FRAME_TONE_VALUES as readonly string[]).includes(v) ? v : undefined),
+  z.enum(FRAME_TONE_VALUES).optional(),
+)
+
+const LAYOUT_VALUES = ['row', 'column'] as const
+const LayoutSchema = z.preprocess(
+  (v) => (typeof v === 'string' && (LAYOUT_VALUES as readonly string[]).includes(v) ? v : undefined),
+  z.enum(LAYOUT_VALUES).optional(),
+)
 
 /** Single primitive in the mock DSL. Matches MockElement union — Gemini
  *  emits objects with discriminator `type` and a flat set of
@@ -9,30 +29,39 @@ const MockToneSchema = z.enum(['default', 'muted', 'accent', 'success', 'warning
  *  (rather than discriminated-union strict) because Gemini's
  *  responseSchema can't model discriminated unions and unknown LLM
  *  behaviour is better handled with a soft schema + drop-on-fail. */
+const SizeSchema = z.preprocess(
+  (v) => (typeof v === 'string' && ['xs', 'sm', 'md', 'lg', 'xl'].includes(v) ? v : undefined),
+  z.enum(['xs', 'sm', 'md', 'lg', 'xl']).optional(),
+)
+const WeightSchema = z.preprocess(
+  (v) => (typeof v === 'string' && ['normal', 'bold'].includes(v) ? v : undefined),
+  z.enum(['normal', 'bold']).optional(),
+)
+
 const MockElementSchema = z.object({
   type: z.string(),
   label: z.string().optional(),
   icon: z.string().optional(),
   statusText: z.string().optional(),
-  statusTone: MockToneSchema.optional(),
+  statusTone: MockToneSchema,
   prefix: z.string().optional(),
   text: z.string().optional(),
-  tone: MockToneSchema.optional(),
+  tone: MockToneSchema,
   indent: z.boolean().optional(),
   trailingHighlight: z.string().optional(),
   title: z.string().optional(),
   rows: z.array(z.object({
     left: z.string(),
     right: z.string().optional(),
-    tone: MockToneSchema.optional(),
+    tone: MockToneSchema,
   })).optional(),
   primary: z.boolean().optional(),
   placeholder: z.string().optional(),
   value: z.string().optional(),
   focused: z.boolean().optional(),
   height: z.number().optional(),
-  size: z.enum(['xs', 'sm', 'md', 'lg', 'xl']).optional(),
-  weight: z.enum(['normal', 'bold']).optional(),
+  size: SizeSchema,
+  weight: WeightSchema,
   from: z.number().optional(),
   to: z.number().optional(),
   suffix: z.string().optional(),
@@ -40,7 +69,7 @@ const MockElementSchema = z.object({
   lineNumber: z.number().optional(),
   tokens: z.array(z.object({
     text: z.string(),
-    tone: MockToneSchema.optional(),
+    tone: MockToneSchema,
   })).optional(),
   delay: z.number().min(0).max(20).optional(),
 })
@@ -48,9 +77,9 @@ const MockElementSchema = z.object({
 const MarketingMockSchema = z.object({
   frame: z.object({
     url: z.string().max(80).optional(),
-    tone: z.enum(['light', 'dark']).optional(),
+    tone: FrameToneSchema,
   }).optional(),
-  layout: z.enum(['row', 'column']).optional(),
+  layout: LayoutSchema,
   elements: z.array(MockElementSchema).max(20),
 })
 
