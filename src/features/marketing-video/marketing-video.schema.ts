@@ -94,7 +94,7 @@ export const MarketingSceneSchema = z.object({
   mock: MarketingMockSchema.optional(),
   /** Raw TSX written by Gemini for this scene's animation. Compiled
    *  server-side; the bundle never sees this directly. */
-  mockCode: z.string().max(10_000).optional(),
+  mockCode: z.string().max(4_000).optional(),
   /** Compiled JS — populated by the service after esbuild runs. Not
    *  emitted by the LLM; we set it on the manifest before save. */
   mockCompiledCode: z.string().max(20_000).optional(),

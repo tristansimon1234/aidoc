@@ -258,6 +258,7 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 
 - Define a function (or const arrow) named exactly \`MockScene\` that takes \`{ branding }\` as its only prop. The component returns a single root element.
 - DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters; everything you need lives on those.
+- **Use SINGLE QUOTES \`'\` for every string literal in the TSX, including JSX attribute values (\`fill='#fff'\`, not \`fill="#fff"\`). Use backticks \` \` only for template literals when you need interpolation. NEVER use double quotes inside the mockCode value. Reason: the mockCode is delivered as a JSON string, so unescaped \`"\` inside it would break the JSON envelope.**
 - Available React: \`React.useMemo\`, \`React.useEffect\` will not work usefully (frames re-render fresh) — for animation use Remotion only.
 - Available Remotion namespace (use as \`Remotion.foo\`):
   - \`Remotion.useCurrentFrame()\` → number, the current frame within the scene's sub-timeline (NOT the whole video). Frame 0 is the start of THIS scene.
@@ -269,7 +270,8 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 - Inline styles ONLY. NO Tailwind class names, NO \`className\`, NO external CSS. Everything goes through \`style={{...}}\`.
 - NO event handlers (\`onClick\`, \`onMouseMove\`, …). The output is rendered server-side, no interaction.
 - NO network access (\`fetch\`, \`XMLHttpRequest\`). NO timers (\`setTimeout\`, \`setInterval\`).
-- Code length: under ~3 KB. Pithy > sprawling.
+- Code length: HARD CAP **1200 characters per mockCode value, including whitespace**. A 4-scene video with 1500-char mocks each will overflow the response token budget, the JSON gets truncated mid-string, and the whole script fails to parse. Stay tight — terse animation > verbose-but-truncated.
+- Minify-friendly style: prefer one-liners with semicolons over multi-line bodies. The compiler runs esbuild on it anyway.
 - Scene duration in seconds is given as \`durationSeconds\` per scene. The frame range for your component is \`0 .. fps × durationSeconds\`.
 
 #### Branding object you receive
@@ -429,11 +431,13 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
 
   const result = await generateText({
     userPrompt,
-    // Bumped to 8192: with audio tags + emphasis + 4 scenes the response
-    // can run long, and a truncated JSON puts us in the repair-or-die
-    // path. 8192 gives enough headroom to never truncate a 45s script
-    // even in the most verbose tones / languages.
-    maxTokens: 8192,
+    // Bumped to 16384: in mocks mode each scene's mockCode is a ~1-2KB
+    // TSX string and 4 scenes × 2KB = 8KB just for code, plus the rest
+    // of the script + JSON-escape overhead. 8192 was hitting the cap
+    // mid-mockCode and the smart repair couldn't recover the scenes
+    // that never made it into the response. 16384 gives ample headroom
+    // for the verbose case (mocks mode + tagged voice-over + FR/DE).
+    maxTokens: 16_384,
     temperature: 0.6,
     json: true,
     responseSchema: RESPONSE_SCHEMA,
