@@ -20,8 +20,16 @@ const repoRoot = join(here, '..')
 const entryPoint = join(repoRoot, 'remotion', 'src', 'index.ts')
 const outDir = join(repoRoot, 'dist', 'remotion-bundle')
 
+// Where the bundle will be served from on the deployed app. The bundle's
+// index.html references its JS via this prefix; without it, the script
+// tag becomes `/bundle.js` (root) and Vercel's SPA-fallback rewrite
+// returns the React app shell when Chromium tries to load it — which is
+// what causes "Unexpected token '<'" inside Remotion's selectComposition.
+const PUBLIC_PATH = '/remotion-bundle/'
+
 console.log(`[remotion-bundle] Bundling ${entryPoint}`)
 console.log(`[remotion-bundle] Output    ${outDir}`)
+console.log(`[remotion-bundle] PublicPath ${PUBLIC_PATH}`)
 
 // The Remotion source uses TS NodeNext-style imports (`./Root.js` referring
 // to `Root.tsx`). Webpack 5's default resolver looks for the literal `.js`
@@ -30,6 +38,7 @@ console.log(`[remotion-bundle] Output    ${outDir}`)
 const bundled = await bundle({
   entryPoint,
   outDir,
+  publicPath: PUBLIC_PATH,
   webpackOverride: (config) => ({
     ...config,
     resolve: {
