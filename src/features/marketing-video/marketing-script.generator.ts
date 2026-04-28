@@ -547,7 +547,9 @@ These four examples are your baseline. EVERY scene must:
 2. Have NO outer background — the AbsoluteFill is transparent.
 3. Use Tailwind \`className\` for static styling, \`style={{...}}\` only for animated values.
 4. If using a cursor: target the panel center via flex-centering + cursor terminal coords (50, 55).
-5. Pick a different mode per scene — dashboard / chat / button-click / chart / etc. Don't repeat.
+5. **Typography — Geist by default, NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\` or any other stack — that overrides our config and the result looks like a 2014 system-monospace dump. Use the className \`font-mono\` ONLY for actual code, URLs, or terminal lines. NEVER use mono for prose, chat bubbles, button labels, or headings.
+6. **Type at scale — make it feel modern.** Headlines \`text-[32px]\` to \`text-[44px]\` (\`font-bold tracking-tight\`). Big numbers / counters \`text-[64px]\` to \`text-[96px]\` (\`tabular-nums tracking-tight\`). Body / chat text \`text-[15px]\` to \`text-[18px]\`. Labels / status pills \`text-[11px] font-bold tracking-widest uppercase\`. Tight letter-spacing on big text is what makes typography feel premium vs. dated.
+7. Pick a different mode per scene — dashboard / chat / button-click / chart / etc. Don't repeat.
 
 Use these as the visual baseline. Each scene picks ONE of these patterns (or a sibling — counter, progress bar, code line typing, notification toast, stat cards) and adapts the copy to the scene's headline. Don't downgrade — match this level of polish.
 

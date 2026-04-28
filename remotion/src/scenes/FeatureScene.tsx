@@ -96,13 +96,21 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
     />
   )
 
+  // Skip the FeatureScene's ambient radial-gradient when a mock is in
+  // play. The mock's own AccentGlow already provides the depth — adding
+  // a second large gradient on the canvas paints a visible tinted
+  // rectangle on one half ("le carré"), breaking the clean white look.
+  // Screenshots still get the gradient (it adds nice ambient where the
+  // raw screenshot has none).
+  const usingMock = !!(scene.mockCompiledCode || scene.mock)
+
   return (
     <AbsoluteFill style={{ backgroundColor: branding.bgColor, overflow: 'hidden' }}>
       <BrandWatermark branding={branding} position="top-right" size={56} />
 
       {layout === 'split-left' && (
         <>
-          <AbsoluteFill style={{ background: `radial-gradient(ellipse at 80% 50%, ${branding.accentColor}22 0%, transparent 65%)`, opacity: fadeOut }} />
+          {!usingMock && <AbsoluteFill style={{ background: `radial-gradient(ellipse at 80% 50%, ${branding.accentColor}22 0%, transparent 65%)`, opacity: fadeOut }} />}
           <div style={{ position: 'absolute', left: 100, top: 0, bottom: 0, width: 720, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             {textBlock('left')}
           </div>
@@ -114,7 +122,7 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
 
       {layout === 'split-right' && (
         <>
-          <AbsoluteFill style={{ background: `radial-gradient(ellipse at 20% 50%, ${branding.accentColor}22 0%, transparent 65%)`, opacity: fadeOut }} />
+          {!usingMock && <AbsoluteFill style={{ background: `radial-gradient(ellipse at 20% 50%, ${branding.accentColor}22 0%, transparent 65%)`, opacity: fadeOut }} />}
           <div style={{ position: 'absolute', right: 100, top: 0, bottom: 0, width: 720, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             {textBlock('right')}
           </div>
@@ -157,7 +165,7 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
 
       {layout === 'stacked' && (
         <>
-          <AbsoluteFill style={{ background: `radial-gradient(ellipse at 50% 0%, ${branding.accentColor}22 0%, transparent 60%)`, opacity: fadeOut }} />
+          {!usingMock && <AbsoluteFill style={{ background: `radial-gradient(ellipse at 50% 0%, ${branding.accentColor}22 0%, transparent 60%)`, opacity: fadeOut }} />}
           <div style={{ position: 'absolute', top: 80, left: 120, right: 120, display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
             {textBlock('center')}
           </div>

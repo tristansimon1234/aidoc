@@ -11,7 +11,11 @@ import { Config } from '@remotion/cli/config'
  * The composition itself lives in `remotion/src/Root.tsx` and is registered
  * with the ID "MarketingVideo" so CLI calls can target it by name.
  */
-Config.setVideoImageFormat('jpeg')
+// PNG instead of JPEG: lossless intermediate frames mean the final MP4
+// shows crisp typography, sharp borders, no JPEG blocking around the
+// browser-frame chrome / pill borders / chart strokes. Render time goes
+// up ~25% but the output reads as "designed" instead of "compressed".
+Config.setVideoImageFormat('png')
 Config.setOverwriteOutput(true)
 Config.setConcurrency(null)
 Config.setCodec('h264')
