@@ -1,5 +1,5 @@
 import { SchemaType, type ResponseSchema } from '@google/generative-ai'
-import { generateText } from '../../shared/ai/gemini.client.js'
+import { generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
 import { MarketingScriptSchema } from './marketing-video.schema.js'
 import type { MarketingScript } from './marketing-video.types.js'
 
@@ -455,7 +455,9 @@ function MockScene({ branding }) {
 }
 \`\`\`
 
-#### Reference example C — cursor clicks centered button (browser frame, glassmorphism)
+#### Reference example C — cursor clicks centered button (MINIMAL only)
+
+CRITICAL ALIGNMENT RULE: when using a cursor, the click target is the ONLY content. No icon, no eyebrow, no headline, no subhead — they all displace the button vertically and the cursor lands in empty space. Just the button, dead-centered. The voiceover provides the context the visual omits.
 
 \`\`\`tsx
 function MockScene({ branding }) {
@@ -465,8 +467,9 @@ function MockScene({ branding }) {
   const btnOp = Remotion.interpolate(btnT, [0, 1], [0, 1])
   const btnScale = Remotion.interpolate(btnT, [0, 1], [0.96, 1])
   const curT = Remotion.spring({ frame: f - 18, fps, config: { damping: 16, stiffness: 70 } })
+  // Both end at 50/50 — same coords as the button's flex-center → cursor lands ON it.
   const curL = Remotion.interpolate(curT, [0, 1], [82, 50])
-  const curTp = Remotion.interpolate(curT, [0, 1], [15, 55])
+  const curTp = Remotion.interpolate(curT, [0, 1], [15, 50])
   const click = f >= 56 && f < 64
   const ripple = Remotion.interpolate(f, [56, 80], [0, 70], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
   const rippleOp = Remotion.interpolate(f, [56, 80], [0.55, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
@@ -475,13 +478,10 @@ function MockScene({ branding }) {
     <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
       <Remotion.AccentGlow color={branding.accentColor} frame={f} size={520} />
       <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/settings\`} tone='light'>
-        <div className='h-full flex flex-col items-center justify-center gap-3 p-8' style={{ background: \`radial-gradient(ellipse at 50% 100%, \${branding.accentColor}10, transparent 70%)\` }}>
-          <div className='w-14 h-14 rounded-2xl flex items-center justify-center' style={{ background: \`linear-gradient(135deg, \${branding.accentColor}, \${branding.accentColor}AA)\`, boxShadow: \`0 12px 40px \${branding.accentColor}55\` }}>
-            <Remotion.Icons.Lock size={28} color='#FFFFFF' />
-          </div>
-          <div className='text-[10px] font-bold tracking-[0.18em] uppercase text-zinc-500'>API Tokens</div>
-          <div className='text-[28px] font-black text-zinc-900 tracking-tight'>Connect your LLM</div>
-          <button className='px-7 py-3.5 rounded-xl text-white text-base font-bold mt-1' style={{ background: branding.accentColor, boxShadow: \`0 1px 2px rgba(0,0,0,0.06), 0 14px 32px -4px \${branding.accentColor}66\`, opacity: btnOp, transform: \`scale(\${btnScale * press})\` }}>Create token</button>
+        {/* The button is the ONLY interior element. No surrounding text.
+            That's how the cursor's terminal coords align with the button center. */}
+        <div className='h-full w-full flex items-center justify-center'>
+          <button className='px-9 py-4 rounded-xl text-white text-lg font-bold' style={{ background: branding.accentColor, boxShadow: \`0 1px 2px rgba(0,0,0,0.06), 0 18px 40px -4px \${branding.accentColor}66\`, opacity: btnOp, transform: \`scale(\${btnScale * press})\` }}>Create token</button>
         </div>
       </Remotion.MockFrame>
       <Remotion.AnimatedCursor leftPct={curL} topPct={curTp} ripple={click} rippleRadius={ripple} rippleOpacity={rippleOp} accentColor={branding.accentColor} />
@@ -619,7 +619,14 @@ These four examples are your baseline. EVERY scene must:
    - **MAXIMUM ONE \`<Remotion.MockFrame>\` per scene.** Never nest or stack two MockFrames (e.g. a chat frame fading into a dashboard frame). Pick one product surface per scene; the next scene gets the next surface. Stacked frames read as a render glitch.
 5. **Typography — Geist by default, NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\` or any other stack — that overrides our config and the result looks like a 2014 system-monospace dump. Use the className \`font-mono\` ONLY for actual code, URLs, or terminal lines. NEVER use mono for prose, chat bubbles, button labels, or headings.
 6. **Type at scale — make it feel modern.** Headlines \`text-[32px]\` to \`text-[44px]\` (\`font-bold tracking-tight\`). Big numbers / counters \`text-[64px]\` to \`text-[96px]\` (\`tabular-nums tracking-tight\`). Body / chat text \`text-[15px]\` to \`text-[18px]\`. Labels / status pills \`text-[11px] font-bold tracking-widest uppercase\`. Tight letter-spacing on big text is what makes typography feel premium vs. dated.
-7. Pick a different mode per scene — dashboard / chat / button-click / chart / etc. Don't repeat.
+7. **Vary scene MODES — REQUIRED, no repeats.** Across the 3-4 scenes, each one MUST use a DIFFERENT mode from this list:
+   - **hero-stat**     — example A. NO browser frame, giant accent number, eyebrow + subhead. Use when the scene is about a single big idea / metric / value prop.
+   - **bento**         — example B. Browser frame WITH perspective tilt, mixed-size grid (col-span-2 + smaller cards), one accent-tinted hero card.
+   - **chat**          — typing prompt + AI reply pair, accent message bubble on the right, neutral reply on the left, optional avatar.
+   - **cursor-click**  — example C. Browser frame, ONLY a centered button as content, cursor flies in and clicks. NO surrounding text or icons.
+   - **chart**         — example D (Recharts). Browser frame, area/line/bar chart with frame-driven data sweep.
+   At least ONE scene MUST be hero-stat OR bento (so the video has a "wow" moment instead of four product UIs in a row).
+   NEVER produce two scenes of the same mode in one video.
 
 Use these as the visual baseline. Each scene picks ONE of these patterns (or a sibling — counter, progress bar, code line typing, notification toast, stat cards) and adapts the copy to the scene's headline. Don't downgrade — match this level of polish.
 
@@ -702,12 +709,15 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
 
   const result = await generateText({
     userPrompt,
-    // Bumped to 16384: in mocks mode each scene's mockCode is a ~1-2KB
-    // TSX string and 4 scenes × 2KB = 8KB just for code, plus the rest
-    // of the script + JSON-escape overhead. 8192 was hitting the cap
-    // mid-mockCode and the smart repair couldn't recover the scenes
-    // that never made it into the response. 16384 gives ample headroom
-    // for the verbose case (mocks mode + tagged voice-over + FR/DE).
+    // Mocks mode benefits dramatically from Pro: Flash produces the
+    // safe-but-dated "browser frame + centered card" output even with
+    // explicit Linear-style directives, while Pro actually uses bento
+    // layouts, perspective tilts, and proper type hierarchy. Costs
+    // ~3-5x more per call (~€0.04 vs €0.01) and adds ~10-20s latency,
+    // worth it for the visible quality jump on a marketing video.
+    // Screenshots mode stays on Flash — script-only generation doesn't
+    // need Pro.
+    model: input.visualMode === 'mocks' ? GEMINI_PRO_MODEL : undefined,
     maxTokens: 16_384,
     temperature: 0.6,
     json: true,
