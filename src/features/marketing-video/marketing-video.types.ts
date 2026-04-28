@@ -91,6 +91,12 @@ export interface MarketingManifest {
   musicPath?: string | null
   /** Linear volume 0–1 for the music. Defaults to 0.15. */
   musicVolume?: number
+  /** When music was requested but generation/upload failed, this carries
+   *  the human-readable reason. The manifest is still saved (with
+   *  musicUrl=null) so the user keeps their script + voice-over instead
+   *  of losing everything to a music-only failure. UI surfaces this as
+   *  a non-blocking warning. */
+  musicError?: string | null
 }
 
 /** Render lifecycle of the MP4. The manifest can exist without a render

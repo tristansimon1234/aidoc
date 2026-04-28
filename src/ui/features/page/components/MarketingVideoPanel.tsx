@@ -214,6 +214,12 @@ export function MarketingVideoPanel({ runId }: MarketingVideoPanelProps): React.
 
       {error && <div className={`${styles.statusBanner} ${styles.statusError}`}>{error}</div>}
 
+      {summary?.manifest.musicError && !working && (
+        <div className={`${styles.statusBanner} ${styles.statusInfo}`}>
+          Music skipped: {summary.manifest.musicError} — your script + voice-over were saved and the video still rendered. Pick "None" or upload your own MP3 to silence this warning.
+        </div>
+      )}
+
       <div className={styles.briefField}>
         <label className={styles.briefLabel} htmlFor="marketing-brief">Creative brief (optional)</label>
         <textarea

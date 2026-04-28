@@ -135,6 +135,13 @@ export interface MarketingManifestDTO {
   }
   voiceoverUrl: string | null
   voiceoverPath: string | null
+  musicUrl?: string | null
+  musicPath?: string | null
+  musicVolume?: number
+  /** Set when music generation/upload failed. The rest of the manifest
+   *  is still valid — a warning is shown but the video still renders
+   *  (silent music track). */
+  musicError?: string | null
 }
 
 export interface MarketingVideoSummaryDTO {

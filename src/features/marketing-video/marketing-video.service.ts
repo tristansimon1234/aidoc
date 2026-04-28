@@ -263,36 +263,51 @@ export async function generateMarketingVideoForRun(
   // Resolve background music. Priority: explicit upload > AI generation
   // > preset by id > none. Either path resolves to a public URL Remotion
   // can <Audio src>.
+  //
+  // Music failures are NON-FATAL — script + voice-over have already been
+  // generated (and paid for) by the time we get here, so an ElevenLabs
+  // music permission issue or a bad preset URL shouldn't roll the whole
+  // pipeline back. Capture the error in musicError, set musicUrl=null,
+  // continue. The UI shows a warning and the user gets a silent video
+  // instead of nothing.
   let musicUrl: string | null = null
   let musicPath: string | null = null
-  if (options.musicUploadPath) {
-    musicPath = options.musicUploadPath
-    musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
-    console.log(`[marketing-video] Music: uploaded path=${musicPath}`)
-  } else if (options.musicTrackId === 'ai') {
-    if (!isElevenLabsConfigured()) {
-      throw new Error('ELEVENLABS_API_KEY is required for AI music generation.')
+  let musicError: string | null = null
+  try {
+    if (options.musicUploadPath) {
+      musicPath = options.musicUploadPath
+      musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
+      console.log(`[marketing-video] Music: uploaded path=${musicPath}`)
+    } else if (options.musicTrackId === 'ai') {
+      if (!isElevenLabsConfigured()) {
+        throw new Error('ELEVENLABS_API_KEY is required for AI music generation.')
+      }
+      const tone = options.tone ?? 'punchy'
+      const musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
+      const durationMs = Math.round(script.totalDurationSeconds * 1000)
+      console.log(`[marketing-video] Music: AI-generating, durationMs=${durationMs}`)
+      const buffer = await generateMusic(musicPrompt, { durationMs })
+      musicPath = `runs/${runId}/marketing-music-ai.mp3`
+      await uploadToStorage('artifacts', musicPath, buffer, 'audio/mpeg')
+      musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
+      console.log(`[marketing-video] Music: AI track uploaded → ${musicUrl}`)
+    } else if (options.musicTrackId && options.musicTrackId !== 'none') {
+      const preset = MUSIC_PRESETS.find((p) => p.id === options.musicTrackId)
+      if (preset) {
+        musicUrl = preset.url
+        console.log(`[marketing-video] Music: preset ${preset.id} (${preset.name})`)
+      } else {
+        console.warn(`[marketing-video] Music: preset id "${options.musicTrackId}" not found in MUSIC_PRESETS, skipping`)
+      }
     }
-    const tone = options.tone ?? 'punchy'
-    const musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
-    // Pace the track to the script's planned duration so the music doesn't
-    // outlast the video. ElevenLabs returns a buffer roughly matching the
-    // requested length.
-    const durationMs = Math.round(script.totalDurationSeconds * 1000)
-    console.log(`[marketing-video] Music: AI-generating, durationMs=${durationMs}`)
-    const buffer = await generateMusic(musicPrompt, { durationMs })
-    musicPath = `runs/${runId}/marketing-music-ai.mp3`
-    await uploadToStorage('artifacts', musicPath, buffer, 'audio/mpeg')
-    musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
-    console.log(`[marketing-video] Music: AI track uploaded → ${musicUrl}`)
-  } else if (options.musicTrackId && options.musicTrackId !== 'none') {
-    const preset = MUSIC_PRESETS.find((p) => p.id === options.musicTrackId)
-    if (preset) {
-      musicUrl = preset.url
-      console.log(`[marketing-video] Music: preset ${preset.id} (${preset.name})`)
-    } else {
-      console.warn(`[marketing-video] Music: preset id "${options.musicTrackId}" not found in MUSIC_PRESETS, skipping`)
-    }
+  } catch (err) {
+    // Surface the underlying message to the UI — ElevenLabs already
+    // returns clean strings like "missing the permission music_generation"
+    // which are actionable as-is.
+    musicError = (err as Error).message
+    musicUrl = null
+    musicPath = null
+    console.warn(`[marketing-video] Music generation failed (non-fatal): ${musicError}`)
   }
   const musicVolume = options.musicVolume ?? DEFAULT_MUSIC_VOLUME
 
@@ -307,6 +322,7 @@ export async function generateMarketingVideoForRun(
     musicUrl,
     musicPath,
     musicVolume,
+    musicError,
   }
 
   // Persist the manifest itself in artifacts storage. Remotion (or a future
