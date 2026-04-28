@@ -5,6 +5,14 @@ import {
   ChevronRight, Plus, X, Copy, Play, Pause, Volume2, Image as ImageIcon,
   ArrowRight, Activity,
 } from 'lucide-react'
+import {
+  ResponsiveContainer,
+  LineChart, Line,
+  AreaChart, Area,
+  BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip,
+  PieChart, Pie, Cell,
+} from 'recharts'
 import type { Branding } from '../manifest.js'
 
 /**
@@ -261,6 +269,20 @@ export const Icons = {
   MousePointer, Send, Sparkles, Loader, Bell, User, Lock, Globe,
   ChevronRight, Plus, X, Copy, Play, Pause, Volume: Volume2, Image: ImageIcon,
   ArrowRight, Activity,
+} as const
+
+/** Recharts components exposed for the LLM. Animations driven by
+ *  Remotion frame, not Recharts' internal tweening — the LLM passes
+ *  data computed via interpolate() so the chart "draws in" frame by
+ *  frame. Use ResponsiveContainer + LineChart / AreaChart / BarChart /
+ *  PieChart inside a fixed-size parent (a card body, etc.) */
+export const Charts = {
+  ResponsiveContainer,
+  LineChart, Line,
+  AreaChart, Area,
+  BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip,
+  PieChart, Pie, Cell,
 } as const
 
 /** Type for the helpers bundled into the LLM's `Remotion` namespace. */

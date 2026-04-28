@@ -9,7 +9,7 @@ import {
   Audio,
 } from 'remotion'
 import type { Branding } from '../manifest.js'
-import { MockFrame, Pill, AccentGlow, AnimatedCursor, Icons } from './mock-helpers.js'
+import { MockFrame, Pill, AccentGlow, AnimatedCursor, Icons, Charts } from './mock-helpers.js'
 
 interface DynamicSceneProps {
   /** esbuild-compiled JS that defines a function/const named MockScene.
@@ -54,6 +54,8 @@ const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, bran
       // Designed helpers — let the LLM stop rewriting the same browser
       // chrome / pill / glow / cursor every scene.
       MockFrame, Pill, AccentGlow, AnimatedCursor, Icons,
+      // Recharts components for data scenes — line / area / bar / pie.
+      Charts,
     }
     // The LLM is asked to define a function named MockScene. We append
     // `;return MockScene` to expose it to the caller.

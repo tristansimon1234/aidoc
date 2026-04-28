@@ -259,6 +259,8 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 - Define a function (or const arrow) named exactly \`MockScene\` that takes \`{ branding }\` as its only prop. The component returns a single root element.
 - DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters; everything you need lives on those.
 - **Use SINGLE QUOTES \`'\` for every string literal in the TSX, including JSX attribute values (\`fill='#fff'\`, not \`fill="#fff"\`). Use backticks \` \` only for template literals when you need interpolation. NEVER use double quotes inside the mockCode value. Reason: the mockCode is delivered as a JSON string, so unescaped \`"\` inside it would break the JSON envelope.**
+- **Tailwind CSS is available via className.** The bundle ships Twind (runtime Tailwind) + lucide icons + recharts. Use \`className='rounded-2xl bg-zinc-950 shadow-2xl backdrop-blur-md p-6'\` etc. — far more concise than inline styles AND visually superior. Mix className with style={{}} when you need dynamic interpolated values (opacity, transform).
+- **Webfonts loaded:** Geist (default), Geist Mono (code/terminal), Inter (fallback), JetBrains Mono. Use via \`fontFamily: 'Geist'\` etc., or rely on \`branding.fontFamily\` which the project sets.
 - Available React: \`React.useMemo\`, \`React.useEffect\` will not work usefully (frames re-render fresh) — for animation use Remotion only.
 - Available Remotion namespace (use as \`Remotion.foo\`):
   - \`Remotion.useCurrentFrame()\` → number, the current frame within the scene's sub-timeline (NOT the whole video). Frame 0 is the start of THIS scene.
@@ -284,6 +286,14 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 
   - \`<Remotion.Icons.Plug size={14} color='currentColor' />\` — Lucide icons. Available names:
     Plug, Mic, Check, Message, Search, Zap, Code, Settings, MousePointer, Send, Sparkles, Loader, Bell, User, Lock, Globe, ChevronRight, Plus, X, Copy, Play, Pause, Volume, Image, ArrowRight, Activity. They take \`size\` (px) and standard SVG props.
+
+  - \`Remotion.Charts\` — recharts components for data-driven scenes. Available: \`ResponsiveContainer\`, \`LineChart\`, \`Line\`, \`AreaChart\`, \`Area\`, \`BarChart\`, \`Bar\`, \`PieChart\`, \`Pie\`, \`Cell\`, \`XAxis\`, \`YAxis\`, \`CartesianGrid\`, \`Tooltip\`. Wrap charts in \`<Remotion.Charts.ResponsiveContainer width='100%' height='100%'>...</Remotion.Charts.ResponsiveContainer>\` inside a fixed-size parent (e.g. a card body 280×140). Disable Recharts' built-in animation (\`isAnimationActive={false}\`) and instead drive the data via \`Remotion.interpolate(frame, ...)\` so the chart "draws in" frame by frame:
+
+    \`\`\`tsx
+    const progress = Remotion.interpolate(f, [10, 60], [0, 1], { extrapolateRight: 'clamp' })
+    const data = baseData.map((d, i) => ({ x: d.x, y: d.y * (i / data.length <= progress ? 1 : 0) }))
+    <Remotion.Charts.LineChart data={data}>...</Remotion.Charts.LineChart>
+    \`\`\`
 - Inline styles ONLY. NO Tailwind class names, NO \`className\`, NO external CSS. Everything goes through \`style={{...}}\`.
 - NO event handlers (\`onClick\`, \`onMouseMove\`, …). The output is rendered server-side, no interaction.
 - NO network access (\`fetch\`, \`XMLHttpRequest\`). NO timers (\`setTimeout\`, \`setInterval\`).
