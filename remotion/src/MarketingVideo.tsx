@@ -84,16 +84,16 @@ export const MarketingVideo: React.FC<MarketingVideoProps> = ({ manifest }) => {
 }
 
 /**
- * Total composition duration in frames given a manifest. TransitionSeries
- * overlaps adjacent sequences by the transition duration, so the *visible*
- * total is shorter than the naive sum. Each transition between two
- * sequences trims `transitionFrames` from the timeline.
+ * Total composition duration in frames given a manifest. We deliberately
+ * use the naive sum of scene durations (NOT subtracting transition
+ * overlaps) so that the rendered video matches the 45s the user asked
+ * Gemini for. TransitionSeries overlaps adjacent sequences during the
+ * transition, but the Composition's outer duration determines how long
+ * the audio plays — and that's what the viewer experiences as "the video
+ * length". The voice-over is paced to fill this same naive duration.
  */
 export function totalDurationInFrames(manifest: Manifest, fps: number): number {
   const { hook, scenes, cta } = manifest.script
   const naiveSec = hook.durationSeconds + scenes.reduce((a, s) => a + s.durationSeconds, 0) + cta.durationSeconds
-  const naiveFrames = Math.round(naiveSec * fps)
-  // Number of transitions = (1 transition before each feature scene) + 1 (before CTA)
-  const transitionCount = scenes.length + 1
-  return Math.max(1, naiveFrames - transitionCount * TRANSITION_FRAMES)
+  return Math.max(1, Math.round(naiveSec * fps))
 }

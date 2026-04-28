@@ -37,16 +37,20 @@ const DEFAULT_MUSIC_VOLUME = 0.15
 
 /** ElevenLabs voice_settings tuned per tone. The triplet maps to:
  *  - stability: lower = more dynamic delivery (variable pitch / pace),
- *    higher = monotone, robotic.
- *  - style: higher = more stylistic exaggeration (good for punchy /
- *    playful), lower = neutral read.
+ *    higher = monotone, robotic. Past ~0.6 the voice flattens noticeably.
+ *  - style: higher = more stylistic exaggeration. Above ~0.85 the model
+ *    can become inconsistent — we sit at 0.90 max.
  *  - similarityBoost: how tightly to stick to the source voice timbre.
- *  These were picked by ear, not science — adjust to taste. */
+ *
+ *  These were re-tuned aggressively (was: 0.35 / 0.70 / 0.80) because the
+ *  earlier mid-range values produced near-identical voiceovers across
+ *  presets — the user heard a monotone read regardless of tone choice.
+ *  The current values pull each preset to a recognisable extreme. */
 const TONE_PRESETS = {
-  punchy:  { stability: 0.35, style: 0.70, similarityBoost: 0.80 },
-  calm:    { stability: 0.65, style: 0.30, similarityBoost: 0.75 },
-  playful: { stability: 0.30, style: 0.85, similarityBoost: 0.70 },
-  serious: { stability: 0.70, style: 0.20, similarityBoost: 0.80 },
+  punchy:  { stability: 0.20, style: 0.90, similarityBoost: 0.75 },
+  calm:    { stability: 0.55, style: 0.35, similarityBoost: 0.80 },
+  playful: { stability: 0.15, style: 0.90, similarityBoost: 0.70 },
+  serious: { stability: 0.55, style: 0.25, similarityBoost: 0.85 },
 } as const
 
 /** Default branding when the project has no custom design saved. Picked to

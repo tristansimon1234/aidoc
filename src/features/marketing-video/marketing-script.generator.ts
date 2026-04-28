@@ -93,14 +93,16 @@ export async function generateMarketingScript(
     ? `\n## Creative brief from the user (HIGHEST PRIORITY for framing — but never overrides the documentation as factual ground truth)\n\n${input.userPrompt.trim()}\n\nRespect this brief: pick the angle, audience, tone shift, and which capabilities to emphasize from it. If the brief asks for something the documentation doesn't support, stay grounded in the docs and pivot the framing — don't invent features to satisfy the brief.\n`
     : ''
 
-  const userPrompt = `You are writing a 60-second marketing video script for a SaaS product feature.
+  const userPrompt = `You are writing a 45-second marketing video script for a SaaS product feature.
 
 The video has THREE acts:
-- HOOK (5-8s): one strong opening line that makes the viewer pause their scroll. Specific to the product, not generic ("save time" / "be productive" → no).
-- SCENES (3-5 scenes, 8-12s each): each scene shows ONE benefit / capability backed by a doc screenshot. The narrator says it; the headline reinforces it visually.
-- CTA (5-7s): clear call-to-action with a short button label.
+- HOOK (4-6s): one strong opening line that makes the viewer pause their scroll. Specific to the product, not generic ("save time" / "be productive" → no).
+- SCENES (3-4 scenes, 7-10s each): each scene shows ONE benefit / capability backed by a doc screenshot. The narrator says it; the headline reinforces it visually. Prefer 3 sharp scenes over 4 watered-down ones.
+- CTA (4-6s): clear call-to-action with a short button label.
 
-Total duration MUST be 55-65 seconds. Keep voice-over CONCISE — at ~2.3 words/second, 60s ≈ 140 words total across all parts.
+Total duration MUST be EXACTLY 45 seconds. Allocate the budget like this:
+  hook + sum(scenes) + cta = 45.0 (±0.5 OK, NOT more).
+Keep voice-over CONCISE — at ~2.3 words/second, 45s ≈ 100 words total across all parts. Short punchy sentences. Sentence fragments are OK ("Built for speed."). Active verbs. No filler ("Don't forget that…", "It's also worth noting…" → cut).
 
 ## Source documentation
 
