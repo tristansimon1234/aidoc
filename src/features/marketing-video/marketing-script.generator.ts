@@ -88,6 +88,29 @@ const TONE_TAG_DIRECTION: Record<NonNullable<GenerateMarketingScriptInput['tone'
   serious: 'Lean understated: [short pause] for emphasis, no exclamation tags. CAPS only for one critical word. No [laughs] or [excited]. 1-2 audio tags total.',
 }
 
+/** Concrete voiceover examples per tone. Pasted into the prompt so Gemini
+ *  pattern-matches against tagged prose instead of clean prose. The
+ *  earlier prompt described the rules abstractly and Gemini still output
+ *  flat strings — examples beat instructions for in-context steering. */
+const TONE_VOICEOVER_EXAMPLES: Record<NonNullable<GenerateMarketingScriptInput['tone']>, string> = {
+  punchy: `hook.voiceover:  "[excited] Stop wasting hours writing docs nobody reads. One screen recording — that's all it takes."
+scenes[0].voiceover: "Hit record. Walk through the feature. The AI watches every click and turns it into a STRUCTURED guide with screenshots and voice-over."
+scenes[1].voiceover: "[happy gasp] Then embed an AI chat widget on your app — it answers user questions in your own voice, sourced from your own docs."
+cta.voiceover: "Stop writing docs nobody reads — try it FREE today."`,
+  calm: `hook.voiceover:  "Documentation that actually serves your users. [short pause] Built around a simple idea."
+scenes[0].voiceover: "You record one walkthrough. The system extracts the structure, the screenshots, and the narration — automatically."
+scenes[1].voiceover: "[calm] Embed a chat widget on your product. Your users ask questions; your docs answer them."
+cta.voiceover: "Give your users docs they'll actually use. [short pause] Start free today."`,
+  playful: `hook.voiceover:  "Writing docs is the worst part of shipping. [laughs] Let's fix that."
+scenes[0].voiceover: "Hit record, click around your product like a USER would, and — [giggles] — boom. Structured guide. Screenshots. Voice-over. Done."
+scenes[1].voiceover: "Drop the AI chat widget on your app and [whispers] watch your support tickets disappear."
+cta.voiceover: "Your future self thanks you. [laughs] Try it free today."`,
+  serious: `hook.voiceover:  "Documentation drives adoption. [short pause] Bad documentation kills it."
+scenes[0].voiceover: "One screen recording produces a structured guide — screenshots, narration, exact step order. Built from what you actually do."
+scenes[1].voiceover: "An embedded AI chat widget answers user questions from your CANONICAL documentation. No hallucination, no drift."
+cta.voiceover: "Stop losing users to bad docs. [short pause] Start today."`,
+}
+
 /** Strip half-open ElevenLabs tags Gemini sometimes produces (e.g.
  *  "[excite" or trailing "["). Without this the TTS reads the bracket out
  *  loud or drops the segment. Mirrors the helper in voiceover.service.ts. */
@@ -164,7 +187,9 @@ The voiceover strings in the JSON output will be fed to ElevenLabs v3 TTS as a s
 - CAPS for one or two key words signal vocal stress (NOT whole sentences).
 - Questions (with ?) create natural rising intonation; only use if the tone allows.
 
-**Audio tags are stage directions** — place them BETWEEN sentences, never mid-sentence:
+**Audio tags are stage directions** — they MUST appear in the voiceover strings, placed BETWEEN sentences (never mid-sentence). The whole point of this script is that ElevenLabs reads it expressively, not flat. A voiceover string with NO tags AND no emphatic punctuation is a FAILED output and will be regenerated.
+
+Available tags:
 Emotional: [excited], [happy], [calm]
 Reactions: [laughs], [giggles], [happy gasp], [sighs]
 Delivery: [whispers], [cheerfully], [sarcastic]
@@ -172,25 +197,31 @@ Pacing: [short pause]
 
 Tags go inside the relevant voiceover string (hook.voiceover / scenes[i].voiceover / cta.voiceover). They count as 0 spoken words for the word-count budget.
 
-### Direction for the selected voice tone (${input.tone ?? 'punchy'})
+### REQUIRED for the selected voice tone (${input.tone ?? 'punchy'})
 
 ${TONE_TAG_DIRECTION[input.tone ?? 'punchy']}
 
-Don't go heavier than the direction says — over-tagging reads as cringe. The point is to give the voice 2-3 moments of texture across 45 seconds, not to performance-act every sentence.
+This is a MUST, not a suggestion. Across the 5 voiceover strings (1 hook + 3-4 scenes + 1 cta), you MUST land 2-3 audio tags total + at least one CAPS-emphasized word + at least one em-dash for a punchy beat. Don't skip them on the grounds of "the prose reads fine without them" — flat prose is the bug we are fixing.
+
+### Concrete voiceover examples for tone="${input.tone ?? 'punchy'}"
+
+These are EXACTLY the shape voiceover strings should have. Notice tags between sentences, em-dashes for beats, occasional CAPS:
+
+${TONE_VOICEOVER_EXAMPLES[input.tone ?? 'punchy']}
 
 ## Output
 
-Return ONLY valid JSON matching this exact shape, no markdown fences, no preamble:
+Return ONLY valid JSON matching this exact shape, no markdown fences, no preamble. Notice the voiceover values — they include audio tags + emphatic punctuation as REQUIRED above. Match this style:
 
 {
   "hook": {
-    "voiceover": "Short opening narration line.",
+    "voiceover": "[excited] Short opening narration — with one CAPS word for stress.",
     "headline": "Big on-screen headline 3-7 words",
-    "durationSeconds": 6
+    "durationSeconds": 5
   },
   "scenes": [
     {
-      "voiceover": "Narration for scene 1 — concrete benefit.",
+      "voiceover": "Narration for scene 1 with a concrete benefit. [short pause] A second sentence for context.",
       "headline": "On-screen headline scene 1",
       "subhead": "Optional supporting line under headline",
       "screenshotIndex": 0,
@@ -198,12 +229,12 @@ Return ONLY valid JSON matching this exact shape, no markdown fences, no preambl
     }
   ],
   "cta": {
-    "voiceover": "Closing narration with the call to action.",
+    "voiceover": "Closing line with the call to action — with one CAPS word.",
     "headline": "Final on-screen headline",
     "buttonLabel": "Try ${input.productName} free",
-    "durationSeconds": 6
+    "durationSeconds": 5
   },
-  "totalDurationSeconds": 60,
+  "totalDurationSeconds": 45,
   "language": "${input.language}"
 }
 
