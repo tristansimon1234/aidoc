@@ -473,7 +473,7 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
         </div>
       )}
 
-      {hasManifest && summary && !working && (
+      {hasManifest && summary && !working && ourJob?.status !== 'running' && (
         <>
           <div className={styles.scriptCard}>
             <div className={styles.scriptSection}>
