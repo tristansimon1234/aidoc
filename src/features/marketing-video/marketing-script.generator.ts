@@ -364,6 +364,19 @@ Use \`branding.accentColor\` for highlights, \`branding.textColor\` for prose, \
 - Pulse / blink:
   \`const blink = (frame % 30) < 15 ? 1 : 0\`
 
+**SUSTAINED MOTION — non-negotiable. Entry animations alone are not enough.** Each scene runs 5-12 seconds (150-360 frames at 30fps). The user keeps flagging "bancale" mocks because the entry animation finishes in the first 1-2 seconds and the rest of the scene is dead-static. Layer in CONTINUOUS motion that runs for the WHOLE scene duration. Pick at least one of these per scene:
+
+- **Traveling dot along an arrow / connection** (flow-diagram): a small \`<div>\` whose left % cycles from 0→100 every \`fps * 2\` frames, drawing the eye along the flow.
+  \`const t = (f % (fps * 2)) / (fps * 2)\` then \`left: \`\${t * 100}%\`\`
+- **Counter ticking up** (bento, hero-stat): a number that animates from 0 to its target across 1.5s and then SLOWLY KEEPS ticking by ±1 every ~30 frames, so the dashboard feels live.
+- **AI typing dots** (chat): three pulsing dots BEFORE the AI reply renders. Each dot's opacity cycles \`0.3 → 1 → 0.3\` with a stagger of 6 frames between the three.
+- **Cursor blink** in any input/text bubble: \`opacity: (f % 30) < 15 ? 1 : 0\`.
+- **Subtle accent pulse on the focal element**: \`scale: 1 + 0.02 * Math.sin(f / 18)\` or \`boxShadow blur: 24 + 8 * Math.sin(f / 14)\`.
+- **Recurring entry waves** (bento with multiple cards): instead of all 3 cards entering at frame 0/8/16 and freezing, stagger entries across a wider window (frame 0/30/60) AND have one or two cards subtly re-enter / re-pulse later in the scene.
+- **Live indicator dot** on a "connected / active" pill: \`opacity: 0.6 + 0.4 * Math.sin(f / 12)\` — small but it sells "this is real-time".
+
+Avoid the failure mode: do NOT cram all entry animations into the first 30 frames and then leave the canvas frozen. The viewer's eye needs continuous motion to stay engaged for 12 seconds.
+
 #### Reference example A — hero stat reveal (Linear-style, NO frame, type hero)
 
 This is a "look at the number" scene. No browser frame — the canvas IS the content. Tiny eyebrow label, gigantic accent-colored number, single-line subhead. Maximum type contrast. Your default for ANY scene that's about a metric or a single big idea.
@@ -381,7 +394,11 @@ function MockScene({ branding }) {
   const numY = Remotion.interpolate(numT, [0, 1], [24, 0])
   const subOp = Remotion.interpolate(subT, [0, 1], [0, 1])
   const ease = 1 - Math.pow(1 - Remotion.interpolate(f, [12, 12 + fps * 1.6], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }), 3)
-  const value = Math.round(12_847 * ease)
+  // SUSTAINED MOTION: counter ticks up to the target across 1.6s, then
+  // keeps drifting upward (~+1 every 30 frames) so the dashboard feels
+  // live for the full scene duration instead of freezing on a number.
+  const post = Math.max(0, f - (12 + fps * 1.6))
+  const value = Math.round(12_847 * ease + post / 30)
   const glow = 0.35 + 0.15 * Math.sin(f / 14)
   return (
     <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
@@ -410,6 +427,12 @@ function MockScene({ branding }) {
   const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
   const enter = (t) => ({ opacity: Remotion.interpolate(t, [0, 1], [0, 1]), transform: \`translateY(\${Remotion.interpolate(t, [0, 1], [16, 0])}px)\` })
   const tilt = Remotion.interpolate(ease(0), [0, 1], [-2, -1])
+  // SUSTAINED MOTION: counter ticks up live, latency jitters within
+  // a tight band, the active-pill dot pulses. Without these the bento
+  // freezes after entry and the scene reads dead for 8+ seconds.
+  const liveCount = 4 + Math.floor(f / 90)
+  const latency = Math.round(178 + 6 * Math.sin(f / 16))
+  const dotPulse = 0.55 + 0.45 * Math.sin(f / 12)
   return (
     <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
       <div className='relative w-[800px]' style={{ transform: \`perspective(1400px) rotateY(\${tilt}deg) rotateX(2deg)\` }}>
@@ -422,12 +445,12 @@ function MockScene({ branding }) {
             </div>
             <div className='rounded-2xl bg-white border border-zinc-200/80 p-4 flex flex-col gap-1' style={{ ...enter(ease(20)), boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
               <div className='text-[10px] font-semibold uppercase tracking-wider text-zinc-500'>Connected</div>
-              <div className='text-[28px] font-bold tabular-nums text-zinc-900'>4</div>
-              <Remotion.Pill tone='success' dot>active</Remotion.Pill>
+              <div className='text-[28px] font-bold tabular-nums text-zinc-900'>{liveCount}</div>
+              <Remotion.Pill tone='success' dot style={{ opacity: dotPulse }}>active</Remotion.Pill>
             </div>
             <div className='rounded-2xl bg-zinc-900 p-4 flex flex-col gap-1' style={enter(ease(28))}>
               <div className='text-[10px] font-semibold uppercase tracking-wider text-zinc-400'>Latency</div>
-              <div className='text-[28px] font-bold tabular-nums text-white'>180ms</div>
+              <div className='text-[28px] font-bold tabular-nums text-white'>{latency}ms</div>
               <div className='text-[11px] text-emerald-400 font-medium'>↓ 12ms</div>
             </div>
           </div>
@@ -531,7 +554,7 @@ function MockScene({ branding }) {
 
 #### Reference example E — abstract flow diagram (NO frame, motion-graphic feel)
 
-Three connected nodes representing a process. NO browser frame — pure motion graphic. Use for "how it works" / "Doc → AI → Answer" / "before-during-after" type beats. Way more expressive than a UI screenshot of the same idea.
+Three connected nodes representing a process. NO browser frame — pure motion graphic. Use for "how it works" / "Doc → AI → Answer" / "before-during-after" type beats. Way more expressive than a UI screenshot of the same idea. **Note the traveling dot on each arrow — that's the sustained motion that keeps the diagram alive after the entry. Without it the scene goes static after 1s and reads "bancale".**
 
 \`\`\`tsx
 function MockScene({ branding }) {
@@ -560,9 +583,13 @@ function MockScene({ branding }) {
                 <div className={\`text-[14px] font-bold tracking-tight \${n.accent ? 'text-white' : 'text-zinc-900'}\`}>{n.label}</div>
               </div>
               {arrowT !== null && (
-                <div className='flex items-center' style={{ opacity: arrowOp }}>
-                  <div className='h-[2px] w-12 rounded' style={{ background: branding.accentColor }} />
+                <div className='relative flex items-center' style={{ opacity: arrowOp }}>
+                  <div className='h-[2px] w-12 rounded' style={{ background: \`\${branding.accentColor}55\` }} />
                   <Remotion.Icons.ArrowRight size={20} color={branding.accentColor} />
+                  {/* SUSTAINED MOTION: dot that travels along the connector
+                      every fps*1.6 frames so the diagram stays alive
+                      after entry. */}
+                  <div className='absolute top-1/2 -mt-1 w-2 h-2 rounded-full' style={{ background: branding.accentColor, left: \`\${((f - n.delay - 8) / (fps * 1.6) % 1 + 1) % 1 * 80}%\`, opacity: arrowOp, boxShadow: \`0 0 12px \${branding.accentColor}\` }} />
                 </div>
               )}
             </React.Fragment>
