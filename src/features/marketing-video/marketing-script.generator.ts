@@ -261,7 +261,7 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 #### Hard rules — non-negotiable, the previous render had ALL of these wrong
 
 1. **Light mode ONLY** — use \`<Remotion.MockFrame tone='light'>\`. No \`tone='dark'\`. Even for terminal-style scenes, use a light-on-dark INSIDE block, not a dark frame. The video lives on a white canvas; dark frames look like glued-on cards.
-2. **Outer AbsoluteFill has NO background.** Use \`<Remotion.AbsoluteFill style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>\`. NO \`background:\` property at all. The FeatureScene canvas (white, branded) shows through.
+2. **Outer AbsoluteFill has NO background and NO \`overflow: hidden\`.** Use \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` (or p-12). NO \`background:\` property, NO \`overflow-hidden\` className. The MockFrame's drop-shadow extends ~80px past its edges; clipping it with overflow-hidden cuts the shadow at the panel boundary and looks abrupt ("shadow coupé par la bordure"). Let it spill onto the surrounding canvas — that's the soft falloff that makes the frame feel anchored.
 3. **Use Tailwind className for static styling.** Inline \`style={{}}\` ONLY for dynamic interpolated values (opacity, transform, computed colors). Everything static (padding, rounded corners, shadows, layout, colors that don't depend on frame) → \`className='rounded-2xl p-6 bg-white shadow-2xl ...'\`. Twind is installed; every Tailwind utility works at runtime.
 4. **NEVER use \`<Remotion.AccentGlow>\`.** The blurred colored circle bleeds onto the canvas and reads as a render glitch ("halo behind the window"). It is deprecated. Mocks render on a clean white canvas — UI modes use the MockFrame's drop-shadow for depth, abstract modes use the project's accent on the focal element (giant typography, gradient logo) for impact. Period. Do not call AccentGlow.
 
@@ -290,8 +290,9 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
   - \`<Remotion.AnimatedCursor leftPct={50} topPct={55} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
     Animated mouse cursor SVG + optional click ripple. \`leftPct\` / \`topPct\` are percentages (0-100) of the parent panel. Use ONLY in cursor-click mode and ONLY when the click target is inside a populated UI (see rule 5). For a flex-centered button inside a full-height MockFrame, the target center is approximately leftPct=50, topPct=55.
 
-  - \`<Remotion.Icons.Plug size={14} color='currentColor' />\` — Lucide icons. Available names:
-    Plug, Mic, Check, Message, Search, Zap, Code, Settings, MousePointer, Send, Sparkles, Loader, Bell, User, Lock, Globe, ChevronRight, Plus, X, Copy, Play, Pause, Volume, Image, ArrowRight, Activity. They take \`size\` (px) and standard SVG props.
+  - \`<Remotion.Icons.Cpu size={14} color='currentColor' />\` — Lucide icons, pre-wrapped with a thin 1.5px stroke (Linear/Vercel weight). Available names:
+    Plug, Mic, Check, Message, Search, Zap, Code, Settings, MousePointer, Send, Loader, Bell, User, Lock, Globe, ChevronRight, Plus, X, Copy, Play, Pause, Volume, Image, ArrowRight, ArrowUpRight, Activity, Cpu, Layers, Database, GitBranch, FileText, Cloud, Workflow, Boxes. They take \`size\` (px) and standard SVG props (stroke is already 1.5; override only if you really need a heavier weight).
+    **NEVER use a "Sparkles" icon** — it's deliberately removed from the export. Every render the LLM picked it the result was a generic "AI sparkle" cliché. Use Cpu / Workflow / Layers / Boxes for AI-related beats — way more visual personality.
 
   - \`Remotion.Charts\` — recharts components for data-driven scenes. Available: \`ResponsiveContainer\`, \`LineChart\`, \`Line\`, \`AreaChart\`, \`Area\`, \`BarChart\`, \`Bar\`, \`PieChart\`, \`Pie\`, \`Cell\`, \`XAxis\`, \`YAxis\`, \`CartesianGrid\`, \`Tooltip\`. Wrap charts in \`<Remotion.Charts.ResponsiveContainer width='100%' height='100%'>...</Remotion.Charts.ResponsiveContainer>\` inside a fixed-size parent (e.g. a card body 280×140). Disable Recharts' built-in animation (\`isAnimationActive={false}\`) and instead drive the data via \`Remotion.interpolate(frame, ...)\` so the chart "draws in" frame by frame:
 
@@ -383,7 +384,7 @@ function MockScene({ branding }) {
   const value = Math.round(12_847 * ease)
   const glow = 0.35 + 0.15 * Math.sin(f / 14)
   return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-12 overflow-hidden'>
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
       <div className='relative flex flex-col items-center gap-5 text-center'>
         <div className='text-[11px] font-bold tracking-[0.18em] uppercase text-zinc-500' style={{ opacity: labelOp, transform: \`translateY(\${labelY}px)\` }}>
           Queries this month
@@ -410,7 +411,7 @@ function MockScene({ branding }) {
   const enter = (t) => ({ opacity: Remotion.interpolate(t, [0, 1], [0, 1]), transform: \`translateY(\${Remotion.interpolate(t, [0, 1], [16, 0])}px)\` })
   const tilt = Remotion.interpolate(ease(0), [0, 1], [-2, -1])
   return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
       <div className='relative w-[800px]' style={{ transform: \`perspective(1400px) rotateY(\${tilt}deg) rotateX(2deg)\` }}>
         <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/analytics\`} tone='light'>
           <div className='p-5 grid grid-cols-3 gap-3 h-full'>
@@ -459,7 +460,7 @@ function MockScene({ branding }) {
   const rippleOp = Remotion.interpolate(f, [70, 92], [0.55, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
   const press = click ? 0.96 : 1
   return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
       <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/settings/tokens\`} tone='light'>
         <div className='h-full flex flex-col' style={{ opacity: headerOp }}>
           <header className='px-6 py-4 border-b border-zinc-200 flex items-center gap-3'>
@@ -499,7 +500,7 @@ function MockScene({ branding }) {
   const labelT = Remotion.spring({ frame: f - 24, fps, config: { damping: 16, stiffness: 100 } })
   const labelOp = Remotion.interpolate(labelT, [0, 1], [0, 1])
   return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
       <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/analytics\`} tone='light'>
         <div className='p-6 flex flex-col gap-3 h-full'>
           <div className='flex items-center gap-2.5'>
@@ -539,11 +540,11 @@ function MockScene({ branding }) {
   const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
   const nodes = [
     { label: 'Your docs',   icon: 'Code',     delay: 0 },
-    { label: 'AI reads',    icon: 'Sparkles', delay: 18, accent: true },
+    { label: 'AI reads',    icon: 'Cpu',      delay: 18, accent: true },
     { label: 'Better answers', icon: 'Check', delay: 36 },
   ]
   return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-12 overflow-hidden'>
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
       <div className='relative flex items-center gap-3'>
         {nodes.map((n, i) => {
           const t = ease(n.delay)
@@ -584,7 +585,7 @@ function MockScene({ branding }) {
   const words = ['Docs', 'that', 'answer', 'for', 'you']
   const accentIdx = 2
   return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center overflow-hidden'>
+    <Remotion.AbsoluteFill className='flex items-center justify-center'>
       <div className='relative flex items-baseline gap-3 flex-wrap justify-center px-12'>
         {words.map((w, i) => {
           const t = Remotion.spring({ frame: f - (8 + i * 6), fps, config: { damping: 14, stiffness: 90 } })
@@ -616,7 +617,7 @@ function MockScene({ branding }) {
   const textOp = Remotion.interpolate(textT, [0, 1], [0, 1])
   const textY = Remotion.interpolate(textT, [0, 1], [24, 0])
   return (
-    <Remotion.AbsoluteFill className='flex flex-col items-center justify-center gap-8 overflow-hidden'>
+    <Remotion.AbsoluteFill className='flex flex-col items-center justify-center gap-8'>
       <div style={{ opacity: markOp, transform: \`scale(\${markSc})\` }}>
         {branding.logoUrl ? (
           <Remotion.Img src={branding.logoUrl} style={{ height: 160, width: 'auto', maxWidth: 360, objectFit: 'contain' }} />
@@ -648,6 +649,8 @@ These seven examples are your baseline. EVERY scene must:
    - **For logo-hero scenes: use \`branding.logoUrl\` via \`<Remotion.Img>\`.** NEVER fabricate a fake brand icon (rounded square + lucide-sparkle, etc.). If logoUrl is null, fall back to a clean geometric composition (overlapping shapes), not a pictogram.
 5. **Typography — Geist by default, NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\` or any other stack — that overrides our config and the result looks like a 2014 system-monospace dump. Use the className \`font-mono\` ONLY for actual code, URLs, or terminal lines. NEVER use mono for prose, chat bubbles, button labels, or headings.
 6. **Type at scale — make it feel modern.** Headlines \`text-[32px]\` to \`text-[44px]\` (\`font-bold tracking-tight\`). Big numbers / counters \`text-[64px]\` to \`text-[96px]\` (\`tabular-nums tracking-tight\`). Body / chat text \`text-[15px]\` to \`text-[18px]\`. Labels / status pills \`text-[11px] font-bold tracking-widest uppercase\`. Tight letter-spacing on big text is what makes typography feel premium vs. dated.
+
+6b. **Icons — thin (1.5px stroke), and NEVER Sparkles.** \`Remotion.Icons.*\` are pre-wrapped at strokeWidth=1.5 (Linear/Vercel weight). Do NOT pass \`strokeWidth={2}\` — the heavier stroke is what makes lucide read as "Bootstrap admin 2018". The Sparkles icon is deliberately removed from the export; use Cpu / Workflow / Layers / Boxes / Database for AI/data/process beats. Generic "AI sparkle in a rounded square" is the #1 cliché the user has banned.
 7. **Vary scene MODES — pick the most relevant per scene, never repeat the same mode.**
    You have a palette of 8 modes below. For each scene, pick the ONE that best serves THAT scene's headline — don't force a quota of UI vs. abstract, just pick what's most pertinent. The only hard constraint: never use the same mode twice in one video. Variety alone is what stops it from feeling like a settings-page tour.
 

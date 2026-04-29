@@ -1,9 +1,10 @@
 import React from 'react'
 import {
   Plug, Mic, Check, MessageSquare, Search, Zap, Code, Settings,
-  MousePointer, Send, Sparkles, Loader, Bell, User, Lock, Globe,
+  MousePointer, Send, Loader, Bell, User, Lock, Globe,
   ChevronRight, Plus, X, Copy, Play, Pause, Volume2, Image as ImageIcon,
-  ArrowRight, Activity,
+  ArrowRight, Activity, Cpu, Layers, Database, GitBranch, FileText,
+  Cloud, Workflow, Boxes, ArrowUpRight, type LucideIcon,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -68,7 +69,12 @@ export const MockFrame: React.FC<MockFrameProps> = ({ url, tone = 'light', child
         overflow: 'hidden',
         background: surface.bg,
         border: `1px solid ${surface.border}`,
-        boxShadow: isDark ? '0 30px 80px rgba(0,0,0,0.45)' : '0 30px 80px rgba(0,0,0,0.20)',
+        // Layered shadow: a soft far blur + a tight close one. Lower-opacity
+        // far layer means the shadow falls off gracefully into the canvas
+        // instead of cutting hard at any container's overflow boundary.
+        boxShadow: isDark
+          ? '0 1px 2px rgba(0,0,0,0.18), 0 24px 48px -12px rgba(0,0,0,0.30), 0 60px 120px -20px rgba(0,0,0,0.20)'
+          : '0 1px 2px rgba(0,0,0,0.04), 0 24px 48px -12px rgba(0,0,0,0.08), 0 60px 120px -20px rgba(0,0,0,0.07)',
         display: 'flex',
         flexDirection: 'column',
         ...style,
@@ -262,14 +268,58 @@ export const AnimatedCursor: React.FC<AnimatedCursorProps> = ({ leftPct, topPct,
   )
 }
 
-/** Curated subset of lucide-react icons exposed by name. Cherry-picked
- *  to keep bundle size tight + cover the common SaaS marketing
- *  scenarios. The LLM calls e.g. <Remotion.Icons.Plug size={14} /> */
+/** Wrap a lucide icon so it defaults to a thin (1.5px) stroke — the
+ *  default 2px stroke reads as "Bootstrap admin 2018"; 1.5px is the
+ *  Linear / Vercel / Arc weight. The LLM can override per-call by
+ *  passing a different `strokeWidth` prop. */
+function thin(Icon: LucideIcon): React.FC<React.ComponentProps<LucideIcon>> {
+  const Wrapped: React.FC<React.ComponentProps<LucideIcon>> = (props) => (
+    <Icon strokeWidth={1.5} {...props} />
+  )
+  Wrapped.displayName = `Thin(${Icon.displayName ?? 'Icon'})`
+  return Wrapped
+}
+
+/** Curated subset of lucide-react icons exposed by name, wrapped with a
+ *  thin 1.5 stroke. Sparkles deliberately NOT exported — every render
+ *  the LLM picked it the result was a generic "AI sparkle" cliché.
+ *  Cpu / Workflow / Layers / Boxes / Atom-style shapes do the same job
+ *  with way more visual personality. */
 export const Icons = {
-  Plug, Mic, Check, Message: MessageSquare, Search, Zap, Code, Settings,
-  MousePointer, Send, Sparkles, Loader, Bell, User, Lock, Globe,
-  ChevronRight, Plus, X, Copy, Play, Pause, Volume: Volume2, Image: ImageIcon,
-  ArrowRight, Activity,
+  Plug:    thin(Plug),
+  Mic:     thin(Mic),
+  Check:   thin(Check),
+  Message: thin(MessageSquare),
+  Search:  thin(Search),
+  Zap:     thin(Zap),
+  Code:    thin(Code),
+  Settings: thin(Settings),
+  MousePointer: thin(MousePointer),
+  Send:    thin(Send),
+  Loader:  thin(Loader),
+  Bell:    thin(Bell),
+  User:    thin(User),
+  Lock:    thin(Lock),
+  Globe:   thin(Globe),
+  ChevronRight: thin(ChevronRight),
+  Plus:    thin(Plus),
+  X:       thin(X),
+  Copy:    thin(Copy),
+  Play:    thin(Play),
+  Pause:   thin(Pause),
+  Volume:  thin(Volume2),
+  Image:   thin(ImageIcon),
+  ArrowRight: thin(ArrowRight),
+  ArrowUpRight: thin(ArrowUpRight),
+  Activity: thin(Activity),
+  Cpu:     thin(Cpu),
+  Layers:  thin(Layers),
+  Database: thin(Database),
+  GitBranch: thin(GitBranch),
+  FileText: thin(FileText),
+  Cloud:   thin(Cloud),
+  Workflow: thin(Workflow),
+  Boxes:   thin(Boxes),
 } as const
 
 /** Recharts components exposed for the LLM. Animations driven by
