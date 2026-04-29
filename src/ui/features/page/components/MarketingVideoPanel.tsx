@@ -449,6 +449,7 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
         >
           {(working || ourJob?.status === 'running') ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
         </Button>
+        <span className={styles.costHint}>~€0.60 / generation · counted toward your monthly quota</span>
       </div>
 
       {/* Pipeline progress — shows while the backend job is running. The

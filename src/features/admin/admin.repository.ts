@@ -3,7 +3,7 @@ import { DatabaseError } from '../../shared/middleware/error.middleware.js'
 
 export interface UsageCounterRow {
   userId: string
-  feature: 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions'
+  feature: 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions' | 'marketing_video'
   count: number
 }
 

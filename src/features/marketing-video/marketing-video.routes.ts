@@ -4,6 +4,8 @@ import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { RunIdParamSchema } from '../run/run.schema.js'
 import { z } from 'zod'
 import { GenerateMarketingVideoOptionsSchema, VoiceTonePresetSchema } from './marketing-video.schema.js'
+import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
+import { incrementUsage, findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
 import {
   findMarketingVideoByRunId,
 } from './marketing-video.repository.js'
@@ -84,12 +86,24 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
       const opts = GenerateMarketingVideoOptionsSchema.safeParse(req.body ?? {})
       if (!opts.success) throw new ValidationError(opts.error.flatten())
 
+      // Quota gate: refuse fast on Free / Founder plans that have hit
+      // their monthly token budget. Marketing video is the heaviest single
+      // op (600 tokens) so the gate matters. Resolved via the run → project
+      // → team chain.
+      const teamId = await findTeamIdByRunId(params.data.id)
+      if (teamId) await enforceQuotaOrThrow(teamId)
+
       const isAsync = req.query.async === '1'
 
       if (!isAsync) {
         // Sync mode: block the request, return the final summary.
         await generateMarketingVideoForRun(params.data.id, opts.data)
         const summary = await renderMarketingVideoForRun(params.data.id)
+        // Bump usage AFTER success so a failed pipeline doesn't burn budget.
+        if (teamId) {
+          try { await incrementUsage(teamId, 'marketing_video') }
+          catch (err) { console.warn('[usage] increment marketing_video failed:', (err as Error).message) }
+        }
         res.status(200).json(summary)
         return
       }
@@ -146,6 +160,12 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
         try {
           await generateMarketingVideoForRun(params.data.id, opts.data)
           await renderMarketingVideoForRun(params.data.id)
+          // Bump usage only AFTER the full pipeline succeeds — a failed
+          // render shouldn't burn the user's budget.
+          if (teamId) {
+            try { await incrementUsage(teamId, 'marketing_video') }
+            catch (err) { console.warn('[usage] increment marketing_video failed:', (err as Error).message) }
+          }
           if (jobId) await updateJobStatus(jobId, 'completed').catch(() => {})
         } catch (err) {
           const message = (err as Error).message

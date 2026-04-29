@@ -74,8 +74,14 @@
 
 .actions {
   display: flex;
-  gap: var(--space-sm);
+  align-items: center;
+  gap: var(--space-md);
   flex-wrap: wrap;
+}
+
+.costHint {
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
 }
 
 .scriptCard {

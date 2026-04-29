@@ -307,7 +307,7 @@ Every DB call through `*.repository.ts`. Services NEVER call Supabase directly.
 - After generation → auto-copied to `doc_pages.content`
 
 ### Full schema reference
-See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions; MCP: mcp_user_tokens), 29 migrations.
+See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions; MCP: mcp_user_tokens), 30 migrations.
 
 ---
 
@@ -327,9 +327,9 @@ Hard cap = blocks the operation when over budget (drives upgrades). Pay-as-you-g
 
 ### Token weights (`src/features/billing/billing.service.ts`)
 Tunable in code, no migration needed:
-- `TOKEN_COSTS` — weight each op contributes to the monthly budget (`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`)
-- `EURO_COSTS` — real COGS in € per op (`0.10 / 0.30 / 0.40 / 0.02`) — drives the admin "AI cost" column
-- `OVERAGE_EUR` — billable rate per extra op once over quota (`0.15 / 0.45 / 0.60 / 0.03`, ≈ 1.5× COGS)
+- `TOKEN_COSTS` — weight each op contributes to the monthly budget (`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`, `marketing_video=600`)
+- `EURO_COSTS` — real COGS in € per op (`0.10 / 0.30 / 0.40 / 0.02 / 0.60`) — drives the admin "AI cost" column. Marketing video bundles Gemini Pro script + ElevenLabs voice + ElevenLabs music + Railway render — heaviest single op.
+- `OVERAGE_EUR` — billable rate per extra op once over quota (`0.15 / 0.45 / 0.60 / 0.03 / 0.90`, ≈ 1.5× COGS)
 - `OVERAGE_ENABLED_PLANS` — `Set('team', 'agency')`
 
 ### Tracking
@@ -338,6 +338,7 @@ Tunable in code, no migration needed:
   - Voice-over → `run.routes /generate-voiceover` → `incrementUsage(ownerId, 'voiceover')`
   - Try Doc → `run.service.analyzeTryDoc` → `incrementUsage(ownerId, 'try_doc')`
   - Chat (widget + in-app) → `widget.routes` and `chat.routes` → `registerChatSession(...) + incrementUsage(ownerId, 'chat_sessions')` only on new session_token per month
+  - Marketing video → `marketing-video.routes /:id/marketing-video` → `incrementUsage(teamId, 'marketing_video')` after the full pipeline succeeds (sync mode = inline, async mode = inside `waitUntil`). Quota-gated: Free / Founder get 402 `QUOTA_EXCEEDED` when over budget.
 - `chat_sessions` table dedupes by `(project_id, session_token, period_month)` with a `source ∈ {widget, app}` column for analytics. Same monthly bucket regardless of source.
 
 ### Admin

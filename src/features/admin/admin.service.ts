@@ -6,7 +6,7 @@ import type { AdminUsageReport, AdminUsageRow } from './admin.types.js'
 import type { PlanId } from '../billing/billing.types.js'
 
 function emptyCounts(): Record<UsageFeature, number> {
-  return { doc_run: 0, voiceover: 0, try_doc: 0, chat_sessions: 0 }
+  return { doc_run: 0, voiceover: 0, try_doc: 0, chat_sessions: 0, marketing_video: 0 }
 }
 
 export async function getUsageReport(periodMonth: string): Promise<AdminUsageReport> {
@@ -43,23 +43,27 @@ export async function getUsageReport(periodMonth: string): Promise<AdminUsageRep
       voiceover: counts.voiceover * TOKEN_COSTS.voiceover,
       try_doc: counts.try_doc * TOKEN_COSTS.try_doc,
       chat_sessions: counts.chat_sessions * TOKEN_COSTS.chat_sessions,
+      marketing_video: counts.marketing_video * TOKEN_COSTS.marketing_video,
     }
     const tokensUsed =
       tokensByFeature.doc_run +
       tokensByFeature.voiceover +
       tokensByFeature.try_doc +
-      tokensByFeature.chat_sessions
+      tokensByFeature.chat_sessions +
+      tokensByFeature.marketing_video
     const euroByFeature: Record<UsageFeature, number> = {
       doc_run: counts.doc_run * EURO_COSTS.doc_run,
       voiceover: counts.voiceover * EURO_COSTS.voiceover,
       try_doc: counts.try_doc * EURO_COSTS.try_doc,
       chat_sessions: counts.chat_sessions * EURO_COSTS.chat_sessions,
+      marketing_video: counts.marketing_video * EURO_COSTS.marketing_video,
     }
     const euroCost =
       euroByFeature.doc_run +
       euroByFeature.voiceover +
       euroByFeature.try_doc +
-      euroByFeature.chat_sessions
+      euroByFeature.chat_sessions +
+      euroByFeature.marketing_video
     const percent = plan && plan.monthlyTokens > 0
       ? Math.round((tokensUsed / plan.monthlyTokens) * 1000) / 10
       : 0
@@ -75,7 +79,8 @@ export async function getUsageReport(periodMonth: string): Promise<AdminUsageRep
         counts.doc_run * excessRatio * OVERAGE_EUR.doc_run +
         counts.voiceover * excessRatio * OVERAGE_EUR.voiceover +
         counts.try_doc * excessRatio * OVERAGE_EUR.try_doc +
-        counts.chat_sessions * excessRatio * OVERAGE_EUR.chat_sessions
+        counts.chat_sessions * excessRatio * OVERAGE_EUR.chat_sessions +
+        counts.marketing_video * excessRatio * OVERAGE_EUR.marketing_video
     }
 
     rows.push({

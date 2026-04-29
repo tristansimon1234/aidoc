@@ -17,16 +17,18 @@ export const TOKEN_COSTS = {
   voiceover: 300,
   try_doc: 400,
   chat_sessions: 20,
+  marketing_video: 600,   // bundles script + voice + music + render — heaviest single op
 } as const
 
 // Real AI / infra cost per operation in EUR — the actual COGS we pay to
 // Gemini / ElevenLabs / Browserbase / Claude on each call. Used by the admin
 // dashboard and later by the overage billing logic. Keep in sync with reality.
 export const EURO_COSTS = {
-  doc_run: 0.10,       // Gemini 2.5 Flash video + doc + storage
-  voiceover: 0.30,     // ElevenLabs eleven_multilingual_v2 ~0.20€/1K chars × ~1.5K chars
-  try_doc: 0.40,       // Claude Sonnet 4 (via Stagehand) + Browserbase + Gemini analysis
-  chat_sessions: 0.02, // Gemini 2.5 Flash ~6 turns per session
+  doc_run: 0.10,           // Gemini 2.5 Flash video + doc + storage
+  voiceover: 0.30,         // ElevenLabs eleven_multilingual_v2 ~0.20€/1K chars × ~1.5K chars
+  try_doc: 0.40,           // Claude Sonnet 4 (via Stagehand) + Browserbase + Gemini analysis
+  chat_sessions: 0.02,     // Gemini 2.5 Flash ~6 turns per session
+  marketing_video: 0.60,   // Gemini 2.5 Pro script (~0.08) + ElevenLabs voice (~0.30) + music (~0.20) + Railway render (~0.05)
 } as const
 
 // Overage price per extra op, billed once the user exceeds their plan's
@@ -38,6 +40,7 @@ export const OVERAGE_EUR = {
   voiceover: 0.45,
   try_doc: 0.60,
   chat_sessions: 0.03,
+  marketing_video: 0.90,   // 1.5× COGS
 } as const
 
 export const OVERAGE_ENABLED_PLANS: ReadonlySet<PlanId> = new Set(['team', 'agency'])
@@ -77,7 +80,8 @@ export async function getSummary(ownerUserId: string, teamId: string): Promise<B
     counters.doc_run * TOKEN_COSTS.doc_run +
     counters.voiceover * TOKEN_COSTS.voiceover +
     counters.try_doc * TOKEN_COSTS.try_doc +
-    counters.chat_sessions * TOKEN_COSTS.chat_sessions
+    counters.chat_sessions * TOKEN_COSTS.chat_sessions +
+    counters.marketing_video * TOKEN_COSTS.marketing_video
 
   const overageEnabled = OVERAGE_ENABLED_PLANS.has(plan.id)
   const snapshot: UsageSnapshot = {
@@ -132,7 +136,8 @@ export async function checkQuota(teamId: string): Promise<QuotaCheck> {
     counters.doc_run * TOKEN_COSTS.doc_run +
     counters.voiceover * TOKEN_COSTS.voiceover +
     counters.try_doc * TOKEN_COSTS.try_doc +
-    counters.chat_sessions * TOKEN_COSTS.chat_sessions
+    counters.chat_sessions * TOKEN_COSTS.chat_sessions +
+    counters.marketing_video * TOKEN_COSTS.marketing_video
 
   const percent = pctOf(tokensUsed, plan.monthlyTokens)
   const overageEnabled = OVERAGE_ENABLED_PLANS.has(plan.id)
