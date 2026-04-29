@@ -270,6 +270,13 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
    - The click target stays at a stable position: put it inside a flex-centered region so the cursor's terminal coords (50% / 55%) land on it consistently.
    - Pattern: \`<div className='h-full flex flex-col'><header className='p-4 border-b border-zinc-200 flex items-center'><span className='text-[14px] font-bold text-zinc-900'>API Tokens</span></header><div className='flex-1 flex flex-col items-center justify-center gap-3'><span className='text-[13px] text-zinc-500'>No tokens yet</span><button className='...'>Create token</button></div></div>\` — header at top + empty-state at center, button is the visual anchor.
    - Maximum ONE \`<Remotion.AnimatedCursor>\` per scene, maximum ONE \`<Remotion.MockFrame>\` per scene.
+
+6. **LAYOUT STABILITY — entries NEVER displace siblings.** The user has explicitly flagged "layout shift" in chat-style mocks. ZERO tolerance for this. Concrete rules:
+   - **Reserve the full layout from frame 0.** Every element that will eventually be visible must already occupy its final slot at frame 0, even if its opacity is 0. \`opacity\` and \`transform\` do NOT affect layout — those are the ONLY props you should animate to enter elements. NEVER animate \`width\`, \`height\`, \`padding\`, \`margin\`, or use conditional \`{cond && <div>}\` for things that will appear later — it pushes siblings around when it mounts.
+   - **Chat / message bubbles: pick short copy that fits ONE line at the bubble's max-width.** A typed-on user prompt that wraps to a second line shifts the AI bubble below it as the bubble's height jumps from 1 to 2 lines. Prefer 5-9 words. If you need longer copy, fade in the WHOLE bubble (no per-character typing).
+   - **AI typing → AI reply transition: stack both in the SAME slot, one absolute-positioned, cross-fade.** \`<div className='relative min-h-[44px]'><div className='absolute inset-0' style={{opacity: dotsOp}}>typing-dots</div><div style={{opacity: replyOp}}>reply text</div></div>\`. The slot's \`min-height\` accommodates the taller of the two; nothing reflows when the reply replaces the dots.
+   - **Chat container: fixed height + \`justify-start\`, NOT vertical centering.** Center-aligned chat regions push existing bubbles up when new ones enter at the bottom. Use \`<div className='h-full p-6 flex flex-col gap-4'>\` (top-aligned) so new bubbles append into empty space below.
+   - **Bento / dashboard cards: fixed grid template, no conditional cells.** All cells render from frame 0 with opacity:0; they fade in via spring delays. Don't lazy-mount cards — empty grid space is fine, mounting one mid-scene reflows the rest.
 - Available React: \`React.useMemo\`, \`React.useEffect\` will not work usefully (frames re-render fresh) — for animation use Remotion only.
 - Available Remotion namespace (use as \`Remotion.foo\`):
   - \`Remotion.useCurrentFrame()\` → number, the current frame within the scene's sub-timeline (NOT the whole video). Frame 0 is the start of THIS scene.
@@ -666,7 +673,59 @@ function MockScene({ branding }) {
 }
 \`\`\`
 
-These seven examples are your baseline. EVERY scene must:
+#### Reference example H — chat (NO layout shifts)
+
+User question + AI typing dots + AI reply, all in pre-allocated slots. Bubbles fade in (opacity only); the typing-dots placeholder cross-fades into the reply in the SAME slot via absolute positioning, so nothing ever reflows. Container is top-aligned (\`justify-start\`), NOT vertically centered, so new content below doesn't push existing content up. NEVER use \`font-mono\` on the bubble text — chat is prose.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const userT = Remotion.spring({ frame: f - 6, fps, config: { damping: 16, stiffness: 90 } })
+  const userOp = Remotion.interpolate(userT, [0, 1], [0, 1])
+  const userY = Remotion.interpolate(userT, [0, 1], [12, 0])
+  // Typing dots appear at frame 28, fade out as reply takes over at frame 70.
+  const dotsOp = Remotion.interpolate(f, [22, 28, 64, 70], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const replyT = Remotion.spring({ frame: f - 70, fps, config: { damping: 16, stiffness: 90 } })
+  const replyOp = Remotion.interpolate(replyT, [0, 1], [0, 1])
+  // SUSTAINED MOTION: three pulsing dots (staggered) + cursor blink in user bubble.
+  const dot = (i) => 0.3 + 0.7 * Math.abs(Math.sin((f - i * 6) / 8))
+  const blink = (f % 30) < 15 ? 1 : 0
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <Remotion.MockFrame url='claude.ai/chat' tone='light'>
+        <div className='h-full flex flex-col p-6 gap-4'>
+          <div className='flex items-center gap-2'>
+            <Remotion.Icons.Cpu size={14} color={branding.accentColor} />
+            <span className='text-[12px] font-bold tracking-tight text-zinc-900'>{branding.productName}</span>
+            <span className='ml-auto'><Remotion.Pill tone='success' dot>connected</Remotion.Pill></span>
+          </div>
+          {/* User bubble — fixed slot, opacity+transform only */}
+          <div className='self-end max-w-[75%]' style={{ opacity: userOp, transform: \`translateY(\${userY}px)\` }}>
+            <div className='rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] text-white' style={{ background: branding.accentColor }}>
+              How do I connect Stripe?<span className='inline-block w-[2px] h-[14px] ml-0.5 align-middle bg-white' style={{ opacity: blink }} />
+            </div>
+          </div>
+          {/* AI bubble area — typing dots ↔ reply share the SAME slot */}
+          <div className='self-start max-w-[75%] flex items-start gap-2.5'>
+            <div className='w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0' style={{ background: branding.accentColor }}>AI</div>
+            <div className='relative min-h-[44px] flex-1'>
+              <div className='absolute inset-0 flex items-center gap-1.5 px-4 rounded-2xl rounded-tl-md bg-zinc-100 border border-zinc-200/70' style={{ opacity: dotsOp }}>
+                {[0,1,2].map(i => <span key={i} className='w-2 h-2 rounded-full bg-zinc-500' style={{ opacity: dot(i) }} />)}
+              </div>
+              <div className='rounded-2xl rounded-tl-md px-4 py-2.5 bg-zinc-100 border border-zinc-200/70 text-[15px] text-zinc-800' style={{ opacity: replyOp }}>
+                Open Settings → Integrations, paste your key, hit save.
+              </div>
+            </div>
+          </div>
+        </div>
+      </Remotion.MockFrame>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+These eight examples are your baseline. EVERY scene must:
 1. Use \`<Remotion.MockFrame tone='light'>\` (light, never dark).
 2. Have NO outer background — the AbsoluteFill is transparent.
 3. Use Tailwind \`className\` for static styling, \`style={{...}}\` only for animated values.
@@ -683,7 +742,7 @@ These seven examples are your baseline. EVERY scene must:
 
    **UI modes** (browser frame inside) — pick when the scene's value is "look, the product does X":
    - **bento**         — example B. Browser frame WITH perspective tilt, mixed-size grid, one accent-tinted hero card.
-   - **chat**          — typing prompt + AI reply pair.
+   - **chat**          — example H. User bubble + AI typing dots ↔ AI reply, all in pre-allocated slots so nothing reflows. Bubble copy must fit ONE line at max-width or the wrap shifts the layout.
    - **chart**         — example D (Recharts). Browser frame, area/line/bar chart with frame-driven data sweep.
    - **cursor-click**  — example C. Browser frame with a populated product surface (header + empty-state + CTA button), cursor flies in and clicks the CTA.
 
