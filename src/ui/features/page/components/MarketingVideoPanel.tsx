@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Spinner, Badge } from '../../../design-system/components/index.js'
+import { Button, Spinner, Badge, ProgressLoader } from '../../../design-system/components/index.js'
 import { api, ApiError } from '../../../shared/api/client.js'
 import type { MarketingVideoSummaryDTO } from '../../../shared/api/client.js'
 import { useJobs } from '../../../shared/jobs/JobContext.js'
@@ -445,11 +445,33 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
         <Button
           variant="primary"
           onClick={handleGenerateAndRender}
-          disabled={working || (musicChoice === 'upload' && !musicUploadPath)}
+          disabled={working || ourJob?.status === 'running' || (musicChoice === 'upload' && !musicUploadPath)}
         >
-          {working ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
+          {(working || ourJob?.status === 'running') ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
         </Button>
       </div>
+
+      {/* Pipeline progress — shows while the backend job is running. The
+       *  job stays in 'running' for ~2-3 min after the panel-side `working`
+       *  flag flips back to false (HTTP 202 returns in ~1s, the actual
+       *  pipeline runs server-side). Driving visibility off the JobContext
+       *  status means the loader is shown for the full duration, not just
+       *  the request lifetime. */}
+      {ourJob?.status === 'running' && (
+        <div style={{ marginTop: 16 }}>
+          <ProgressLoader
+            startedAt={ourJob.startedAt}
+            steps={[
+              { label: 'Writing the script', estimatedSeconds: 30 },
+              { label: 'Synthesizing voice-over', estimatedSeconds: withVoiceover ? 25 : 1 },
+              { label: 'Composing music', estimatedSeconds: musicChoice === 'ai' ? 45 : 1 },
+              { label: 'Rendering the video', estimatedSeconds: 80 },
+            ]}
+            activeStep={0}
+            done={false}
+          />
+        </div>
+      )}
 
       {hasManifest && summary && !working && (
         <>
