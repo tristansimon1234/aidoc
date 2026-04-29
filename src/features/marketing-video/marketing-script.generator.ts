@@ -247,7 +247,7 @@ You may set "screenshotIndex" to any integer between 0 and ${Math.max(0, input.a
 ## Visuals — ${input.visualMode === 'mocks' ? 'TSX animations you write (every scene)' : 'real screenshots (every scene)'}
 
 ${input.visualMode === 'mocks'
-  ? `**Mode = MOCKS.** For every scene you write a small TSX component in the field \`mockCode\`. The component renders an ANIMATED illustration of the scene's idea — a cursor moving and clicking a button, text typing into a prompt, a progress bar filling, a notification toast popping in, a chat bubble appearing, a code line being highlighted. Compose freely; you control the visuals. Always set \`screenshotIndex: null\` in this mode. DO NOT also fill the legacy \`mock\` field.`
+  ? `**Mode = MOCKS.** For every scene you write a small TSX component in the field \`mockCode\`. The component renders an ANIMATED illustration of the scene's idea — text typing into a prompt, a progress bar filling, a notification toast popping in, a chat bubble appearing, a chart drawing in, a giant headline bursting word-by-word, a flow diagram revealing node-by-node. Compose freely; you control the visuals. Always set \`screenshotIndex: null\` in this mode. DO NOT also fill the legacy \`mock\` field.`
   : `**Mode = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}) and MUST NOT include \`mock\` or \`mockCode\`. If a scene has no relevant screenshot you may set \`screenshotIndex: null\` and the renderer will show an accent gradient placeholder.`}
 
 ${input.visualMode === 'mocks' ? `### Mock code — REQUIRED for every scene
@@ -263,12 +263,7 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 1. **Light mode ONLY** — use \`<Remotion.MockFrame tone='light'>\`. No \`tone='dark'\`. Even for terminal-style scenes, use a light-on-dark INSIDE block, not a dark frame. The video lives on a white canvas; dark frames look like glued-on cards.
 2. **Outer AbsoluteFill has NO background.** Use \`<Remotion.AbsoluteFill style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>\`. NO \`background:\` property at all. The FeatureScene canvas (white, branded) shows through.
 3. **Use Tailwind className for static styling.** Inline \`style={{}}\` ONLY for dynamic interpolated values (opacity, transform, computed colors). Everything static (padding, rounded corners, shadows, layout, colors that don't depend on frame) → \`className='rounded-2xl p-6 bg-white shadow-2xl ...'\`. Twind is installed; every Tailwind utility works at runtime.
-4. **Cursor alignment recipe — STRICT.**
-   When you put a cursor on a target:
-   - Place the target with FLEX CENTERING, not absolute coords. e.g. inside the MockFrame: \`<div className='flex items-center justify-center h-full'><button className='...'>Click</button></div>\`. The button's center is now at the parent's center.
-   - The cursor's terminal coordinates MUST match the button's center. If the button is in a flex-centered parent that fills the MockFrame interior, that center in panel-relative coords is approximately leftPct=50, topPct=55 (50% horizontal, slightly below center because the chrome bar takes ~6% of the height).
-   - Use \`<Remotion.AnimatedCursor leftPct={cursorLeft} topPct={cursorTop} ... />\` with leftPct/topPct interpolated from a starting position (e.g. 80, 15) to the target (50, 55).
-   - DON'T put cursors on off-center elements (like a Copy button next to an input). Either center the target or skip the cursor.
+4. **NEVER use \`<Remotion.AnimatedCursor>\`.** Cursor-click scenes look broken every time — cursor lands off-target, click ripple in empty space, button squished into the URL bar. The primitive exists for legacy reasons; do NOT call it. If a scene's idea is "user clicks something", use the chat / bento / chart / abstract modes instead — the voiceover narrates the verb, the visual shows the outcome.
 - Available React: \`React.useMemo\`, \`React.useEffect\` will not work usefully (frames re-render fresh) — for animation use Remotion only.
 - Available Remotion namespace (use as \`Remotion.foo\`):
   - \`Remotion.useCurrentFrame()\` → number, the current frame within the scene's sub-timeline (NOT the whole video). Frame 0 is the start of THIS scene.
@@ -288,9 +283,6 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 
   - \`<Remotion.AccentGlow color={branding.accentColor} frame={frame} size={540} position='center' />\`
     Cinematic blurred-circle backdrop. Place AS A SIBLING of the MockFrame (in the outer container, BEHIND the frame). Pass \`frame\` to enable the breathing pulse, omit for static. Position can be center / top / bottom / left / right.
-
-  - \`<Remotion.AnimatedCursor leftPct={50} topPct={70} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
-    Animated mouse cursor SVG + optional click ripple. \`leftPct\` / \`topPct\` are percentages (0-100) of the parent. To align with a flex-centered button: set leftPct=50, topPct=50 (same coords as the button's center via translate -50% -50%) and the cursor lands ON the button.
 
   - \`<Remotion.Icons.Plug size={14} color='currentColor' />\` — Lucide icons. Available names:
     Plug, Mic, Check, Message, Search, Zap, Code, Settings, MousePointer, Send, Sparkles, Loader, Bell, User, Lock, Globe, ChevronRight, Plus, X, Copy, Play, Pause, Volume, Image, ArrowRight, Activity. They take \`size\` (px) and standard SVG props.
@@ -312,24 +304,14 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 
 Your mock renders inside a **920 wide × 580 tall** panel (the visual half of the scene; the text headline sits in the OTHER half). That's your full coordinate space — NOT 1920×1080. Position everything relative to this.
 
-**Prefer flex centering over absolute pixel coordinates** — it's the #1 cause of misaligned cursors, off-target ripples, and elements that drift. Pattern:
+**Prefer flex centering over absolute pixel coordinates** — drifting elements are the #1 source of "looks broken" renders. Pattern:
 
 \`\`\`tsx
 // Outer container: full panel, flex center
 <Remotion.AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-  // Element you want centered: just renders, no need to compute (460-w/2, 290-h/2)
-  <div style={{ width: 280, height: 80, ... }}>Create token</div>
+  <div style={{ width: 280, height: 80, ... }}>Headline</div>
 </Remotion.AbsoluteFill>
 \`\`\`
-
-When you DO need absolute positioning (cursor, ripple), use percentages anchored on the SAME center point:
-
-\`\`\`tsx
-// Cursor terminal position = panel center = 50%/50%
-<div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}>...</div>
-\`\`\`
-
-This way the cursor lands ON the centered button regardless of exact pixel measurements. NO MORE "cursor clicks empty space".
 
 #### Visual style — aim for Linear / Vercel / Cursor 2026, NOT Bootstrap 2018
 
@@ -372,12 +354,8 @@ Use \`branding.accentColor\` for highlights, \`branding.textColor\` for prose, \
 - Type-on text:
   \`const charsShown = Math.floor(Remotion.interpolate(frame, [0, 60], [0, fullText.length], { extrapolateRight: 'clamp' }))\`
   then render \`fullText.slice(0, charsShown)\`.
-- Cursor sliding to a target:
-  \`const cursorProgress = Remotion.spring({ frame: frame - 12, fps, config: { damping: 18 } })\`
-  \`const cursorX = Remotion.interpolate(cursorProgress, [0, 1], [800, targetX])\`
 - Pulse / blink:
   \`const blink = (frame % 30) < 15 ? 1 : 0\`
-- Click ripple: an absolute-positioned circle whose radius interpolates outward + opacity fades (e.g. \`r = interpolate(frame, [clickFrame, clickFrame+18], [0, 60])\`).
 
 #### Reference example A — hero stat reveal (Linear-style, NO frame, type hero)
 
@@ -450,41 +428,6 @@ function MockScene({ branding }) {
           </div>
         </Remotion.MockFrame>
       </div>
-    </Remotion.AbsoluteFill>
-  )
-}
-\`\`\`
-
-#### Reference example C — cursor clicks centered button (MINIMAL only)
-
-CRITICAL ALIGNMENT RULE: when using a cursor, the click target is the ONLY content. No icon, no eyebrow, no headline, no subhead — they all displace the button vertically and the cursor lands in empty space. Just the button, dead-centered. The voiceover provides the context the visual omits.
-
-\`\`\`tsx
-function MockScene({ branding }) {
-  const f = Remotion.useCurrentFrame()
-  const { fps } = Remotion.useVideoConfig()
-  const btnT = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 90 } })
-  const btnOp = Remotion.interpolate(btnT, [0, 1], [0, 1])
-  const btnScale = Remotion.interpolate(btnT, [0, 1], [0.96, 1])
-  const curT = Remotion.spring({ frame: f - 18, fps, config: { damping: 16, stiffness: 70 } })
-  // Both end at 50/50 — same coords as the button's flex-center → cursor lands ON it.
-  const curL = Remotion.interpolate(curT, [0, 1], [82, 50])
-  const curTp = Remotion.interpolate(curT, [0, 1], [15, 50])
-  const click = f >= 56 && f < 64
-  const ripple = Remotion.interpolate(f, [56, 80], [0, 70], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  const rippleOp = Remotion.interpolate(f, [56, 80], [0.55, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  const press = click ? 0.96 : 1
-  return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-10 overflow-hidden'>
-      <Remotion.AccentGlow color={branding.accentColor} frame={f} size={520} />
-      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/settings\`} tone='light'>
-        {/* The button is the ONLY interior element. No surrounding text.
-            That's how the cursor's terminal coords align with the button center. */}
-        <div className='h-full w-full flex items-center justify-center'>
-          <button className='px-9 py-4 rounded-xl text-white text-lg font-bold' style={{ background: branding.accentColor, boxShadow: \`0 1px 2px rgba(0,0,0,0.06), 0 18px 40px -4px \${branding.accentColor}66\`, opacity: btnOp, transform: \`scale(\${btnScale * press})\` }}>Create token</button>
-        </div>
-      </Remotion.MockFrame>
-      <Remotion.AnimatedCursor leftPct={curL} topPct={curTp} ripple={click} rippleRadius={ripple} rippleOpacity={rippleOp} accentColor={branding.accentColor} />
     </Remotion.AbsoluteFill>
   )
 }
@@ -642,9 +585,7 @@ These seven examples are your baseline. EVERY scene must:
 1. Use \`<Remotion.MockFrame tone='light'>\` (light, never dark).
 2. Have NO outer background — the AbsoluteFill is transparent.
 3. Use Tailwind \`className\` for static styling, \`style={{...}}\` only for animated values.
-4. If using a cursor: target the panel center via flex-centering + cursor terminal coords (50, 55).
-   - **MAXIMUM ONE \`<Remotion.AnimatedCursor>\` per scene.** Two cursors look like a misplaced overlay error. If the scene's idea has multiple steps (e.g. "click Create token, then copy URL"), pick the ONE most visually meaningful click — usually the first action that creates something — and skip the rest. The voiceover narrates the rest of the flow; the visual just shows the moment.
-   - **The click target MUST be stable for the entire scene.** Don't add or remove sibling elements while the cursor is moving toward / clicking on the target — that displaces the target by some unpredictable px and the click lands in empty space. If you need a "result reveal" after the click (e.g. a token card appearing), put it BELOW the static target area, not inserted in a way that re-flows the layout.
+4. **NEVER use \`<Remotion.AnimatedCursor>\`.** The cursor-click pattern looks broken every time — cursor lands off-target, click ripple in empty space, button squished. Just don't. If you want to convey a click, use the chat / bento / chart / abstract modes instead — the voiceover does the verb.
    - **MAXIMUM ONE \`<Remotion.MockFrame>\` per scene.** Never nest or stack two MockFrames (e.g. a chat frame fading into a dashboard frame). Pick one product surface per scene; the next scene gets the next surface. Stacked frames read as a render glitch.
 5. **Typography — Geist by default, NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\` or any other stack — that overrides our config and the result looks like a 2014 system-monospace dump. Use the className \`font-mono\` ONLY for actual code, URLs, or terminal lines. NEVER use mono for prose, chat bubbles, button labels, or headings.
 6. **Type at scale — make it feel modern.** Headlines \`text-[32px]\` to \`text-[44px]\` (\`font-bold tracking-tight\`). Big numbers / counters \`text-[64px]\` to \`text-[96px]\` (\`tabular-nums tracking-tight\`). Body / chat text \`text-[15px]\` to \`text-[18px]\`. Labels / status pills \`text-[11px] font-bold tracking-widest uppercase\`. Tight letter-spacing on big text is what makes typography feel premium vs. dated.
@@ -655,7 +596,6 @@ These seven examples are your baseline. EVERY scene must:
    - **bento**         — example B. Browser frame WITH perspective tilt, mixed-size grid, one accent-tinted hero card.
    - **chat**          — typing prompt + AI reply pair.
    - **chart**         — example D (Recharts). Browser frame, area/line/bar chart with frame-driven data sweep.
-   - **cursor-click**  — example C. Browser frame, ONLY a centered button as content. Use SPARINGLY (alignment is fragile).
 
    **Abstract modes** (NO browser frame, the canvas IS the content) — pick when the scene's idea is bigger than any one screen (a claim, a process, a metric, a feeling):
    - **hero-stat**       — example A. Giant accent-colored number / metric, eyebrow label, subhead.

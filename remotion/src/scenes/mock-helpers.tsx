@@ -62,6 +62,7 @@ export const MockFrame: React.FC<MockFrameProps> = ({ url, tone = 'light', child
       style={{
         position: 'relative',
         width: '100%',
+        height: '100%',
         maxWidth: '100%',
         borderRadius: 16,
         overflow: 'hidden',
