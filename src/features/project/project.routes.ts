@@ -310,9 +310,13 @@ projectRouter.post('/:id/logo', (req: Request, res: Response, next: NextFunction
       const ext = contentType.includes('svg') ? 'svg' : contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
       const path = `projects/${projectId}/logo.${ext}`
 
-      const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
+      const { uploadToStorage, getSignedUrl } = await import('../../shared/db/storage.repository.js')
       await uploadToStorage('artifacts', path, body, contentType)
-      const logoUrl = getPublicUrl('artifacts', path)
+      // Signed URL (1 year). Public URLs from getPublicUrl 401 when the
+      // artifacts bucket isn't actually public on the user's Supabase
+      // instance — happens when the make-public migration didn't run.
+      // Signed URLs work regardless of bucket visibility.
+      const logoUrl = await getSignedUrl('artifacts', path)
 
       res.status(200).json({ logoUrl })
     } catch (err) {

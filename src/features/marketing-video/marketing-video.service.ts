@@ -1,7 +1,6 @@
 import { findRunById } from '../run/run.repository.js'
 import { findStepsByRunId } from '../run/run.repository.js'
 import { findPageById } from '../page/page.repository.js'
-import { findProjectById } from '../project/project.repository.js'
 import { getPublicUrl, uploadToStorage } from '../../shared/db/storage.repository.js'
 import { synthesizeSpeech, generateMusic, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 import { generateMarketingScript } from './marketing-script.generator.js'
@@ -106,8 +105,15 @@ function detectLanguage(markdown: string): string {
  */
 async function resolveBranding(projectId: string | null): Promise<MarketingBranding> {
   if (!projectId) return DEFAULT_BRANDING
-  const project = await findProjectById(projectId)
-  if (!project) return DEFAULT_BRANDING
+  // getProject (vs. findProjectById) re-signs stale public logo URLs so
+  // Remotion can fetch the logo even if the artifacts bucket isn't public.
+  const { getProject } = await import('../project/project.service.js')
+  let project
+  try {
+    project = await getProject(projectId)
+  } catch {
+    return DEFAULT_BRANDING
+  }
 
   const design = project.design
   return {

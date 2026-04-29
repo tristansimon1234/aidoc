@@ -3,6 +3,31 @@ import type { Project, CreateProjectInput, UpdateProjectInput } from './project.
 import * as projectRepo from './project.repository.js'
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
+import { getSignedUrl } from '../../shared/db/storage.repository.js'
+
+// Old logos were saved as `getPublicUrl()` strings. Those 401 when the
+// artifacts bucket isn't actually public on the user's Supabase instance
+// (the make-public migration didn't run, or RLS was added later). Detect
+// the public-URL shape, extract the storage path, and return a fresh
+// signed URL (1 year). Already-signed URLs and external URLs pass through.
+const ARTIFACTS_PATH_RE = /\/storage\/v1\/object\/(?:public|sign)\/artifacts\/([^?]+)/
+
+async function resignLogoUrl(logoUrl: string | null | undefined): Promise<string | null> {
+  if (!logoUrl) return null
+  // Already a signed URL with a token? Leave it alone.
+  if (logoUrl.includes('/storage/v1/object/sign/') && logoUrl.includes('token=')) return logoUrl
+  const m = logoUrl.match(ARTIFACTS_PATH_RE)
+  if (!m || !m[1]) return logoUrl
+  const fresh = await getSignedUrl('artifacts', decodeURIComponent(m[1]))
+  return fresh ?? logoUrl
+}
+
+async function hydrateProjectLogo(project: Project): Promise<Project> {
+  if (!project.design?.logoUrl) return project
+  const signed = await resignLogoUrl(project.design.logoUrl)
+  if (signed === project.design.logoUrl) return project
+  return { ...project, design: { ...project.design, logoUrl: signed ?? undefined } }
+}
 
 async function assertTeamMembership(teamId: string, userId: string): Promise<void> {
   const { data, error } = await supabase
@@ -41,12 +66,13 @@ export async function getProject(id: string, userId?: string): Promise<Project> 
   const project = await projectRepo.findProjectById(id)
   if (!project) throw new NotFoundError('Project')
   if (userId) await assertAccess(project, userId)
-  return project
+  return hydrateProjectLogo(project)
 }
 
 export async function listProjects(userId: string, teamId?: string): Promise<Project[]> {
   if (teamId) await assertTeamMembership(teamId, userId)
-  return projectRepo.listProjectsForUser(userId, teamId)
+  const projects = await projectRepo.listProjectsForUser(userId, teamId)
+  return Promise.all(projects.map(hydrateProjectLogo))
 }
 
 export async function updateProject(id: string, userId: string, input: UpdateProjectInput): Promise<Project> {
