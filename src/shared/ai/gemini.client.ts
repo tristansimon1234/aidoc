@@ -172,20 +172,41 @@ export async function generateTextStream(opts: {
 const EMBEDDING_DIMENSIONS = 768
 
 // Default embedding model — pinned to avoid a ListModels round-trip on
-// every cold start. The previous auto-discovery added 200-400ms to the
-// first chat message after a Vercel function spin-up. `text-embedding-004`
-// is Gemini's current production embedding endpoint at 768 dims (matches
-// our pgvector column). If Google ships a successor we override via
-// GEMINI_EMBEDDING_MODEL without code changes.
-const DEFAULT_EMBEDDING_MODEL = 'text-embedding-004'
-
+// Embedding model selection. We try the env override first (so an
+// operator can pin a specific model without a deploy), then fall back
+// to ListModels discovery — that lets us survive Google's periodic
+// model deprecations / regional rollouts without code changes. The
+// ListModels round-trip costs ~200-400ms but only fires once per
+// Vercel cold start; subsequent calls hit the in-process cache.
+//
+// Earlier versions of this code hard-coded `text-embedding-004`, which
+// turned out NOT to be visible to every API key (it's gated by region
+// + project enablement) and caused a 404 on first chat. Discovery is
+// the safer default.
 let _cachedEmbeddingModel: string | null = null
 
 async function getEmbeddingModel(): Promise<string> {
   if (_cachedEmbeddingModel) return _cachedEmbeddingModel
-  // Synchronous resolution — falls through to discovery only if the
-  // pinned model isn't supported by the API key (rare migration case).
-  _cachedEmbeddingModel = process.env.GEMINI_EMBEDDING_MODEL?.replace(/^models\//, '') ?? DEFAULT_EMBEDDING_MODEL
+
+  const override = process.env.GEMINI_EMBEDDING_MODEL?.replace(/^models\//, '')
+  if (override) {
+    _cachedEmbeddingModel = override
+    return _cachedEmbeddingModel
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models?key=${env.GEMINI_API_KEY}`,
+  )
+  if (!res.ok) throw new Error(`Failed to list models: ${res.status}`)
+
+  const data = (await res.json()) as { models: { name: string; supportedGenerationMethods: string[] }[] }
+  const embeddingModel = data.models.find((m) =>
+    m.supportedGenerationMethods.includes('embedContent'),
+  )
+  if (!embeddingModel) throw new Error('No embedding model available for this API key')
+
+  _cachedEmbeddingModel = embeddingModel.name.replace(/^models\//, '')
+  console.log(`[gemini] Using embedding model: ${_cachedEmbeddingModel}`)
   return _cachedEmbeddingModel
 }
 
