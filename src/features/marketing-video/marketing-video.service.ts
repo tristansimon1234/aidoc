@@ -570,10 +570,12 @@ export async function updateMarketingManifestForRun(
     ...existing,
     manifest: updatedManifest,
     manifestUrl,
-    // Manifest changed → existing MP4 no longer matches. Drop the URL
-    // and reset status so the UI shows a clear "Re-render" CTA.
-    videoUrl: null,
-    videoPath: null,
+    // Manifest changed → the existing MP4 no longer matches its source.
+    // We deliberately KEEP videoUrl + videoPath so the user doesn't
+    // lose their preview while iterating; only flip renderStatus to
+    // 'idle'. The UI uses that combination (videoUrl present + status
+    // 'idle') to show the old video alongside a "manifest edited,
+    // re-render to apply" banner. The next /render overwrites the path.
     renderStatus: 'idle',
     renderError: null,
   }

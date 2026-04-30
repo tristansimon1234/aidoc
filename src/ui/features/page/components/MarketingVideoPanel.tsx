@@ -255,6 +255,26 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
     }
   }
 
+  // Render only — re-runs the Remotion render against the current
+  // manifest WITHOUT re-doing Gemini script + ElevenLabs voice + music.
+  // Cheap (~render cost only) and fast (2-5min). Used after an AI edit
+  // to apply the new manifest without burning the full pipeline.
+  const [rerendering, setRerendering] = useState(false)
+  const handleRerenderOnly = async (): Promise<void> => {
+    if (!runId || rerendering) return
+    setRerendering(true)
+    setError(null)
+    try {
+      const fresh = await api.runs.marketingVideo.render(runId)
+      setSummary(fresh)
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : (err as Error).message
+      setError(message)
+    } finally {
+      setRerendering(false)
+    }
+  }
+
   // AI-driven manifest refinement. Calls /marketing-video/edit with the
   // user's instruction + recent history; Gemini Pro returns the updated
   // manifest. Server validates + persists + resets renderStatus, so on
@@ -512,13 +532,32 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       {/* === Result (after) === */}
       {hasManifest && summary && !working && ourJob?.status !== 'running' && (
         <div className={styles.resultBlock}>
-          {summary.videoUrl && renderStatus === 'ready' && (
+          {/* The video stays visible across edits — even when renderStatus
+            *  flipped back to 'idle' (manifest changed, no fresh render).
+            *  The banner below tells the user the preview is stale. */}
+          {summary.videoUrl && (renderStatus === 'ready' || renderStatus === 'idle') && (
             <video
               className={styles.videoPlayer}
               controls
               src={summary.videoUrl}
               preload="metadata"
             />
+          )}
+
+          {summary.videoUrl && renderStatus === 'idle' && (
+            <div className={styles.staleBanner}>
+              <span className={styles.staleBannerText}>
+                Preview is from before your last edit. Re-render to apply the new manifest.
+              </span>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => void handleRerenderOnly()}
+                disabled={rerendering}
+              >
+                {rerendering ? 'Rendering…' : 'Re-render now'}
+              </Button>
+            </div>
           )}
 
           {summary.manifest.voiceoverUrl && (
@@ -530,7 +569,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             />
           )}
 
-          {summary.videoUrl && (
+          {summary.videoUrl && renderStatus === 'ready' && (
             <div className={styles.actions}>
               <a href={summary.videoUrl} download="marketing.mp4" className={styles.downloadLink}>
                 Download MP4

@@ -327,6 +327,32 @@ input[type='range'].volumeSlider::-moz-range-thumb {
   background: color-mix(in srgb, var(--color-fg) 4%, transparent);
 }
 
+/* === Stale banner ===
+ *  Shown when a manifest has been edited (via AI chat or PUT) but the
+ *  video preview hasn't been re-rendered yet. Inline CTA so the user
+ *  doesn't have to scroll to find the regenerate button.
+ */
+
+.staleBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--color-fg) 4%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.staleBannerText {
+  flex: 1;
+  min-width: 200px;
+  color: var(--color-fg);
+}
+
 /* === Refine with AI ===
  *  Mini chat panel that lives at the bottom of the result block. Users
  *  type plain-language instructions ("shorten scene 2", "make the CTA
