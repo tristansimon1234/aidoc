@@ -97,14 +97,31 @@
       '#aidoc-widget-header span{font-size:14px;font-weight:600;color:' + C.text + '}',
       '#aidoc-widget-close{background:none;border:none;color:' + mutedText + ';cursor:pointer;font-size:18px;padding:4px;line-height:1;border-radius:6px;transition:color .15s,background .15s}',
       '#aidoc-widget-close:hover{color:' + C.text + ';background:' + (isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)') + '}',
-      '#aidoc-widget-messages{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}',
-      '.aidoc-msg{max-width:88%;font-size:13px;line-height:1.6;padding:10px 14px;border-radius:14px;word-wrap:break-word}',
-      '.aidoc-msg img{max-width:100%;border-radius:8px;margin:8px 0}',
-      '.aidoc-msg a{color:' + C.accent + '}',
-      '.aidoc-msg-user{align-self:flex-end;background:' + C.accent + ';color:white;border-radius:14px 14px 4px 14px}',
-      '.aidoc-msg-bot{align-self:flex-start;background:' + subtle + ';color:' + C.text + ';border:1px solid ' + border + ';border-radius:14px 14px 14px 4px}',
-      '.aidoc-sources{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid ' + border + '}',
-      '.aidoc-source{font-size:10px;color:' + C.accent + ';background:' + tint + ';padding:2px 8px;border-radius:4px}',
+      '#aidoc-widget-messages{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}',
+      // User: tight pill, subtle bg tint, NO border, NO accent fill — same lean style as the admin chat.
+      '.aidoc-msg-user{align-self:flex-end;max-width:80%;padding:7px 14px;background:' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.05)') + ';color:' + C.text + ';border-radius:16px;font-size:13.5px;line-height:1.5;word-wrap:break-word;animation:aidoc-msg-in 200ms cubic-bezier(.16,1,.3,1)}',
+      // Bot: full-width inline text (no bubble), like Claude.ai. Compact line-height for the smaller widget viewport.
+      '.aidoc-msg-bot{align-self:stretch;font-size:14px;line-height:1.6;color:' + C.text + ';animation:aidoc-msg-in 200ms cubic-bezier(.16,1,.3,1)}',
+      '.aidoc-msg-bot p{margin:0 0 10px 0}',
+      '.aidoc-msg-bot p:last-child{margin-bottom:0}',
+      '.aidoc-msg-bot ul,.aidoc-msg-bot ol{margin:0 0 10px 0;padding-left:20px}',
+      '.aidoc-msg-bot li{margin:3px 0}',
+      '.aidoc-msg-bot a{color:' + C.text + ';text-decoration:underline;text-underline-offset:3px;text-decoration-color:' + (isDark ? 'rgba(255,255,255,.4)' : 'rgba(0,0,0,.4)') + '}',
+      '.aidoc-msg-bot a:hover{text-decoration-color:' + C.text + '}',
+      '.aidoc-msg-bot code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;padding:2px 6px;background:' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)') + ';border-radius:4px}',
+      '.aidoc-msg-bot img{max-width:100%;border-radius:8px;margin:8px 0}',
+      // Streaming caret — thin blinking bar at end of in-progress text
+      '.aidoc-msg-bot.streaming::after{content:"";display:inline-block;width:2px;height:1.05em;background:' + C.text + ';vertical-align:text-bottom;margin-left:2px;animation:aidoc-caret 1s step-end infinite;border-radius:1px}',
+      '@keyframes aidoc-caret{0%,50%{opacity:1}50.01%,100%{opacity:0}}',
+      '@keyframes aidoc-msg-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}',
+      // Thinking shimmer — Vercel/Claude pattern: brain icon + gradient that sweeps the text
+      '.aidoc-thinking{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;line-height:1.5;height:1.5em;align-self:flex-start;animation:aidoc-msg-in 200ms cubic-bezier(.16,1,.3,1)}',
+      '.aidoc-thinking svg{width:16px;height:16px;color:' + mutedText + ';flex-shrink:0;opacity:.85}',
+      '.aidoc-thinking-text{background:linear-gradient(90deg,' + (isDark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)') + ' 0%,' + (isDark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)') + ' 40%,' + C.text + ' 50%,' + (isDark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)') + ' 60%,' + (isDark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)') + ' 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:aidoc-shimmer 1.6s linear infinite;font-weight:500}',
+      '@keyframes aidoc-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}',
+      '.aidoc-sources{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}',
+      '.aidoc-source{font-size:11px;color:' + C.text + ';background:' + (isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)') + ';border:1px solid ' + border + ';padding:3px 9px;border-radius:999px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}',
+      '.aidoc-source:hover{border-color:' + (isDark ? 'rgba(255,255,255,.3)' : 'rgba(0,0,0,.25)') + '}',
       '.aidoc-welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px}',
       '.aidoc-welcome h3{font-size:16px;font-weight:600;color:' + C.text + ';margin:0}',
       '.aidoc-welcome p{font-size:12px;color:' + mutedText + ';margin:0;max-width:280px;line-height:1.5}',
@@ -259,11 +276,24 @@
 
     msgContainer.innerHTML = '';
     messages.forEach(function (m) {
+      // Streaming assistant message with no content yet → shimmer Thinking
+      if (m.role === 'assistant' && m.streaming && !m.content) {
+        var thinking = document.createElement('div');
+        thinking.className = 'aidoc-thinking';
+        thinking.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+            '<path d="M12 5a3 3 0 0 0-3 3v.5a3 3 0 0 0-3 3v.5a3 3 0 0 0-1 5.83V19a3 3 0 0 0 6 0V8a3 3 0 0 0 1 0V19a3 3 0 0 0 6 0v-1.17a3 3 0 0 0-1-5.83V12a3 3 0 0 0-3-3.5V8a3 3 0 0 0-3-3z" />' +
+            '<path d="M9 12h.01" /><path d="M15 12h.01" />' +
+          '</svg>' +
+          '<span class="aidoc-thinking-text">Thinking…</span>';
+        msgContainer.appendChild(thinking);
+        return;
+      }
       var div = document.createElement('div');
-      div.className = 'aidoc-msg ' + (m.role === 'user' ? 'aidoc-msg-user' : 'aidoc-msg-bot');
+      div.className = (m.role === 'user' ? 'aidoc-msg-user' : 'aidoc-msg-bot' + (m.streaming ? ' streaming' : ''));
       if (m.role === 'assistant') {
         div.innerHTML = simpleMarkdown(m.content);
-        if (m.sources && m.sources.length > 0) {
+        if (!m.streaming && m.sources && m.sources.length > 0) {
           var srcDiv = document.createElement('div');
           srcDiv.className = 'aidoc-sources';
           m.sources.forEach(function (s) {
@@ -274,7 +304,7 @@
           });
           div.appendChild(srcDiv);
         }
-        if (m.walkthroughAvailable) {
+        if (!m.streaming && m.walkthroughAvailable) {
           var guideBtn = document.createElement('button');
           guideBtn.className = 'aidoc-guide-btn';
           guideBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg> Guide me';
@@ -288,7 +318,7 @@
     });
 
     var lastMsg = messages[messages.length - 1];
-    if (!isSending && lastMsg && lastMsg.role === 'assistant' && lastMsg.followUps && lastMsg.followUps.length > 0) {
+    if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.streaming && lastMsg.followUps && lastMsg.followUps.length > 0) {
       var fuDiv = document.createElement('div');
       fuDiv.className = 'aidoc-suggestions';
       fuDiv.style.alignSelf = 'flex-start';
@@ -302,34 +332,115 @@
       msgContainer.appendChild(fuDiv);
     }
 
-    if (isSending) {
-      var typing = document.createElement('div');
-      typing.className = 'aidoc-typing';
-      typing.textContent = 'Searching docs...';
-      msgContainer.appendChild(typing);
-    }
-
     msgContainer.scrollTop = msgContainer.scrollHeight;
   }
 
+  // Streaming send — uses SSE so the widget renders shimmer Thinking…
+  // → token-by-token text. Falls back to JSON POST on browsers that
+  // don't support ReadableStream in fetch responses (very old Safari).
   function sendMessage(text) {
     text = (text || '').trim();
     if (!text || isSending) return;
     inputEl.value = '';
     messages.push({ role: 'user', content: text });
+    // Pre-create the assistant message in `streaming` state so the
+    // shimmer Thinking… is visible immediately. Tracks the array index
+    // so subsequent deltas patch the right message.
+    var assistantIdx = messages.length;
+    messages.push({ role: 'assistant', content: '', streaming: true, _originalQuestion: text });
     isSending = true;
     sendBtn.disabled = true;
     renderMessages();
-    var history = messages.map(function (m) { return { role: m.role, content: m.content }; });
-    fetch(API_BASE + '/' + API_KEY + '/chat', {
+    var history = messages.slice(0, -2).map(function (m) { return { role: m.role, content: m.content }; });
+    var body = JSON.stringify({
+      message: text,
+      history: history,
+      sessionToken: SESSION_TOKEN,
+      userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() },
+    });
+
+    function finish() {
+      messages[assistantIdx].streaming = false;
+      isSending = false;
+      sendBtn.disabled = false;
+      renderMessages();
+      inputEl.focus();
+    }
+
+    function onError() {
+      messages[assistantIdx].content = 'Sorry, something went wrong. Please try again.';
+      finish();
+    }
+
+    // ReadableStream support detection (covers all modern browsers; older
+    // Safari pre-2020 falls back to JSON below).
+    var supportsStream = typeof TextDecoder !== 'undefined' && typeof Response !== 'undefined';
+
+    if (!supportsStream) {
+      // Legacy non-streaming fallback
+      fetch(API_BASE + '/' + API_KEY + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          messages[assistantIdx].content = data.answer;
+          messages[assistantIdx].sources = data.sources;
+          messages[assistantIdx].followUps = data.followUps || [];
+          messages[assistantIdx].walkthroughAvailable = data.walkthroughAvailable || false;
+          finish();
+        })
+        .catch(onError);
+      return;
+    }
+
+    fetch(API_BASE + '/' + API_KEY + '/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history: history.slice(0, -1), sessionToken: SESSION_TOKEN, userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() } }),
+      body: body,
     })
-      .then(function (r) { return r.json(); })
-      .then(function (data) { messages.push({ role: 'assistant', content: data.answer, sources: data.sources, followUps: data.followUps || [], walkthroughAvailable: data.walkthroughAvailable || false, _originalQuestion: text }); })
-      .catch(function () { messages.push({ role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }); })
-      .finally(function () { isSending = false; sendBtn.disabled = false; renderMessages(); inputEl.focus(); });
+      .then(function (res) {
+        if (!res.ok || !res.body) throw new Error('Stream failed: ' + res.status);
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        var fullText = '';
+        function pump() {
+          return reader.read().then(function (chunk) {
+            if (chunk.done) { finish(); return; }
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var sep;
+            while ((sep = buffer.indexOf('\n\n')) >= 0) {
+              var frame = buffer.slice(0, sep);
+              buffer = buffer.slice(sep + 2);
+              var lines = frame.split('\n');
+              for (var i = 0; i < lines.length; i++) {
+                if (lines[i].indexOf('data: ') !== 0) continue;
+                var payload = lines[i].slice(6).trim();
+                if (payload === '[DONE]') { finish(); return; }
+                try {
+                  var ev = JSON.parse(payload);
+                  if (ev.type === 'delta' && ev.text) {
+                    fullText += ev.text;
+                    messages[assistantIdx].content = fullText;
+                    renderMessages();
+                  } else if (ev.type === 'sources') {
+                    messages[assistantIdx].sources = ev.items;
+                  } else if (ev.type === 'followups') {
+                    messages[assistantIdx].followUps = ev.items;
+                  } else if (ev.type === 'walkthrough') {
+                    messages[assistantIdx].walkthroughAvailable = ev.available;
+                  } else if (ev.type === 'done') {
+                    messages[assistantIdx].content = ev.fullText || fullText;
+                  } else if (ev.type === 'error') {
+                    messages[assistantIdx].content = 'Sorry, something went wrong. Please try again.';
+                  }
+                } catch (e) { /* skip malformed frame */ }
+              }
+            }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(onError);
   }
 
   // --- DOM Snapshot Capture ---
