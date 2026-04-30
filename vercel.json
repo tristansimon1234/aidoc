@@ -1,5 +1,5 @@
 {
-  "buildCommand": "vite build",
+  "buildCommand": "node scripts/bundle-remotion.mjs && node scripts/copy-remotion-bundle.mjs && vite build",
   "outputDirectory": "dist/client",
   "framework": "vite",
   "functions": {
@@ -14,6 +14,7 @@
   "rewrites": [
     { "source": "/docs/:projectId/:slug?", "destination": "/api/docs-ssr" },
     { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/remotion-bundle/(.*)", "destination": "/remotion-bundle/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

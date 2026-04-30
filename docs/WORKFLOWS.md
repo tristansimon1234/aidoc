@@ -231,7 +231,7 @@ Frontend renders:
 
 ## 11. Voice-over Narration
 
-**Trigger**: User clicks "Generate voice-over" in the Video tab
+**Trigger**: User clicks "Generate voice-over" in the Walkthrough tab
 **Flow**:
 1. Frontend sends `POST /api/runs/:id/generate-voiceover` with voice ID, tone, video duration
 2. Backend downloads video from Supabase Storage
@@ -249,6 +249,34 @@ Frontend renders:
 - "Regenerate" button re-generates entire voice-over (confirmation dialog if existing)
 
 **Cost**: ~$0.005 per segment (ElevenLabs) + ~$0.02 Gemini narration script
+
+## 11b. Marketing Video Generation
+
+**Trigger**: User opens the **Marketing** tab on a page and clicks "Generate marketing video"
+
+This is a separate output from the walkthrough video (the recorded screen capture + voice-over). It's a 45-second branded promo built FROM the page's content — designed for landing pages, social posts, sales decks. The Marketing tab sits next to Walkthrough in the page header but the two never share assets.
+
+**Flow** (async via Vercel `waitUntil`, completion via Realtime on `jobs`):
+1. Frontend `POST /api/runs/:id/marketing-video?async=1` with options (visualMode, tone, voiceId, music choice + volume, optional userPrompt brief)
+   - If the page has no run yet (manually-typed content, no recorded video), the panel calls `api.runs.create({ docPageId, ... })` first to spin up a stub run; visualMode is locked to `mocks` (no screenshots available).
+2. Backend `enforceQuotaOrThrow(teamId)` — Free / Founder hit a 402 `QUOTA_EXCEEDED` if over budget; Team / Agency pass through (overage billed later).
+3. Backend creates a row in `jobs` (type=`marketing-video`), returns 202 with `{ runId, jobId, status: 'running' }`.
+4. Inside `waitUntil`, the pipeline runs:
+   - **Script** — Gemini 2.5 Pro (mocks mode) or 2.5 Flash (screenshots mode) generates a JSON script: hook + 3-4 scenes + CTA, with audio-tag voice-over lines and either `mockCode` (TSX) per scene OR `screenshotIndex` references.
+   - **Mock compilation** (mocks mode only) — esbuild compiles each scene's TSX into a JS function ready for Remotion's sandbox.
+   - **Voice-over** — ElevenLabs TTS (`eleven_multilingual_v2`) synthesizes the concatenated script with the chosen voice + tone settings (stability/style/similarityBoost from `TONE_PRESETS`); duration probed via `music-metadata`.
+   - **Music** (optional) — preset MP3, AI-generated via ElevenLabs Music (~30 s extra), or the user's uploaded MP3. Non-fatal: a music failure is recorded as `musicError` and the render proceeds without music.
+   - **Render** — POST to the Railway video-service `/render-marketing-video` with the manifest; service runs Remotion → MP4 → uploads to Supabase Storage.
+5. Backend bumps usage: `incrementUsage(teamId, 'marketing_video')`.
+6. Backend flips the job to `completed` (or `failed` with the error message).
+7. Frontend Realtime listener (`useJobRealtime`) fires; `MarketingVideoPanel` refetches the summary via direct Supabase read (`fetchMarketingVideo` in `db.ts`); video player + Download MP4 button appear in place of the ProgressLoader.
+
+**Frontend UX**:
+- The form is intentionally lean: brief (textarea), visual style (radio), voice-over toggle + voice/tone selectors, music dropdown + volume, a single Generate button. The script preview is **not** shown (it's not editable so it would only add noise). Pricing is hidden during the design-partner phase.
+- During generation: a 4-step `ProgressLoader` (script → voice-over → music → render) covers the full 2-3 min pipeline. Visibility is driven by `ourJob?.status === 'running'` (not the local `working` flag, which flips back after the 202 returns in ~1 s).
+- The bottom-right `JobTracker` card runs in parallel — the user can navigate away and the card surfaces completion globally.
+
+**Cost** (real COGS): ~€0.60 per generation = Gemini Pro script (~€0.08) + ElevenLabs voice (~€0.30) + ElevenLabs music (~€0.20 if AI) + Railway render (~€0.05). Token weight = 600 (heaviest single op). See `TOKEN_COSTS` / `EURO_COSTS` / `OVERAGE_EUR` in `src/features/billing/billing.service.ts`.
 
 ## 12. Public Documentation Pages
 
@@ -300,6 +328,11 @@ Frontend renders:
 | **Total per page (video-to-doc + voice-over)** | | **~$0.20** |
 | Try Doc test (25 steps) | Claude Sonnet 4 via Stagehand | ~$0.09 |
 | Try Doc analysis | Gemini 2.5 Flash | ~$0.03 |
+| Marketing video script | Gemini 2.5 Pro (mocks) / Flash (screenshots) | ~$0.08 |
+| Marketing video voice-over | ElevenLabs | ~$0.30 |
+| Marketing video music (optional) | ElevenLabs Music | ~$0.20 |
+| Marketing video render | Remotion on Railway | ~$0.05 |
+| **Marketing video total** | | **~$0.60** |
 
 Auto-generate structure: ~$0.03 (one-time per project)
 Context enrichment: ~$0.001 per generation

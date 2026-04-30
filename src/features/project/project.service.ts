@@ -3,6 +3,34 @@ import type { Project, CreateProjectInput, UpdateProjectInput } from './project.
 import * as projectRepo from './project.repository.js'
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
+import { getSignedUrl } from '../../shared/db/storage.repository.js'
+
+// Logo URLs are always re-signed on read. We extract the storage path
+// from whatever's stored (public URL, expired signed URL, fresh signed
+// URL — all share the same path segment) and mint a new signed URL each
+// time the project is fetched. This means:
+//   - Old public URLs that 401 (artifacts bucket not actually public) heal.
+//   - Signed URLs never go stale: the upload-time URL is just a snapshot;
+//     real reads always come through getProject / listProjects, so any
+//     in-flight URL outlives the request.
+// External URLs (anything not under /storage/v1/object/.../artifacts/)
+// pass through unchanged.
+const ARTIFACTS_PATH_RE = /\/storage\/v1\/object\/(?:public|sign)\/artifacts\/([^?]+)/
+
+async function resignLogoUrl(logoUrl: string | null | undefined): Promise<string | null> {
+  if (!logoUrl) return null
+  const m = logoUrl.match(ARTIFACTS_PATH_RE)
+  if (!m || !m[1]) return logoUrl
+  const fresh = await getSignedUrl('artifacts', decodeURIComponent(m[1]))
+  return fresh ?? logoUrl
+}
+
+async function hydrateProjectLogo(project: Project): Promise<Project> {
+  if (!project.design?.logoUrl) return project
+  const signed = await resignLogoUrl(project.design.logoUrl)
+  if (signed === project.design.logoUrl) return project
+  return { ...project, design: { ...project.design, logoUrl: signed ?? undefined } }
+}
 
 async function assertTeamMembership(teamId: string, userId: string): Promise<void> {
   const { data, error } = await supabase
@@ -41,12 +69,13 @@ export async function getProject(id: string, userId?: string): Promise<Project> 
   const project = await projectRepo.findProjectById(id)
   if (!project) throw new NotFoundError('Project')
   if (userId) await assertAccess(project, userId)
-  return project
+  return hydrateProjectLogo(project)
 }
 
 export async function listProjects(userId: string, teamId?: string): Promise<Project[]> {
   if (teamId) await assertTeamMembership(teamId, userId)
-  return projectRepo.listProjectsForUser(userId, teamId)
+  const projects = await projectRepo.listProjectsForUser(userId, teamId)
+  return Promise.all(projects.map(hydrateProjectLogo))
 }
 
 export async function updateProject(id: string, userId: string, input: UpdateProjectInput): Promise<Project> {

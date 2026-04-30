@@ -20,6 +20,7 @@ import { publicDocsRouter } from '../src/features/page/public-docs.routes.js'
 import { analyticsRouter } from '../src/features/analytics/analytics.routes.js'
 import { teamRouter, invitePublicRouter } from '../src/features/team/team.routes.js'
 import { exportRouter } from '../src/features/export/export.routes.js'
+import { marketingVideoRouter } from '../src/features/marketing-video/marketing-video.routes.js'
 import { errorHandler } from '../src/shared/middleware/error.middleware.js'
 
 const app = express()
@@ -55,6 +56,7 @@ app.use('/api/projects/:projectId/analytics', authMiddleware, analyticsRouter)
 app.use('/api/runs', authMiddleware, runRouter)
 app.use('/api/runs', authMiddleware, questionsRouter)
 app.use('/api/runs', authMiddleware, documentationRouter)
+app.use('/api/runs', authMiddleware, marketingVideoRouter)
 
 app.use(errorHandler)
 

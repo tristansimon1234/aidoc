@@ -1,6 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 
-export type JobType = 'doc-gen' | 'voiceover' | 'try-doc'
+export type JobType = 'doc-gen' | 'voiceover' | 'try-doc' | 'marketing-video'
 export type JobStatus = 'running' | 'completed' | 'failed'
 
 export interface Job {
