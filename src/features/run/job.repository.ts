@@ -45,21 +45,40 @@ export async function createJob(input: {
   type: JobType
   triggeredByUserId?: string | null
 }): Promise<Job> {
-  const { data, error } = await supabase
-    .from('jobs')
-    .insert({
-      run_id: input.runId,
-      page_id: input.pageId,
-      project_id: input.projectId,
-      type: input.type,
-      status: 'running',
-      triggered_by_user_id: input.triggeredByUserId ?? null,
-    })
-    .select()
-    .single()
+  // Build the row with triggered_by_user_id by default, but fall back to a
+  // row WITHOUT it if PostgREST reports the column is missing. That means
+  // the migration `20260422000002_extend_jobs_for_exclusive_locks.sql`
+  // hasn't been applied yet — we'd rather create the job (lose the audit
+  // attribution) than break every doc-gen / voiceover / exploration /
+  // marketing-video pipeline until the operator runs the migration.
+  const baseRow = {
+    run_id: input.runId,
+    page_id: input.pageId,
+    project_id: input.projectId,
+    type: input.type,
+    status: 'running' as const,
+  }
+  const fullRow = { ...baseRow, triggered_by_user_id: input.triggeredByUserId ?? null }
 
-  if (error || !data) throw new Error(`Failed to create job: ${error?.message}`)
-  return rowToJob(data)
+  const first = await supabase.from('jobs').insert(fullRow).select().single()
+  if (!first.error && first.data) return rowToJob(first.data)
+
+  // Detect schema-cache misses on triggered_by_user_id (PGRST204 +
+  // "Could not find the 'triggered_by_user_id' column"). Only retry in
+  // that specific case so we don't paper over real INSERT failures.
+  const msg = first.error?.message ?? ''
+  const code = first.error?.code ?? ''
+  const missingColumn = code === 'PGRST204'
+    || /could not find the 'triggered_by_user_id' column/i.test(msg)
+  if (!missingColumn) {
+    throw new Error(`Failed to create job: ${msg}`)
+  }
+  console.warn('[jobs] migration 20260422000002 not applied — creating job without triggered_by_user_id')
+  const fallback = await supabase.from('jobs').insert(baseRow).select().single()
+  if (fallback.error || !fallback.data) {
+    throw new Error(`Failed to create job: ${fallback.error?.message ?? 'unknown'}`)
+  }
+  return rowToJob(fallback.data)
 }
 
 export async function updateJobStatus(id: string, status: JobStatus, error?: string): Promise<void> {

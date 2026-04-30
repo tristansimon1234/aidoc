@@ -144,16 +144,30 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
           pageId: run.docPageId,
           projectId: page.projectId,
           type: 'marketing-video',
+          triggeredByUserId: (req as Request & { userId?: string }).userId ?? null,
         })
         jobId = job.id
       } catch (err) {
-        // Most common cause: a marketing-video job is already running for
-        // this page (unique index on page_id+type WHERE status='running').
-        res.status(409).json({
-          error: 'A marketing-video generation is already running for this page.',
-          code: 'JOB_ALREADY_RUNNING',
-          details: (err as Error).message,
-        })
+        const errMsg = (err as Error).message ?? ''
+        // Distinguish the unique-index conflict (a job is already running
+        // for this page) from any other failure. Without this split a
+        // missing migration / schema cache miss / FK violation got
+        // surfaced as "JOB_ALREADY_RUNNING" with the real error in the
+        // details field — confusing to debug and wrong status code.
+        const isDuplicate = /duplicate key|unique constraint|23505/i.test(errMsg)
+        if (isDuplicate) {
+          res.status(409).json({
+            error: 'A marketing-video generation is already running for this page.',
+            code: 'JOB_ALREADY_RUNNING',
+            details: errMsg,
+          })
+        } else {
+          res.status(500).json({
+            error: 'Failed to start marketing-video job',
+            code: 'JOB_CREATE_FAILED',
+            details: errMsg,
+          })
+        }
         return
       }
 
