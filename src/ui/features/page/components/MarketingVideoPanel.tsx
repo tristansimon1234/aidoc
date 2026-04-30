@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Spinner, Badge, ProgressLoader } from '../../../design-system/components/index.js'
+import { Button, Spinner, ProgressLoader } from '../../../design-system/components/index.js'
 import { api, ApiError } from '../../../shared/api/client.js'
 import { fetchMarketingVideo } from '../../../shared/api/db.js'
 import type { MarketingVideoSummaryDTO } from '../../../shared/api/client.js'
@@ -256,7 +256,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       <div className={styles.header}>
         <h2 className={styles.title}>Marketing video</h2>
         <p className={styles.subtitle}>
-          A short promo video (~45s) made FROM this page's content — separate from the walkthrough. The AI writes a marketing script, picks animations or screenshots, lays in voice-over and music, and renders the MP4. Pick your settings and click Generate.
+          A 45-second promo generated from this page — separate from the walkthrough.
         </p>
       </div>
 
@@ -264,12 +264,15 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
 
       {summary?.manifest.musicError && !working && (
         <div className={`${styles.statusBanner} ${styles.statusInfo}`}>
-          Music skipped: {summary.manifest.musicError} — your script + voice-over were saved and the video still rendered. Pick "None" or upload your own MP3 to silence this warning.
+          Music skipped: {summary.manifest.musicError} — your voice-over was saved and the video still rendered.
         </div>
       )}
 
+      {/* === Brief === */}
       <div className={styles.briefField}>
-        <label className={styles.briefLabel} htmlFor="marketing-brief">Creative brief (optional)</label>
+        <label className={styles.fieldLabel} htmlFor="marketing-brief">
+          Creative brief <span className={styles.fieldHint}>optional</span>
+        </label>
         <textarea
           id="marketing-brief"
           className={styles.briefTextarea}
@@ -281,92 +284,18 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         />
       </div>
 
-      <div className={styles.optionsRow}>
-        <label className={styles.toggle}>
-          <input
-            type="checkbox"
-            checked={withVoiceover}
-            onChange={(e) => setWithVoiceover(e.target.checked)}
-            disabled={working}
-          />
-          Generate voice-over (~€0.30 / generation)
-        </label>
-      </div>
-
-      {withVoiceover && (
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: voices.length > 0 ? '1fr 1fr' : '1fr',
-            gap: 16,
-            margin: '0 0 24px',
-          }}
-        >
-          {voices.length > 0 && (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
-              <span style={{ color: 'var(--color-muted-fg)' }}>Voice</span>
-              <select
-                value={voiceId}
-                onChange={(e) => setVoiceId(e.target.value)}
-                disabled={working}
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--color-border)',
-                  background: 'var(--color-bg)',
-                  color: 'var(--color-fg)',
-                  fontSize: 'var(--text-sm)',
-                }}
-              >
-                <option value="">Default (Sarah — clear, professional)</option>
-                {voices.map((v) => (
-                  <option key={v.voiceId} value={v.voiceId}>
-                    {v.name} {v.category ? `· ${v.category}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
-            <span style={{ color: 'var(--color-muted-fg)' }}>Tone</span>
-            <select
-              value={tone}
-              onChange={(e) => setTone(e.target.value as VoiceTone)}
-              disabled={working}
-              style={{
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border)',
-                background: 'var(--color-bg)',
-                color: 'var(--color-fg)',
-                fontSize: 'var(--text-sm)',
-              }}
-            >
-              {(Object.keys(TONE_LABELS) as VoiceTone[]).map((t) => (
-                <option key={t} value={t}>{TONE_LABELS[t]}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
-
-      <div style={{ margin: '0 0 24px' }}>
-        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', marginBottom: 8 }}>
+      {/* === Visual style === */}
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>
           Visual style
-          {!runId && (
-            <span style={{ marginLeft: 8, fontSize: 11 }}>
-              · Designed mocks only — record or upload a video on this page to unlock real screenshots.
-            </span>
-          )}
-        </div>
-        <div role="radiogroup" style={{ display: 'flex', gap: 8 }}>
+          {!runId && <span className={styles.fieldHint}>· Real screenshots locked — record a video first</span>}
+        </span>
+        <div className={styles.radioRow} role="radiogroup">
           {([
             { id: 'screenshots' as const, title: 'Real screenshots', subtitle: 'Grounded in your product UI' },
-            { id: 'mocks' as const,       title: 'Designed mocks',    subtitle: 'AI-designed animated UI panels' },
+            { id: 'mocks' as const,       title: 'Designed mocks',    subtitle: 'AI-designed animated panels' },
           ]).map((opt) => {
             const selected = visualMode === opt.id
-            // Real screenshots need a run with steps (= a recorded video).
-            // Lock the option when there's no run for this page yet.
             const optDisabled = working || (opt.id === 'screenshots' && !runId)
             return (
               <button
@@ -376,54 +305,74 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
                 aria-checked={selected}
                 onClick={() => { if (!optDisabled) setVisualMode(opt.id) }}
                 disabled={optDisabled}
-                style={{
-                  flex: 1,
-                  padding: '12px 14px',
-                  borderRadius: 'var(--radius-md)',
-                  border: `1px solid ${selected ? 'var(--color-fg)' : 'var(--color-border)'}`,
-                  background: selected ? 'var(--color-fg)' : 'transparent',
-                  color: selected ? 'var(--color-bg)' : 'var(--color-fg)',
-                  cursor: optDisabled ? 'not-allowed' : 'pointer',
-                  opacity: optDisabled && !selected ? 0.5 : 1,
-                  textAlign: 'left',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 2,
-                  fontSize: 'var(--text-sm)',
-                  transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
-                }}
+                className={`${styles.radioCard} ${selected ? styles.radioCardSelected : ''}`}
               >
-                <span style={{ fontWeight: 600 }}>{opt.title}</span>
-                <span style={{ fontSize: 'var(--text-xs)', opacity: 0.7 }}>{opt.subtitle}</span>
+                <span className={styles.radioCardTitle}>{opt.title}</span>
+                <span className={styles.radioCardSubtitle}>{opt.subtitle}</span>
               </button>
             )
           })}
         </div>
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: musicChoice === 'none' ? '1fr' : '2fr 1fr',
-          gap: 16,
-          margin: '0 0 24px',
-          alignItems: 'end',
-        }}
-      >
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
-          <span style={{ color: 'var(--color-muted-fg)' }}>Background music</span>
+      {/* === Voice === */}
+      <div className={styles.optionsRow}>
+        <label className={styles.toggle}>
+          <input
+            type="checkbox"
+            checked={withVoiceover}
+            onChange={(e) => setWithVoiceover(e.target.checked)}
+            disabled={working}
+          />
+          Generate voice-over
+        </label>
+      </div>
+
+      {withVoiceover && (
+        <div className={styles.fieldGrid}>
+          {voices.length > 0 && (
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>Voice</span>
+              <select
+                className={styles.select}
+                value={voiceId}
+                onChange={(e) => setVoiceId(e.target.value)}
+                disabled={working}
+              >
+                <option value="">Default — Sarah (clear, professional)</option>
+                {voices.map((v) => (
+                  <option key={v.voiceId} value={v.voiceId}>
+                    {v.name}{v.category ? ` · ${v.category}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Tone</span>
+            <select
+              className={styles.select}
+              value={tone}
+              onChange={(e) => setTone(e.target.value as VoiceTone)}
+              disabled={working}
+            >
+              {(Object.keys(TONE_LABELS) as VoiceTone[]).map((t) => (
+                <option key={t} value={t}>{TONE_LABELS[t]}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
+      {/* === Music === */}
+      <div className={musicChoice === 'none' ? styles.field : styles.fieldGrid}>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>Background music</span>
           <select
+            className={styles.select}
             value={musicChoice}
             onChange={(e) => setMusicChoice(e.target.value)}
             disabled={working}
-            style={{
-              padding: '8px 10px',
-              borderRadius: 'var(--radius-md)',
-              border: '1px solid var(--color-border)',
-              background: 'var(--color-bg)',
-              color: 'var(--color-fg)',
-              fontSize: 'var(--text-sm)',
-            }}
           >
             <option value="none">None — voice-over only</option>
             {musicPresets.map((p) => (
@@ -431,13 +380,13 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
                 {p.name}{p.mood ? ` · ${p.mood}` : ''}
               </option>
             ))}
-            <option value="ai">Generate AI music (~30s extra, ~€0.10)</option>
+            <option value="ai">Generate AI music</option>
             <option value="upload">Upload custom MP3…</option>
           </select>
         </label>
         {musicChoice !== 'none' && (
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
-            <span style={{ color: 'var(--color-muted-fg)' }}>Volume {Math.round(musicVolume * 100)}%</span>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Volume {Math.round(musicVolume * 100)}%</span>
             <input
               type="range"
               min={0}
@@ -453,42 +402,24 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       </div>
 
       {musicChoice === 'ai' && (
-        <div style={{ margin: '0 0 24px' }}>
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-sm)' }}>
-            <span style={{ color: 'var(--color-muted-fg)' }}>
-              Music style (optional) — base prompt is derived from your tone choice; this fine-tunes it.
-            </span>
-            <input
-              type="text"
-              value={aiMusicPrompt}
-              onChange={(e) => setAiMusicPrompt(e.target.value)}
-              placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
-              maxLength={300}
-              disabled={working}
-              style={{
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-md)',
-                border: '1px solid var(--color-border)',
-                background: 'var(--color-bg)',
-                color: 'var(--color-fg)',
-                fontSize: 'var(--text-sm)',
-              }}
-            />
-          </label>
-        </div>
+        <label className={styles.field}>
+          <span className={styles.fieldLabel}>
+            Music style <span className={styles.fieldHint}>optional · fine-tunes the AI prompt</span>
+          </span>
+          <input
+            type="text"
+            className={styles.textInput}
+            value={aiMusicPrompt}
+            onChange={(e) => setAiMusicPrompt(e.target.value)}
+            placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
+            maxLength={300}
+            disabled={working}
+          />
+        </label>
       )}
 
       {musicChoice === 'upload' && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            margin: '0 0 24px',
-            fontSize: 'var(--text-sm)',
-            color: 'var(--color-muted-fg)',
-          }}
-        >
+        <div className={styles.optionsRow} style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)' }}>
           <input
             type="file"
             accept="audio/mpeg,audio/mp3,audio/wav,audio/x-m4a"
@@ -503,6 +434,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         </div>
       )}
 
+      {/* === Generate === */}
       <div className={styles.actions}>
         <Button
           variant="primary"
@@ -511,74 +443,26 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         >
           {(working || ourJob?.status === 'running') ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
         </Button>
-        <span className={styles.costHint}>~€0.60 / generation · counted toward your monthly quota</span>
       </div>
 
-      {/* Pipeline progress — shows while the backend job is running. The
-       *  job stays in 'running' for ~2-3 min after the panel-side `working`
-       *  flag flips back to false (HTTP 202 returns in ~1s, the actual
-       *  pipeline runs server-side). Driving visibility off the JobContext
-       *  status means the loader is shown for the full duration, not just
-       *  the request lifetime. */}
+      {/* === Pipeline progress (during) === */}
       {ourJob?.status === 'running' && (
-        <div style={{ marginTop: 16 }}>
-          <ProgressLoader
-            startedAt={ourJob.startedAt}
-            steps={[
-              { label: 'Writing the script', estimatedSeconds: 30 },
-              { label: 'Synthesizing voice-over', estimatedSeconds: withVoiceover ? 25 : 1 },
-              { label: 'Composing music', estimatedSeconds: musicChoice === 'ai' ? 45 : 1 },
-              { label: 'Rendering the video', estimatedSeconds: 80 },
-            ]}
-            activeStep={0}
-            done={false}
-          />
-        </div>
+        <ProgressLoader
+          startedAt={ourJob.startedAt}
+          steps={[
+            { label: 'Writing the script', estimatedSeconds: 30 },
+            { label: 'Synthesizing voice-over', estimatedSeconds: withVoiceover ? 25 : 1 },
+            { label: 'Composing music', estimatedSeconds: musicChoice === 'ai' ? 45 : 1 },
+            { label: 'Rendering the video', estimatedSeconds: 80 },
+          ]}
+          activeStep={0}
+          done={false}
+        />
       )}
 
+      {/* === Result (after) === */}
       {hasManifest && summary && !working && ourJob?.status !== 'running' && (
         <>
-          <div className={styles.scriptCard}>
-            <div className={styles.scriptSection}>
-              <div className={styles.scriptLabel}>
-                <span>Hook · {summary.manifest.script.hook.durationSeconds}s</span>
-                <Badge color="purple">{summary.manifest.script.language}</Badge>
-              </div>
-              <h3 className={styles.scriptHeadline}>{summary.manifest.script.hook.headline}</h3>
-              <p className={styles.scriptVoiceover}>"{summary.manifest.script.hook.voiceover}"</p>
-            </div>
-
-            {summary.manifest.script.scenes.map((scene, i) => (
-              <div key={i} className={styles.scriptSection}>
-                <div className={styles.scriptLabel}>
-                  <span>Scene {i + 1} · {scene.durationSeconds}s</span>
-                  {scene.screenshotIndex != null && <span>screenshot #{scene.screenshotIndex}</span>}
-                </div>
-                <h3 className={styles.scriptHeadline}>{scene.headline}</h3>
-                {scene.subhead && <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: 0 }}>{scene.subhead}</p>}
-                <p className={styles.scriptVoiceover}>"{scene.voiceover}"</p>
-              </div>
-            ))}
-
-            <div className={styles.scriptSection}>
-              <div className={styles.scriptLabel}>
-                <span>CTA · {summary.manifest.script.cta.durationSeconds}s</span>
-                <span>{summary.manifest.script.cta.buttonLabel}</span>
-              </div>
-              <h3 className={styles.scriptHeadline}>{summary.manifest.script.cta.headline}</h3>
-              <p className={styles.scriptVoiceover}>"{summary.manifest.script.cta.voiceover}"</p>
-            </div>
-
-            {summary.manifest.voiceoverUrl && (
-              <audio
-                className={styles.audioPlayer}
-                controls
-                src={summary.manifest.voiceoverUrl}
-                preload="metadata"
-              />
-            )}
-          </div>
-
           {summary.videoUrl && renderStatus === 'ready' && (
             <video
               className={styles.videoPlayer}
@@ -588,57 +472,36 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             />
           )}
 
+          {summary.manifest.voiceoverUrl && (
+            <audio
+              className={styles.audioPlayer}
+              controls
+              src={summary.manifest.voiceoverUrl}
+              preload="metadata"
+            />
+          )}
+
           <div className={styles.actions}>
+            {summary.videoUrl && (
+              <a href={summary.videoUrl} download="marketing.mp4" className={styles.downloadLink}>
+                Download MP4
+              </a>
+            )}
             {summary.manifestUrl && (
               <a
                 href={summary.manifestUrl}
-                download={`marketing-manifest-${runId}.json`}
-                title="Download the manifest JSON to render locally with `npm run remotion:render -- --props=<file>`"
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-fg)',
-                  textDecoration: 'none',
-                  fontSize: 'var(--text-sm)',
-                  fontWeight: 500,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                }}
+                download={`marketing-manifest-${runId ?? 'page'}.json`}
+                title="Manifest JSON — render locally with `npm run remotion:render -- --props=<file>`"
+                className={styles.downloadLink}
               >
-                Download manifest JSON
-              </a>
-            )}
-            {summary.videoUrl && (
-              <a
-                href={summary.videoUrl}
-                download="marketing.mp4"
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-fg)',
-                  textDecoration: 'none',
-                  fontSize: 'var(--text-sm)',
-                  fontWeight: 500,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                }}
-              >
-                Download MP4
+                Download manifest
               </a>
             )}
           </div>
 
-          {renderStatus === 'failed' && summary.renderError && !working && (
+          {renderStatus === 'failed' && summary.renderError && (
             <div className={`${styles.statusBanner} ${styles.statusError}`}>
               Render failed: {summary.renderError}
-              {summary.manifestUrl && (
-                <>
-                  {' '}— you can download the manifest above and render locally with{' '}
-                  <code>npm run remotion:render -- --props=&lt;file&gt;</code>.
-                </>
-              )}
             </div>
           )}
         </>

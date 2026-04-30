@@ -30,12 +30,21 @@
   gap: 6px;
 }
 
-.briefLabel {
+.fieldLabel {
   font-size: var(--text-xs);
   font-weight: 500;
   color: var(--color-muted-fg);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.fieldHint {
+  font-size: 11px;
+  color: var(--color-muted-fg);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-left: 8px;
 }
 
 .briefTextarea {
@@ -56,6 +65,41 @@
   border-color: var(--color-fg);
 }
 
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.select,
+.textInput {
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+}
+
+.select:focus,
+.textInput:focus {
+  outline: none;
+  border-color: var(--color-fg);
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-md);
+}
+
+@media (max-width: 640px) {
+  .fieldGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .optionsRow {
   display: flex;
   align-items: center;
@@ -68,8 +112,54 @@
   align-items: center;
   gap: 8px;
   font-size: var(--text-sm);
-  color: var(--color-muted-fg);
+  color: var(--color-fg);
   cursor: pointer;
+}
+
+.radioRow {
+  display: flex;
+  gap: 8px;
+}
+
+.radioCard {
+  flex: 1;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-fg);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.radioCard:hover:not(:disabled) {
+  border-color: var(--color-fg);
+}
+
+.radioCardSelected {
+  border-color: var(--color-fg);
+  background: var(--color-fg);
+  color: var(--color-bg);
+}
+
+.radioCard:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.radioCardTitle {
+  font-weight: 600;
+}
+
+.radioCardSubtitle {
+  font-size: var(--text-xs);
+  opacity: 0.7;
 }
 
 .actions {
@@ -77,59 +167,6 @@
   align-items: center;
   gap: var(--space-md);
   flex-wrap: wrap;
-}
-
-.costHint {
-  font-size: var(--text-xs);
-  color: var(--color-muted-fg);
-}
-
-.scriptCard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-  padding: var(--space-md);
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.scriptSection {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-bottom: var(--space-sm);
-  border-bottom: 1px dashed var(--color-border);
-}
-
-.scriptSection:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.scriptLabel {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  color: var(--color-muted-fg);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.scriptHeadline {
-  font-size: var(--text-md);
-  font-weight: 600;
-  color: var(--color-fg);
-  margin: 0;
-}
-
-.scriptVoiceover {
-  font-size: var(--text-sm);
-  color: var(--color-muted-fg);
-  margin: 0;
-  font-style: italic;
 }
 
 .audioPlayer {
@@ -140,6 +177,23 @@
   width: 100%;
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
+}
+
+.downloadLink {
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  color: var(--color-fg);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  transition: border-color 0.15s;
+}
+
+.downloadLink:hover {
+  border-color: var(--color-fg);
 }
 
 .statusBanner {
