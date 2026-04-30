@@ -138,15 +138,16 @@
   justify-content: flex-start;
 }
 
-/* User message — soft pill, right-aligned */
+/* User message — Claude.ai / ChatGPT style: tight pill, no border,
+ * subtle bg tint. Tight padding so it feels like punctuation in the
+ * conversation rather than a billboard. */
 .bubbleUser {
-  max-width: min(80%, 560px);
-  padding: 10px 14px;
-  background: color-mix(in srgb, var(--color-fg) 6%, var(--color-bg));
-  border: 1px solid var(--color-border);
-  border-radius: 14px 14px 4px 14px;
-  font-size: 15px;
-  line-height: 1.55;
+  max-width: min(72%, 520px);
+  padding: 7px 14px;
+  background: color-mix(in srgb, var(--color-fg) 5%, var(--color-bg));
+  border-radius: 18px;
+  font-size: 14.5px;
+  line-height: 1.5;
   color: var(--color-fg);
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -212,26 +213,53 @@
   border-radius: 4px;
 }
 
-/* === Thinking dots (before first delta) === */
+/* === Thinking shimmer (before first delta) ===
+ * Vercel AI / Claude.ai pattern: a small icon + "Thinking…" text where
+ * a linear gradient sweeps across the letters every 1.6s, giving the
+ * illusion of motion without a spinner. The icon stays static + muted
+ * so it doesn't compete with the text animation.
+ */
 
-.thinkingDots {
+.thinking {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.5;
   height: 1.5em;
-  padding: 0;
 }
 
-.thinkingDots span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-muted-fg);
-  animation: thinkingPulse 1.2s ease-in-out infinite;
+.thinkingIcon {
+  color: var(--color-muted-fg);
+  flex-shrink: 0;
+  opacity: 0.85;
 }
 
-.thinkingDots span:nth-child(2) { animation-delay: 0.2s; }
-.thinkingDots span:nth-child(3) { animation-delay: 0.4s; }
+.thinkingText {
+  /* Three-stop gradient: muted → bright → muted, oversized so we can
+   * pan it across the text via background-position. */
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-fg) 35%, transparent) 0%,
+    color-mix(in srgb, var(--color-fg) 35%, transparent) 40%,
+    var(--color-fg) 50%,
+    color-mix(in srgb, var(--color-fg) 35%, transparent) 60%,
+    color-mix(in srgb, var(--color-fg) 35%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 1.6s linear infinite;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
 
 /* === Source pills === */
 
@@ -499,18 +527,7 @@
   50.01%, 100% { opacity: 0; }
 }
 
-@keyframes thinkingPulse {
-  0%, 80%, 100% {
-    opacity: 0.3;
-    transform: scale(0.8);
-  }
-  40% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* Reduced-motion: kill the slide-ins and blinking caret. */
+/* Reduced-motion: freeze the shimmer + slide-ins + blinking caret. */
 @media (prefers-reduced-motion: reduce) {
   .msgRow,
   .welcome,
@@ -522,9 +539,11 @@
     animation: none;
     opacity: 1;
   }
-  .thinkingDots span {
+  .thinkingText {
     animation: none;
-    opacity: 0.5;
+    background: var(--color-muted-fg);
+    -webkit-background-clip: text;
+    background-clip: text;
   }
   .messages {
     scroll-behavior: auto;

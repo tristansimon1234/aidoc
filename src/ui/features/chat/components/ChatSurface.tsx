@@ -454,10 +454,17 @@ export function ChatSurface({
                     <div className={styles.bubbleUser}>{msg.content}</div>
                   ) : (
                     <div className={styles.bubbleAssistant}>
-                      {/* Empty + streaming = thinking dots */}
+                      {/* Empty + streaming = shimmer "Thinking…" with brain icon
+                       *  (Claude / Vercel AI pattern). The text gradient sweeps
+                       *  across the letters while we wait for the first delta. */}
                       {msg.content === '' && msg.streaming ? (
-                        <div className={styles.thinkingDots} aria-label="Thinking">
-                          <span /><span /><span />
+                        <div className={styles.thinking} aria-label="Thinking">
+                          <svg className={styles.thinkingIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M12 5a3 3 0 0 0-3 3v.5a3 3 0 0 0-3 3v.5a3 3 0 0 0-1 5.83V19a3 3 0 0 0 6 0V8a3 3 0 0 0 1 0V19a3 3 0 0 0 6 0v-1.17a3 3 0 0 0-1-5.83V12a3 3 0 0 0-3-3.5V8a3 3 0 0 0-3-3z" />
+                            <path d="M9 12h.01" />
+                            <path d="M15 12h.01" />
+                          </svg>
+                          <span className={styles.thinkingText}>Thinking…</span>
                         </div>
                       ) : (
                         <div className={`${styles.assistantText} ${msg.streaming ? styles.assistantStreaming : ''}`}>
