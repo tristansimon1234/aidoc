@@ -522,6 +522,206 @@ export async function updateMarketingVoiceoverForRun(
   return updated
 }
 
+/**
+ * Persist a user-edited manifest. The script + branding + screenshots +
+ * music volume can be tweaked in place; voice-over URLs / paths and
+ * music URLs are intentionally NOT accepted from the client (changing
+ * them would let a caller point Remotion at any URL — re-synthesize via
+ * /:id/marketing-video/voiceover for voice changes).
+ *
+ * Flow:
+ *   1. Read the existing summary (404s when there's no manifest yet).
+ *   2. Merge the patch on top — fields the user didn't include keep
+ *      their persisted value.
+ *   3. Upload the JSON to the same storage path → cache-busts the URL.
+ *   4. Reset renderStatus to 'idle' so the UI prompts a fresh render.
+ */
+export async function updateMarketingManifestForRun(
+  runId: string,
+  patch: import('./marketing-video.schema.js').UpdateMarketingManifestInput,
+): Promise<MarketingVideoSummary> {
+  const { findMarketingVideoByRunId } = await import('./marketing-video.repository.js')
+  const existing = await findMarketingVideoByRunId(runId)
+  if (!existing) throw new Error('No marketing-video manifest for this run yet — generate one first.')
+
+  // Cast through `as` because the schema's inferred type uses a permissive
+  // MockElement shape (`type: z.string()`) — the discriminated-union types
+  // in marketing-video.types.ts are stricter. The Zod validator already
+  // gated the runtime shape; the cast just bridges the structural gap.
+  const updatedManifest: MarketingManifest = {
+    ...existing.manifest,
+    script: patch.script as MarketingManifest['script'],
+    ...(patch.screenshots ? { screenshots: patch.screenshots } : {}),
+    ...(patch.branding ? { branding: patch.branding } : {}),
+    ...(typeof patch.musicVolume === 'number' ? { musicVolume: patch.musicVolume } : {}),
+    generatedAt: new Date().toISOString(),
+  }
+
+  const manifestPath = `runs/${runId}/marketing-manifest.json`
+  await uploadToStorage(
+    'artifacts',
+    manifestPath,
+    Buffer.from(JSON.stringify(updatedManifest, null, 2), 'utf-8'),
+    'application/json',
+  )
+  const manifestUrl = `${getPublicUrl('artifacts', manifestPath) ?? ''}?v=${Date.now()}`
+
+  const updated: MarketingVideoSummary = {
+    ...existing,
+    manifest: updatedManifest,
+    manifestUrl,
+    // Manifest changed → existing MP4 no longer matches. Drop the URL
+    // and reset status so the UI shows a clear "Re-render" CTA.
+    videoUrl: null,
+    videoPath: null,
+    renderStatus: 'idle',
+    renderError: null,
+  }
+  await saveMarketingVideo(runId, updated)
+  return updated
+}
+
+/**
+ * AI-driven manifest edit. The user types a free-form instruction
+ * ("shorten scene 2 by 2 seconds and make it punchier", "switch the
+ * accent color to blue", "rewrite the CTA in french") and Gemini
+ * returns the updated manifest + a one-line confirmation. Internally
+ * routes the new manifest through updateMarketingManifestForRun, so
+ * the edit goes through the same validation + storage + render-status
+ * reset path as a manual JSON edit.
+ *
+ * Costs: one Gemini Pro call (~€0.04). NOT counted against the
+ * marketing_video quota — that counter tracks full pipelines (script
+ * + voice + music + render). Quota-gated up-front so a hard-cap plan
+ * over budget can't iterate either.
+ */
+export async function editMarketingManifestWithAi(
+  runId: string,
+  input: {
+    instruction: string
+    history?: { role: 'user' | 'assistant'; content: string }[]
+  },
+): Promise<{ summary: MarketingVideoSummary; message: string }> {
+  const { findMarketingVideoByRunId } = await import('./marketing-video.repository.js')
+  const existing = await findMarketingVideoByRunId(runId)
+  if (!existing) throw new Error('No marketing-video manifest for this run yet — generate one first.')
+
+  const { generateText, GEMINI_PRO_MODEL } = await import('../../shared/ai/gemini.client.js')
+
+  // Trim mockCompiledCode out of the snapshot we feed Gemini — it's
+  // esbuild output, not human-edited, and inflates the prompt by ~2-3×
+  // for no signal. We re-compile it server-side after the edit lands.
+  const editableScript = {
+    ...existing.manifest.script,
+    scenes: existing.manifest.script.scenes.map((s) => ({
+      ...s,
+      mockCompiledCode: undefined,
+    })),
+  }
+
+  const historyBlock = (input.history ?? [])
+    .slice(-6)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n')
+
+  const prompt = `You are editing a marketing video manifest based on a user instruction.
+
+## Product
+${existing.manifest.branding.productName}
+
+## Current manifest script
+\`\`\`json
+${JSON.stringify(editableScript, null, 2)}
+\`\`\`
+
+## Current branding
+\`\`\`json
+${JSON.stringify(existing.manifest.branding, null, 2)}
+\`\`\`
+
+${historyBlock ? `## Earlier turns in this edit session\n${historyBlock}\n\n` : ''}## User instruction
+${input.instruction}
+
+## Your job
+Return the updated script (and branding when relevant) along with a one-line summary of what you changed.
+
+RULES:
+- Preserve the overall structure: hook → scenes → cta. Don't add or remove scenes unless the user explicitly asks.
+- Keep totalDurationSeconds === hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds.
+- Keep word counts realistic at ~2.3 words/sec for voice-over text.
+- When editing mockCode, keep it valid TSX that renders a single React element.
+- Only change what the instruction asks for. Leave the rest verbatim.
+- If the instruction is unclear or impossible, return the manifest unchanged and explain in the message.
+- Voice-over audio + music URLs are NOT yours to change — those are regenerated separately.
+
+Return ONLY valid JSON matching the response schema.`
+
+  const result = await generateText({
+    userPrompt: prompt,
+    model: GEMINI_PRO_MODEL,
+    maxTokens: 16_384,
+    temperature: 0.4,
+    json: true,
+  })
+
+  // Parse defensively — even with responseMimeType:application/json the
+  // model occasionally wraps the answer in markdown fences.
+  let parsed: { message?: string; script?: unknown; branding?: unknown }
+  try {
+    let text = result.text.trim()
+    if (text.startsWith('```')) text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start !== -1 && end > start) text = text.slice(start, end + 1)
+    parsed = JSON.parse(text) as typeof parsed
+  } catch (err) {
+    throw new Error(`AI returned invalid JSON: ${(err as Error).message}`)
+  }
+
+  if (!parsed.script) {
+    // No script field → AI bailed (instruction unclear / impossible).
+    // Surface the message but don't touch the manifest.
+    return {
+      summary: existing,
+      message: parsed.message ?? "I couldn't apply that change. Try rephrasing or be more specific.",
+    }
+  }
+
+  const { UpdateMarketingManifestSchema } = await import('./marketing-video.schema.js')
+  const validated = UpdateMarketingManifestSchema.safeParse({
+    script: parsed.script,
+    ...(parsed.branding ? { branding: parsed.branding } : {}),
+  })
+  if (!validated.success) {
+    throw new Error(`AI produced an invalid manifest: ${JSON.stringify(validated.error.flatten().fieldErrors).slice(0, 300)}`)
+  }
+
+  // Recompile any mockCode the AI rewrote — Remotion runs the compiled
+  // output, not the TSX source.
+  const { compileMockCode } = await import('./mock-code.compiler.js')
+  for (const scene of validated.data.script.scenes) {
+    if (scene.mockCode && scene.mockCode.length > 0) {
+      try {
+        const c = await compileMockCode(scene.mockCode)
+        scene.mockCompiledCode = c.compiled
+      } catch (err) {
+        // Drop the new mockCode + its compiled output if the AI emitted
+        // something that won't compile — better to keep the previous
+        // visual than break the render.
+        console.warn(`[marketing-edit] mockCode compile failed, dropping: ${(err as Error).message}`)
+        scene.mockCode = undefined
+        scene.mockCompiledCode = undefined
+      }
+    }
+  }
+
+  const summary = await updateMarketingManifestForRun(runId, validated.data)
+  return {
+    summary,
+    message: parsed.message ?? 'Manifest updated.',
+  }
+}
+
 /** Where the pre-bundled Remotion site lives. Resolution order:
  *  1. REMOTION_SERVE_URL env — escape hatch when the bundle is hosted
  *     somewhere other than the current deploy (rare).

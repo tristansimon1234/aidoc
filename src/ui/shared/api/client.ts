@@ -671,6 +671,33 @@ export const api = {
           method: 'POST',
           body: JSON.stringify(opts),
         }),
+      /** Persist a user-edited manifest. Server validates with Zod and
+       *  resets renderStatus to 'idle' so the UI prompts a fresh render.
+       *  Voice-over / music URLs are NOT accepted — use updateVoice for
+       *  voice changes, regenerate for music changes. */
+      updateManifest: (
+        id: string,
+        manifest: { script: MarketingScriptDTO; screenshots?: { url: string; caption: string }[]; branding?: MarketingManifestDTO['branding']; musicVolume?: number },
+      ): Promise<MarketingVideoSummaryDTO> =>
+        request(`/runs/${id}/marketing-video/manifest`, {
+          method: 'PUT',
+          body: JSON.stringify(manifest),
+        }),
+      /** Chat-style AI edit: user types an instruction, Gemini returns
+       *  the updated manifest + a one-line summary of changes. The
+       *  manifest is persisted server-side (same path as updateManifest)
+       *  and renderStatus resets to 'idle'. */
+      editWithAi: (
+        id: string,
+        input: {
+          instruction: string
+          history?: { role: 'user' | 'assistant'; content: string }[]
+        },
+      ): Promise<{ summary: MarketingVideoSummaryDTO; message: string }> =>
+        request(`/runs/${id}/marketing-video/edit`, {
+          method: 'POST',
+          body: JSON.stringify(input),
+        }),
       voices: (): Promise<{ voices: Array<{ voiceId: string; name: string; category: string; labels: Record<string, string> }> }> =>
         request(`/runs/marketing-video/voices`),
       musicPresets: (): Promise<{ presets: Array<{ id: string; name: string; url: string; mood?: string }> }> =>

@@ -327,6 +327,165 @@ input[type='range'].volumeSlider::-moz-range-thumb {
   background: color-mix(in srgb, var(--color-fg) 4%, transparent);
 }
 
+/* === Refine with AI ===
+ *  Mini chat panel that lives at the bottom of the result block. Users
+ *  type plain-language instructions ("shorten scene 2", "make the CTA
+ *  more aggressive") and Gemini Pro returns an updated manifest +
+ *  one-line confirmation. Visually mirrors the admin chat surface
+ *  (Vercel/Claude lean) but compact — it's secondary to the video.
+ */
+
+.refine {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  margin-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.refineHint {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-muted-fg);
+  margin: -4px 0 0;
+}
+
+.refineHistory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 4px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--color-fg) 3%, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.refineMsgUser {
+  align-self: flex-end;
+  max-width: 82%;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--color-fg) 8%, var(--color-bg));
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-fg);
+  white-space: pre-wrap;
+}
+
+.refineMsgAssistant {
+  align-self: flex-start;
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-fg);
+}
+
+.refineThinking {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--color-muted-fg) 0%,
+    var(--color-muted-fg) 46%,
+    var(--color-fg) 50%,
+    var(--color-muted-fg) 54%,
+    var(--color-muted-fg) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: refineShimmer 2.4s ease-in-out infinite;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+@keyframes refineShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -150% 0; }
+}
+
+.refineInputWrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.refineInputWrap:focus-within {
+  border-color: color-mix(in srgb, var(--color-fg) 40%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-fg) 8%, transparent);
+}
+
+.refineInput {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-fg);
+  padding: 6px 0;
+  min-height: 22px;
+  max-height: 140px;
+}
+
+.refineInput::placeholder {
+  color: var(--color-muted-fg);
+}
+
+.refineInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refineSend {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-fg);
+  color: var(--color-bg);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.refineSend:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.refineSend:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+.refineSend:not(:disabled):active {
+  transform: scale(0.95);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refineThinking {
+    animation: none;
+    background: var(--color-muted-fg);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+
 /* === Status banners === */
 
 .statusBanner {

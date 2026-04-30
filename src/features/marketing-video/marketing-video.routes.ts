@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { RunIdParamSchema } from '../run/run.schema.js'
 import { z } from 'zod'
-import { GenerateMarketingVideoOptionsSchema, VoiceTonePresetSchema } from './marketing-video.schema.js'
+import { GenerateMarketingVideoOptionsSchema, UpdateMarketingManifestSchema, VoiceTonePresetSchema } from './marketing-video.schema.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { incrementUsage, findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
 import {
@@ -13,8 +13,18 @@ import {
   generateMarketingVideoForRun,
   renderMarketingVideoForRun,
   updateMarketingVoiceoverForRun,
+  updateMarketingManifestForRun,
+  editMarketingManifestWithAi,
   MUSIC_PRESETS,
 } from './marketing-video.service.js'
+
+const EditManifestBodySchema = z.object({
+  instruction: z.string().min(1).max(2000),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().max(4000),
+  })).max(20).optional(),
+})
 
 const UpdateVoiceoverBodySchema = z.object({
   voiceId: z.string().optional(),
@@ -228,6 +238,61 @@ marketingVideoRouter.post('/:id/marketing-video/voiceover', (req: Request, res: 
 
       const summary = await updateMarketingVoiceoverForRun(params.data.id, body.data)
       res.status(200).json(summary)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+/**
+ * PUT /runs/:id/marketing-video/manifest
+ * Persist a user-edited manifest. Lets the operator iterate on the
+ * rendering (tweak headlines, scene durations, mockCode, branding,
+ * music volume) without re-running Gemini + ElevenLabs. Voice-over /
+ * music URLs stay frozen — re-synthesize voice via the dedicated
+ * /voiceover endpoint, change music via a fresh /marketing-video call.
+ *
+ * Resets renderStatus to 'idle' on success so the UI prompts a
+ * re-render with the new manifest.
+ */
+marketingVideoRouter.put('/:id/marketing-video/manifest', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const body = UpdateMarketingManifestSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const summary = await updateMarketingManifestForRun(params.data.id, body.data)
+      res.status(200).json(summary)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+/**
+ * POST /runs/:id/marketing-video/edit
+ * Chat-style manifest edits: user describes a change in plain language
+ * ("shorten scene 2 by 2s", "switch accent to blue") and the AI returns
+ * the updated manifest + a one-line summary of what it changed. Quota
+ * gated up-front because the underlying Gemini Pro call is metered.
+ */
+marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const body = EditManifestBodySchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const teamId = await findTeamIdByRunId(params.data.id)
+      if (teamId) await enforceQuotaOrThrow(teamId)
+
+      const result = await editMarketingManifestWithAi(params.data.id, body.data)
+      res.status(200).json(result)
     } catch (err) {
       next(err)
     }

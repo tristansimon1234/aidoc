@@ -131,6 +131,38 @@ export type VoiceTonePreset = z.infer<typeof VoiceTonePresetSchema>
 export const VisualModeSchema = z.enum(['screenshots', 'mocks'])
 export type VisualMode = z.infer<typeof VisualModeSchema>
 
+/** Schema for an incoming manifest update via PUT /:id/marketing-video/manifest.
+ *  Same shape as the persisted MarketingManifest but every field beyond the
+ *  script is optional — the user typically edits the script (headlines,
+ *  durations, mockCode) and we keep the rest from the existing manifest.
+ *  The service merges this on top of the persisted version, so a partial
+ *  payload doesn't wipe screenshots / branding / voiceover. */
+const MarketingScreenshotSchema = z.object({
+  url: z.string().url(),
+  caption: z.string(),
+})
+
+const MarketingBrandingSchema = z.object({
+  productName: z.string(),
+  accentColor: z.string(),
+  bgColor: z.string(),
+  textColor: z.string(),
+  fontFamily: z.string(),
+  logoUrl: z.string().nullable(),
+})
+
+export const UpdateMarketingManifestSchema = z.object({
+  script: MarketingScriptSchema,
+  screenshots: z.array(MarketingScreenshotSchema).optional(),
+  branding: MarketingBrandingSchema.optional(),
+  // Voice-over / music URLs are NOT user-editable here — re-synthesize via
+  // POST /:id/marketing-video/voiceover. Accepting the fields would let
+  // the user point Remotion at an arbitrary URL.
+  musicVolume: z.number().min(0).max(1).optional(),
+})
+
+export type UpdateMarketingManifestInput = z.infer<typeof UpdateMarketingManifestSchema>
+
 export const GenerateMarketingVideoOptionsSchema = z.object({
   withVoiceover: z.boolean().optional(),
   voiceId: z.string().optional(),

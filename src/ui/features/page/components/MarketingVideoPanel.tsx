@@ -84,6 +84,14 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
   const [aiMusicPrompt, setAiMusicPrompt] = useState('')
   const [error, setError] = useState<string | null>(null)
 
+  // AI-driven manifest edit: chat-style refinement on top of an existing
+  // manifest. `editHistory` keeps the conversation so Gemini sees the
+  // context of earlier edits in this session.
+  const [editHistory, setEditHistory] = useState<{ role: 'user' | 'assistant'; content: string }[]>([])
+  const [editInput, setEditInput] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+
   useEffect(() => {
     let cancelled = false
     // The summary read (Supabase direct, ~50-200ms) and the music presets
@@ -244,6 +252,38 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       // Free the form quickly — user can adjust options for the next
       // run while this one is still finishing in the background.
       setWorking(false)
+    }
+  }
+
+  // AI-driven manifest refinement. Calls /marketing-video/edit with the
+  // user's instruction + recent history; Gemini Pro returns the updated
+  // manifest. Server validates + persists + resets renderStatus, so on
+  // success we just refresh the local summary and prompt for re-render.
+  const handleEditWithAi = async (): Promise<void> => {
+    const instruction = editInput.trim()
+    if (!instruction || editing || !runId) return
+    setEditError(null)
+    // Optimistic: push the user message immediately so the chat feels
+    // responsive even before Gemini answers.
+    const nextHistory = [...editHistory, { role: 'user' as const, content: instruction }]
+    setEditHistory(nextHistory)
+    setEditInput('')
+    setEditing(true)
+    try {
+      const result = await api.runs.marketingVideo.editWithAi(runId, {
+        instruction,
+        history: editHistory,
+      })
+      setEditHistory([...nextHistory, { role: 'assistant', content: result.message }])
+      setSummary(result.summary)
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : (err as Error).message
+      setEditError(message)
+      // Roll back the optimistic user message so the input doesn't show
+      // an unanswered prompt — the failure is surfaced via editError.
+      setEditHistory(editHistory)
+    } finally {
+      setEditing(false)
     }
   }
 
@@ -503,6 +543,69 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
               Render failed: {summary.renderError}
             </div>
           )}
+
+          {/* === Refine with AI ===
+            *  Chat-style manifest edits on top of the rendered video.
+            *  Tell the AI what to change in plain language; the server
+            *  validates the proposed manifest, persists it, and resets
+            *  render status so the next render uses the new version. */}
+          <div className={styles.refine}>
+            <span className={styles.fieldLabel}>Refine with AI</span>
+            <p className={styles.refineHint}>
+              Describe a change in plain language and we'll update the manifest.
+              Re-render after to see the result. Voice-over stays the same — change
+              it from the Voice section above.
+            </p>
+
+            {editHistory.length > 0 && (
+              <div className={styles.refineHistory}>
+                {editHistory.map((m, i) => (
+                  <div
+                    key={i}
+                    className={m.role === 'user' ? styles.refineMsgUser : styles.refineMsgAssistant}
+                  >
+                    {m.content}
+                  </div>
+                ))}
+                {editing && (
+                  <div className={styles.refineMsgAssistant}>
+                    <span className={styles.refineThinking}>Updating manifest…</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {editError && (
+              <div className={`${styles.statusBanner} ${styles.statusError}`}>{editError}</div>
+            )}
+
+            <div className={styles.refineInputWrap}>
+              <textarea
+                className={styles.refineInput}
+                value={editInput}
+                onChange={(e) => setEditInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void handleEditWithAi()
+                  }
+                }}
+                placeholder='e.g. "shorten scene 2 by 2 seconds and make it punchier"'
+                rows={2}
+                disabled={editing}
+              />
+              <button
+                className={styles.refineSend}
+                onClick={() => void handleEditWithAi()}
+                disabled={!editInput.trim() || editing}
+                aria-label="Send"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
