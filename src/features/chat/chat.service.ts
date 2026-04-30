@@ -1,4 +1,4 @@
-import { embedText, embedTexts, generateText } from '../../shared/ai/gemini.client.js'
+import { embedText, embedTexts, generateText, generateTextStream } from '../../shared/ai/gemini.client.js'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
 import { env } from '../../shared/config/env.js'
 import { WalkthroughResponseSchema } from './chat.schema.js'
@@ -289,6 +289,197 @@ export async function chat(
     followUps,
     ...(walkthroughAvailable ? { walkthroughAvailable } : {}),
   }
+}
+
+// --- Streaming chat ---
+
+export type ChatStreamEvent =
+  | { type: 'start' }
+  | { type: 'delta'; text: string }
+  | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
+  | { type: 'followups'; items: string[] }
+  | { type: 'walkthrough'; available: boolean }
+  | { type: 'done'; fullText: string }
+  | { type: 'error'; message: string }
+
+/**
+ * Streaming variant of chat() — yields incremental text deltas as Gemini
+ * emits them, so the client can render token-by-token. Same retrieval +
+ * post-processing as the non-streaming path; the only differences are:
+ *
+ *   1. We hold back the trailing 30 chars of the assistant text from each
+ *      delta until we know it's not the start of a `---FOLLOWUPS---` or
+ *      `---WALKTHROUGH---` marker. Those structured trailers must NOT be
+ *      shown to the user. Once a marker is detected, streaming stops and
+ *      we accumulate the rest into a private buffer.
+ *
+ *   2. On stream end we run the same wrapBareImageUrls + resolvePublicDocsLinks
+ *      transforms as the non-streaming path, then emit `sources` /
+ *      `followups` / `walkthrough` / `done` events. The frontend can either
+ *      replace the accumulated assistant text with the post-processed
+ *      version (clean) or rely on the fact that link/image fixes are
+ *      typically a no-op for Gemini's well-formed output.
+ */
+export async function* chatStream(
+  projectId: string,
+  message: string,
+  history: ChatMessage[],
+  userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
+): AsyncGenerator<ChatStreamEvent> {
+  yield { type: 'start' }
+
+  // Same retrieval pipeline as chat()
+  let chunks: DocChunk[] = []
+  const didSearch = needsDocSearch(message, history)
+  if (didSearch) {
+    const needsRewrite = history.length >= 2 || message.trim().length < 20
+    const effectiveQuery = needsRewrite
+      ? await rewriteQuery(message, history).catch(() => message)
+      : message
+    const queryEmbedding = await embedText(effectiveQuery)
+    const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
+    chunks = candidates.length > 0
+      ? (candidates.length >= 10
+          ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
+          : candidates.slice(0, 8))
+      : []
+  }
+
+  const { findProjectById } = await import('../project/project.repository.js')
+  const project = await findProjectById(projectId)
+  const productContext: string[] = []
+  if (project) {
+    productContext.push(`Product: ${project.name}`)
+    if (project.description) productContext.push(`Description: ${project.description}`)
+    if (project.context?.audience) productContext.push(`Target audience: ${project.context.audience}`)
+    if (project.context?.workflow) productContext.push(`Core workflow: ${project.context.workflow}`)
+    if (project.context?.quirks) productContext.push(`Important details: ${project.context.quirks}`)
+    if (project.discoveredContext?.summary) productContext.push(`Product summary: ${project.discoveredContext.summary}`)
+    if (project.discoveredContext?.features?.length) {
+      productContext.push(`Key features: ${project.discoveredContext.features.join(', ')}`)
+    }
+    if (project.discoveredContext?.terminology && Object.keys(project.discoveredContext.terminology).length > 0) {
+      const terms = Object.entries(project.discoveredContext.terminology)
+        .map(([term, def]) => `${term}: ${def}`)
+        .join('; ')
+      productContext.push(`Terminology: ${terms}`)
+    }
+  }
+
+  if (didSearch && chunks.length === 0) {
+    const fallback = productContext.length > 0
+      ? "I don't have a specific article about that, but I'd be happy to help! Could you rephrase your question or ask about a specific feature?"
+      : "I couldn't find relevant information to answer your question. The documentation may not cover this topic yet."
+    yield { type: 'delta', text: fallback }
+    yield { type: 'sources', items: [] }
+    yield { type: 'followups', items: [] }
+    yield { type: 'done', fullText: fallback }
+    return
+  }
+
+  const pageIndex = chunks.length > 0 ? await buildPageIndex(projectId) : new Map()
+  const context = chunks.length > 0 ? buildContextFromChunks(chunks, pageIndex) : ''
+  const conversationHistory = history
+    .slice(-10)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n\n')
+
+  const { buildChatSystemPrompt, buildChatUserPrompt } = await import('../../shared/ai/prompt.builder.js')
+  const systemPrompt = buildChatSystemPrompt({ productContext, userContext })
+  const userPrompt = buildChatUserPrompt({ context, conversationHistory, message })
+
+  const stream = await generateTextStream({
+    systemPrompt,
+    userPrompt,
+    maxTokens: 2048,
+    temperature: 0.3,
+  })
+
+  // Marker detection. Gemini emits `---FOLLOWUPS---` and `---WALKTHROUGH---`
+  // as trailers on its own lines. We hold back a small tail buffer so we
+  // can detect those markers before flushing them to the client.
+  const TAIL_HOLD = 30
+  let visible = ''            // accumulated text we've emitted as deltas
+  let pending = ''            // accumulated text NOT yet emitted (last TAIL_HOLD chars OR everything after a marker hit)
+  let markerHit = false       // true once we've seen a trailer marker; stop streaming further text
+
+  const MARKER_RE = /\n?---\s*(?:FOLLOWUPS|WALKTHROUGH)/i
+
+  try {
+    for await (const delta of stream.deltas) {
+      pending += delta
+      if (markerHit) continue
+      // Check if pending now contains a marker
+      const m = MARKER_RE.exec(pending)
+      if (m && m.index !== undefined) {
+        const safeText = pending.slice(0, m.index)
+        if (safeText) {
+          yield { type: 'delta', text: safeText }
+          visible += safeText
+        }
+        // Keep everything from the marker onwards in `pending` for parsing
+        pending = pending.slice(m.index)
+        markerHit = true
+        continue
+      }
+      // Flush all but the trailing TAIL_HOLD chars (in case marker spans the chunk boundary)
+      if (pending.length > TAIL_HOLD) {
+        const safeEnd = pending.length - TAIL_HOLD
+        const safeText = pending.slice(0, safeEnd)
+        yield { type: 'delta', text: safeText }
+        visible += safeText
+        pending = pending.slice(safeEnd)
+      }
+    }
+    // Stream ended. Flush remaining pending text if no marker was hit.
+    if (!markerHit && pending) {
+      yield { type: 'delta', text: pending }
+      visible += pending
+      pending = ''
+    }
+  } catch (err) {
+    yield { type: 'error', message: (err as Error).message }
+    return
+  }
+
+  // Full text = visible (already streamed) + pending (the trailer block, if any)
+  const fullText = visible + pending
+
+  // Apply the same post-processing as the non-streaming chat() so links
+  // and bare image URLs render correctly. These transforms are mostly
+  // no-ops on well-formed output — the streamed text the user already saw
+  // matches what we send below in 99% of cases.
+  let answer = visible
+  answer = wrapBareImageUrls(answer)
+  answer = resolvePublicDocsLinks(answer, projectId, pageIndex)
+
+  // Walkthrough flag (already filtered out of `visible` thanks to the marker hold)
+  const walkthroughAvailable = /---?\s*WALKTHROUGH\s*---?/i.test(fullText)
+
+  // Follow-ups: parse from the trailer block we held back
+  let followUps: string[] = []
+  const followUpSplit = fullText.split(/---?\s*FOLLOWUPS\s*---?/i)
+  if (followUpSplit.length > 1) {
+    try {
+      let jsonStr = followUpSplit[1]!.trim()
+      if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+      const parsed = JSON.parse(jsonStr) as string[]
+      if (Array.isArray(parsed)) followUps = parsed.slice(0, 2)
+    } catch { /* keep empty */ }
+  }
+
+  // Sources (deduped by slug)
+  const sourceMap = new Map<string, { pageId: string; pageTitle: string; pageSlug: string }>()
+  for (const chunk of chunks) {
+    if (!sourceMap.has(chunk.pageSlug)) {
+      sourceMap.set(chunk.pageSlug, { pageId: chunk.pageId, pageTitle: chunk.pageTitle, pageSlug: chunk.pageSlug })
+    }
+  }
+
+  yield { type: 'sources', items: Array.from(sourceMap.values()) }
+  yield { type: 'followups', items: followUps }
+  if (walkthroughAvailable) yield { type: 'walkthrough', available: true }
+  yield { type: 'done', fullText: answer }
 }
 
 export async function getSuggestions(projectId: string): Promise<string[]> {

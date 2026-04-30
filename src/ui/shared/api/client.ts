@@ -687,6 +687,50 @@ export const api = {
   chat: {
     send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string): Promise<ChatResponseDTO> =>
       request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history, sessionToken }) }),
+    /** Streaming variant — yields ChatStreamEvent objects parsed from SSE
+     *  frames as the backend emits them. Caller consumes via for-await-of. */
+    sendStream: async function* (
+      projectId: string,
+      message: string,
+      history: { role: 'user' | 'assistant'; content: string }[],
+      sessionToken?: string,
+      signal?: AbortSignal,
+    ): AsyncGenerator<ChatStreamEventDTO> {
+      const headers = await getAuthHeaders()
+      const res = await fetch(`${API_BASE}/projects/${projectId}/chat/stream`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message, history, sessionToken }),
+        signal,
+      })
+      if (!res.ok || !res.body) {
+        const body = (await res.json().catch(() => null)) as { error?: string; code?: string; details?: unknown } | null
+        throw new ApiError(body?.error ?? `Chat stream failed: ${res.status}`, body?.code ?? null, res.status, body?.details)
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // SSE frames are separated by a blank line. Each frame may have
+        // multiple `data:` lines but our backend emits one per frame.
+        let sep: number
+        while ((sep = buffer.indexOf('\n\n')) >= 0) {
+          const frame = buffer.slice(0, sep)
+          buffer = buffer.slice(sep + 2)
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            const payload = line.slice(6).trim()
+            if (payload === '[DONE]') return
+            try {
+              yield JSON.parse(payload) as ChatStreamEventDTO
+            } catch { /* skip malformed frame, keep streaming */ }
+          }
+        }
+      }
+    },
     index: (projectId: string, force?: boolean): Promise<{ indexed: number }> =>
       request(`/projects/${projectId}/chat/index`, { method: 'POST', body: JSON.stringify({ force }) }),
     suggestions: (projectId: string): Promise<{ suggestions: string[] }> =>
@@ -877,6 +921,18 @@ export interface ChatResponseDTO {
    *  matching video clip. */
   walkthroughAvailable?: boolean
 }
+
+/** SSE event shape emitted by the streaming chat endpoints. Mirrors the
+ *  backend's ChatStreamEvent in chat.service.ts; the discriminated `type`
+ *  field lets consumers narrow without runtime checks. */
+export type ChatStreamEventDTO =
+  | { type: 'start' }
+  | { type: 'delta'; text: string }
+  | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
+  | { type: 'followups'; items: string[] }
+  | { type: 'walkthrough'; available: boolean }
+  | { type: 'done'; fullText: string }
+  | { type: 'error'; message: string }
 
 export interface PreflightCheckDTO {
   category: 'url' | 'credentials' | 'file' | 'navigation' | 'prerequisite'

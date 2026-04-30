@@ -100,6 +100,79 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
+// Streaming variant of POST / — same business logic + same auth + same
+// quota gate, but the response is SSE so the client renders token-by-token
+// as Gemini emits text. The legacy POST / stays for MCP / widget / any
+// caller that wants a single JSON response.
+chatRouter.post('/stream', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const body = ChatRequestSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const { projectId, teamId } = await assertChatAccess(req)
+      await enforceQuotaOrThrow(teamId)
+
+      const sessionToken = (req.body as { sessionToken?: string }).sessionToken
+      const sessionTrackPromise = trackAppChatSession(projectId, teamId, sessionToken)
+
+      // SSE headers
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.setHeader('X-Accel-Buffering', 'no')
+      res.flushHeaders()
+
+      const stream = chatService.chatStream(
+        projectId,
+        body.data.message,
+        body.data.history,
+        body.data.userContext,
+      )
+      let assistantText = ''
+      try {
+        for await (const event of stream) {
+          if (event.type === 'done') assistantText = event.fullText
+          res.write(`data: ${JSON.stringify(event)}\n\n`)
+        }
+      } catch (err) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+      }
+
+      res.write('data: [DONE]\n\n')
+      res.end()
+
+      // Post-stream side effects: log + session tracker. Best-effort, never
+      // fails the response (the response has already been written).
+      if (sessionToken && assistantText) {
+        try {
+          const ownerId = await findOwnerUserIdByTeamId(teamId)
+          if (ownerId) {
+            await logChatMessages({
+              projectId,
+              userId: ownerId,
+              sessionToken,
+              source: 'app',
+              userMessage: body.data.message,
+              assistantMessage: assistantText,
+            })
+          }
+        } catch (err) {
+          console.warn('[analytics] app chat stream log failed:', (err as Error).message)
+        }
+      }
+      await sessionTrackPromise
+    } catch (err) {
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+        res.end()
+      } else {
+        next(err)
+      }
+    }
+  })()
+})
+
 // Check if indexed, optionally force re-index
 chatRouter.post('/index', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {

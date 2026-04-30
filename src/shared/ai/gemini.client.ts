@@ -89,6 +89,84 @@ export async function generateText(opts: {
   }
 }
 
+/**
+ * Streamed text generation. Yields the same response as `generateText` but
+ * exposes incremental chunks as Gemini emits them, so SSE callers can flush
+ * tokens to the client as they arrive instead of buffering the whole answer.
+ *
+ * Same retry behaviour as generateText for the initial connection (handles
+ * the 429 backoff). Once the stream is open we don't retry — partial
+ * deltas have already been sent and the caller's protocol handles
+ * mid-stream errors.
+ *
+ * Usage:
+ *   const stream = await generateTextStream(opts)
+ *   for await (const delta of stream.deltas) { res.write(delta) }
+ *   const { fullText, usage } = await stream.result
+ */
+export async function generateTextStream(opts: {
+  systemPrompt?: string
+  userPrompt: string
+  maxTokens?: number
+  temperature?: number
+  model?: string
+}): Promise<{
+  deltas: AsyncIterable<string>
+  result: Promise<{ fullText: string; usage: GeminiUsage }>
+}> {
+  const genAI = getGenAI()
+  const model = genAI.getGenerativeModel({
+    model: opts.model ?? GEMINI_MODEL,
+    ...(opts.systemPrompt ? { systemInstruction: opts.systemPrompt } : {}),
+  })
+
+  const streamResult = await withRetry(() =>
+    model.generateContentStream({
+      contents: [{ role: 'user', parts: [{ text: opts.userPrompt }] }],
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+      },
+    }),
+  )
+
+  // Capture the full text + usage as the stream drains. Caller awaits
+  // `result` after consuming `deltas` to get the final state.
+  let fullText = ''
+  let resolveResult: (v: { fullText: string; usage: GeminiUsage }) => void
+  let rejectResult: (e: unknown) => void
+  const result = new Promise<{ fullText: string; usage: GeminiUsage }>((resolve, reject) => {
+    resolveResult = resolve
+    rejectResult = reject
+  })
+
+  async function* deltaIterator(): AsyncIterable<string> {
+    try {
+      for await (const chunk of streamResult.stream) {
+        const text = chunk.text()
+        if (text) {
+          fullText += text
+          yield text
+        }
+      }
+      const final = await streamResult.response
+      const usage = final.usageMetadata
+      resolveResult({
+        fullText,
+        usage: {
+          inputTokens: usage?.promptTokenCount ?? 0,
+          outputTokens: usage?.candidatesTokenCount ?? 0,
+        },
+      })
+    } catch (err) {
+      rejectResult(err)
+      throw err
+    }
+  }
+
+  return { deltas: deltaIterator(), result }
+}
+
 // --- Embeddings ---
 
 const EMBEDDING_DIMENSIONS = 768

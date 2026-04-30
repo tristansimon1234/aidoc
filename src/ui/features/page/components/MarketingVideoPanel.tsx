@@ -261,7 +261,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <h2 className={styles.title}>Marketing video</h2>
+        <span className={styles.eyebrow}>Marketing video</span>
         <p className={styles.subtitle}>
           A 45-second promo generated from this page — separate from the walkthrough.
         </p>
@@ -276,7 +276,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       )}
 
       {/* === Brief === */}
-      <div className={styles.briefField}>
+      <div className={styles.field}>
         <label className={styles.fieldLabel} htmlFor="marketing-brief">
           Creative brief <span className={styles.fieldHint}>optional</span>
         </label>
@@ -295,7 +295,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       <div className={styles.field}>
         <span className={styles.fieldLabel}>
           Visual style
-          {!runId && <span className={styles.fieldHint}>· Real screenshots locked — record a video first</span>}
+          {!runId && <span className={styles.fieldHint}>Real screenshots locked — record a video first</span>}
         </span>
         <div className={styles.radioRow} role="radiogroup">
           {([
@@ -322,8 +322,9 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         </div>
       </div>
 
-      {/* === Voice === */}
-      <div className={styles.optionsRow}>
+      {/* === Voice-over === */}
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>Voice-over</span>
         <label className={styles.toggle}>
           <input
             type="checkbox"
@@ -331,50 +332,50 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             onChange={(e) => setWithVoiceover(e.target.checked)}
             disabled={working}
           />
-          Generate voice-over
+          Generate AI voice narration
         </label>
-      </div>
 
-      {withVoiceover && (
-        <div className={styles.fieldGrid}>
-          {voices.length > 0 && (
-            <label className={styles.field}>
+        {withVoiceover && (
+          <div className={styles.fieldGrid} style={{ marginTop: 4 }}>
+            <div className={styles.field}>
               <span className={styles.fieldLabel}>Voice</span>
               <select
                 className={styles.select}
                 value={voiceId}
                 onChange={(e) => setVoiceId(e.target.value)}
-                disabled={working}
+                disabled={working || voices.length === 0}
               >
-                <option value="">Default — Sarah (clear, professional)</option>
+                <option value="">
+                  {voices.length === 0 ? 'Loading voices…' : 'Default — Sarah (clear, professional)'}
+                </option>
                 {voices.map((v) => (
                   <option key={v.voiceId} value={v.voiceId}>
                     {v.name}{v.category ? ` · ${v.category}` : ''}
                   </option>
                 ))}
               </select>
-            </label>
-          )}
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Tone</span>
-            <select
-              className={styles.select}
-              value={tone}
-              onChange={(e) => setTone(e.target.value as VoiceTone)}
-              disabled={working}
-            >
-              {(Object.keys(TONE_LABELS) as VoiceTone[]).map((t) => (
-                <option key={t} value={t}>{TONE_LABELS[t]}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
+            </div>
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>Tone</span>
+              <select
+                className={styles.select}
+                value={tone}
+                onChange={(e) => setTone(e.target.value as VoiceTone)}
+                disabled={working}
+              >
+                {(Object.keys(TONE_LABELS) as VoiceTone[]).map((t) => (
+                  <option key={t} value={t}>{TONE_LABELS[t]}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* === Music === */}
-      <div className={musicChoice === 'none' ? styles.field : styles.fieldGrid}>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>Background music</span>
+      <div className={styles.field}>
+        <span className={styles.fieldLabel}>Background music</span>
+        <div className={musicChoice === 'none' ? '' : styles.fieldGrid}>
           <select
             className={styles.select}
             value={musicChoice}
@@ -390,56 +391,57 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             <option value="ai">Generate AI music</option>
             <option value="upload">Upload custom MP3…</option>
           </select>
-        </label>
-        {musicChoice !== 'none' && (
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>Volume {Math.round(musicVolume * 100)}%</span>
+          {musicChoice !== 'none' && (
+            <div className={styles.field}>
+              <span className={styles.fieldLabel}>Volume {Math.round(musicVolume * 100)}%</span>
+              <input
+                type="range"
+                min={0}
+                max={0.5}
+                step={0.01}
+                value={musicVolume}
+                onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                disabled={working}
+                title="0–50% — kept low so the voice-over stays audible"
+                className={styles.volumeSlider}
+              />
+            </div>
+          )}
+        </div>
+
+        {musicChoice === 'ai' && (
+          <div className={styles.field} style={{ marginTop: 12 }}>
+            <span className={styles.fieldLabel}>
+              Music style <span className={styles.fieldHint}>optional · fine-tunes the AI prompt</span>
+            </span>
             <input
-              type="range"
-              min={0}
-              max={0.5}
-              step={0.01}
-              value={musicVolume}
-              onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+              type="text"
+              className={styles.textInput}
+              value={aiMusicPrompt}
+              onChange={(e) => setAiMusicPrompt(e.target.value)}
+              placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
+              maxLength={300}
               disabled={working}
-              title="0–50% — kept low so the voice-over stays audible"
             />
-          </label>
+          </div>
+        )}
+
+        {musicChoice === 'upload' && (
+          <div className={styles.uploadRow} style={{ marginTop: 12 }}>
+            <input
+              type="file"
+              accept="audio/mpeg,audio/mp3,audio/wav,audio/x-m4a"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) void handleMusicUpload(file)
+              }}
+              disabled={musicUploading || working}
+            />
+            {musicUploading && <Spinner size="sm" />}
+            {musicUploadName && !musicUploading && <span className={styles.uploadOk}>✓ {musicUploadName}</span>}
+          </div>
         )}
       </div>
-
-      {musicChoice === 'ai' && (
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>
-            Music style <span className={styles.fieldHint}>optional · fine-tunes the AI prompt</span>
-          </span>
-          <input
-            type="text"
-            className={styles.textInput}
-            value={aiMusicPrompt}
-            onChange={(e) => setAiMusicPrompt(e.target.value)}
-            placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
-            maxLength={300}
-            disabled={working}
-          />
-        </label>
-      )}
-
-      {musicChoice === 'upload' && (
-        <div className={styles.optionsRow} style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)' }}>
-          <input
-            type="file"
-            accept="audio/mpeg,audio/mp3,audio/wav,audio/x-m4a"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) void handleMusicUpload(file)
-            }}
-            disabled={musicUploading || working}
-          />
-          {musicUploading && <Spinner size="sm" />}
-          {musicUploadName && !musicUploading && <span>✓ {musicUploadName}</span>}
-        </div>
-      )}
 
       {/* === Generate === */}
       <div className={styles.actions}>
@@ -469,7 +471,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
 
       {/* === Result (after) === */}
       {hasManifest && summary && !working && ourJob?.status !== 'running' && (
-        <>
+        <div className={styles.resultBlock}>
           {summary.videoUrl && renderStatus === 'ready' && (
             <video
               className={styles.videoPlayer}
@@ -488,20 +490,20 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             />
           )}
 
-          <div className={styles.actions}>
-            {summary.videoUrl && (
+          {summary.videoUrl && (
+            <div className={styles.actions}>
               <a href={summary.videoUrl} download="marketing.mp4" className={styles.downloadLink}>
                 Download MP4
               </a>
-            )}
-          </div>
+            </div>
+          )}
 
           {renderStatus === 'failed' && summary.renderError && (
             <div className={`${styles.statusBanner} ${styles.statusError}`}>
               Render failed: {summary.renderError}
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   )

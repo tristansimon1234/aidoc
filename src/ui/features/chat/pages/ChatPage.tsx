@@ -28,6 +28,8 @@ export function ChatPage(): React.ReactElement {
     index: (projectId) => api.chat.index(projectId),
     send: (projectId, message, history, sessionToken) =>
       api.chat.send(projectId, message, history, sessionToken),
+    // Streaming SSE — token-by-token rendering instead of a 2-3s spinner.
+    sendStream: api.chat.sendStream,
     suggestions: (projectId) => api.chat.suggestions(projectId),
   }
 

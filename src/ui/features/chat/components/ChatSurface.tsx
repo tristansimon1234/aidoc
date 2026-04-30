@@ -9,10 +9,26 @@ interface ChatMessage {
   sources?: { pageId: string; pageTitle: string; pageSlug: string }[]
   followUps?: string[]
   walkthroughAvailable?: boolean
+  /** True while the assistant message is being streamed in. The UI shows
+   *  a blinking caret at the end of the text and suppresses follow-ups
+   *  until the stream completes. */
+  streaming?: boolean
   /** Whether the user clicked "watch walkthrough" — expands the inline
    *  narrated player only when they opt in, not automatically. */
   videoExpanded?: boolean
 }
+
+/** Streaming event shape emitted by sendStream — mirrors the backend's
+ *  ChatStreamEvent in chat.service.ts. The surface ignores any event it
+ *  doesn't recognise so future additions don't break older clients. */
+export type ChatStreamEvent =
+  | { type: 'start' }
+  | { type: 'delta'; text: string }
+  | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
+  | { type: 'followups'; items: string[] }
+  | { type: 'walkthrough'; available: boolean }
+  | { type: 'done'; fullText: string }
+  | { type: 'error'; message: string }
 
 /**
  * Shape of the chat API the surface depends on. Admin uses the authed
@@ -26,12 +42,24 @@ export interface ChatSurfaceApi {
   /** Return whether the project has embeddings indexed. When omitted,
    *  the surface assumes yes and shows chat immediately. */
   status?: (projectId: string) => Promise<{ hasEmbeddings: boolean }>
+  /** Legacy single-shot send — kept as a fallback when sendStream is
+   *  unavailable (older clients, MCP, tests). */
   send: (
     projectId: string,
     message: string,
     history: { role: 'user' | 'assistant'; content: string }[],
     sessionToken?: string,
   ) => Promise<ChatResponseDTO>
+  /** Streaming send. When provided, the surface uses this instead of
+   *  `send` and renders deltas as they arrive. The async generator must
+   *  yield ChatStreamEvent in the order the backend emits them. */
+  sendStream?: (
+    projectId: string,
+    message: string,
+    history: { role: 'user' | 'assistant'; content: string }[],
+    sessionToken?: string,
+    signal?: AbortSignal,
+  ) => AsyncIterable<ChatStreamEvent>
   suggestions: (projectId: string) => Promise<{ suggestions: string[] }>
 }
 
@@ -63,8 +91,7 @@ const DEFAULT_SUGGESTIONS = [
 
 /** Extract every doc-page slug Gemini cited via a resolved absolute
  *  markdown link (https://…/docs/<projectId>/<slug>). Slugs ordered
- *  by first appearance. Used to tie the video suggestion to what the
- *  answer actually references — not just the top RAG source. */
+ *  by first appearance. */
 function extractCitedSlugs(markdown: string): string[] {
   const out: string[] = []
   const seen = new Set<string>()
@@ -84,8 +111,7 @@ function extractCitedSlugs(markdown: string): string[] {
  * Compact narrated video player for chat responses — same voice-over
  * semantics as PublicDocs.NarratedVideo: video forced muted so the
  * original track never plays over the ElevenLabs narration, volume
- * slider piped to the audio element. Tight height so it sits nicely
- * inside an assistant bubble.
+ * slider piped to the audio element.
  */
 function ChatNarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?: string }): React.ReactElement {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -131,10 +157,45 @@ function ChatNarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?
 }
 
 /**
- * The polished chat UI surface — welcome state with suggestion chips,
- * message bubbles with avatar, sources and follow-ups, thinking dots,
- * auto-resize input. Used by admin ChatPage and the public-docs chat
- * route so both surfaces look identical except for theming.
+ * Smart auto-scroll: follows the bottom while content streams in, but
+ * pauses tracking the moment the user scrolls up. Same pattern as
+ * Claude.ai / ChatGPT — the user can re-read earlier text without the
+ * UI yanking them back to the bottom. Resumes following when the user
+ * scrolls back to within 80px of the bottom.
+ */
+function useAutoScroll(deps: unknown[]): {
+  scrollerRef: React.RefObject<HTMLDivElement>
+  endRef: React.RefObject<HTMLDivElement>
+} {
+  const scrollerRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>
+  const endRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>
+  const followingRef = useRef(true)
+
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+    const onScroll = (): void => {
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      followingRef.current = distFromBottom < 80
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    if (followingRef.current) {
+      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+
+  return { scrollerRef, endRef }
+}
+
+/**
+ * Polished chat UI surface — Vercel AI / Claude.ai style. Streams
+ * tokens with a blinking caret, slide-in messages, smart auto-scroll,
+ * source pills that fade in after the stream completes.
  */
 export function ChatSurface({
   projectId,
@@ -152,8 +213,10 @@ export function ChatSurface({
   const [indexed, setIndexed] = useState<boolean | null>(api.index || api.status ? null : true)
   const [indexError, setIndexError] = useState<string | null>(null)
   const [suggestions, setSuggestions] = useState<string[]>(fallbackSuggestions)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const { scrollerRef, endRef } = useAutoScroll([messages.length, messages[messages.length - 1]?.content])
 
   useEffect(() => {
     void checkAndIndex()
@@ -164,13 +227,11 @@ export function ChatSurface({
     if (indexed && !sending) inputRef.current?.focus()
   }, [indexed, sending])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  // Cancel any in-flight stream when unmounting so the SSE connection
+  // closes cleanly instead of leaking.
+  useEffect(() => () => abortRef.current?.abort(), [])
 
   const checkAndIndex = async (): Promise<void> => {
-    // Nothing to check when the caller didn't provide status/index —
-    // assume ready (public docs) and move straight into chat.
     if (!api.status && !api.index) {
       setIndexed(true)
       setIndexing(false)
@@ -211,37 +272,91 @@ export function ChatSurface({
     } catch { /* fallback suggestions stay */ }
   }
 
+  /** Patch the most recent assistant message in `messages`. Used while
+   *  streaming so each delta updates the same message instead of
+   *  appending a new one. */
+  const patchLastAssistant = useCallback((patch: Partial<ChatMessage> | ((m: ChatMessage) => ChatMessage)): void => {
+    setMessages((prev) => {
+      // Find the last assistant message
+      let idx = -1
+      for (let i = prev.length - 1; i >= 0; i--) {
+        if (prev[i]?.role === 'assistant') { idx = i; break }
+      }
+      if (idx === -1) return prev
+      const next = [...prev]
+      const current = next[idx]!
+      next[idx] = typeof patch === 'function' ? patch(current) : { ...current, ...patch }
+      return next
+    })
+  }, [])
+
   const sendMessage = useCallback(async (text: string): Promise<void> => {
     const msg = text.trim()
     if (!msg || sending) return
 
     setInput('')
-    setMessages((prev) => [...prev, { role: 'user', content: msg }])
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: msg },
+      // Pre-create the assistant message in `streaming` state so the UI
+      // shows the thinking dots / caret immediately, before the first
+      // delta arrives.
+      { role: 'assistant', content: '', streaming: true },
+    ])
     setSending(true)
 
+    const history = messages.map((m) => ({ role: m.role, content: m.content }))
+
     try {
-      const history = messages.map((m) => ({ role: m.role, content: m.content }))
-      const response = await api.send(projectId, msg, history, sessionToken)
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
+      if (api.sendStream) {
+        // Streaming path
+        const controller = new AbortController()
+        abortRef.current = controller
+        let fullText = ''
+        for await (const event of api.sendStream(projectId, msg, history, sessionToken, controller.signal)) {
+          if (event.type === 'delta') {
+            fullText += event.text
+            patchLastAssistant({ content: fullText })
+          } else if (event.type === 'sources') {
+            patchLastAssistant({ sources: event.items })
+          } else if (event.type === 'followups') {
+            patchLastAssistant({ followUps: event.items })
+          } else if (event.type === 'walkthrough') {
+            patchLastAssistant({ walkthroughAvailable: event.available })
+          } else if (event.type === 'done') {
+            // Replace with the post-processed full text (link rewriting,
+            // image URL normalization). May be identical to fullText for
+            // well-formed Gemini output.
+            patchLastAssistant({ content: event.fullText, streaming: false })
+          } else if (event.type === 'error') {
+            patchLastAssistant({ content: 'Sorry, something went wrong. Please try again.', streaming: false })
+          }
+        }
+        // Stream finished without explicit done — close streaming state
+        patchLastAssistant({ streaming: false })
+        abortRef.current = null
+      } else {
+        // Legacy single-shot path
+        const response = await api.send(projectId, msg, history, sessionToken)
+        patchLastAssistant({
           content: response.answer,
           sources: response.sources,
           followUps: response.followUps,
           walkthroughAvailable: response.walkthroughAvailable,
-        },
-      ])
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' },
-      ])
+          streaming: false,
+        })
+      }
+    } catch (err) {
+      const isAbort = (err as Error).name === 'AbortError'
+      patchLastAssistant({
+        content: isAbort ? '' : 'Sorry, something went wrong. Please try again.',
+        streaming: false,
+      })
     } finally {
       setSending(false)
       inputRef.current?.focus()
     }
-  }, [messages, sending, projectId, api, sessionToken])
+  }, [messages, sending, projectId, api, sessionToken, patchLastAssistant])
 
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -292,20 +407,25 @@ export function ChatSurface({
     )
   }
 
+  // The last assistant message — we render its follow-ups separately so
+  // they appear under the bubble after streaming ends.
+  const lastAssistant = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (m?.role === 'assistant') return m
+    }
+    return null
+  })()
+
   return (
     <div className={styles.page}>
       <div className={styles.chat}>
-        <div className={styles.messages}>
+        <div className={styles.messages} ref={scrollerRef}>
           {messages.length === 0 ? (
             <div className={styles.welcome}>
-              <div className={styles.welcomeIcon}>
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2C6.477 2 2 6.015 2 10.97c0 2.735 1.329 5.175 3.406 6.813.118.093.2.236.2.394L5.4 20.6a.85.85 0 0 0 1.254.745l2.663-1.472a.85.85 0 0 1 .562-.088c.7.14 1.426.215 2.171.215 5.523 0 10-4.015 10-8.97C22 6.015 17.523 2 12 2z" />
-                </svg>
-              </div>
               <h2 className={styles.welcomeTitle}>Chat with {projectName}</h2>
               <p className={styles.welcomeHint}>
-                Ask anything about the documentation. I'll search through all published pages and give you a clear answer with sources.
+                Ask anything about the documentation.
               </p>
               <div className={styles.suggestionsGrid}>
                 {suggestions.map((s) => (
@@ -315,10 +435,10 @@ export function ChatSurface({
                     onClick={() => void sendMessage(s)}
                     disabled={sending}
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={styles.suggestionIcon}>
-                      <path d="M13 7l5 5-5 5" /><path d="M6 12h12" />
-                    </svg>
                     {s}
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={styles.suggestionIcon}>
+                      <path d="M7 17 17 7" /><path d="M7 7h10v10" />
+                    </svg>
                   </button>
                 ))}
               </div>
@@ -326,114 +446,101 @@ export function ChatSurface({
           ) : (
             <>
               {messages.map((msg, i) => (
-                <div key={i} className={`${styles.msgRow} ${msg.role === 'user' ? styles.msgRowUser : styles.msgRowAssistant}`}>
-                  {msg.role === 'assistant' && (
-                    <div className={styles.avatar}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09z"/><path d="M18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456z"/></svg>
+                <div
+                  key={i}
+                  className={`${styles.msgRow} ${msg.role === 'user' ? styles.msgRowUser : styles.msgRowAssistant}`}
+                >
+                  {msg.role === 'user' ? (
+                    <div className={styles.bubbleUser}>{msg.content}</div>
+                  ) : (
+                    <div className={styles.bubbleAssistant}>
+                      {/* Empty + streaming = thinking dots */}
+                      {msg.content === '' && msg.streaming ? (
+                        <div className={styles.thinkingDots} aria-label="Thinking">
+                          <span /><span /><span />
+                        </div>
+                      ) : (
+                        <div className={`${styles.assistantText} ${msg.streaming ? styles.assistantStreaming : ''}`}>
+                          <MarkdownRenderer content={msg.content} />
+                        </div>
+                      )}
+
+                      {/* Suggested narrated walkthrough (when the answer cites a page that has one) */}
+                      {!msg.streaming && resolveSourceMedia && msg.content && (() => {
+                        const citedSlugs = extractCitedSlugs(msg.content)
+                        if (citedSlugs.length === 0) return null
+                        let match: { title: string; videoUrl: string; audioUrl?: string | null } | null = null
+                        for (const slug of citedSlugs) {
+                          const source = msg.sources?.find((s) => s.pageSlug === slug)
+                          const media = resolveSourceMedia(source ?? { pageId: '', pageSlug: slug })
+                          if (media?.videoUrl) {
+                            match = {
+                              title: source?.pageTitle ?? slug,
+                              videoUrl: media.videoUrl,
+                              audioUrl: media.audioUrl,
+                            }
+                            break
+                          }
+                        }
+                        if (!match) return null
+                        const expand = (): void => {
+                          setMessages((prev) => prev.map((m, idx) => idx === i ? { ...m, videoExpanded: true } : m))
+                        }
+                        return (
+                          <div className={styles.sourceVideo}>
+                            {msg.videoExpanded ? (
+                              <>
+                                <ChatNarratedVideo
+                                  videoUrl={match.videoUrl}
+                                  audioUrl={match.audioUrl ?? undefined}
+                                />
+                                <p className={styles.sourceVideoHint}>
+                                  Clip from <strong>{match.title}</strong>
+                                </p>
+                              </>
+                            ) : (
+                              <button className={styles.videoButton} onClick={expand}>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                  <polygon points="6 3 20 12 6 21 6 3" />
+                                </svg>
+                                Watch the <strong>{match.title}</strong> walkthrough
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })()}
+
+                      {!msg.streaming && msg.sources && msg.sources.length > 0 && (
+                        <div className={styles.sources}>
+                          {msg.sources.map((s) => (
+                            <button
+                              key={s.pageSlug}
+                              className={styles.sourceTag}
+                              onClick={() => onSourceClick(s)}
+                            >
+                              {s.pageTitle}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
-                  <div className={`${styles.bubble} ${msg.role === 'user' ? styles.bubbleUser : styles.bubbleAssistant}`}>
-                    {msg.role === 'assistant' ? (
-                      <MarkdownRenderer content={msg.content} />
-                    ) : (
-                      <span>{msg.content}</span>
-                    )}
-
-                    {msg.role === 'assistant' && resolveSourceMedia && (() => {
-                      // Suggest a walkthrough video ONLY when Gemini's answer
-                      // explicitly cites a page via a markdown link AND that
-                      // page has a video. Ties the suggestion to the answer's
-                      // own references instead of the RAG ranking, which was
-                      // pulling unrelated videos whenever the top-reranked
-                      // source happened to have one.
-                      const citedSlugs = extractCitedSlugs(msg.content)
-                      if (citedSlugs.length === 0) return null
-                      // Walk the cited slugs in order, find the first that
-                      // resolves to a page with a video.
-                      let match: { title: string; videoUrl: string; audioUrl?: string | null } | null = null
-                      for (const slug of citedSlugs) {
-                        const source = msg.sources?.find((s) => s.pageSlug === slug)
-                        const media = resolveSourceMedia(source ?? { pageId: '', pageSlug: slug })
-                        if (media?.videoUrl) {
-                          match = {
-                            title: source?.pageTitle ?? slug,
-                            videoUrl: media.videoUrl,
-                            audioUrl: media.audioUrl,
-                          }
-                          break
-                        }
-                      }
-                      if (!match) return null
-                      const expand = (): void => {
-                        setMessages((prev) => prev.map((m, idx) => idx === i ? { ...m, videoExpanded: true } : m))
-                      }
-                      return (
-                        <div className={styles.sourceVideo}>
-                          {msg.videoExpanded ? (
-                            <>
-                              <ChatNarratedVideo
-                                videoUrl={match.videoUrl}
-                                audioUrl={match.audioUrl ?? undefined}
-                              />
-                              <p className={styles.sourceVideoHint}>
-                                Clip from <strong>{match.title}</strong>
-                              </p>
-                            </>
-                          ) : (
-                            <button className={styles.videoButton} onClick={expand}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                                <polygon points="6 3 20 12 6 21 6 3" />
-                              </svg>
-                              Watch the <strong>{match.title}</strong> walkthrough
-                            </button>
-                          )}
-                        </div>
-                      )
-                    })()}
-
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className={styles.sources}>
-                        {msg.sources.map((s) => (
-                          <button
-                            key={s.pageSlug}
-                            className={styles.sourceTag}
-                            onClick={() => onSourceClick(s)}
-                          >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
-                            {s.pageTitle}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
                 </div>
               ))}
 
-              {!sending && messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && messages[messages.length - 1]?.followUps && (messages[messages.length - 1]?.followUps?.length ?? 0) > 0 && (
+              {/* Follow-ups under the last assistant message, only after streaming completes */}
+              {lastAssistant && !lastAssistant.streaming && lastAssistant.followUps && lastAssistant.followUps.length > 0 && (
                 <div className={styles.followUps}>
-                  {(messages[messages.length - 1]?.followUps ?? []).map((q) => (
+                  {lastAssistant.followUps.map((q) => (
                     <button key={q} className={styles.followUp} onClick={() => void sendMessage(q)}>
                       {q}
                     </button>
                   ))}
                 </div>
               )}
-
-              {sending && (
-                <div className={styles.msgRow + ' ' + styles.msgRowAssistant}>
-                  <div className={styles.avatar}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09z"/><path d="M18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456z"/></svg>
-                  </div>
-                  <div className={styles.thinking}>
-                    <div className={styles.thinkingDots}>
-                      <span /><span /><span />
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
-          <div ref={messagesEndRef} />
+          <div ref={endRef} />
         </div>
 
         <div className={styles.inputBar}>
@@ -441,7 +548,7 @@ export function ChatSurface({
             <textarea
               ref={inputRef}
               className={styles.input}
-              placeholder="Ask a question..."
+              placeholder="Ask anything…"
               value={input}
               onChange={handleInput}
               onKeyDown={handleKeyDown}
@@ -452,11 +559,13 @@ export function ChatSurface({
               className={styles.sendBtn}
               onClick={() => void sendMessage(input)}
               disabled={!input.trim() || sending}
+              aria-label="Send"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+              </svg>
             </button>
           </div>
-          <span className={styles.inputHint}>Searches documentation via RAG</span>
         </div>
       </div>
     </div>

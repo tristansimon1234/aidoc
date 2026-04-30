@@ -191,6 +191,78 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
   })()
 })
 
+// SSE streaming variant — same auth + quota + rate limit as POST /chat,
+// just emits Gemini deltas as they arrive so the public docs surface can
+// render token-by-token. The legacy POST stays for callers that want a
+// single JSON response (search bots, future integrations).
+publicDocsRouter.post('/:projectId/chat/stream', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const projectId = req.params.projectId as string
+      await publicChatLimiter.checkOrThrow(`${projectId}:${clientIp(req)}`)
+
+      const project = await loadChatEnabledProject(projectId)
+      await enforceQuotaOrThrow(project.teamId)
+
+      const body = ChatRequestSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const sessionToken = (req.body as { sessionToken?: string }).sessionToken
+      const sessionTrackPromise = trackPublicSession(project, sessionToken)
+
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.setHeader('X-Accel-Buffering', 'no')
+      res.flushHeaders()
+
+      const stream = chatService.chatStream(
+        project.id,
+        body.data.message,
+        body.data.history,
+        body.data.userContext,
+      )
+      let assistantText = ''
+      try {
+        for await (const event of stream) {
+          // Anonymous visitors don't get walkthrough hints (no DOM context)
+          if (event.type === 'walkthrough') continue
+          if (event.type === 'done') assistantText = event.fullText
+          res.write(`data: ${JSON.stringify(event)}\n\n`)
+        }
+      } catch (err) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+      }
+
+      res.write('data: [DONE]\n\n')
+      res.end()
+
+      if (sessionToken && assistantText) {
+        try {
+          await logChatMessages({
+            projectId: project.id,
+            userId: project.userId,
+            sessionToken,
+            source: 'public',
+            userMessage: body.data.message,
+            assistantMessage: assistantText,
+          })
+        } catch (err) {
+          console.warn('[analytics] public chat stream log failed:', (err as Error).message)
+        }
+      }
+      await sessionTrackPromise
+    } catch (err) {
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+        res.end()
+      } else {
+        next(err)
+      }
+    }
+  })()
+})
+
 publicDocsRouter.get('/:projectId/chat/status', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
