@@ -7,11 +7,20 @@ import { useJobs } from '../../../shared/jobs/JobContext.js'
 import styles from './MarketingVideoPanel.module.css'
 
 interface MarketingVideoPanelProps {
-  runId: string
+  /** Latest run for this page, if any. When null, the panel runs in
+   *  "page-only" mode: no screenshots, mocks visualMode forced, and a
+   *  stub run is auto-created server-side on the first Generate click
+   *  so the marketing-video pipeline (which is run-scoped) has a
+   *  container to write the manifest to. */
+  runId: string | null
   /** Required so the global JobTracker (bottom-right floating panel) can
    *  link the in-progress card back to this page. */
   pageId: string
   pageTitle: string
+  /** Used to seed the stub run when runId is null — the run table needs
+   *  a startUrl + goal even though the marketing pipeline doesn't read
+   *  them. Page.startUrl with the project base URL as fallback. */
+  fallbackStartUrl: string
 }
 
 type VoiceTone = 'punchy' | 'calm' | 'playful' | 'serious'
@@ -45,8 +54,17 @@ const TONE_LABELS: Record<VoiceTone, string> = {
  * which made the user think about pipeline stages they shouldn't care
  * about.
  */
-export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideoPanelProps): React.ReactElement {
+export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fallbackStartUrl }: MarketingVideoPanelProps): React.ReactElement {
   const { jobs, addJob, failJob } = useJobs()
+  // We may transition from no-run → run after the user clicks Generate
+  // for the first time (auto-stub creation). Track it locally so all
+  // subsequent calls (job tracking, refetch, regenerate) reuse the same
+  // run instead of stubbing a new one each time.
+  const [runId, setRunId] = useState<string | null>(initialRunId)
+  // Resync if the parent ever passes a fresh runId (e.g. after the user
+  // uploads a video on the same page in another tab).
+  useEffect(() => { if (initialRunId) setRunId(initialRunId) }, [initialRunId])
+
   const [summary, setSummary] = useState<MarketingVideoSummaryDTO | null>(null)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
@@ -54,7 +72,8 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
   const [withVoiceover, setWithVoiceover] = useState(true)
   const [voiceId, setVoiceId] = useState<string>('')
   const [tone, setTone] = useState<VoiceTone>('punchy')
-  const [visualMode, setVisualMode] = useState<VisualMode>('screenshots')
+  // No run = no screenshots = mocks-only. Lock the option in that case.
+  const [visualMode, setVisualMode] = useState<VisualMode>(initialRunId ? 'screenshots' : 'mocks')
   const [voices, setVoices] = useState<Array<{ voiceId: string; name: string; category: string }>>([])
   const [musicPresets, setMusicPresets] = useState<Array<{ id: string; name: string; mood?: string }>>([])
   const [musicChoice, setMusicChoice] = useState<string>('none')
@@ -69,10 +88,15 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
     let cancelled = false
     void (async () => {
       try {
+        // No run yet (page-only mode): nothing to fetch on the
+        // marketing-video side — there's no manifest to surface. Still
+        // hydrate voices + music presets so the form is usable.
         const [result, voicesResult, presetsResult] = await Promise.all([
-          // Direct Supabase read — saves the Vercel cold-start that
-          // /runs/:id/marketing-video would incur on every panel mount.
-          fetchMarketingVideo(runId),
+          runId
+            // Direct Supabase read — saves the Vercel cold-start that
+            // /runs/:id/marketing-video would incur on every panel mount.
+            ? fetchMarketingVideo(runId)
+            : Promise.resolve(null),
           api.runs.marketingVideo.voices().catch(() => ({ voices: [] })),
           api.runs.marketingVideo.musicPresets().catch(() => ({ presets: [] })),
         ])
@@ -93,9 +117,10 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
   // When the marketing-video job for this run completes (via Realtime),
   // refetch the summary so the panel surfaces the fresh manifest + MP4.
   // Tracking by the job's status as it transitions to non-running.
-  const ourJob = jobs.find((j) => j.runId === runId && j.type === 'marketing-video')
+  const ourJob = runId ? jobs.find((j) => j.runId === runId && j.type === 'marketing-video') : undefined
   const ourJobStatus = ourJob?.status
   useEffect(() => {
+    if (!runId) return
     if (ourJobStatus !== 'completed' && ourJobStatus !== 'failed') return
     let cancelled = false
     void (async () => {
@@ -109,6 +134,13 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
 
   const handleMusicUpload = async (file: File): Promise<void> => {
     setError(null)
+    if (!runId) {
+      // The signed-upload-url helper writes under runs/:id/, so we need
+      // a run to scope the upload. Pages without a video can still pick
+      // AI-generated music or no music; tell the user the alternative.
+      setError('Click Generate first to start a run, then come back to upload custom music — or pick AI-generated music instead.')
+      return
+    }
     setMusicUploading(true)
     try {
       const ext = file.name.split('.').pop()?.toLowerCase() || 'mp3'
@@ -144,9 +176,25 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
     setError(null)
     setWorking(true)
 
-    addJob({ runId, pageId, pageTitle, type: 'marketing-video', status: 'running' })
-
     try {
+      // No run on this page yet (manually-typed content, no video) —
+      // auto-create a stub run so the marketing-video pipeline (which
+      // is run-scoped) has a container. We do this BEFORE addJob so the
+      // tracker card carries the real run id from frame 0.
+      let activeRunId = runId
+      if (!activeRunId) {
+        const stub = await api.runs.create({
+          featureName: `[Marketing] ${pageTitle}`,
+          startUrl: fallbackStartUrl || 'https://example.com',
+          goal: `Marketing video for ${pageTitle}`,
+          docPageId: pageId,
+        })
+        activeRunId = stub.id
+        setRunId(activeRunId)
+      }
+
+      addJob({ runId: activeRunId, pageId, pageTitle, type: 'marketing-video', status: 'running' })
+
       const musicOpts: {
         musicTrackId?: string
         musicUploadPath?: string
@@ -168,7 +216,7 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
       // Fire-and-forget: 202 returns in ~1s, pipeline finishes in the
       // background. JobTracker card stays running until Realtime flips
       // it to completed/failed.
-      await api.runs.marketingVideo.generate(runId, {
+      await api.runs.marketingVideo.generate(activeRunId, {
         userPrompt: userPrompt.trim() || undefined,
         withVoiceover,
         voiceId: voiceId || undefined,
@@ -182,7 +230,9 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
       // failures arrive via Realtime → useJobRealtime later.
       const message = err instanceof ApiError ? err.message : (err as Error).message
       setError(message)
-      failJob(runId, message, err instanceof ApiError ? err.code ?? null : null)
+      // Mark the job failed if we'd already created one. If the stub-run
+      // create itself threw before addJob, there's nothing to fail.
+      if (runId) failJob(runId, message, err instanceof ApiError ? err.code ?? null : null)
     } finally {
       // Free the form quickly — user can adjust options for the next
       // run while this one is still finishing in the background.
@@ -303,6 +353,11 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
       <div style={{ margin: '0 0 24px' }}>
         <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', marginBottom: 8 }}>
           Visual style
+          {!runId && (
+            <span style={{ marginLeft: 8, fontSize: 11 }}>
+              · Designed mocks only — record or upload a video on this page to unlock real screenshots.
+            </span>
+          )}
         </div>
         <div role="radiogroup" style={{ display: 'flex', gap: 8 }}>
           {([
@@ -310,14 +365,17 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
             { id: 'mocks' as const,       title: 'Designed mocks',    subtitle: 'AI-designed animated UI panels' },
           ]).map((opt) => {
             const selected = visualMode === opt.id
+            // Real screenshots need a run with steps (= a recorded video).
+            // Lock the option when there's no run for this page yet.
+            const optDisabled = working || (opt.id === 'screenshots' && !runId)
             return (
               <button
                 key={opt.id}
                 type="button"
                 role="radio"
                 aria-checked={selected}
-                onClick={() => setVisualMode(opt.id)}
-                disabled={working}
+                onClick={() => { if (!optDisabled) setVisualMode(opt.id) }}
+                disabled={optDisabled}
                 style={{
                   flex: 1,
                   padding: '12px 14px',
@@ -325,13 +383,14 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
                   border: `1px solid ${selected ? 'var(--color-fg)' : 'var(--color-border)'}`,
                   background: selected ? 'var(--color-fg)' : 'transparent',
                   color: selected ? 'var(--color-bg)' : 'var(--color-fg)',
-                  cursor: working ? 'not-allowed' : 'pointer',
+                  cursor: optDisabled ? 'not-allowed' : 'pointer',
+                  opacity: optDisabled && !selected ? 0.5 : 1,
                   textAlign: 'left',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 2,
                   fontSize: 'var(--text-sm)',
-                  transition: 'background 0.15s, border-color 0.15s',
+                  transition: 'background 0.15s, border-color 0.15s, opacity 0.15s',
                 }}
               >
                 <span style={{ fontWeight: 600 }}>{opt.title}</span>

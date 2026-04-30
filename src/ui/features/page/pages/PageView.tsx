@@ -1084,17 +1084,19 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         </div>
       )}
 
-      {/* ===== MARKETING TAB ===== */}
-      {activeTab === 'marketing' && latestRunId && pageId && (
+      {/* ===== MARKETING TAB =====
+          The panel renders even without a run: pages with manually-typed
+          content (no video) can still produce a marketing video, locked
+          to "designed mocks" visualMode. A stub run is auto-created on
+          first Generate so the run-scoped pipeline has a container. */}
+      {activeTab === 'marketing' && pageId && (
         <div className={styles.tabContent}>
-          <MarketingVideoPanel runId={latestRunId} pageId={pageId} pageTitle={page.title} />
-        </div>
-      )}
-      {activeTab === 'marketing' && !latestRunId && (
-        <div className={styles.tabContent}>
-          <p style={{ color: 'var(--color-muted-fg)', fontSize: 'var(--text-sm)' }}>
-            Generate or upload a video for this page first — the marketing video pulls its screenshots from the run's steps.
-          </p>
+          <MarketingVideoPanel
+            runId={latestRunId}
+            pageId={pageId}
+            pageTitle={page.title}
+            fallbackStartUrl={page.startUrl ?? context.project.baseUrl ?? ''}
+          />
         </div>
       )}
     </div>
