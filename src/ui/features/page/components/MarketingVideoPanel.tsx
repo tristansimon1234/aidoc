@@ -487,16 +487,6 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
                 Download MP4
               </a>
             )}
-            {summary.manifestUrl && (
-              <a
-                href={summary.manifestUrl}
-                download={`marketing-manifest-${runId ?? 'page'}.json`}
-                title="Manifest JSON — render locally with `npm run remotion:render -- --props=<file>`"
-                className={styles.downloadLink}
-              >
-                Download manifest
-              </a>
-            )}
           </div>
 
           {renderStatus === 'failed' && summary.renderError && (
