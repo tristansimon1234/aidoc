@@ -256,7 +256,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       <div className={styles.header}>
         <h2 className={styles.title}>Marketing video</h2>
         <p className={styles.subtitle}>
-          Turn this page into a 45-second marketing video. Pick your settings, click Generate — we handle the script, voice, music, and final MP4 in one pass.
+          A short promo video (~45s) made FROM this page's content — separate from the walkthrough. The AI writes a marketing script, picks animations or screenshots, lays in voice-over and music, and renders the MP4. Pick your settings and click Generate.
         </p>
       </div>
 

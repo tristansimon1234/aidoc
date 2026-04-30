@@ -373,8 +373,12 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         <div className={styles.tabBar}>
           <button className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`} onClick={() => setActiveTab('doc')}>Documentation</button>
           <button className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`} onClick={() => setActiveTab('exploration')}>Generate</button>
-          <button className={`${styles.tab} ${activeTab === 'video' ? styles.tabActive : ''}`} onClick={() => setActiveTab('video')}>
-            Video
+          <button
+            className={`${styles.tab} ${activeTab === 'video' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('video')}
+            title="The walkthrough video for this feature: recorded demo + AI voice-over."
+          >
+            Walkthrough
             {(voiceoverUrl || videoUrl) && <span className={`${styles.tabDot} ${styles.tabDotPass}`} />}
           </button>
           <button className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`} onClick={() => setActiveTab('test')}>
@@ -388,7 +392,11 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               }`} />
             )}
           </button>
-          <button className={`${styles.tab} ${activeTab === 'marketing' ? styles.tabActive : ''}`} onClick={() => setActiveTab('marketing')}>
+          <button
+            className={`${styles.tab} ${activeTab === 'marketing' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('marketing')}
+            title="A 45s marketing/promo video generated from this page — different from the walkthrough."
+          >
             Marketing
           </button>
         </div>
@@ -523,9 +531,18 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         </div>
       )}
 
-      {/* ===== VIDEO TAB ===== */}
+      {/* ===== WALKTHROUGH TAB =====
+          The recorded screen capture of the feature being documented +
+          its AI voice-over. Distinct from the Marketing tab, which
+          generates a 45s promo video from the same page content. */}
       {activeTab === 'video' && (
         <div className={styles.tabContent} style={{ maxWidth: '960px', margin: '0 auto' }}>
+          <div style={{ marginBottom: 'var(--space-md)' }}>
+            <h2 style={{ margin: 0, fontSize: 'var(--text-lg)', fontWeight: 600 }}>Walkthrough video</h2>
+            <p style={{ margin: '4px 0 0', fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)' }}>
+              The recorded demo of this feature, narrated by the AI voice-over. Embedded on the public docs page above the written content.
+            </p>
+          </div>
           {(videoUrl || latestRunId) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               {/* Publish toggle — show video on public documentation page */}
