@@ -1,6 +1,12 @@
 (function () {
   'use strict';
 
+  // Build stamp — bump on every meaningful widget change so we can verify
+  // in DevTools console which version a customer's browser actually loaded.
+  // If you see an old build here, the CDN cache hasn't expired yet.
+  var WIDGET_BUILD = '2026-04-30-streaming-v2';
+  console.log('[Doclee Widget] build', WIDGET_BUILD);
+
   var script = document.currentScript;
   if (!script) return;
 
