@@ -16,11 +16,24 @@ import { getSignedUrl } from '../../shared/db/storage.repository.js'
 // pass through unchanged.
 const ARTIFACTS_PATH_RE = /\/storage\/v1\/object\/(?:public|sign)\/artifacts\/([^?]+)/
 
+// In-process cache for resigned logo URLs. Supabase signed URLs default
+// to 1h validity; we cache for 50min to leave a 10min cushion before
+// they actually expire. Each Vercel cold start gets its own cache —
+// fine, the savings are within a single function invocation's worth of
+// project reads (listProjects + getProject + activity feed all hit the
+// same project rows).
+const SIGNED_URL_TTL_MS = 50 * 60 * 1000
+const logoCache = new Map<string, { url: string; expiresAt: number }>()
+
 async function resignLogoUrl(logoUrl: string | null | undefined): Promise<string | null> {
   if (!logoUrl) return null
   const m = logoUrl.match(ARTIFACTS_PATH_RE)
   if (!m || !m[1]) return logoUrl
-  const fresh = await getSignedUrl('artifacts', decodeURIComponent(m[1]))
+  const path = decodeURIComponent(m[1])
+  const cached = logoCache.get(path)
+  if (cached && cached.expiresAt > Date.now()) return cached.url
+  const fresh = await getSignedUrl('artifacts', path)
+  if (fresh) logoCache.set(path, { url: fresh, expiresAt: Date.now() + SIGNED_URL_TTL_MS })
   return fresh ?? logoUrl
 }
 

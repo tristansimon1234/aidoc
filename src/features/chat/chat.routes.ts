@@ -4,7 +4,7 @@ import { AppError, ValidationError } from '../../shared/middleware/error.middlew
 import { ChatRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { UuidParamSchema } from '../../shared/validation/schemas.js'
-import { registerChatSession, incrementUsage, findTeamIdByProjectId, findOwnerUserIdByTeamId } from '../../shared/usage/usage.repository.js'
+import { registerChatSession, incrementUsage, findOwnerUserIdByTeamId } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { assertProjectAccess } from '../project/project.service.js'
@@ -18,18 +18,19 @@ function getUserId(req: Request): string {
 }
 
 /** Parse + assert team membership on the :projectId path param before any
- *  authed chat operation. Returns the projectId so callers can use it
- *  without re-parsing. Treats "not a member" as 404 to match the rest of
- *  the app. */
-async function assertChatAccess(req: Request): Promise<string> {
+ *  authed chat operation. Returns BOTH projectId and teamId so callers
+ *  don't have to re-fetch the project to learn which team owns it (saves
+ *  one round-trip on every chat turn — main hot path). 404 on "not a
+ *  member" to match the rest of the app. */
+async function assertChatAccess(req: Request): Promise<{ projectId: string; teamId: string }> {
   const params = UuidParamSchema.safeParse({ id: req.params.projectId })
   if (!params.success) throw new ValidationError(params.error.flatten())
   try {
-    await assertProjectAccess(params.data.id, getUserId(req))
+    const project = await assertProjectAccess(params.data.id, getUserId(req))
+    return { projectId: project.id, teamId: project.teamId }
   } catch {
     throw new AppError('Project not found', 'PROJECT_NOT_FOUND', 404)
   }
-  return params.data.id
 }
 
 async function trackAppChatSession(projectId: string, teamId: string, sessionToken: string | undefined): Promise<void> {
@@ -46,13 +47,16 @@ async function trackAppChatSession(projectId: string, teamId: string, sessionTok
 chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const projectId = await assertChatAccess(req)
-
+      // Parse the request body upfront — independent of the auth check, so
+      // we can race them. Body parse is sync but tiny.
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      const teamId = await findTeamIdByProjectId(projectId)
-      if (!teamId) throw new ValidationError('Project not found')
+      // assertChatAccess already loads the project (auth + team check) and
+      // returns the teamId, so we no longer need a second findTeamIdByProjectId.
+      // Quota check needs teamId, so it has to come after — but the project
+      // load is the only blocker on the read path.
+      const { projectId, teamId } = await assertChatAccess(req)
 
       // Block hard-cap plans before spending on Gemini.
       await enforceQuotaOrThrow(teamId)
@@ -100,7 +104,7 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
 chatRouter.post('/index', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const projectId = await assertChatAccess(req)
+      const { projectId } = await assertChatAccess(req)
 
       const body = req.body as { force?: boolean }
       const { hasEmbeddings } = await import('./chat.repository.js')
@@ -144,7 +148,7 @@ const SUGGESTIONS_TTL_MS = 3600_000 // 1 hour
 chatRouter.get('/suggestions', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const projectId = await assertChatAccess(req)
+      const { projectId } = await assertChatAccess(req)
       const cached = suggestionsCache.get(projectId)
 
       if (cached && Date.now() - cached.generatedAt < SUGGESTIONS_TTL_MS) {

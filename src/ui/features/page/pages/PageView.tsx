@@ -1,16 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { useParams, useOutletContext, Link } from 'react-router-dom'
 import { formatRelativeTime } from '../../../shared/util/relativeTime.js'
 import {
   Button,
   Spinner,
-  BlockEditor,
   EmptyState,
   TableOfContents,
   ProgressLoader,
   useConfirmDialog,
   AlreadyRunningNotice,
 } from '../../../design-system/components/index.js'
+
+// BlockEditor pulls BlockNote + Mantine + ProseMirror (~600kb gzipped) and
+// is only used in the Documentation tab. Code-split so the project list
+// and the rest of PageView don't pay for it on first paint.
+const BlockEditor = lazy(() => import('../../../design-system/components/BlockEditor.js').then((m) => ({ default: m.BlockEditor })))
 import { api, isAlreadyRunningError, type AlreadyRunningDetails, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
@@ -493,12 +497,14 @@ function PageViewInner(): React.ReactElement {
               )}
             </p>
           )}
-          <BlockEditor
-            key={pageId}
-            content={page.content ?? ''}
-            contentBlocks={page.contentBlocks}
-            onSave={handleSaveContent}
-          />
+          <Suspense fallback={<div style={{ padding: '2rem' }}><Spinner size="md" /></div>}>
+            <BlockEditor
+              key={pageId}
+              content={page.content ?? ''}
+              contentBlocks={page.contentBlocks}
+              onSave={handleSaveContent}
+            />
+          </Suspense>
           {/* Notion-style child page links */}
           {(() => {
             const children = context.pages.filter((p) => p.parentId === pageId)
