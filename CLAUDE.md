@@ -195,9 +195,13 @@ src/
       auth/pages/            # Login.tsx
       project/pages/         # ProjectList, NewProject, ProjectDetail, ProjectSettings, ProjectDesign
       page/
-        pages/               # NewPage, PageView (with edit mode + live exploration + video upload), SharePage
+        pages/               # NewPage, PageView (Documentation / Generate / Walkthrough / Test / Marketing tabs), SharePage
         components/           # PageTree, TryDocReport, PreflightPanel, ScreenRecorder,
-                             # VideoTimeline, NarratedPlayer
+                             # VideoTimeline, NarratedPlayer,
+                             # MarketingVideoPanel (lean form: brief / visual style / voice-over / music / generate;
+                             #   ProgressLoader during the 2-3 min pipeline; works on pages without a video too —
+                             #   auto-creates a stub run on first Generate, locks visual mode to "designed mocks";
+                             #   pricing intentionally hidden during the design-partner phase)
       chat/
         pages/                # ChatPage (full-page chat)
         components/           # ChatPanel (slide-out RAG chat with dynamic suggestions)
@@ -276,9 +280,9 @@ Doclee has **two** data-access layers because Supabase is designed to be safely 
 
 The browser can hit Supabase directly for any table protected by RLS — that's the whole point of RLS. We **don't** route every read through `/api/*`.
 
-- **Reads + simple writes** (projects list, page tree, rename a page, update project) → `src/ui/shared/api/db.ts`. This file is the frontend's equivalent of a repository: all browser-side `supabase.*` calls live here.
-- **Everything that needs server-side logic or a secret** (chat, doc generation, voice-over, billing, widget key generation, Stripe later) → `src/ui/shared/api/client.ts`, which calls `/api/*` routes.
-- Rule of thumb when adding a UI data call: if it's a plain RLS-filtered SELECT/UPDATE, put it in `db.ts`. If you need to call Gemini, ElevenLabs, Browserbase, Stripe, or to run multiple queries as a transaction, you need a backend route.
+- **Reads + simple writes** (projects list, page tree, rename a page, update project, latest test report, marketing-video summary) → `src/ui/shared/api/db.ts`. This file is the frontend's equivalent of a repository: all browser-side `supabase.*` calls live here. Going direct saves the Vercel cold-start (~200-500 ms) that an `/api/*` proxy would incur for what is otherwise a plain RLS-protected SELECT.
+- **Everything that needs server-side logic or a secret** (chat, doc generation, voice-over, billing, marketing-video generation, ElevenLabs voices/music, widget key generation, admin reports cross-team, Stripe later) → `src/ui/shared/api/client.ts`, which calls `/api/*` routes.
+- Rule of thumb when adding a UI data call: if it's a plain RLS-filtered SELECT/UPDATE, put it in `db.ts`. If you need to call Gemini, ElevenLabs, Browserbase, Stripe, the service-role key for cross-RLS reads, or to run multiple queries as a transaction, you need a backend route.
 
 ---
 
@@ -328,7 +332,7 @@ Every DB call through `*.repository.ts`. Services NEVER call Supabase directly.
 - After generation → auto-copied to `doc_pages.content`
 
 ### Full schema reference
-See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs — `triggered_by_user_id` + nullable `page_id` added 2026-04-22 to support the exclusive-lock pattern; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions; MCP: mcp_user_tokens — `token_hash` / `preview` columns added 2026-04-22), 31 migrations.
+See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs — `triggered_by_user_id` + nullable `page_id` added 2026-04-22 to support the exclusive-lock pattern, `marketing-video` job type added 2026-04-26; SaaS: profiles, plans, subscriptions, usage_counters with `marketing_video` feature; chat_sessions; MCP: mcp_user_tokens — `token_hash` / `preview` columns added 2026-04-22), 31 migrations.
 
 ---
 
@@ -348,9 +352,9 @@ Hard cap = blocks the operation when over budget (drives upgrades). Pay-as-you-g
 
 ### Token weights (`src/features/billing/billing.service.ts`)
 Tunable in code, no migration needed:
-- `TOKEN_COSTS` — weight each op contributes to the monthly budget (`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`)
-- `EURO_COSTS` — real COGS in € per op (`0.10 / 0.30 / 0.40 / 0.02`) — drives the admin "AI cost" column
-- `OVERAGE_EUR` — billable rate per extra op once over quota (`0.15 / 0.45 / 0.60 / 0.03`, ≈ 1.5× COGS)
+- `TOKEN_COSTS` — weight each op contributes to the monthly budget (`doc_run=100`, `voiceover=300`, `try_doc=400`, `chat_sessions=20`, `marketing_video=600`)
+- `EURO_COSTS` — real COGS in € per op (`0.10 / 0.30 / 0.40 / 0.02 / 0.60`) — drives the admin "AI cost" column. Marketing video bundles Gemini Pro script + ElevenLabs voice + ElevenLabs music + Railway render — heaviest single op.
+- `OVERAGE_EUR` — billable rate per extra op once over quota (`0.15 / 0.45 / 0.60 / 0.03 / 0.90`, ≈ 1.5× COGS)
 - `OVERAGE_ENABLED_PLANS` — `Set('team', 'agency')`
 
 ### Tracking
@@ -359,6 +363,7 @@ Tunable in code, no migration needed:
   - Voice-over → `run.routes /generate-voiceover` → `incrementUsage(teamId, 'voiceover')`
   - Try Doc → `run.service.analyzeTryDoc` → `incrementUsage(teamId, 'try_doc')`
   - Chat (widget + in-app) → `widget.routes` and `chat.routes` → `registerChatSession(...) + incrementUsage(teamId, 'chat_sessions')` only on new session_token per month
+  - Marketing video → `marketing-video.routes /:id/marketing-video` → `incrementUsage(teamId, 'marketing_video')` after the full pipeline succeeds (sync mode = inline, async mode = inside `waitUntil`). Quota-gated: Free / Founder get 402 `QUOTA_EXCEEDED` when over budget.
 - `chat_sessions` table dedupes by `(project_id, session_token, period_month)` PK with a `source ∈ {widget, app}` column for analytics. Same monthly bucket regardless of source. Inserts use `ignoreDuplicates: true` so two concurrent callers (same session, two tabs) can't double-count.
 
 ### Admin
@@ -594,5 +599,5 @@ VITE_SENTRY_RELEASE      # Optional — override for the release tag
 
 ---
 
-*Last updated: 2026-04-22*
+*Last updated: 2026-04-30*
 *Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19 / BlockNote 0.47*

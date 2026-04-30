@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
 import { type ProjectDTO, type ProjectDesignDTO } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
+import { supabase } from '../../../shared/api/supabase.js'
 import styles from './ProjectDesign.module.css'
 
 const DEFAULTS: ProjectDesignDTO = {
@@ -133,9 +134,17 @@ export function ProjectDesign(): React.ReactElement {
     if (!file) return
     setUploading(true)
     try {
+      // Logo upload sends the raw file as the body (not JSON), so it can't
+      // go through the typed api client. Build the auth header manually so
+      // verifyProjectOwnership on the server doesn't 401.
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess.session?.access_token
       const res = await fetch(`/api/projects/${project.id}/logo`, {
         method: 'POST',
-        headers: { 'Content-Type': file.type },
+        headers: {
+          'Content-Type': file.type,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: file,
       })
       if (!res.ok) throw new Error('Upload failed')

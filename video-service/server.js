@@ -437,4 +437,117 @@ app.post('/mux', async (req, res) => {
   }
 })
 
+/**
+ * POST /render-marketing-video
+ * Render a Remotion composition to MP4. Doclee owns the trigger + the
+ * compositions (shipped as a pre-bundled site at `remotionServeUrl`); we
+ * just run Chromium + the Remotion renderer here because Vercel functions
+ * can't host Chromium.
+ *
+ * Request:  { runId, manifestUrl, remotionServeUrl, compositionId, fps, widthPx, heightPx }
+ * Response: { videoPath: "runs/<runId>/marketing.mp4" }
+ *
+ * The first call after a cold start downloads Chromium to /tmp via
+ * `ensureBrowser()` (~150 MB, one-shot). Subsequent calls reuse it.
+ */
+app.post('/render-marketing-video', async (req, res) => {
+  const start = Date.now()
+  try {
+    const {
+      runId,
+      manifestUrl,
+      // Doclee can ship the manifest content inline (verified upstream).
+      // Prefer it when present — avoids a network round-trip and the
+      // chance of an intermediate proxy returning HTML.
+      manifest: inlineManifest,
+      remotionServeUrl,
+      compositionId,
+      fps,
+      widthPx,
+      heightPx,
+    } = req.body
+    if (!runId || !remotionServeUrl) {
+      return res.status(400).json({ error: 'runId and remotionServeUrl required' })
+    }
+    if (!inlineManifest && !manifestUrl) {
+      return res.status(400).json({ error: 'manifest or manifestUrl required' })
+    }
+
+    console.log(`[render-marketing] Start runId=${runId} bundle=${remotionServeUrl}`)
+
+    const supabase = getSupabase(req.body)
+
+    let manifest
+    if (inlineManifest && typeof inlineManifest === 'object') {
+      manifest = inlineManifest
+      console.log('[render-marketing] Using inline manifest from request body')
+    } else {
+      console.log(`[render-marketing] Fetching manifest from ${manifestUrl}`)
+      const manifestRes = await fetch(manifestUrl)
+      if (!manifestRes.ok) throw new Error(`Manifest fetch failed: ${manifestRes.status} ${manifestRes.statusText}`)
+      const text = await manifestRes.text()
+      try {
+        manifest = JSON.parse(text)
+      } catch (err) {
+        const preview = text.slice(0, 200).replace(/\s+/g, ' ')
+        const ct = manifestRes.headers.get('content-type') ?? 'unknown'
+        throw new Error(
+          `Manifest URL returned non-JSON (content-type: ${ct}). First 200 chars: "${preview}". ` +
+            `Original parse error: ${err.message}`,
+        )
+      }
+    }
+
+    console.log(
+      `[render-marketing] Manifest loaded: ${manifest.script?.scenes?.length ?? '?'} scenes, ` +
+        `${manifest.screenshots?.length ?? '?'} screenshots, lang=${manifest.script?.language ?? '?'}`,
+    )
+
+    const { ensureBrowser, selectComposition, renderMedia } = await import('@remotion/renderer')
+
+    console.log('[render-marketing] Ensuring browser…')
+    await ensureBrowser()
+
+    console.log(`[render-marketing] selectComposition id=${compositionId || 'MarketingVideo'} serveUrl=${remotionServeUrl}`)
+    const composition = await selectComposition({
+      serveUrl: remotionServeUrl,
+      id: compositionId || 'MarketingVideo',
+      inputProps: { manifest },
+    })
+
+    console.log(`[render-marketing] Composition: ${composition.durationInFrames} frames @ ${composition.fps}fps`)
+
+    const tmpOut = join(tmpdir(), `marketing-${runId}-${Date.now()}.mp4`)
+    console.log(`[render-marketing] renderMedia → ${tmpOut}`)
+    await renderMedia({
+      composition,
+      serveUrl: remotionServeUrl,
+      codec: 'h264',
+      outputLocation: tmpOut,
+      inputProps: { manifest },
+      // Concurrency null = let Remotion pick (cores - 1). On a 2-vCPU box
+      // a 60s 1080p render lands in ~2-5 min; on 4-vCPU it's closer to 90s.
+      concurrency: null,
+    })
+
+    console.log('[render-marketing] Render done, uploading…')
+    const videoBuffer = readFileSync(tmpOut)
+    const videoPath = `runs/${runId}/marketing.mp4`
+    await uploadFile(supabase, videoPath, videoBuffer, 'video/mp4')
+
+    try { unlinkSync(tmpOut) } catch {}
+
+    console.log(`[render-marketing] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${videoPath} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+    res.json({ videoPath })
+  } catch (err) {
+    // Full stack to logs so we can see WHERE the error came from. Send a
+    // truncated stack back so Doclee surfaces it in the UI banner without
+    // dumping the entire trace into the user's view.
+    console.error('[render-marketing] Error:', err.message)
+    console.error('[render-marketing] Stack:', err.stack)
+    const shortStack = (err.stack || '').split('\n').slice(0, 6).join(' | ')
+    res.status(500).json({ error: err.message, stack: shortStack })
+  }
+})
+
 app.listen(PORT, () => console.log(`Video service running on port ${PORT}`))

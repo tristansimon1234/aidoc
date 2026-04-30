@@ -1,7 +1,7 @@
 import { supabase } from '../db/supabase.client.js'
 import { DatabaseError } from '../middleware/error.middleware.js'
 
-export type UsageFeature = 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions'
+export type UsageFeature = 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions' | 'marketing_video'
 export type ChatSessionSource = 'widget' | 'app'
 
 function currentPeriodMonth(): string {
@@ -34,6 +34,7 @@ export async function listUsageForCurrentMonth(teamId: string): Promise<Record<U
     voiceover: 0,
     try_doc: 0,
     chat_sessions: 0,
+    marketing_video: 0,
   }
   for (const row of (data as { feature: UsageFeature; count: number }[])) {
     result[row.feature] = row.count

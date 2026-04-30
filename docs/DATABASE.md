@@ -120,9 +120,9 @@ created_at           timestamptz DEFAULT now()
 **RLS**: SELECT allowed to anyone (public pricing data).
 **Seeded** (after 20260420000001): free=3 000 tk · founder=30 000 tk (19€) · team=100 000 tk (59€) · agency=500 000 tk (149€).
 **Token costs** (app-side constants in `src/features/billing/billing.service.ts`, tunable without migration):
-`TOKEN_COSTS = { doc_run: 100, voiceover: 300, try_doc: 400, chat_sessions: 20 }`
-`EURO_COSTS = { doc_run: 0.10, voiceover: 0.30, try_doc: 0.40, chat_sessions: 0.02 }` (real COGS)
-`OVERAGE_EUR = { doc_run: 0.15, voiceover: 0.45, try_doc: 0.60, chat_sessions: 0.03 }` (~1.5× COGS, ~50% margin)
+`TOKEN_COSTS = { doc_run: 100, voiceover: 300, try_doc: 400, chat_sessions: 20, marketing_video: 600 }`
+`EURO_COSTS = { doc_run: 0.10, voiceover: 0.30, try_doc: 0.40, chat_sessions: 0.02, marketing_video: 0.60 }` (real COGS — marketing_video bundles Gemini Pro + ElevenLabs voice + ElevenLabs music + Railway render)
+`OVERAGE_EUR = { doc_run: 0.15, voiceover: 0.45, try_doc: 0.60, chat_sessions: 0.03, marketing_video: 0.90 }` (~1.5× COGS, ~50% margin)
 `OVERAGE_ENABLED_PLANS = { 'team', 'agency' }` — Free + Founder hit a hard cap instead.
 
 ### subscriptions
@@ -146,7 +146,7 @@ updated_at              timestamptz DEFAULT now()
 ```sql
 user_id       uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
 period_month  date NOT NULL
-feature       text NOT NULL CHECK (feature IN ('doc_run','voiceover','try_doc','chat_sessions'))
+feature       text NOT NULL CHECK (feature IN ('doc_run','voiceover','try_doc','chat_sessions','marketing_video'))
 count         integer NOT NULL DEFAULT 0
 updated_at    timestamptz DEFAULT now()
 PRIMARY KEY (user_id, period_month, feature)

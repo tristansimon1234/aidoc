@@ -21,6 +21,7 @@ import { VideoTimeline } from '../components/VideoTimeline.js'
 import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
 import { PreflightPanel } from '../components/PreflightPanel.js'
+import { MarketingVideoPanel } from '../components/MarketingVideoPanel.js'
 import styles from './PageView.module.css'
 
 interface PageContext {
@@ -58,7 +59,7 @@ function PageViewInner(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(hasRunningTest ? (initialTestJob.liveUrl ?? null) : null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test'>(hasRunningTest ? 'test' : 'doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test' | 'marketing'>(hasRunningTest ? 'test' : 'doc')
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
@@ -359,8 +360,12 @@ function PageViewInner(): React.ReactElement {
         <div className={styles.tabBar}>
           <button className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`} onClick={() => setActiveTab('doc')}>Documentation</button>
           <button className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`} onClick={() => setActiveTab('exploration')}>Generate</button>
-          <button className={`${styles.tab} ${activeTab === 'video' ? styles.tabActive : ''}`} onClick={() => setActiveTab('video')}>
-            Video
+          <button
+            className={`${styles.tab} ${activeTab === 'video' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('video')}
+            title="The walkthrough video for this feature: recorded demo + AI voice-over."
+          >
+            Walkthrough
             {(voiceoverUrl || videoUrl) && <span className={`${styles.tabDot} ${styles.tabDotPass}`} />}
           </button>
           <button className={`${styles.tab} ${activeTab === 'test' ? styles.tabActive : ''}`} onClick={() => setActiveTab('test')}>
@@ -373,6 +378,13 @@ function PageViewInner(): React.ReactElement {
                 styles.tabDotPartial
               }`} />
             )}
+          </button>
+          <button
+            className={`${styles.tab} ${activeTab === 'marketing' ? styles.tabActive : ''}`}
+            onClick={() => setActiveTab('marketing')}
+            title="A 45s marketing/promo video generated from this page — different from the walkthrough."
+          >
+            Marketing
           </button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
@@ -506,9 +518,18 @@ function PageViewInner(): React.ReactElement {
         </div>
       )}
 
-      {/* ===== VIDEO TAB ===== */}
+      {/* ===== WALKTHROUGH TAB =====
+          The recorded screen capture of the feature being documented +
+          its AI voice-over. Distinct from the Marketing tab, which
+          generates a 45s promo video from the same page content. */}
       {activeTab === 'video' && (
         <div className={styles.tabContent} style={{ maxWidth: '960px', margin: '0 auto' }}>
+          <div style={{ marginBottom: 'var(--space-md)' }}>
+            <h2 style={{ margin: 0, fontSize: 'var(--text-lg)', fontWeight: 600 }}>Walkthrough video</h2>
+            <p style={{ margin: '4px 0 0', fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)' }}>
+              The recorded demo of this feature, narrated by the AI voice-over. Embedded on the public docs page above the written content.
+            </p>
+          </div>
           {(videoUrl || latestRunId) ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
               {/* Publish toggle — show video on public documentation page */}
@@ -1067,6 +1088,22 @@ function PageViewInner(): React.ReactElement {
               activeStep={0}
             />
           )}
+        </div>
+      )}
+
+      {/* ===== MARKETING TAB =====
+          The panel renders even without a run: pages with manually-typed
+          content (no video) can still produce a marketing video, locked
+          to "designed mocks" visualMode. A stub run is auto-created on
+          first Generate so the run-scoped pipeline has a container. */}
+      {activeTab === 'marketing' && pageId && (
+        <div className={styles.tabContent}>
+          <MarketingVideoPanel
+            runId={latestRunId}
+            pageId={pageId}
+            pageTitle={page.title}
+            fallbackStartUrl={page.startUrl ?? context.project.baseUrl ?? ''}
+          />
         </div>
       )}
     </div>

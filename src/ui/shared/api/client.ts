@@ -125,6 +125,57 @@ export interface RunDTO {
   updatedAt: string
 }
 
+export type MarketingRenderStatusDTO = 'idle' | 'rendering' | 'ready' | 'failed'
+
+export interface MarketingSceneDTO {
+  voiceover: string
+  headline: string
+  subhead?: string
+  screenshotIndex: number | null
+  durationSeconds: number
+}
+
+export interface MarketingScriptDTO {
+  hook: { voiceover: string; headline: string; durationSeconds: number }
+  scenes: MarketingSceneDTO[]
+  cta: { voiceover: string; headline: string; buttonLabel: string; durationSeconds: number }
+  totalDurationSeconds: number
+  language: string
+}
+
+export interface MarketingManifestDTO {
+  runId: string
+  generatedAt: string
+  script: MarketingScriptDTO
+  screenshots: { url: string; caption: string }[]
+  branding: {
+    productName: string
+    accentColor: string
+    bgColor: string
+    textColor: string
+    fontFamily: string
+    logoUrl: string | null
+  }
+  voiceoverUrl: string | null
+  voiceoverPath: string | null
+  musicUrl?: string | null
+  musicPath?: string | null
+  musicVolume?: number
+  /** Set when music generation/upload failed. The rest of the manifest
+   *  is still valid — a warning is shown but the video still renders
+   *  (silent music track). */
+  musicError?: string | null
+}
+
+export interface MarketingVideoSummaryDTO {
+  manifest: MarketingManifestDTO
+  manifestUrl: string | null
+  videoUrl: string | null
+  videoPath: string | null
+  renderStatus: MarketingRenderStatusDTO
+  renderError: string | null
+}
+
 export interface RunStepDTO {
   id: string
   runId: string
@@ -581,6 +632,50 @@ export const api = {
     steps: (id: string): Promise<RunStepDTO[]> => request(`/runs/${id}/steps`),
     questions: (id: string): Promise<QuestionDTO[]> => request(`/runs/${id}/questions`),
     doc: (id: string): Promise<GeneratedDocDTO> => request(`/runs/${id}/doc`),
+    marketingVideo: {
+      get: (id: string): Promise<MarketingVideoSummaryDTO | null> =>
+        request<MarketingVideoSummaryDTO>(`/runs/${id}/marketing-video`).catch((err: unknown) => {
+          if (err instanceof ApiError && err.status === 404) return null
+          throw err
+        }),
+      generate: (
+        id: string,
+        opts?: {
+          userPrompt?: string
+          withVoiceover?: boolean
+          voiceId?: string
+          tone?: 'punchy' | 'calm' | 'playful' | 'serious'
+          visualMode?: 'screenshots' | 'mocks'
+          musicTrackId?: string
+          musicUploadPath?: string
+          musicVolume?: number
+          aiMusicPrompt?: string
+        },
+      ): Promise<{ runId: string; jobId: string; status: 'running' }> =>
+        // ?async=1 → backend writes a job row, returns 202 in <1s,
+        // runs the pipeline in the background via Vercel's waitUntil
+        // (which keeps the function alive past the response).
+        // Frontend tracks completion via Supabase Realtime on the
+        // jobs table — same pattern as doc-gen / voiceover / try-doc.
+        request(`/runs/${id}/marketing-video?async=1`, {
+          method: 'POST',
+          body: JSON.stringify(opts ?? {}),
+        }),
+      render: (id: string): Promise<MarketingVideoSummaryDTO> =>
+        request(`/runs/${id}/marketing-video/render`, { method: 'POST' }),
+      updateVoice: (
+        id: string,
+        opts: { voiceId?: string; tone?: 'punchy' | 'calm' | 'playful' | 'serious' },
+      ): Promise<MarketingVideoSummaryDTO> =>
+        request(`/runs/${id}/marketing-video/voiceover`, {
+          method: 'POST',
+          body: JSON.stringify(opts),
+        }),
+      voices: (): Promise<{ voices: Array<{ voiceId: string; name: string; category: string; labels: Record<string, string> }> }> =>
+        request(`/runs/marketing-video/voices`),
+      musicPresets: (): Promise<{ presets: Array<{ id: string; name: string; url: string; mood?: string }> }> =>
+        request(`/runs/marketing-video/music-presets`),
+    },
   },
   questions: {
     answer: (runId: string, qid: string, answer: string): Promise<QuestionDTO> =>

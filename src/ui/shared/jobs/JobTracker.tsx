@@ -8,12 +8,14 @@ const TYPE_LABELS: Record<Job['type'], string> = {
   'doc-gen': 'Generating documentation',
   'voiceover': 'Generating voice-over',
   'try-doc': 'Running test',
+  'marketing-video': 'Generating marketing video',
 }
 
 const COMPLETED_LABELS: Record<Job['type'], string> = {
   'doc-gen': 'Documentation ready',
   'voiceover': 'Voice-over ready',
   'try-doc': 'Test complete',
+  'marketing-video': 'Marketing video ready',
 }
 
 function elapsed(startedAt: number): string {

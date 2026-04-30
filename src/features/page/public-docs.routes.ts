@@ -60,7 +60,10 @@ const PUBLIC_SUGGESTIONS_TTL_MS = 3_600_000
 publicDocsRouter.get('/:projectId', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const project = await findProjectById(req.params.projectId as string)
+      // getProject (vs. findProjectById) re-signs stale logo URLs so the
+      // public docs header logo doesn't 401.
+      const { getProject } = await import('../project/project.service.js')
+      const project = await getProject(req.params.projectId as string).catch(() => null)
       if (!project) throw new NotFoundError('Project not found')
 
       const pages = await findPublicPagesMetaByProjectId(project.id)

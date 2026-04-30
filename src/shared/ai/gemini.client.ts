@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import type { ResponseSchema } from '@google/generative-ai'
 import { GoogleAIFileManager } from '@google/generative-ai/server'
 import { z } from 'zod'
 import { env } from '../config/env.js'
@@ -54,6 +55,11 @@ export async function generateText(opts: {
   model?: string
   /** Force Gemini to emit a valid JSON response (no prose, no code fences). */
   json?: boolean
+  /** Constrained-generation schema. When set (and `json` is true), Gemini
+   *  is server-side-forced to emit JSON matching this shape — no missing
+   *  fields, no wrong types, no extra envelope keys. Use for any JSON we
+   *  Zod-validate downstream so the model can't drift the shape. */
+  responseSchema?: ResponseSchema
 }): Promise<{ text: string; usage: GeminiUsage }> {
   const genAI = getGenAI()
   const model = genAI.getGenerativeModel({
@@ -68,6 +74,7 @@ export async function generateText(opts: {
         maxOutputTokens: opts.maxTokens,
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.json ? { responseMimeType: 'application/json' } : {}),
+        ...(opts.responseSchema ? { responseSchema: opts.responseSchema } : {}),
       },
     }),
   )

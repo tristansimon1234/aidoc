@@ -104,7 +104,7 @@ export function useLoadJobsFromDB(projectId: string | undefined): void {
             runId: row.run_id as string,
             pageId: row.page_id as string,
             pageTitle: title ?? 'Page',
-            type: row.type as 'doc-gen' | 'voiceover' | 'try-doc',
+            type: row.type as 'doc-gen' | 'voiceover' | 'try-doc' | 'marketing-video',
             status: 'running',
           })
         }

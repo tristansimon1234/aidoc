@@ -7,6 +7,7 @@ export type JobType =
   | 'try-doc-analysis'   // /api/runs/:id/analyze-try
   | 'try-doc'            // legacy frontend alias — kept so JobTracker doesn't 404 existing rows
   | 'index'              // /api/projects/:pid/chat/index
+  | 'marketing-video'    // /api/runs/:id/marketing-video — Remotion render
 export type JobStatus = 'running' | 'completed' | 'failed'
 
 export interface Job {

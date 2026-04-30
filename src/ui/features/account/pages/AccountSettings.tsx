@@ -154,11 +154,14 @@ function UsageBar({ label, percent }: { label: string; percent: number }): React
   )
 }
 
-function formatPrice(plan: PlanDTO): string {
+// Pricing is intentionally hidden during the design-partner phase —
+// numbers aren't finalized and Stripe checkout isn't wired. Show a
+// neutral placeholder on the plan cards instead of the real price.
+// To re-enable real prices: replace the call site below with the
+// commented-out formatPrice() that uses plan.priceCents / plan.currency.
+function pricePlaceholder(plan: PlanDTO): string {
   if (plan.priceCents === 0) return 'Free'
-  const amount = (plan.priceCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })
-  const symbol = plan.currency === 'EUR' ? '€' : plan.currency
-  return `${amount}${symbol}/mo`
+  return 'Coming soon'
 }
 
 function BillingTab(): React.ReactElement {
@@ -196,8 +199,6 @@ function BillingTab(): React.ReactElement {
     setError(null)
     setMsg(null)
     try {
-      // TODO(stripe): for paid plans, call POST /billing/checkout instead and
-      // redirect to the Stripe Checkout Session URL. Free / downgrade stays here.
       const next = await api.billing.selectPlan(planId)
       setSummary(next)
       setMsg(`Switched to the ${next.plan.name} plan.`)
@@ -236,10 +237,12 @@ function BillingTab(): React.ReactElement {
         {sortedPlans.map((plan) => {
           const isCurrent = plan.id === currentPlanId
           const isBusy = selecting === plan.id
-          // Team + Agency require Stripe checkout, which isn't wired yet.
-          // We let users go free → founder directly (mutates the DB) but block
-          // anything paid until the webhook handler lands.
-          const stripeRequired = !isCurrent && (plan.id === 'team' || plan.id === 'agency')
+          // While pricing is placeholder'd, every paid plan is treated as
+          // "coming soon" — switching wouldn't be meaningful without a
+          // visible price. Free → free swap is also gated since it's the
+          // default already. Re-enable by reverting to the old check
+          // (stripeRequired = team || agency) once real prices are public.
+          const isLockedDuringDesignPhase = !isCurrent && plan.priceCents > 0
           return (
             <div
               key={plan.id}
@@ -248,7 +251,7 @@ function BillingTab(): React.ReactElement {
               <div className={styles.planHeader}>
                 <div>
                   <h3 className={styles.planName}>{plan.name}</h3>
-                  <p className={styles.planPrice}>{formatPrice(plan)}</p>
+                  <p className={styles.planPrice}>{pricePlaceholder(plan)}</p>
                 </div>
                 {isCurrent && <Badge color="green">Current</Badge>}
               </div>
@@ -267,24 +270,17 @@ function BillingTab(): React.ReactElement {
               <Button
                 size="sm"
                 variant={isCurrent ? 'ghost' : 'primary'}
-                disabled={isCurrent || isBusy || stripeRequired}
+                disabled={isCurrent || isBusy || isLockedDuringDesignPhase}
                 onClick={() => void handleSelect(plan.id)}
               >
                 {isCurrent
                   ? 'Active'
                   : isBusy
                     ? 'Updating...'
-                    : stripeRequired
+                    : isLockedDuringDesignPhase
                       ? 'Coming soon'
-                      : plan.priceCents === 0
-                        ? 'Switch to Free'
-                        : 'Select'}
+                      : 'Switch to Free'}
               </Button>
-              {stripeRequired && (
-                <p className={styles.billingFootnote} style={{ margin: 'var(--space-sm) 0 0', fontSize: 11 }}>
-                  Available once Stripe checkout is enabled.
-                </p>
-              )}
             </div>
           )
         })}
@@ -296,12 +292,6 @@ function BillingTab(): React.ReactElement {
           {error && <span className={`${styles.saveMsg} ${styles.error}`}>{error}</span>}
         </div>
       )}
-
-      <p className={styles.billingFootnote}>
-        Stripe checkout is not wired yet — paid plan changes are applied
-        immediately without payment. When Stripe is enabled, paid plans will
-        redirect to a hosted checkout.
-      </p>
     </div>
   )
 }

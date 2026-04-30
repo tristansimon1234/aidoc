@@ -19,6 +19,7 @@ import { analyticsRouter } from '../../features/analytics/analytics.routes.js'
 import { cronRouter } from '../../features/analytics/cron.routes.js'
 import { teamRouter, invitePublicRouter } from '../../features/team/team.routes.js'
 import { exportRouter } from '../../features/export/export.routes.js'
+import { marketingVideoRouter } from '../../features/marketing-video/marketing-video.routes.js'
 
 interface MountOptions {
   /**
@@ -70,4 +71,5 @@ export function mountRouters(app: Express, options: MountOptions): void {
   app.use(`${p}/runs`, authMiddleware, runRouter)
   app.use(`${p}/runs`, authMiddleware, questionsRouter)
   app.use(`${p}/runs`, authMiddleware, documentationRouter)
+  app.use(`${p}/runs`, authMiddleware, marketingVideoRouter)
 }
