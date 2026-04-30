@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Button, Spinner, Field, useConfirmDialog } from '../../../design-system/components/index.js'
-import { api, type BillingSummaryDTO, type McpScopeDTO, type McpTokenSummaryDTO, type McpTokenCreatedDTO, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
+import { Button, Spinner, Badge, Field, useConfirmDialog } from '../../../design-system/components/index.js'
+import { api, type BillingSummaryDTO, type McpScopeDTO, type McpTokenSummaryDTO, type McpTokenCreatedDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
 import { Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import styles from './AccountSettings.module.css'
@@ -154,22 +154,30 @@ function UsageBar({ label, percent }: { label: string; percent: number }): React
   )
 }
 
+// Pricing is intentionally hidden during the design-partner phase —
+// numbers aren't finalized and Stripe checkout isn't wired. Show a
+// neutral placeholder on the plan cards instead of the real price.
+// To re-enable real prices: replace the call site below with the
+// commented-out formatPrice() that uses plan.priceCents / plan.currency.
+function pricePlaceholder(plan: PlanDTO): string {
+  if (plan.priceCents === 0) return 'Free'
+  return 'Coming soon'
+}
+
 function BillingTab(): React.ReactElement {
-  // Plans grid + plan-switching are hidden during the design-partner
-  // phase — we only need the current-plan summary + monthly usage bar.
-  // To restore: re-add the `plans` state + the api.billing.plans() call,
-  // sortedPlans memo, handleSelect handler, and the JSX block that was
-  // removed below.
   const [summary, setSummary] = useState<BillingSummaryDTO | null>(null)
+  const [plans, setPlans] = useState<PlanDTO[] | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selecting, setSelecting] = useState<PlanId | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [msg] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
       try {
-        const s = await api.billing.summary()
+        const [s, p] = await Promise.all([api.billing.summary(), api.billing.plans()])
         setSummary(s)
+        setPlans(p)
       } catch (err) {
         setError((err as Error).message)
       } finally {
@@ -177,6 +185,30 @@ function BillingTab(): React.ReactElement {
       }
     })()
   }, [])
+
+  const currentPlanId = summary?.plan.id ?? null
+
+  const sortedPlans = useMemo(
+    () => (plans ? [...plans].sort((a, b) => a.sortOrder - b.sortOrder) : []),
+    [plans],
+  )
+
+  const handleSelect = async (planId: PlanId): Promise<void> => {
+    if (planId === currentPlanId || selecting) return
+    setSelecting(planId)
+    setError(null)
+    setMsg(null)
+    try {
+      const next = await api.billing.selectPlan(planId)
+      setSummary(next)
+      setMsg(`Switched to the ${next.plan.name} plan.`)
+      setTimeout(() => setMsg(null), 3000)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setSelecting(null)
+    }
+  }
 
   if (loading) return <div className={styles.loading}><Spinner size="md" /></div>
   if (error && !summary) return <div className={styles.section}><p className={`${styles.saveMsg} ${styles.error}`}>{error}</p></div>
@@ -201,11 +233,58 @@ function BillingTab(): React.ReactElement {
         )}
       </div>
 
-      {/* Pricing grid + Stripe footnote intentionally hidden during the
-       *  design-partner phase — prices aren't finalized and the upgrade
-       *  flow isn't billable yet, so showing them would mislead. To
-       *  re-enable, restore the <div className={styles.plansGrid}>...</div>
-       *  block and the trailing "Stripe checkout is not wired yet" <p>. */}
+      <div className={styles.plansGrid}>
+        {sortedPlans.map((plan) => {
+          const isCurrent = plan.id === currentPlanId
+          const isBusy = selecting === plan.id
+          // While pricing is placeholder'd, every paid plan is treated as
+          // "coming soon" — switching wouldn't be meaningful without a
+          // visible price. Free → free swap is also gated since it's the
+          // default already. Re-enable by reverting to the old check
+          // (stripeRequired = team || agency) once real prices are public.
+          const isLockedDuringDesignPhase = !isCurrent && plan.priceCents > 0
+          return (
+            <div
+              key={plan.id}
+              className={`${styles.planCard} ${isCurrent ? styles.planCardCurrent : ''}`}
+            >
+              <div className={styles.planHeader}>
+                <div>
+                  <h3 className={styles.planName}>{plan.name}</h3>
+                  <p className={styles.planPrice}>{pricePlaceholder(plan)}</p>
+                </div>
+                {isCurrent && <Badge color="green">Current</Badge>}
+              </div>
+
+              <ul className={styles.planFeatures}>
+                <li>
+                  {plan.maxMembers === 1
+                    ? '1 team member (you)'
+                    : `${plan.maxMembers} team members`}
+                </li>
+                {plan.features.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+
+              <Button
+                size="sm"
+                variant={isCurrent ? 'ghost' : 'primary'}
+                disabled={isCurrent || isBusy || isLockedDuringDesignPhase}
+                onClick={() => void handleSelect(plan.id)}
+              >
+                {isCurrent
+                  ? 'Active'
+                  : isBusy
+                    ? 'Updating...'
+                    : isLockedDuringDesignPhase
+                      ? 'Coming soon'
+                      : 'Switch to Free'}
+              </Button>
+            </div>
+          )
+        })}
+      </div>
 
       {(msg || error) && (
         <div className={styles.saveBar}>
