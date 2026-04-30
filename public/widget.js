@@ -123,19 +123,25 @@
       '.aidoc-source{font-size:11px;color:' + C.text + ';background:' + (isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)') + ';border:1px solid ' + border + ';padding:3px 9px;border-radius:999px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}',
       '.aidoc-source:hover{border-color:' + (isDark ? 'rgba(255,255,255,.3)' : 'rgba(0,0,0,.25)') + '}',
       '.aidoc-welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px}',
-      '.aidoc-welcome h3{font-size:16px;font-weight:600;color:' + C.text + ';margin:0}',
-      '.aidoc-welcome p{font-size:12px;color:' + mutedText + ';margin:0;max-width:280px;line-height:1.5}',
-      '.aidoc-suggestions{display:flex;flex-direction:column;gap:8px;width:100%;max-width:300px}',
-      '.aidoc-suggestion{text-align:left;background:' + subtle + ';border:1px solid ' + border + ';border-radius:10px;padding:10px 14px;color:' + mutedText + ';font-size:12px;cursor:pointer;font-family:inherit;transition:border-color .15s,color .15s}',
-      '.aidoc-suggestion:hover{border-color:' + C.accent + ';color:' + C.text + '}',
-      '#aidoc-widget-input{display:flex;gap:8px;padding:12px 16px;border-top:1px solid ' + border + ';background:' + headerBg + '}',
-      '#aidoc-widget-input input{flex:1;background:' + inputBg + ';border:1px solid ' + border + ';border-radius:10px;padding:10px 14px;color:' + C.text + ';font-size:13px;font-family:inherit;outline:none;transition:border-color .15s}',
+      '.aidoc-welcome h3{font-size:18px;font-weight:500;color:' + C.text + ';margin:0;letter-spacing:-.01em}',
+      '.aidoc-welcome p{font-size:13px;color:' + mutedText + ';margin:0;max-width:300px;line-height:1.5}',
+      '.aidoc-suggestions{display:flex;flex-direction:column;gap:8px;width:100%;max-width:320px}',
+      '.aidoc-suggestion{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;background:' + C.bg + ';border:1px solid ' + border + ';border-radius:10px;padding:11px 14px;color:' + C.text + ';font-size:13px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}',
+      '.aidoc-suggestion:hover{border-color:' + (isDark ? 'rgba(255,255,255,.3)' : 'rgba(0,0,0,.25)') + ';background:' + (isDark ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.02)') + '}',
+      '.aidoc-suggestion-arrow{color:' + mutedText + ';flex-shrink:0;transition:transform .15s,color .15s}',
+      '.aidoc-suggestion:hover .aidoc-suggestion-arrow{color:' + C.text + ';transform:translate(2px,-2px)}',
+      // Input bar — single rounded wrapper with focus ring + dark circular send button.
+      // Matches the admin chat surface (Vercel/Claude pattern).
+      '#aidoc-widget-input{padding:10px 16px 14px;background:linear-gradient(to bottom,transparent,' + C.bg + ' 30%)}',
+      '#aidoc-widget-input-wrap{display:flex;align-items:flex-end;gap:8px;padding:6px 6px 6px 14px;background:' + C.bg + ';border:1px solid ' + border + ';border-radius:16px;transition:border-color .15s,box-shadow .15s}',
+      '#aidoc-widget-input-wrap:focus-within{border-color:' + (isDark ? 'rgba(255,255,255,.4)' : 'rgba(0,0,0,.4)') + ';box-shadow:0 0 0 3px ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + '}',
+      '#aidoc-widget-input input{flex:1;background:transparent;border:none;outline:none;color:' + C.text + ';font-size:14px;line-height:1.5;font-family:inherit;padding:7px 0;min-height:24px}',
       '#aidoc-widget-input input::placeholder{color:' + mutedText + '}',
-      '#aidoc-widget-input input:focus{border-color:' + C.accent + '}',
-      '#aidoc-widget-input button{background:' + C.accent + ';border:none;color:white;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:opacity .15s}',
-      '#aidoc-widget-input button:hover{opacity:.85}',
-      '#aidoc-widget-input button:disabled{opacity:.4;cursor:not-allowed}',
-      '.aidoc-typing{font-size:12px;color:' + mutedText + ';padding:4px 0;align-self:flex-start}',
+      '#aidoc-widget-input button{flex-shrink:0;width:30px;height:30px;border-radius:50%;border:none;background:' + C.text + ';color:' + C.bg + ';cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .15s,transform .1s}',
+      '#aidoc-widget-input button:hover:not(:disabled){opacity:.9}',
+      '#aidoc-widget-input button:active:not(:disabled){transform:scale(.95)}',
+      '#aidoc-widget-input button:disabled{opacity:.25;cursor:not-allowed}',
+      '#aidoc-widget-input button svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}',
       '#aidoc-widget-powered{text-align:center;padding:6px;font-size:10px;color:' + mutedText + ';border-top:1px solid ' + (isDark ? '#1a1a1e' : '#eee') + '}',
       '#aidoc-widget-powered a{color:' + mutedText + ';text-decoration:none}',
       '#aidoc-widget-powered a:hover{color:' + C.accent + '}',
@@ -235,13 +241,18 @@
   panel.innerHTML = [
     '<div id="aidoc-widget-header"><span>Ask about the docs</span><button id="aidoc-widget-close">&times;</button></div>',
     '<div id="aidoc-widget-messages"></div>',
-    '<div id="aidoc-widget-input"><input placeholder="Ask a question..." /><button>Send</button></div>',
+    '<div id="aidoc-widget-input">'
+      + '<div id="aidoc-widget-input-wrap">'
+      + '<input placeholder="Ask anything…" />'
+      + '<button aria-label="Send"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>'
+      + '</div>'
+    + '</div>',
     '<div id="aidoc-widget-powered">Powered by <a href="https://doclee.tech" target="_blank">doclee</a></div>',
   ].join('');
   document.body.appendChild(panel);
 
   var msgContainer = panel.querySelector('#aidoc-widget-messages');
-  var inputEl = panel.querySelector('#aidoc-widget-input input');
+  var inputEl = panel.querySelector('#aidoc-widget-input-wrap input');
   var sendBtn = panel.querySelector('#aidoc-widget-input button');
 
   panel.querySelector('#aidoc-widget-close').onclick = function () { togglePanel(); };
@@ -257,6 +268,7 @@
   function renderMessages() {
     if (messages.length === 0) {
       var greetingText = C.greeting || (USER_NAME ? 'Hi ' + USER_NAME + '!' : 'Hi! Ask me anything.');
+      var arrowSvg = '<svg class="aidoc-suggestion-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>';
       msgContainer.innerHTML = [
         '<div class="aidoc-welcome">',
         '<div><h3>' + greetingText + '</h3>',
@@ -265,11 +277,18 @@
         (dynamicSuggestions.length > 0
           ? dynamicSuggestions
           : ['How does ' + projectName + ' work?', 'What are the main features?']
-        ).map(function (s) { return '<button class="aidoc-suggestion">' + s + '</button>'; }).join(''),
+        ).map(function (s) {
+          return '<button class="aidoc-suggestion"><span>' + s + '</span>' + arrowSvg + '</button>';
+        }).join(''),
         '</div></div>',
       ].join('');
       msgContainer.querySelectorAll('.aidoc-suggestion').forEach(function (el) {
-        el.onclick = function () { sendMessage(el.textContent); };
+        el.onclick = function () {
+          // Prefer the textual span — querying textContent picks up the
+          // arrow's hidden text on some browsers.
+          var span = el.querySelector('span');
+          sendMessage(span ? span.textContent : el.textContent);
+        };
       });
       return;
     }
@@ -402,6 +421,24 @@
         var decoder = new TextDecoder();
         var buffer = '';
         var fullText = '';
+        // Cache the streaming bot DOM node so each delta updates its
+        // innerHTML in place — full renderMessages() rebuilds were
+        // wiping the caret animation on every chunk and visually
+        // flattened the streaming effect to a single jump.
+        var botEl = null;
+        function ensureBotEl() {
+          if (botEl && botEl.isConnected) return botEl;
+          // First delta — replace the shimmer with a fresh bot div
+          // and remember the reference. We don't touch any other
+          // message in the list, so user pills + earlier bot answers
+          // stay still.
+          var thinking = msgContainer.querySelector('.aidoc-thinking');
+          if (thinking) thinking.remove();
+          botEl = document.createElement('div');
+          botEl.className = 'aidoc-msg-bot streaming';
+          msgContainer.appendChild(botEl);
+          return botEl;
+        }
         function pump() {
           return reader.read().then(function (chunk) {
             if (chunk.done) { finish(); return; }
@@ -420,7 +457,9 @@
                   if (ev.type === 'delta' && ev.text) {
                     fullText += ev.text;
                     messages[assistantIdx].content = fullText;
-                    renderMessages();
+                    var el = ensureBotEl();
+                    el.innerHTML = simpleMarkdown(fullText);
+                    msgContainer.scrollTop = msgContainer.scrollHeight;
                   } else if (ev.type === 'sources') {
                     messages[assistantIdx].sources = ev.items;
                   } else if (ev.type === 'followups') {

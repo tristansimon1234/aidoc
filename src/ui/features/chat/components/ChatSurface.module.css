@@ -214,11 +214,11 @@
 }
 
 /* === Thinking shimmer (before first delta) ===
- * Vercel AI / Claude.ai pattern: a small icon + "Thinking…" text where
- * a linear gradient sweeps across the letters every 1.6s, giving the
- * illusion of motion without a spinner. The icon stays static + muted
- * so it doesn't compete with the text animation.
- */
+ * Sparkle icon + "Thinking…" with a gradient that sweeps slowly across
+ * the letters. Tighter highlight band (8% wide) and slower animation
+ * (2.4s, ease-in-out) for a polished feel — earlier 50% / 1.6s linear
+ * was too aggressive. Uses currentColor on the gradient so it inherits
+ * the surface's text colour automatically (light + dark themes). */
 
 .thinking {
   display: inline-flex;
@@ -226,39 +226,45 @@
   gap: 8px;
   font-size: 14px;
   line-height: 1.5;
+  /* color drives the icon (currentColor) — sparkle sits at the muted
+   *  level so the shimmer on the text is the only thing moving. */
+  color: var(--color-muted-fg);
   height: 1.5em;
 }
 
 .thinkingIcon {
-  color: var(--color-muted-fg);
   flex-shrink: 0;
-  opacity: 0.85;
 }
 
 .thinkingText {
-  /* Three-stop gradient: muted → bright → muted, oversized so we can
-   * pan it across the text via background-position. */
+  /* background-clip:text + linear-gradient + animated background-position:
+   *  the text becomes a window onto a horizontally-panning gradient.
+   *  Most of the gradient is the muted base; an ~8% slice (46-54%)
+   *  peaks at the surface's fg colour — that's the moving shine.
+   *  background-size 250% lets the highlight travel fully off-screen
+   *  on each side so the start + end of every cycle are uniformly
+   *  muted (no flash). */
   background: linear-gradient(
     90deg,
-    color-mix(in srgb, var(--color-fg) 35%, transparent) 0%,
-    color-mix(in srgb, var(--color-fg) 35%, transparent) 40%,
+    var(--color-muted-fg) 0%,
+    var(--color-muted-fg) 46%,
     var(--color-fg) 50%,
-    color-mix(in srgb, var(--color-fg) 35%, transparent) 60%,
-    color-mix(in srgb, var(--color-fg) 35%, transparent) 100%
+    var(--color-muted-fg) 54%,
+    var(--color-muted-fg) 100%
   );
-  background-size: 200% 100%;
+  background-size: 250% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  animation: shimmer 1.6s linear infinite;
+  animation: shimmer 2.4s ease-in-out infinite;
   font-weight: 500;
   letter-spacing: -0.005em;
 }
 
 @keyframes shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+  0% { background-position: 100% 0; }
+  100% { background-position: -150% 0; }
 }
 
 /* === Source pills === */
