@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Spinner, Badge, ProgressLoader } from '../../../design-system/components/index.js'
 import { api, ApiError } from '../../../shared/api/client.js'
+import { fetchMarketingVideo } from '../../../shared/api/db.js'
 import type { MarketingVideoSummaryDTO } from '../../../shared/api/client.js'
 import { useJobs } from '../../../shared/jobs/JobContext.js'
 import styles from './MarketingVideoPanel.module.css'
@@ -69,7 +70,9 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
     void (async () => {
       try {
         const [result, voicesResult, presetsResult] = await Promise.all([
-          api.runs.marketingVideo.get(runId),
+          // Direct Supabase read — saves the Vercel cold-start that
+          // /runs/:id/marketing-video would incur on every panel mount.
+          fetchMarketingVideo(runId),
           api.runs.marketingVideo.voices().catch(() => ({ voices: [] })),
           api.runs.marketingVideo.musicPresets().catch(() => ({ presets: [] })),
         ])
@@ -97,7 +100,7 @@ export function MarketingVideoPanel({ runId, pageId, pageTitle }: MarketingVideo
     let cancelled = false
     void (async () => {
       try {
-        const fresh = await api.runs.marketingVideo.get(runId)
+        const fresh = await fetchMarketingVideo(runId)
         if (!cancelled) setSummary(fresh)
       } catch { /* keep stale summary; banner will show if there was an error */ }
     })()

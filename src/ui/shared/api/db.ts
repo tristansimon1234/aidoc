@@ -1,6 +1,6 @@
 import { supabase } from './supabase.js'
 import { getActiveTeamId, setActiveTeamId } from './client.js'
-import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO, ProjectContextDTO, TryDocReportDTO } from './client.js'
+import type { DocPageDTO, RunDTO, GeneratedDocDTO, ProjectDTO, ProjectContextDTO, TryDocReportDTO, MarketingVideoSummaryDTO } from './client.js'
 
 // Direct Supabase queries — bypass Vercel serverless
 
@@ -296,6 +296,40 @@ export async function fetchLatestTestReport(pageId: string): Promise<TryDocRepor
   const summary = data.summary_json as Record<string, unknown> | null
   if (!summary?.tryDocReport) return null
   return summary.tryDocReport as TryDocReportDTO
+}
+
+/**
+ * Marketing video summary lives on `runs.summary_json.marketingVideo`
+ * (MVP storage; no dedicated table yet — see marketing-video.repository.ts).
+ * Direct Supabase read avoids the Vercel cold-start that the equivalent
+ * /runs/:id/marketing-view route incurs (~200-500ms saved per page mount).
+ * Returns null when the run has no marketing video yet.
+ */
+export async function fetchMarketingVideo(runId: string): Promise<MarketingVideoSummaryDTO | null> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('summary_json')
+    .eq('id', runId)
+    .single()
+  if (error || !data) return null
+  const summary = data.summary_json as Record<string, unknown> | null
+  const mv = summary?.marketingVideo as MarketingVideoSummaryDTO | undefined
+  return mv ?? null
+}
+
+/** Latest generated doc for a run — direct read of `generated_docs` so the
+ *  PageView fallback path doesn't pay a serverless round-trip. RLS scopes
+ *  to runs the user can see via project membership. */
+export async function fetchRunDoc(runId: string): Promise<GeneratedDocDTO | null> {
+  const { data, error } = await supabase
+    .from('generated_docs')
+    .select('*')
+    .eq('run_id', runId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error || !data) return null
+  return mapDoc(data)
 }
 
 // --- Helpers ---
