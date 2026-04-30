@@ -86,29 +86,36 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
 
   useEffect(() => {
     let cancelled = false
+    // The summary read (Supabase direct, ~50-200ms) and the music presets
+    // (in-memory constant) are both fast; the ElevenLabs voices call can
+    // take 1-3s on a cold path. Don't gate the whole panel on it — fire
+    // the fast pair first, render the form, and let voices stream in.
     void (async () => {
       try {
-        // No run yet (page-only mode): nothing to fetch on the
-        // marketing-video side — there's no manifest to surface. Still
-        // hydrate voices + music presets so the form is usable.
-        const [result, voicesResult, presetsResult] = await Promise.all([
-          runId
-            // Direct Supabase read — saves the Vercel cold-start that
-            // /runs/:id/marketing-video would incur on every panel mount.
-            ? fetchMarketingVideo(runId)
-            : Promise.resolve(null),
-          api.runs.marketingVideo.voices().catch(() => ({ voices: [] })),
+        const [result, presetsResult] = await Promise.all([
+          runId ? fetchMarketingVideo(runId) : Promise.resolve(null),
           api.runs.marketingVideo.musicPresets().catch(() => ({ presets: [] })),
         ])
         if (!cancelled) {
           setSummary(result)
-          setVoices(voicesResult.voices)
           setMusicPresets(presetsResult.presets)
+          setLoading(false)
         }
       } catch (err) {
-        if (!cancelled) setError((err as Error).message)
-      } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setError((err as Error).message)
+          setLoading(false)
+        }
+      }
+    })()
+    // Voices fire in parallel but don't block the form render — the voice
+    // picker shows "Loading…" in its native disabled state until they land.
+    void (async () => {
+      try {
+        const voicesResult = await api.runs.marketingVideo.voices()
+        if (!cancelled) setVoices(voicesResult.voices)
+      } catch {
+        if (!cancelled) setVoices([])
       }
     })()
     return () => { cancelled = true }

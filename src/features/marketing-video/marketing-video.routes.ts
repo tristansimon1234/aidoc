@@ -40,6 +40,9 @@ marketingVideoRouter.get('/marketing-video/music-presets', (_req: Request, res: 
   // Strip nothing — these are public CDN URLs by design (Remotion fetches
   // them from the video-service). Adding tracks doesn't require a
   // migration; the constant is the schema.
+  // Edge cache 1h — the preset list is a code-level constant; refreshing
+  // it more often than that just adds latency for no signal.
+  res.set('Cache-Control', 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400')
   res.status(200).json({ presets: MUSIC_PRESETS })
 })
 
@@ -51,6 +54,11 @@ marketingVideoRouter.get('/marketing-video/voices', (_req: Request, res: Respons
         return
       }
       const voices = await getAvailableVoices()
+      // Edge cache 5 min on Vercel + 1h SWR — the voices list rarely
+      // changes and is identical for every authed user (same backend
+      // API key). Eliminates the ElevenLabs round-trip on every
+      // Marketing panel mount after the first one.
+      res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=3600')
       res.status(200).json({ voices })
     } catch (err) {
       next(err)
