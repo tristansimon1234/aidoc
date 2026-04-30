@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Button, Spinner, Badge, Field, useConfirmDialog } from '../../../design-system/components/index.js'
-import { api, type BillingSummaryDTO, type McpScopeDTO, type McpTokenSummaryDTO, type McpTokenCreatedDTO, type PlanDTO, type PlanId, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
+import { Button, Spinner, Field, useConfirmDialog } from '../../../design-system/components/index.js'
+import { api, type BillingSummaryDTO, type McpScopeDTO, type McpTokenSummaryDTO, type McpTokenCreatedDTO, type ProfileDTO, type TeamDTO, type TeamMemberDTO, type TeamRoleDTO, type TeamSeatInfoDTO, type TeamInviteDTO, getActiveTeamId, setActiveTeamId } from '../../../shared/api/client.js'
 import { Link } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
 import styles from './AccountSettings.module.css'
@@ -154,27 +154,22 @@ function UsageBar({ label, percent }: { label: string; percent: number }): React
   )
 }
 
-function formatPrice(plan: PlanDTO): string {
-  if (plan.priceCents === 0) return 'Free'
-  const amount = (plan.priceCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })
-  const symbol = plan.currency === 'EUR' ? '€' : plan.currency
-  return `${amount}${symbol}/mo`
-}
-
 function BillingTab(): React.ReactElement {
+  // Plans grid + plan-switching are hidden during the design-partner
+  // phase — we only need the current-plan summary + monthly usage bar.
+  // To restore: re-add the `plans` state + the api.billing.plans() call,
+  // sortedPlans memo, handleSelect handler, and the JSX block that was
+  // removed below.
   const [summary, setSummary] = useState<BillingSummaryDTO | null>(null)
-  const [plans, setPlans] = useState<PlanDTO[] | null>(null)
   const [loading, setLoading] = useState(true)
-  const [selecting, setSelecting] = useState<PlanId | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [msg, setMsg] = useState<string | null>(null)
+  const [msg] = useState<string | null>(null)
 
   useEffect(() => {
     void (async () => {
       try {
-        const [s, p] = await Promise.all([api.billing.summary(), api.billing.plans()])
+        const s = await api.billing.summary()
         setSummary(s)
-        setPlans(p)
       } catch (err) {
         setError((err as Error).message)
       } finally {
@@ -182,32 +177,6 @@ function BillingTab(): React.ReactElement {
       }
     })()
   }, [])
-
-  const currentPlanId = summary?.plan.id ?? null
-
-  const sortedPlans = useMemo(
-    () => (plans ? [...plans].sort((a, b) => a.sortOrder - b.sortOrder) : []),
-    [plans],
-  )
-
-  const handleSelect = async (planId: PlanId): Promise<void> => {
-    if (planId === currentPlanId || selecting) return
-    setSelecting(planId)
-    setError(null)
-    setMsg(null)
-    try {
-      // TODO(stripe): for paid plans, call POST /billing/checkout instead and
-      // redirect to the Stripe Checkout Session URL. Free / downgrade stays here.
-      const next = await api.billing.selectPlan(planId)
-      setSummary(next)
-      setMsg(`Switched to the ${next.plan.name} plan.`)
-      setTimeout(() => setMsg(null), 3000)
-    } catch (err) {
-      setError((err as Error).message)
-    } finally {
-      setSelecting(null)
-    }
-  }
 
   if (loading) return <div className={styles.loading}><Spinner size="md" /></div>
   if (error && !summary) return <div className={styles.section}><p className={`${styles.saveMsg} ${styles.error}`}>{error}</p></div>
@@ -232,63 +201,11 @@ function BillingTab(): React.ReactElement {
         )}
       </div>
 
-      <div className={styles.plansGrid}>
-        {sortedPlans.map((plan) => {
-          const isCurrent = plan.id === currentPlanId
-          const isBusy = selecting === plan.id
-          // Team + Agency require Stripe checkout, which isn't wired yet.
-          // We let users go free → founder directly (mutates the DB) but block
-          // anything paid until the webhook handler lands.
-          const stripeRequired = !isCurrent && (plan.id === 'team' || plan.id === 'agency')
-          return (
-            <div
-              key={plan.id}
-              className={`${styles.planCard} ${isCurrent ? styles.planCardCurrent : ''}`}
-            >
-              <div className={styles.planHeader}>
-                <div>
-                  <h3 className={styles.planName}>{plan.name}</h3>
-                  <p className={styles.planPrice}>{formatPrice(plan)}</p>
-                </div>
-                {isCurrent && <Badge color="green">Current</Badge>}
-              </div>
-
-              <ul className={styles.planFeatures}>
-                <li>
-                  {plan.maxMembers === 1
-                    ? '1 team member (you)'
-                    : `${plan.maxMembers} team members`}
-                </li>
-                {plan.features.map((f) => (
-                  <li key={f}>{f}</li>
-                ))}
-              </ul>
-
-              <Button
-                size="sm"
-                variant={isCurrent ? 'ghost' : 'primary'}
-                disabled={isCurrent || isBusy || stripeRequired}
-                onClick={() => void handleSelect(plan.id)}
-              >
-                {isCurrent
-                  ? 'Active'
-                  : isBusy
-                    ? 'Updating...'
-                    : stripeRequired
-                      ? 'Coming soon'
-                      : plan.priceCents === 0
-                        ? 'Switch to Free'
-                        : 'Select'}
-              </Button>
-              {stripeRequired && (
-                <p className={styles.billingFootnote} style={{ margin: 'var(--space-sm) 0 0', fontSize: 11 }}>
-                  Available once Stripe checkout is enabled.
-                </p>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {/* Pricing grid + Stripe footnote intentionally hidden during the
+       *  design-partner phase — prices aren't finalized and the upgrade
+       *  flow isn't billable yet, so showing them would mislead. To
+       *  re-enable, restore the <div className={styles.plansGrid}>...</div>
+       *  block and the trailing "Stripe checkout is not wired yet" <p>. */}
 
       {(msg || error) && (
         <div className={styles.saveBar}>
@@ -296,12 +213,6 @@ function BillingTab(): React.ReactElement {
           {error && <span className={`${styles.saveMsg} ${styles.error}`}>{error}</span>}
         </div>
       )}
-
-      <p className={styles.billingFootnote}>
-        Stripe checkout is not wired yet — paid plan changes are applied
-        immediately without payment. When Stripe is enabled, paid plans will
-        redirect to a hosted checkout.
-      </p>
     </div>
   )
 }
