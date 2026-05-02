@@ -1,20 +1,26 @@
-/* Marketing video panel — Vercel/Linear-style: breathable, monospace
- * labels, subtle borders, focus rings instead of color inversions.
- * Layout pattern: vertical sections with mono uppercase mini-labels,
- * generous vertical spacing, no heavy headers. */
+/* Marketing video panel — Linear / Stripe Checkout / Vercel Deploy
+ * inspired form. Each logical group lives in a subtle card with its
+ * own title + description; the form is centered in the panel; the
+ * primary CTA sits in a footer block at the bottom with a one-line
+ * summary so the user knows what they're about to generate.
+ */
 
 .container {
   display: flex;
   flex-direction: column;
-  gap: 28px;
-  padding: 32px 24px;
-  max-width: 720px;
+  gap: 16px;
+  padding: 32px 20px;
+  max-width: 600px;
+  /* Centre the form within whatever panel renders it. Fixes the
+   * left-stuck feel reported in the design pass. */
+  margin: 0 auto;
+  width: 100%;
 }
 
 @media (max-width: 640px) {
   .container {
     padding: 20px 16px;
-    gap: 22px;
+    gap: 14px;
   }
 }
 
@@ -24,7 +30,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-bottom: 4px;
+  padding: 4px 4px 8px;
 }
 
 .eyebrow {
@@ -38,6 +44,42 @@
 
 .subtitle {
   font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-muted-fg);
+  margin: 0;
+}
+
+/* === Card group ===
+ * Each section of the form lives in a subtle card. The card surface is
+ * a 4% tint on top of the page bg — distinct enough to read as a
+ * separate group, not heavy enough to compete with the inputs inside.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  background: color-mix(in srgb, var(--color-fg) 2%, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.cardHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-fg);
+  letter-spacing: -0.005em;
+}
+
+.cardDescription {
+  font-size: 13px;
   line-height: 1.5;
   color: var(--color-muted-fg);
   margin: 0;
@@ -75,16 +117,16 @@
 .fieldGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 14px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 540px) {
   .fieldGrid {
     grid-template-columns: 1fr;
   }
 }
 
-/* === Inputs (textarea / input / select) === */
+/* === Inputs === */
 
 .briefTextarea,
 .textInput,
@@ -97,11 +139,11 @@
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .briefTextarea {
-  min-height: 92px;
+  min-height: 88px;
   padding: 10px 12px;
   resize: vertical;
 }
@@ -112,7 +154,6 @@
   padding: 0 12px;
 }
 
-/* Native select chevron — keep platform default but visually balanced */
 .select {
   appearance: none;
   -webkit-appearance: none;
@@ -137,7 +178,7 @@
   cursor: not-allowed;
 }
 
-/* === Toggle (voice-over checkbox) === */
+/* === Toggle === */
 
 .toggle {
   display: inline-flex;
@@ -162,7 +203,7 @@
   opacity: 0.5;
 }
 
-/* === Radio cards (visual-style picker) === */
+/* === Radio cards === */
 
 .radioRow {
   display: grid;
@@ -219,7 +260,7 @@
 
 /* === Volume slider === */
 
-input[type='range'].volumeSlider {
+.volumeSlider {
   width: 100%;
   height: 6px;
   background: var(--color-border);
@@ -229,7 +270,7 @@ input[type='range'].volumeSlider {
   cursor: pointer;
 }
 
-input[type='range'].volumeSlider::-webkit-slider-thumb {
+.volumeSlider::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 14px;
@@ -241,7 +282,7 @@ input[type='range'].volumeSlider::-webkit-slider-thumb {
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
-input[type='range'].volumeSlider::-moz-range-thumb {
+.volumeSlider::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -272,14 +313,39 @@ input[type='range'].volumeSlider::-moz-range-thumb {
   color: var(--color-success, #16a34a);
 }
 
-/* === Actions === */
+/* === Footer / actions ===
+ * Sticky in spirit: lives at the bottom of the form, visually distinct
+ * from the cards above. Summary line above the CTA so the user knows
+ * what they're about to spend before clicking. */
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  margin-top: 4px;
+}
+
+.footerSummary {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-muted-fg);
+  margin: 0;
+}
+
+.footerSummary strong {
+  font-weight: 500;
+  color: var(--color-fg);
+}
 
 .actions {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding-top: 4px;
 }
 
 .actions :global(.button) {
@@ -292,8 +358,10 @@ input[type='range'].volumeSlider::-moz-range-thumb {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--color-border);
+  padding: 18px 20px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
 }
 
 .audioPlayer {
@@ -327,11 +395,7 @@ input[type='range'].volumeSlider::-moz-range-thumb {
   background: color-mix(in srgb, var(--color-fg) 4%, transparent);
 }
 
-/* === Stale banner ===
- *  Shown when a manifest has been edited (via AI chat or PUT) but the
- *  video preview hasn't been re-rendered yet. Inline CTA so the user
- *  doesn't have to scroll to find the regenerate button.
- */
+/* === Stale banner === */
 
 .staleBanner {
   display: flex;
@@ -353,13 +417,7 @@ input[type='range'].volumeSlider::-moz-range-thumb {
   color: var(--color-fg);
 }
 
-/* === Refine with AI ===
- *  Mini chat panel that lives at the bottom of the result block. Users
- *  type plain-language instructions ("shorten scene 2", "make the CTA
- *  more aggressive") and Gemini Pro returns an updated manifest +
- *  one-line confirmation. Visually mirrors the admin chat surface
- *  (Vercel/Claude lean) but compact — it's secondary to the video.
- */
+/* === Refine with AI === */
 
 .refine {
   display: flex;

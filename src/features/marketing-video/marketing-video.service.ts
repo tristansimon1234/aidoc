@@ -658,13 +658,36 @@ RULES:
 
 Return ONLY valid JSON matching the response schema.`
 
-  const result = await generateText({
-    userPrompt: prompt,
-    model: GEMINI_PRO_MODEL,
-    maxTokens: 16_384,
-    temperature: 0.4,
-    json: true,
-  })
+  // Try Pro first for better edit reasoning, fall back to Flash on
+  // 503 / overload / 429. Pro has visible quality lift on "rewrite the
+  // CTA in french while keeping the playful tone" but Flash handles
+  // most edits acceptably and is the right pressure-relief when Google
+  // returns "model currently experiencing high demand". Without this,
+  // a busy Pro cluster blocks every iteration on the editor.
+  let result: { text: string }
+  try {
+    result = await generateText({
+      userPrompt: prompt,
+      model: GEMINI_PRO_MODEL,
+      maxTokens: 16_384,
+      temperature: 0.4,
+      json: true,
+    })
+  } catch (err) {
+    const message = (err as Error).message ?? ''
+    const status = (err as { status?: number }).status
+    const isOverload = status === 503 || status === 429
+      || /high demand|overload|temporarily unavailable|rate.?limit/i.test(message)
+    if (!isOverload) throw err
+    console.warn(`[marketing-edit] Pro overloaded (${status ?? 'no-status'}), falling back to Flash`)
+    result = await generateText({
+      userPrompt: prompt,
+      // No model override → uses default Flash from gemini.client.
+      maxTokens: 16_384,
+      temperature: 0.4,
+      json: true,
+    })
+  }
 
   // Parse defensively — even with responseMimeType:application/json the
   // model occasionally wraps the answer in markdown fences.

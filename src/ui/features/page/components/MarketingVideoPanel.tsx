@@ -336,10 +336,13 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       )}
 
       {/* === Brief === */}
-      <div className={styles.field}>
-        <label className={styles.fieldLabel} htmlFor="marketing-brief">
-          Creative brief <span className={styles.fieldHint}>optional</span>
-        </label>
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <span className={styles.cardTitle}>Creative brief</span>
+          <p className={styles.cardDescription}>
+            Tell the AI what angle to take. Skip if the doc speaks for itself.
+          </p>
+        </div>
         <textarea
           id="marketing-brief"
           className={styles.briefTextarea}
@@ -352,11 +355,15 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       </div>
 
       {/* === Visual style === */}
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>
-          Visual style
-          {!runId && <span className={styles.fieldHint}>Real screenshots locked — record a video first</span>}
-        </span>
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <span className={styles.cardTitle}>Visual style</span>
+          <p className={styles.cardDescription}>
+            {runId
+              ? 'Real screenshots ground the video in your product. Designed mocks look more polished but less specific.'
+              : 'Record a video first to unlock real screenshots — for now, the AI generates designed mocks.'}
+          </p>
+        </div>
         <div className={styles.radioRow} role="radiogroup">
           {([
             { id: 'screenshots' as const, title: 'Real screenshots', subtitle: 'Grounded in your product UI' },
@@ -383,8 +390,13 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       </div>
 
       {/* === Voice-over === */}
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>Voice-over</span>
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <span className={styles.cardTitle}>Voice-over</span>
+          <p className={styles.cardDescription}>
+            ElevenLabs synthesizes a narration from the script. Disable to keep the video silent.
+          </p>
+        </div>
         <label className={styles.toggle}>
           <input
             type="checkbox"
@@ -396,7 +408,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         </label>
 
         {withVoiceover && (
-          <div className={styles.fieldGrid} style={{ marginTop: 4 }}>
+          <div className={styles.fieldGrid}>
             <div className={styles.field}>
               <span className={styles.fieldLabel}>Voice</span>
               <select
@@ -433,8 +445,13 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       </div>
 
       {/* === Music === */}
-      <div className={styles.field}>
-        <span className={styles.fieldLabel}>Background music</span>
+      <div className={styles.card}>
+        <div className={styles.cardHeader}>
+          <span className={styles.cardTitle}>Background music</span>
+          <p className={styles.cardDescription}>
+            Optional soundtrack mixed under the voice-over. Pick a preset, generate one with AI, or upload your own.
+          </p>
+        </div>
         <div className={musicChoice === 'none' ? '' : styles.fieldGrid}>
           <select
             className={styles.select}
@@ -470,7 +487,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         </div>
 
         {musicChoice === 'ai' && (
-          <div className={styles.field} style={{ marginTop: 12 }}>
+          <div className={styles.field}>
             <span className={styles.fieldLabel}>
               Music style <span className={styles.fieldHint}>optional · fine-tunes the AI prompt</span>
             </span>
@@ -487,7 +504,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         )}
 
         {musicChoice === 'upload' && (
-          <div className={styles.uploadRow} style={{ marginTop: 12 }}>
+          <div className={styles.uploadRow}>
             <input
               type="file"
               accept="audio/mpeg,audio/mp3,audio/wav,audio/x-m4a"
@@ -503,15 +520,36 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         )}
       </div>
 
-      {/* === Generate === */}
-      <div className={styles.actions}>
-        <Button
-          variant="primary"
-          onClick={handleGenerateAndRender}
-          disabled={working || ourJob?.status === 'running' || (musicChoice === 'upload' && !musicUploadPath)}
-        >
-          {(working || ourJob?.status === 'running') ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
-        </Button>
+      {/* === Footer / generate ===
+       *  Distinct from the cards above — sits as a clear "this is what
+       *  you're about to do" panel with a one-line summary of the
+       *  current selection above the primary CTA. Stripe Checkout
+       *  pattern: the user reads what they're confirming before
+       *  clicking. */}
+      <div className={styles.footer}>
+        <p className={styles.footerSummary}>
+          Generates a 45-second{' '}
+          <strong>{visualMode === 'screenshots' ? 'screenshot-based' : 'designed-mock'}</strong>{' '}
+          video
+          {withVoiceover ? <> with a <strong>{TONE_LABELS[tone].split(' ')[0]?.toLowerCase()}</strong> voice-over</> : <> (no voice-over)</>}
+          {musicChoice === 'none'
+            ? ''
+            : musicChoice === 'ai'
+              ? ' and AI-generated music'
+              : musicChoice === 'upload'
+                ? ' and your uploaded music'
+                : ` and the ${musicPresets.find((p) => p.id === musicChoice)?.name ?? 'selected'} preset`}
+          .
+        </p>
+        <div className={styles.actions}>
+          <Button
+            variant="primary"
+            onClick={handleGenerateAndRender}
+            disabled={working || ourJob?.status === 'running' || (musicChoice === 'upload' && !musicUploadPath)}
+          >
+            {(working || ourJob?.status === 'running') ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
+          </Button>
+        </div>
       </div>
 
       {/* === Pipeline progress (during) === */}

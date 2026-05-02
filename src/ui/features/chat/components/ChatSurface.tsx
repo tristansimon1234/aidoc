@@ -459,15 +459,20 @@ export function ChatSurface({
                        *  across the letters while we wait for the first delta. */}
                       {msg.content === '' && msg.streaming ? (
                         <div className={styles.thinking} aria-label="Thinking">
-                          {/* Lucide "sparkles" — clean two-star outline.
-                           *  Subtler than a brain shape and visually
-                           *  matches the AI-product context. */}
+                          {/* Lucide "brain" — anatomical two-hemisphere
+                           *  outline. The earlier sparkle felt generic;
+                           *  the brain reads as "the AI is thinking"
+                           *  more clearly. */}
                           <svg className={styles.thinkingIcon} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M9.94 14.06a2 2 0 0 0-1.44-1.44L2.37 11.04a.5.5 0 0 1 0-.96l6.13-1.58A2 2 0 0 0 9.94 7.06l1.58-6.13a.5.5 0 0 1 .96 0l1.58 6.13a2 2 0 0 0 1.44 1.44l6.13 1.58a.5.5 0 0 1 0 .96l-6.13 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.13a.5.5 0 0 1-.96 0z" />
-                            <path d="M20 3v4" />
-                            <path d="M22 5h-4" />
-                            <path d="M4 17v2" />
-                            <path d="M5 18H3" />
+                            <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+                            <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+                            <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+                            <path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
+                            <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
+                            <path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
+                            <path d="M19.938 10.5a4 4 0 0 1 .585.396" />
+                            <path d="M6 18a4 4 0 0 1-1.967-.516" />
+                            <path d="M19.967 17.484A4 4 0 0 1 18 18" />
                           </svg>
                           <span className={styles.thinkingText}>Thinking…</span>
                         </div>
