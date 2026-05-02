@@ -207,6 +207,60 @@ export function stripBrokenAudioTags(text: string): string {
  * seconds, sell 3 benefits, and CTA — completely different rhythm. Reusing
  * the tutorial voice-over for marketing produces sleepy videos.
  */
+/** Style seeds rotated per generation to fight Gemini's tendency to
+ *  converge on the same "browser frame + bento + chat" sequence every
+ *  time it sees the same product. Each seed pushes a distinct visual
+ *  direction + a different mode mix; one is picked at random per call.
+ *
+ *  This is the cheapest variety lever — no model swap, no schema
+ *  change, just a textual nudge in the prompt. Gemini at temperature
+ *  0.85 takes the hint and produces meaningfully different output.
+ *
+ *  Adding a seed here is the way to introduce a new aesthetic; don't
+ *  bake it into the main prompt body where it would steamroll all the
+ *  other directions. */
+const STYLE_SEEDS = [
+  {
+    label: 'editorial',
+    brief: 'Lead with a giant typographic headline (headline-burst or hero-stat). Magazine-grade type hierarchy, generous whitespace, restrained color. The video should feel like a premium product page, not a SaaS dashboard tour. Lean abstract; cap UI scenes at 1.',
+  },
+  {
+    label: 'product-tour',
+    brief: 'Lead with the product itself. Start with a cursor-click or bento UI scene that shows the user actually doing something. Save abstract scenes (hero-stat, flow-diagram) for the "why it works" beat. Treat the video as a 45-second walkthrough.',
+  },
+  {
+    label: 'metric-driven',
+    brief: 'Anchor on a single big number or metric. Use hero-stat for at least one beat, prefer counter / chart for another. The arc is "here is the claim → here is the evidence → here is the call to action". Skip cursor-click — claims, not flows.',
+  },
+  {
+    label: 'process-flow',
+    brief: 'Tell the story as a 3-step process. Use flow-diagram for the central beat (3 connected nodes with animated arrows). Bookend with logo-hero (open) and cursor-click or chat (close). Visual mode mix should feel diagrammatic.',
+  },
+  {
+    label: 'brand-first',
+    brief: 'Open with logo-hero showing the project\'s real logo at 160-180px and a bold tagline. Each subsequent scene reinforces the brand promise with one strong visual idea. Limit UI scenes to 1; favour abstract beats so the brand stays foreground.',
+  },
+  {
+    label: 'conversational',
+    brief: 'The hero of this video is the chat / AI agent angle. Use chat mode prominently — at least one full scene of user → agent dialogue with typing dots → reply. Let the conversation reveal the value prop. Other scenes support but don\'t outshine.',
+  },
+  {
+    label: 'high-contrast',
+    brief: 'Brutalist energy: oversized accent-color blocks, type at extreme scale (text-[80px]+ on hero numbers / words), minimal frames. Mostly abstract modes (headline-burst, hero-stat). When a UI scene appears, push it small and to the side — the canvas dominates.',
+  },
+  {
+    label: 'data-density',
+    brief: 'Visual mode mix should lean on chart and bento. Show real-looking dashboards, sparklines, multi-card layouts. Use the chart mode at least once with a frame-driven sweep. Abstract beats are limited to one — the rest is "look how much information the product surfaces".',
+  },
+] as const
+
+/** Pick a style seed for this generation. Deterministic if a seed-id
+ *  is provided (useful for tests / regenerate-with-same-look UX);
+ *  otherwise random. */
+function pickStyleSeed(): typeof STYLE_SEEDS[number] {
+  return STYLE_SEEDS[Math.floor(Math.random() * STYLE_SEEDS.length)]!
+}
+
 export async function generateMarketingScript(
   input: GenerateMarketingScriptInput,
 ): Promise<MarketingScript> {
@@ -216,6 +270,13 @@ export async function generateMarketingScript(
 
   const briefBlock = input.userPrompt?.trim()
     ? `\n## Creative brief from the user (HIGHEST PRIORITY for framing — but never overrides the documentation as factual ground truth)\n\n${input.userPrompt.trim()}\n\nRespect this brief: pick the angle, audience, tone shift, and which capabilities to emphasize from it. If the brief asks for something the documentation doesn't support, stay grounded in the docs and pivot the framing — don't invent features to satisfy the brief.\n`
+    : ''
+
+  // Style seed only affects mocks mode — screenshots mode has the doc
+  // visuals as the anchor and doesn't need a synthetic style nudge.
+  const styleSeed = input.visualMode === 'mocks' ? pickStyleSeed() : null
+  const styleSeedBlock = styleSeed
+    ? `\n## Style direction for THIS generation (random per call — fights "every video looks the same")\n\n**Style: ${styleSeed.label}** — ${styleSeed.brief}\n\nThis steers the visual mix only. The script still has to be grounded in the doc + the user brief above. Do NOT mention the style label in the output.\n`
     : ''
 
   const userPrompt = `You are writing a 45-second marketing video script for a SaaS product feature.
@@ -236,7 +297,7 @@ Feature page: ${input.pageTitle}
 
 Markdown content (use as the ONLY source of truth — don't invent features):
 ${input.pageMarkdown.slice(0, 6000)}
-${briefBlock}
+${briefBlock}${styleSeedBlock}
 
 ## Available screenshots (from the same doc)
 
@@ -845,7 +906,9 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     // need Pro.
     model: input.visualMode === 'mocks' ? GEMINI_PRO_MODEL : undefined,
     maxTokens: 16_384,
-    temperature: 0.6,
+    // Mocks need higher temperature to fight "every video looks the same"
+    // (the style seed pushes direction; temperature gives execution variance).
+    temperature: input.visualMode === 'mocks' ? 0.85 : 0.6,
     json: true,
     responseSchema: RESPONSE_SCHEMA,
   })

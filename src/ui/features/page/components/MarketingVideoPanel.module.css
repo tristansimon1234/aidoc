@@ -9,17 +9,13 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 32px 20px;
-  max-width: 600px;
-  /* Centre the form within whatever panel renders it. Fixes the
-   * left-stuck feel reported in the design pass. */
-  margin: 0 auto;
+  padding: 28px 0;
   width: 100%;
 }
 
 @media (max-width: 640px) {
   .container {
-    padding: 20px 16px;
+    padding: 20px 0;
     gap: 14px;
   }
 }
