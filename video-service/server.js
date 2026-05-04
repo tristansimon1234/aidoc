@@ -1,6 +1,7 @@
 import express from 'express'
 import ffmpeg from 'fluent-ffmpeg'
 import { createClient } from '@supabase/supabase-js'
+import ws from 'ws'
 import { writeFileSync, readFileSync, unlinkSync, mkdirSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,10 +16,20 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok', service: 'aidoc-video' })
 })
 
-// Helper: create supabase client from request
+// Helper: create supabase client from request.
+//
+// `realtime: { transport: ws }` is required because supabase-js >= 2.100
+// initializes a RealtimeClient on createClient() even when we don't
+// subscribe to realtime channels — and on Node < 22 (this service runs
+// on Node 20 in the Railway image) the SDK throws on boot if no
+// WebSocket transport is provided. Service only uses storage upload /
+// download; the transport is wired so the SDK's init-time check
+// passes, not because realtime is actually used.
 function getSupabase(body) {
   if (!body.supabaseUrl || !body.serviceKey) throw new Error('supabaseUrl and serviceKey required')
-  return createClient(body.supabaseUrl, body.serviceKey)
+  return createClient(body.supabaseUrl, body.serviceKey, {
+    realtime: { transport: ws },
+  })
 }
 
 // Helper: download from supabase storage
