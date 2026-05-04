@@ -144,16 +144,99 @@ export const MockSchema = z.object({
   elements: z.array(MockElementSchema).max(20),
 })
 
+/* === Template-based scenes ===
+ *  A scene's visual is one of three things, picked in this priority order
+ *  by FeatureScene:
+ *    1. `template` — structured JSON the LLM fills (preferred, fixed
+ *       components, zero compile/runtime risk).
+ *    2. `mockCode` — free TSX the LLM writes (legacy, runs in a
+ *       sandboxed Function; can fail in many ways).
+ *    3. `screenshotIndex` — a real product screenshot.
+ *
+ *  Templates are the new default. The mockCode escape hatch stays for
+ *  the rare scene the templates can't express. */
+
+const ListItemSchema = z.object({
+  text: z.string().max(160),
+  icon: z.string().max(40).optional(),
+})
+
+const FlowNodeSchema = z.object({
+  icon: z.string().max(40),
+  label: z.string().max(40),
+  accent: z.boolean().optional(),
+})
+
+const ChartPointSchema = z.object({
+  label: z.string().max(20),
+  value: z.number(),
+})
+
+const MockFrameCardSchema = z.object({
+  title: z.string().max(60),
+  subtitle: z.string().max(120).optional(),
+  pillText: z.string().max(20).optional(),
+  pillTone: z.enum(['accent', 'success', 'warning', 'danger', 'muted']).optional(),
+})
+
+export const SceneTemplateSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('hero-text'),
+    headline: z.string().max(120),
+    subhead: z.string().max(160).optional(),
+    layout: z.enum(['center', 'left', 'burst']).optional(),
+  }),
+  z.object({
+    kind: z.literal('kpi-reveal'),
+    metric: z.string().max(40),
+    value: z.string().max(20),
+    sub: z.string().max(80).optional(),
+    trend: z.enum(['up', 'down', 'flat']).optional(),
+  }),
+  z.object({
+    kind: z.literal('list-reveal'),
+    title: z.string().max(80),
+    items: z.array(ListItemSchema).min(1).max(8),
+  }),
+  z.object({
+    kind: z.literal('mock-frame'),
+    url: z.string().max(80).optional(),
+    appName: z.string().max(40).optional(),
+    cards: z.array(MockFrameCardSchema).min(1).max(6),
+  }),
+  z.object({
+    kind: z.literal('chat-bubble'),
+    appName: z.string().max(40).optional(),
+    question: z.string().max(200),
+    answer: z.string().max(400),
+  }),
+  z.object({
+    kind: z.literal('flow-diagram'),
+    nodes: z.array(FlowNodeSchema).min(2).max(5),
+  }),
+  z.object({
+    kind: z.literal('chart'),
+    type: z.enum(['bar', 'line']),
+    title: z.string().max(80).optional(),
+    points: z.array(ChartPointSchema).min(2).max(12),
+  }),
+])
+
+export type SceneTemplate = z.infer<typeof SceneTemplateSchema>
+
 export const SceneSchema = z.object({
   voiceover: z.string(),
   headline: z.string(),
   subhead: z.string().optional(),
   screenshotIndex: z.number().nullable(),
   durationSeconds: z.number().positive(),
+  /** Structured template — preferred path. Fixed React components fill
+   *  the slots; zero compile/runtime risk. */
+  template: SceneTemplateSchema.optional(),
   /** Legacy DSL mock kept for backwards-compat with persisted manifests. */
   mock: MockSchema.optional(),
-  /** Raw TSX written by the LLM. Diagnostics only — bundle runs
-   *  `mockCompiledCode`. */
+  /** Free TSX written by the LLM (escape hatch for scenes templates
+   *  can't express). Diagnostics only — bundle runs mockCompiledCode. */
   mockCode: z.string().optional(),
   /** esbuild output of mockCode. The bundle's <DynamicScene>
    *  evaluates this with React + Remotion + branding bound. */

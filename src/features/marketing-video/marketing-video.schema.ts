@@ -83,6 +83,73 @@ const MarketingMockSchema = z.object({
   elements: z.array(MockElementSchema).max(20),
 })
 
+// Template helpers
+const TemplateListItemSchema = z.object({
+  text: z.string().min(1).max(160),
+  icon: z.string().max(40).optional(),
+})
+const TemplateFlowNodeSchema = z.object({
+  icon: z.string().min(1).max(40),
+  label: z.string().min(1).max(40),
+  accent: z.boolean().optional(),
+})
+const TemplateChartPointSchema = z.object({
+  label: z.string().min(1).max(20),
+  value: z.number(),
+})
+const TemplateMockFrameCardSchema = z.object({
+  title: z.string().min(1).max(60),
+  subtitle: z.string().max(120).optional(),
+  pillText: z.string().max(20).optional(),
+  pillTone: z.enum(['accent', 'success', 'warning', 'danger', 'muted']).optional(),
+})
+
+/** Discriminated union of structured visual templates. The LLM picks a
+ *  `kind` and fills the slots; the Remotion bundle has a fixed React
+ *  component per kind. Zero TSX generation, zero compile/runtime risk. */
+export const SceneTemplateSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('hero-text'),
+    headline: z.string().min(1).max(120),
+    subhead: z.string().max(160).optional(),
+    layout: z.enum(['center', 'left', 'burst']).optional(),
+  }),
+  z.object({
+    kind: z.literal('kpi-reveal'),
+    metric: z.string().min(1).max(40),
+    value: z.string().min(1).max(20),
+    sub: z.string().max(80).optional(),
+    trend: z.enum(['up', 'down', 'flat']).optional(),
+  }),
+  z.object({
+    kind: z.literal('list-reveal'),
+    title: z.string().min(1).max(80),
+    items: z.array(TemplateListItemSchema).min(1).max(8),
+  }),
+  z.object({
+    kind: z.literal('mock-frame'),
+    url: z.string().max(80).optional(),
+    appName: z.string().max(40).optional(),
+    cards: z.array(TemplateMockFrameCardSchema).min(1).max(6),
+  }),
+  z.object({
+    kind: z.literal('chat-bubble'),
+    appName: z.string().max(40).optional(),
+    question: z.string().min(1).max(200),
+    answer: z.string().min(1).max(400),
+  }),
+  z.object({
+    kind: z.literal('flow-diagram'),
+    nodes: z.array(TemplateFlowNodeSchema).min(2).max(5),
+  }),
+  z.object({
+    kind: z.literal('chart'),
+    type: z.enum(['bar', 'line']),
+    title: z.string().max(80).optional(),
+    points: z.array(TemplateChartPointSchema).min(2).max(12),
+  }),
+])
+
 /** Zod for what Gemini returns as the marketing script. Field names mirror
  *  MarketingScript so the parsed output drops straight into the service. */
 export const MarketingSceneSchema = z.object({
@@ -91,9 +158,11 @@ export const MarketingSceneSchema = z.object({
   subhead: z.string().optional(),
   screenshotIndex: z.number().int().nullable(),
   durationSeconds: z.number().positive(),
+  /** Structured template — preferred. */
+  template: SceneTemplateSchema.optional(),
   mock: MarketingMockSchema.optional(),
-  /** Raw TSX written by Gemini for this scene's animation. Compiled
-   *  server-side; the bundle never sees this directly. */
+  /** Free TSX (escape hatch). Compiled server-side; bundle reads
+   *  mockCompiledCode. */
   mockCode: z.string().max(6_000).optional(),
   /** Compiled JS — populated by the service after esbuild runs. Not
    *  emitted by the LLM; we set it on the manifest before save. */

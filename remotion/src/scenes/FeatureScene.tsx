@@ -4,6 +4,7 @@ import type { Branding, Scene, Screenshot } from '../manifest.js'
 import { BrandWatermark } from './BrandWatermark.js'
 import { DynamicMock } from '../mocks/DynamicMock.js'
 import { DynamicScene } from './DynamicScene.js'
+import { TemplateScene } from './templates/TemplateScene.js'
 
 interface FeatureSceneProps {
   scene: Scene
@@ -70,14 +71,18 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   const layout: LayoutVariant = LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
 
   // Visual priority for the scene:
-  //   1. mockCompiledCode → run the LLM-generated TSX inside the
-  //      visual panel, side-by-side with the text block.
-  //   2. mock (legacy DSL) → static-ish primitive composition.
-  //   3. screenshot → real product UI with Ken Burns.
-  // The mock IS the visual element of whatever layout the scene uses
+  //   1. template → structured JSON, fixed React component (preferred).
+  //      Zero compile/runtime risk; the LLM only fills slots.
+  //   2. mockCompiledCode → free TSX written by the LLM (escape hatch
+  //      for scenes templates can't express; runs in a sandboxed Function).
+  //   3. mock (legacy DSL) → static-ish primitive composition.
+  //   4. screenshot → real product UI with Ken Burns.
+  // The visual fills the visual half of whatever layout the scene uses
   // (split-left / split-right / fullscreen / stacked). It does NOT
   // consume the whole canvas — text panel always coexists.
-  const visualElement = scene.mockCompiledCode ? (
+  const visualElement = scene.template ? (
+    <TemplateScene template={scene.template} branding={branding} />
+  ) : scene.mockCompiledCode ? (
     <DynamicScene mockCompiledCode={scene.mockCompiledCode} branding={branding} />
   ) : scene.mock ? (
     <DynamicMock mock={scene.mock} branding={branding} width={920} height={580} />
@@ -107,7 +112,7 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   // rectangle on one half ("le carré"), breaking the clean white look.
   // Screenshots still get the gradient (it adds nice ambient where the
   // raw screenshot has none).
-  const usingMock = !!(scene.mockCompiledCode || scene.mock)
+  const usingMock = !!(scene.template || scene.mockCompiledCode || scene.mock)
 
   // Expose the project's font as a CSS custom property so Twind's
   // font-sans utility (used by every Tailwind text-* className inside

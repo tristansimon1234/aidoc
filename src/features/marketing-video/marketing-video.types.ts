@@ -42,6 +42,20 @@ export interface MarketingMock {
   elements: MockElement[]
 }
 
+/** Structured scene templates. The LLM picks one of these and fills the
+ *  slots; the Remotion bundle renders a fixed React component for each
+ *  kind. Zero compile/runtime risk: the model can't write components
+ *  that don't exist or break the layout, because it doesn't write any
+ *  components at all. */
+export type SceneTemplate =
+  | { kind: 'hero-text'; headline: string; subhead?: string; layout?: 'center' | 'left' | 'burst' }
+  | { kind: 'kpi-reveal'; metric: string; value: string; sub?: string; trend?: 'up' | 'down' | 'flat' }
+  | { kind: 'list-reveal'; title: string; items: { text: string; icon?: string }[] }
+  | { kind: 'mock-frame'; url?: string; appName?: string; cards: { title: string; subtitle?: string; pillText?: string; pillTone?: 'accent' | 'success' | 'warning' | 'danger' | 'muted' }[] }
+  | { kind: 'chat-bubble'; appName?: string; question: string; answer: string }
+  | { kind: 'flow-diagram'; nodes: { icon: string; label: string; accent?: boolean }[] }
+  | { kind: 'chart'; type: 'bar' | 'line'; title?: string; points: { label: string; value: number }[] }
+
 export type MarketingScene = {
   /** Plain text the narrator says during this scene. ElevenLabs reads this
    *  verbatim — keep it short, punchy, no audio tags (the marketing voice
@@ -53,20 +67,20 @@ export type MarketingScene = {
   subhead?: string
   /** Index into manifest.screenshots — which doc screenshot to feature in
    *  this scene. Null = no screenshot, headline-only scene. Ignored when
-   *  `mockCode` (or the legacy `mock` DSL) is set. */
+   *  a `template` (or `mockCode`) is set. */
   screenshotIndex: number | null
   /** Duration of this scene in seconds. The Remotion composition uses these
    *  to compute frame ranges so scene timings line up with the voice-over. */
   durationSeconds: number
-  /** Legacy DSL mock (header / card / terminalLine / etc.) — kept for
-   *  backwards-compat with persisted manifests. New flow uses mockCode. */
+  /** Structured visual template — preferred path. The Remotion bundle
+   *  has a fixed React component per `kind`; the LLM only fills slots. */
+  template?: SceneTemplate
+  /** Legacy DSL mock — backwards-compat only. */
   mock?: MarketingMock
-  /** Raw TSX the LLM wrote for this scene's animation. Diagnostics
-   *  only — Remotion runs `mockCompiledCode`. */
+  /** Free TSX the LLM wrote (escape hatch for scenes a template can't
+   *  express). Diagnostics only — Remotion runs mockCompiledCode. */
   mockCode?: string
-  /** esbuild output of mockCode. Remotion's `<DynamicScene>` wraps it
-   *  in a `new Function(...)` with React + Remotion + branding bound,
-   *  evaluates, and renders the resulting component. */
+  /** esbuild output of mockCode. */
   mockCompiledCode?: string
 }
 
