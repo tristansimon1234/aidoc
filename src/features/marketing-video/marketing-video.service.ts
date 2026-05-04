@@ -865,8 +865,10 @@ RULES:
 - Preserve the overall structure: hook → scenes → cta. Don't add or remove scenes unless the user explicitly asks.
 - Keep totalDurationSeconds === hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds.
 - Keep word counts realistic at ~2.3 words/sec for voice-over text.
-- When editing mockCode, keep it valid TSX that renders a single React element.
-- Only change what the instruction asks for. Leave the rest verbatim.
+- **Every scene MUST have either a populated \`template\` field OR a non-null \`screenshotIndex\`.** If you find a scene without either (left over from an older generation), ADD an appropriate template with slots that match the headline + voice-over. A scene without a template renders as a blank panel — never ship that.
+- Available template kinds (use only these, exact spelling): hero-text, kpi-reveal, list-reveal, mock-frame, chat-bubble, flow-diagram, chart, before-after, comparison-bars, quote, step-progression, big-stat, live-typing, dual-screen. See the response schema for the slot shape per kind.
+- Icons in templates: any lucide-react icon name (Cpu, BookOpen, Workflow, Video, Sparkles, etc.).
+- Only change what the instruction asks for. Leave the rest verbatim — except the missing-template rule above, which is a hard requirement on every scene.
 - If the instruction is unclear or impossible, return the manifest unchanged and explain in the message.
 - Voice-over audio + music URLs are NOT yours to change — those are regenerated separately.
 
@@ -946,7 +948,26 @@ Return ONLY valid JSON matching the response schema.`
   // because the scene falls back to its real screenshot.
   const { compileMockCode } = await import('./mock-code.compiler.js')
   const { repairMockCode } = await import('./marketing-script.generator.js')
-  const isMocksMode = validated.data.script.scenes.some((s) => s.mockCode || s.mockCompiledCode)
+  // Mocks mode = ANY scene has a visual that isn't a real screenshot.
+  // Templates are the new path; mockCode is the legacy escape hatch;
+  // both count. Without this, scenes that come back from Gemini with
+  // only a `template` get treated as "screenshots mode" and the
+  // missing-visual backfill below skips them.
+  const isMocksMode = validated.data.script.scenes.some(
+    (s) => s.template || s.mockCode || s.mockCompiledCode,
+  )
+
+  // Last-resort deterministic visual: if even the rescue + previous-version
+  // fallback can't fill a scene, add a hero-text template so the scene
+  // still renders something readable instead of a blank panel.
+  const fillWithHeroFallback = (scene: typeof validated.data.script.scenes[number]): void => {
+    scene.template = {
+      kind: 'hero-text',
+      headline: scene.headline,
+      ...(scene.subhead ? { subhead: scene.subhead } : {}),
+      layout: 'burst',
+    } as typeof scene.template
+  }
   // Index the PREVIOUS manifest's scenes for fallback when an edit
   // breaks a scene. We try TWO lookups:
   //   1. By headline — the AI usually keeps headlines stable across
@@ -1035,6 +1056,23 @@ Return ONLY valid JSON matching the response schema.`
           await applyDeterministicFallback(scene, compileMockCode)
         }
       }
+    }
+  }
+
+  // Final guardrail — after every recovery path, every scene MUST have
+  // SOMETHING to render: a template OR mockCompiledCode OR a real
+  // screenshotIndex. Otherwise we ship a blank panel. This catches the
+  // "edit didn't add templates to a screenshots-mode-but-empty manifest"
+  // case the user hit: existing scenes had no template + no screenshot
+  // + no mockCode → all blank. Promote the headline into a hero-text
+  // template so the scene still reads.
+  for (const scene of validated.data.script.scenes) {
+    const hasVisual = scene.template
+      || scene.mockCompiledCode
+      || (typeof scene.screenshotIndex === 'number' && scene.screenshotIndex !== null)
+    if (!hasVisual) {
+      console.warn(`[marketing-edit] Scene "${scene.headline}" had no visual after edit — adding hero-text fallback`)
+      fillWithHeroFallback(scene)
     }
   }
 
