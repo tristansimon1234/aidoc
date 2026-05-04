@@ -44,17 +44,22 @@ const RESPONSE_SCHEMA: ResponseSchema = {
               kind: {
                 type: SchemaType.STRING,
                 format: 'enum',
-                enum: ['hero-text', 'kpi-reveal', 'list-reveal', 'mock-frame', 'chat-bubble', 'flow-diagram', 'chart'],
+                enum: [
+                  'hero-text', 'kpi-reveal', 'list-reveal', 'mock-frame', 'chat-bubble', 'flow-diagram', 'chart',
+                  'before-after', 'comparison-bars', 'quote', 'step-progression', 'big-stat', 'live-typing', 'dual-screen',
+                ],
               },
               // hero-text + everywhere a headline-like field reads natural
               headline: { type: SchemaType.STRING },
               subhead: { type: SchemaType.STRING },
               layout: { type: SchemaType.STRING, format: 'enum', enum: ['center', 'left', 'burst'] },
-              // kpi-reveal
+              // kpi-reveal + big-stat
               metric: { type: SchemaType.STRING },
               value: { type: SchemaType.STRING },
               sub: { type: SchemaType.STRING },
               trend: { type: SchemaType.STRING, format: 'enum', enum: ['up', 'down', 'flat'] },
+              // big-stat (label) — also used by other templates
+              label: { type: SchemaType.STRING },
               // list-reveal + chart + flow-diagram + mock-frame have a title
               title: { type: SchemaType.STRING },
               items: {
@@ -111,6 +116,81 @@ const RESPONSE_SCHEMA: ResponseSchema = {
                     value: { type: SchemaType.NUMBER },
                   },
                   required: ['label', 'value'],
+                },
+              },
+              // before-after
+              beforeLabel: { type: SchemaType.STRING },
+              afterLabel: { type: SchemaType.STRING },
+              beforeText: { type: SchemaType.STRING },
+              afterText: { type: SchemaType.STRING },
+              beforeIcon: { type: SchemaType.STRING },
+              afterIcon: { type: SchemaType.STRING },
+              // comparison-bars
+              leftLabel: { type: SchemaType.STRING },
+              rightLabel: { type: SchemaType.STRING },
+              rows: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    feature: { type: SchemaType.STRING },
+                    left: { type: SchemaType.BOOLEAN },
+                    right: { type: SchemaType.BOOLEAN },
+                  },
+                  required: ['feature', 'left', 'right'],
+                },
+              },
+              // quote
+              text: { type: SchemaType.STRING },
+              author: { type: SchemaType.STRING },
+              role: { type: SchemaType.STRING },
+              company: { type: SchemaType.STRING },
+              avatarUrl: { type: SchemaType.STRING },
+              // step-progression
+              steps: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    title: { type: SchemaType.STRING },
+                    description: { type: SchemaType.STRING },
+                  },
+                  required: ['title'],
+                },
+              },
+              // live-typing
+              language: { type: SchemaType.STRING, format: 'enum', enum: ['shell', 'js', 'json', 'http'] },
+              lines: {
+                type: SchemaType.ARRAY,
+                items: { type: SchemaType.STRING },
+              },
+              // dual-screen
+              leftUrl: { type: SchemaType.STRING },
+              rightUrl: { type: SchemaType.STRING },
+              leftCards: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    title: { type: SchemaType.STRING },
+                    subtitle: { type: SchemaType.STRING },
+                    pillText: { type: SchemaType.STRING },
+                    pillTone: { type: SchemaType.STRING, format: 'enum', enum: ['accent', 'success', 'warning', 'danger', 'muted'] },
+                  },
+                  required: ['title'],
+                },
+              },
+              rightCards: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    title: { type: SchemaType.STRING },
+                    subtitle: { type: SchemaType.STRING },
+                    pillText: { type: SchemaType.STRING },
+                    pillTone: { type: SchemaType.STRING, format: 'enum', enum: ['accent', 'success', 'warning', 'danger', 'muted'] },
+                  },
+                  required: ['title'],
                 },
               },
             },
@@ -525,16 +605,51 @@ ${input.visualMode === 'mocks'
   Use for: growth, comparisons, before/after metrics.
   Slots: \`{ kind: 'chart', type: 'bar' | 'line', title?: string, points: { label, value: number }[] }\` (2-12 points)
 
+\`before-after\` — split panel: left = "old way" (gray, neutral icon), right = "with the product" (accent gradient, success icon).
+  Use for: pain → solution beats, "manual writing" → "AI-generated", any transformation.
+  Slots: \`{ kind: 'before-after', beforeLabel: string, afterLabel: string, beforeText?: string, afterText?: string, beforeIcon?: string, afterIcon?: string }\`
+
+\`comparison-bars\` — 2-column feature matrix (Doclee vs alternative) with check / X marks.
+  Use for: competitive positioning, "what we do that they don't".
+  Slots: \`{ kind: 'comparison-bars', leftLabel: string, rightLabel: string, rows: { feature: string, left: bool, right: bool }[] }\` (2-6 rows; right = your product)
+
+\`quote\` — testimonial card with big quote text, avatar circle, author + role.
+  Use for: social proof scenes, customer voice moments.
+  Slots: \`{ kind: 'quote', text: string, author: string, role?: string, company?: string, avatarUrl?: string }\` (no avatarUrl = initials fallback in accent color)
+
+\`step-progression\` — vertical timeline with numbered steps; progress bar fills as steps appear.
+  Use for: "how it works in 3 steps", onboarding flow narration.
+  Slots: \`{ kind: 'step-progression', steps: { title: string, description?: string }[] }\` (2-5 steps)
+
+\`big-stat\` — single giant number filling 80% of the screen with a gradient text effect; tiny label above, sub-line below.
+  Use for: maxi-impact stat moments. Higher emphasis than \`kpi-reveal\` (no chart, no trend, just the number).
+  Slots: \`{ kind: 'big-stat', value: string, label?: string, sub?: string }\` (value ≤ 12 chars: "10×", "0", "$2.5M", "5min")
+
+\`live-typing\` — terminal / API call / code typed out character by character, dark background, prompt prefix.
+  Use for: developer-flavoured beats, API demos, "one command" moments.
+  Slots: \`{ kind: 'live-typing', language?: 'shell' | 'js' | 'json' | 'http', lines: string[] }\` (1-8 lines, ≤120 chars each)
+
+\`dual-screen\` — two MockFrames side-by-side with subtle perspective tilt (left tilts right, right tilts left).
+  Use for: "old workflow vs new", "their app vs ours", desktop + mobile.
+  Slots: \`{ kind: 'dual-screen', leftUrl?: string, rightUrl?: string, leftCards: [{ title, subtitle?, pillText? }], rightCards: [{ ... }] }\` (1-3 cards each side)
+
 ### Picking template per scene
 
 Match the scene's idea to the template that expresses it most directly:
 - "We turn X into Y" → \`flow-diagram\` with X / AI / Y nodes
 - "Get instant answers" → \`chat-bubble\`
-- "X% faster" / "0 to N in T" → \`kpi-reveal\`
+- "X% faster" / "0 to N in T" / metric in context → \`kpi-reveal\`
 - "Built-in features" / capability list → \`list-reveal\`
 - "See the dashboard" / product surface → \`mock-frame\`
 - "Growth chart" / "tickets dropped" → \`chart\`
 - Hooks, CTAs, transitions, claims → \`hero-text\` (often \`burst\`)
+- "Old way → new way" / pain → solution → \`before-after\`
+- "Us vs them" / competitive feature matrix → \`comparison-bars\`
+- Customer voice / social proof → \`quote\`
+- "How it works in 3 steps" / sequential process → \`step-progression\`
+- Single dominant statistic / "0 lines of code" / "10× faster" claim → \`big-stat\` (one number, no chart needed)
+- API / CLI / code demo / developer beat → \`live-typing\`
+- "Side-by-side" / two product surfaces compared → \`dual-screen\`
 
 A typical 3-4 scene video uses 3 different template kinds. Don't pick the same template twice unless the content genuinely calls for it.
 

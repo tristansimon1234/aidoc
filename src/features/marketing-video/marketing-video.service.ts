@@ -978,6 +978,47 @@ function resolveRemotionServeUrl(): string {
  * blow past that, switch to the existing job pattern in run/job.repository
  * and have the video-service post back.
  */
+/**
+ * Persist a thumbnail JPEG for the rendered video. Captured client-side
+ * by the panel after the first video load (see MarketingVideoPanel) — the
+ * frame at 4s sits at the end of the hook with the headline locked in,
+ * which makes a punchy social card. Server stores it under the run's
+ * artifacts and patches the manifest's thumbnailUrl + thumbnailPath.
+ *
+ * Doesn't reset renderStatus (unlike updateMarketingManifestForRun) —
+ * the thumbnail is a side artifact, not a manifest change.
+ */
+export async function setMarketingThumbnailForRun(
+  runId: string,
+  jpegBase64: string,
+): Promise<{ thumbnailUrl: string; thumbnailPath: string }> {
+  const { findMarketingVideoByRunId, saveMarketingVideo } = await import('./marketing-video.repository.js')
+  const existing = await findMarketingVideoByRunId(runId)
+  if (!existing) {
+    throw new Error('No marketing-video manifest for this run yet.')
+  }
+  // Strip the data: URL prefix if the client included it.
+  const cleanBase64 = jpegBase64.replace(/^data:image\/\w+;base64,/, '')
+  const buffer = Buffer.from(cleanBase64, 'base64')
+  // Sanity check: refuse anything beyond ~2MB so a malicious or buggy
+  // client can't blow up Storage. A 1080p JPEG at quality 0.85 is
+  // ~200-400KB; 2MB is comfortable headroom.
+  if (buffer.byteLength > 2 * 1024 * 1024) {
+    throw new Error(`Thumbnail too large: ${buffer.byteLength} bytes (cap 2MB)`)
+  }
+  const thumbnailPath = `runs/${runId}/marketing-thumbnail.jpg`
+  await uploadToStorage('artifacts', thumbnailPath, buffer, 'image/jpeg')
+  const thumbnailUrl = `${getPublicUrl('artifacts', thumbnailPath) ?? ''}?v=${Date.now()}`
+
+  await saveMarketingVideo(runId, {
+    ...existing,
+    manifest: { ...existing.manifest, thumbnailUrl, thumbnailPath },
+  })
+
+  console.log(`[marketing-video] Thumbnail uploaded: ${thumbnailUrl} (${buffer.byteLength} bytes)`)
+  return { thumbnailUrl, thumbnailPath }
+}
+
 export async function renderMarketingVideoForRun(
   runId: string,
 ): Promise<MarketingVideoSummary> {

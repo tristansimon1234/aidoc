@@ -165,6 +165,11 @@ export interface MarketingManifestDTO {
    *  is still valid — a warning is shown but the video still renders
    *  (silent music track). */
   musicError?: string | null
+  /** Public URL to the video thumbnail (JPEG, frame at ~4s). Captured
+   *  client-side after the first render and uploaded server-side. Used
+   *  as the player's poster + og:image / social card preview. */
+  thumbnailUrl?: string | null
+  thumbnailPath?: string | null
 }
 
 export interface MarketingVideoSummaryDTO {
@@ -663,6 +668,13 @@ export const api = {
         }),
       render: (id: string): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video/render`, { method: 'POST' }),
+      /** Persist a thumbnail (captured client-side at ~4s into the video).
+       *  Server uploads to Storage and updates manifest.thumbnailUrl. */
+      uploadThumbnail: (id: string, jpegBase64: string): Promise<{ thumbnailUrl: string; thumbnailPath: string }> =>
+        request(`/runs/${id}/marketing-video/thumbnail`, {
+          method: 'POST',
+          body: JSON.stringify({ jpegBase64 }),
+        }),
       updateVoice: (
         id: string,
         opts: { voiceId?: string; tone?: 'punchy' | 'calm' | 'playful' | 'serious' },

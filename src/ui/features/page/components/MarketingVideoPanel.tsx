@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Spinner, ProgressLoader } from '../../../design-system/components/index.js'
 import { api, ApiError } from '../../../shared/api/client.js'
 import { fetchMarketingVideo } from '../../../shared/api/db.js'
@@ -267,6 +267,80 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
   // when the user fires a refine; cleared when the chained render
   // completes (so the next refine starts a fresh elapsed counter).
   const [refineStartedAt, setRefineStartedAt] = useState<number | null>(null)
+
+  // Capture a thumbnail at ~4s from the rendered video, once. Used as the
+  // poster on the player AND the og:image / social preview when the doc
+  // page is shared. The 4s mark sits at the end of the hook with the
+  // headline locked in — the punchiest frame in the video.
+  const videoElementRef = useRef<HTMLVideoElement | null>(null)
+  const thumbnailCapturedRef = useRef<string | null>(null) // tracks which videoUrl we already captured
+  useEffect(() => {
+    if (!runId) return
+    if (!summary?.videoUrl) return
+    // Skip if the manifest already has a thumbnail OR we already tried
+    // for this exact videoUrl (prevent re-capture loops on re-renders).
+    if (summary.manifest.thumbnailUrl) return
+    if (thumbnailCapturedRef.current === summary.videoUrl) return
+
+    let cancelled = false
+    const video = document.createElement('video')
+    video.crossOrigin = 'anonymous'
+    video.src = summary.videoUrl
+    video.muted = true
+    video.preload = 'metadata'
+
+    const cleanup = () => {
+      video.pause()
+      video.src = ''
+      video.load()
+    }
+
+    video.addEventListener('loadeddata', () => {
+      if (cancelled) return
+      // Seek to 4s; the 'seeked' event fires once the frame is decoded.
+      video.currentTime = Math.min(4, video.duration - 0.5)
+    })
+
+    video.addEventListener('seeked', () => {
+      if (cancelled) return
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return cleanup()
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+        thumbnailCapturedRef.current = summary.videoUrl ?? null
+        // Fire-and-forget upload. Failure is silent — the poster just
+        // stays empty until next time.
+        api.runs.marketingVideo.uploadThumbnail(runId, dataUrl).then((result) => {
+          if (cancelled) return
+          // Patch the local summary so the poster shows immediately
+          // without a refetch.
+          setSummary((prev) => prev
+            ? { ...prev, manifest: { ...prev.manifest, thumbnailUrl: result.thumbnailUrl, thumbnailPath: result.thumbnailPath } }
+            : prev,
+          )
+        }).catch((err) => {
+          console.warn('[marketing] thumbnail upload failed:', err)
+        }).finally(() => {
+          cleanup()
+        })
+      } catch (err) {
+        // Cross-origin canvas taint will throw. Storage is on Supabase
+        // with permissive CORS, so this should be rare in practice.
+        console.warn('[marketing] thumbnail capture failed:', err)
+        cleanup()
+      }
+    })
+
+    video.addEventListener('error', () => cleanup())
+    video.load()
+
+    return () => { cancelled = true; cleanup() }
+  }, [runId, summary?.videoUrl, summary?.manifest.thumbnailUrl])
+
   const handleRerenderOnly = async (): Promise<void> => {
     if (!runId || rerendering) return
     setRerendering(true)
@@ -634,10 +708,12 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             *  The banner below tells the user the preview is stale. */}
           {summary.videoUrl && (renderStatus === 'ready' || renderStatus === 'idle') && (
             <video
+              ref={videoElementRef}
               className={styles.videoPlayer}
               controls
               src={summary.videoUrl}
               preload="metadata"
+              poster={summary.manifest.thumbnailUrl ?? undefined}
             />
           )}
 

@@ -148,6 +148,59 @@ export const SceneTemplateSchema = z.discriminatedUnion('kind', [
     title: z.string().max(80).optional(),
     points: z.array(TemplateChartPointSchema).min(2).max(12),
   }),
+  // Phase 3
+  z.object({
+    kind: z.literal('before-after'),
+    beforeLabel: z.string().min(1).max(40),
+    afterLabel: z.string().min(1).max(40),
+    beforeText: z.string().max(120).optional(),
+    afterText: z.string().max(120).optional(),
+    beforeIcon: z.string().max(40).optional(),
+    afterIcon: z.string().max(40).optional(),
+  }),
+  z.object({
+    kind: z.literal('comparison-bars'),
+    leftLabel: z.string().min(1).max(40),
+    rightLabel: z.string().min(1).max(40),
+    rows: z.array(z.object({
+      feature: z.string().min(1).max(60),
+      left: z.boolean(),
+      right: z.boolean(),
+    })).min(2).max(6),
+  }),
+  z.object({
+    kind: z.literal('quote'),
+    text: z.string().min(1).max(300),
+    author: z.string().min(1).max(40),
+    role: z.string().max(60).optional(),
+    company: z.string().max(40).optional(),
+    avatarUrl: z.string().url().optional(),
+  }),
+  z.object({
+    kind: z.literal('step-progression'),
+    steps: z.array(z.object({
+      title: z.string().min(1).max(60),
+      description: z.string().max(120).optional(),
+    })).min(2).max(5),
+  }),
+  z.object({
+    kind: z.literal('big-stat'),
+    value: z.string().min(1).max(12),
+    label: z.string().max(60).optional(),
+    sub: z.string().max(80).optional(),
+  }),
+  z.object({
+    kind: z.literal('live-typing'),
+    language: z.enum(['shell', 'js', 'json', 'http']).optional(),
+    lines: z.array(z.string().max(120)).min(1).max(8),
+  }),
+  z.object({
+    kind: z.literal('dual-screen'),
+    leftUrl: z.string().max(80).optional(),
+    rightUrl: z.string().max(80).optional(),
+    leftCards: z.array(TemplateMockFrameCardSchema).min(1).max(3),
+    rightCards: z.array(TemplateMockFrameCardSchema).min(1).max(3),
+  }),
 ])
 
 /** Zod for what Gemini returns as the marketing script. Field names mirror

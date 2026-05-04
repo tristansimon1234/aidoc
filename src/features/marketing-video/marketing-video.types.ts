@@ -55,6 +55,13 @@ export type SceneTemplate =
   | { kind: 'chat-bubble'; appName?: string; question: string; answer: string }
   | { kind: 'flow-diagram'; nodes: { icon: string; label: string; accent?: boolean }[] }
   | { kind: 'chart'; type: 'bar' | 'line'; title?: string; points: { label: string; value: number }[] }
+  | { kind: 'before-after'; beforeLabel: string; afterLabel: string; beforeText?: string; afterText?: string; beforeIcon?: string; afterIcon?: string }
+  | { kind: 'comparison-bars'; leftLabel: string; rightLabel: string; rows: { feature: string; left: boolean; right: boolean }[] }
+  | { kind: 'quote'; text: string; author: string; role?: string; company?: string; avatarUrl?: string }
+  | { kind: 'step-progression'; steps: { title: string; description?: string }[] }
+  | { kind: 'big-stat'; value: string; label?: string; sub?: string }
+  | { kind: 'live-typing'; language?: 'shell' | 'js' | 'json' | 'http'; lines: string[] }
+  | { kind: 'dual-screen'; leftUrl?: string; rightUrl?: string; leftCards: { title: string; subtitle?: string; pillText?: string; pillTone?: 'accent' | 'success' | 'warning' | 'danger' | 'muted' }[]; rightCards: { title: string; subtitle?: string; pillText?: string; pillTone?: 'accent' | 'success' | 'warning' | 'danger' | 'muted' }[] }
 
 export type MarketingScene = {
   /** Plain text the narrator says during this scene. ElevenLabs reads this
@@ -161,6 +168,14 @@ export interface MarketingManifest {
    *  of losing everything to a music-only failure. UI surfaces this as
    *  a non-blocking warning. */
   musicError?: string | null
+  /** Public URL to the JPEG thumbnail of a punchy frame (default: 4s into
+   *  the video, end of the hook with the headline in place). Used as the
+   *  video player's `poster`, the public-docs og:image, and the social
+   *  card preview. Captured client-side after the first render and
+   *  uploaded via POST /api/runs/:id/marketing-video/thumbnail. */
+  thumbnailUrl?: string | null
+  /** Storage path of the thumbnail (relative to artifacts bucket). */
+  thumbnailPath?: string | null
 }
 
 /** Render lifecycle of the MP4. The manifest can exist without a render

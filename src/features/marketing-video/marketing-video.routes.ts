@@ -15,6 +15,7 @@ import {
   updateMarketingVoiceoverForRun,
   updateMarketingManifestForRun,
   editMarketingManifestWithAi,
+  setMarketingThumbnailForRun,
   MUSIC_PRESETS,
 } from './marketing-video.service.js'
 
@@ -375,6 +376,32 @@ marketingVideoRouter.post('/:id/marketing-video/render', (req: Request, res: Res
 
       const summary = await renderMarketingVideoForRun(params.data.id)
       res.status(200).json(summary)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+/**
+ * POST /runs/:id/marketing-video/thumbnail
+ * Persist a JPEG thumbnail (captured client-side from the rendered video
+ * at ~4s into the hook). Stored as a side artifact; the manifest's
+ * thumbnailUrl is updated. Used as the player's poster, og:image, and
+ * social card. Body: { jpegBase64: string } (data URL or raw base64).
+ */
+const ThumbnailBodySchema = z.object({
+  jpegBase64: z.string().min(100).max(4_000_000),
+})
+marketingVideoRouter.post('/:id/marketing-video/thumbnail', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = ThumbnailBodySchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const result = await setMarketingThumbnailForRun(params.data.id, body.data.jpegBase64)
+      res.status(200).json(result)
     } catch (err) {
       next(err)
     }
