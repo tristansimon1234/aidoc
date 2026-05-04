@@ -261,20 +261,36 @@ export async function generateMarketingVideoForRun(
   console.log(`[marketing-video] Script: ${script.scenes.length} scenes, ${script.totalDurationSeconds}s total`)
 
   // Compile any TSX mockCode the LLM emitted. Failures are isolated:
-  // a scene that fails to compile drops mockCode silently and falls
-  // through to its screenshot — better than killing the whole run.
+  // a scene that fails to compile is given ONE rescue attempt (single
+  // Gemini call with the compiler error in context) before being dropped
+  // entirely. Without the rescue, every scene whose mock fails shows the
+  // gradient placeholder — and with mocks mode having no screenshot
+  // fallback, all-failures = a video that's just purple gradients.
   if (options.visualMode === 'mocks') {
     const { compileMockCode } = await import('./mock-code.compiler.js')
+    const { repairMockCode } = await import('./marketing-script.generator.js')
+
     for (const scene of script.scenes) {
       if (!scene.mockCode || scene.mockCode.trim().length === 0) continue
       try {
         const { compiled } = await compileMockCode(scene.mockCode)
         scene.mockCompiledCode = compiled
       } catch (err) {
-        console.warn(`[marketing-video] mockCode compile failed for scene "${scene.headline}": ${(err as Error).message}`)
-        // Drop the field so the renderer falls back to screenshot /
-        // accent gradient. Keep the raw source for diagnostics.
-        delete scene.mockCompiledCode
+        const firstErr = (err as Error).message
+        console.warn(`[marketing-video] mockCode compile failed for scene "${scene.headline}": ${firstErr} — attempting one rescue`)
+        try {
+          const rescued = await repairMockCode({
+            scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode },
+            compileError: firstErr,
+          })
+          const { compiled } = await compileMockCode(rescued)
+          scene.mockCode = rescued
+          scene.mockCompiledCode = compiled
+          console.log(`[marketing-video] Rescued mockCode for scene "${scene.headline}"`)
+        } catch (rescueErr) {
+          console.warn(`[marketing-video] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message}`)
+          delete scene.mockCompiledCode
+        }
       }
     }
     const compiled = script.scenes.filter((s) => s.mockCompiledCode).length

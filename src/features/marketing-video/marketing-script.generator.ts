@@ -261,6 +261,57 @@ function pickStyleSeed(): typeof STYLE_SEEDS[number] {
   return STYLE_SEEDS[Math.floor(Math.random() * STYLE_SEEDS.length)]!
 }
 
+/**
+ * Single-scene rescue path. When the LLM emits TSX that fails compile
+ * (banned pattern, syntax error, missing `MockScene` definition), this
+ * asks the model to fix just that scene's mockCode given the compiler
+ * error. Cheaper + more targeted than re-running the whole script
+ * generation. One shot only — if it fails again, the renderer falls
+ * back to the gradient.
+ */
+export async function repairMockCode(args: {
+  scene: { headline: string; voiceover: string; mockCode: string }
+  compileError: string
+}): Promise<string> {
+  const result = await generateText({
+    userPrompt: `You wrote invalid TSX for one scene of a marketing video. The compiler rejected it with this error:
+
+${args.compileError}
+
+The scene:
+- Headline: "${args.scene.headline}"
+- Voice-over: "${args.scene.voiceover}"
+
+Your previous (broken) code:
+\`\`\`tsx
+${args.scene.mockCode}
+\`\`\`
+
+Rewrite ONLY this scene's mockCode. Hard rules (the same rules the original prompt enforced):
+- Define a function exactly named \`MockScene\` taking \`{ branding }\` as its only prop.
+- DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters.
+- DO NOT call \`fetch\`, \`new XMLHttpRequest\`, \`eval\`, \`new Function\`, \`document.write\`, \`window.open\`.
+- DO NOT use \`<Remotion.AccentGlow>\` (deprecated).
+- Outer element: \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` — no background, no overflow-hidden.
+- Use \`<Remotion.MockFrame tone='light'>\` for UI mocks.
+- Static styling via Tailwind \`className\`; inline \`style={{}}\` only for animated values.
+- Stay under 2500 characters.
+
+Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding prose). It will be passed straight to esbuild.`,
+    model: GEMINI_PRO_MODEL,
+    maxTokens: 2_500,
+    temperature: 0.4,
+    json: false,
+  })
+
+  // Strip markdown fences if the model added them anyway.
+  let code = result.text.trim()
+  if (code.startsWith('```')) {
+    code = code.replace(/^```(?:tsx|jsx|ts|js)?\s*\n/, '').replace(/\n```\s*$/, '').trim()
+  }
+  return code
+}
+
 export async function generateMarketingScript(
   input: GenerateMarketingScriptInput,
 ): Promise<MarketingScript> {
@@ -906,9 +957,12 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     // need Pro.
     model: input.visualMode === 'mocks' ? GEMINI_PRO_MODEL : undefined,
     maxTokens: 16_384,
-    // Mocks need higher temperature to fight "every video looks the same"
-    // (the style seed pushes direction; temperature gives execution variance).
-    temperature: input.visualMode === 'mocks' ? 0.85 : 0.6,
+    // Mocks need a touch of extra variance — but 0.85 was over the line:
+    // the model started emitting TSX with subtle syntax errors / banned
+    // patterns often enough that all 4 scenes would fall back to the
+    // gradient placeholder. The style seed already provides directional
+    // variety, so 0.7 is enough top-up.
+    temperature: input.visualMode === 'mocks' ? 0.7 : 0.6,
     json: true,
     responseSchema: RESPONSE_SCHEMA,
   })
