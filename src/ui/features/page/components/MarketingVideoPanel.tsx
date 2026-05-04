@@ -278,7 +278,10 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
   // AI-driven manifest refinement. Calls /marketing-video/edit with the
   // user's instruction + recent history; Gemini Pro returns the updated
   // manifest. Server validates + persists + resets renderStatus, so on
-  // success we just refresh the local summary and prompt for re-render.
+  // success we automatically chain a render — the user shouldn't need
+  // a separate click to see their refinement applied. The manual
+  // "Re-render now" button stays as a fallback for cases where the
+  // auto-render failed.
   const handleEditWithAi = async (): Promise<void> => {
     const instruction = editInput.trim()
     if (!instruction || editing || !runId) return
@@ -296,6 +299,24 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       })
       setEditHistory([...nextHistory, { role: 'assistant', content: result.message }])
       setSummary(result.summary)
+      // Chain the render. Don't await it inside the same try/catch — if
+      // the render fails, surface that as a render error (the manifest
+      // edit itself succeeded). The button text on the input flips back
+      // immediately so the user can queue another instruction.
+      setEditing(false)
+      void (async () => {
+        setRerendering(true)
+        try {
+          const fresh = await api.runs.marketingVideo.render(runId)
+          setSummary(fresh)
+        } catch (renderErr) {
+          const message = renderErr instanceof ApiError ? renderErr.message : (renderErr as Error).message
+          setError(`Render after refine failed: ${message}`)
+        } finally {
+          setRerendering(false)
+        }
+      })()
+      return
     } catch (err) {
       const message = err instanceof ApiError ? err.message : (err as Error).message
       setEditError(message)
@@ -599,18 +620,31 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             />
           )}
 
-          {summary.videoUrl && renderStatus === 'idle' && (
+          {/* Re-render in flight — show a clear progress indicator above
+            *  the stale preview so the user knows their refine is being
+            *  applied without a manual click. */}
+          {rerendering && (
             <div className={styles.staleBanner}>
               <span className={styles.staleBannerText}>
-                Preview is from before your last edit. Re-render to apply the new manifest.
+                <span className={styles.refineThinking}>Applying your refine — re-rendering the video…</span>
+              </span>
+            </div>
+          )}
+
+          {/* Stale banner is now only shown when render is NOT auto-chained
+            *  (e.g. an earlier render failed and we want to expose a
+            *  manual retry). Hidden while a re-render is in flight. */}
+          {summary.videoUrl && renderStatus === 'idle' && !rerendering && (
+            <div className={styles.staleBanner}>
+              <span className={styles.staleBannerText}>
+                Preview is from before your last edit.
               </span>
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => void handleRerenderOnly()}
-                disabled={rerendering}
               >
-                {rerendering ? 'Rendering…' : 'Re-render now'}
+                Re-render now
               </Button>
             </div>
           )}
@@ -646,9 +680,9 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           <div className={styles.refine}>
             <span className={styles.fieldLabel}>Refine with AI</span>
             <p className={styles.refineHint}>
-              Describe a change in plain language and we'll update the manifest.
-              Re-render after to see the result. Voice-over stays the same — change
-              it from the Voice section above.
+              Describe a change in plain language. We'll update the manifest and
+              re-render automatically. Voice-over stays the same — change it from
+              the Voice section above.
             </p>
 
             {editHistory.length > 0 && (
