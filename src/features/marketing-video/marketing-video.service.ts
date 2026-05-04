@@ -939,7 +939,19 @@ RULES:
 - Preserve the overall structure: hook → scenes → cta. Don't add or remove scenes unless the user explicitly asks.
 - Keep totalDurationSeconds === hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds.
 - Keep word counts realistic at ~2.3 words/sec for voice-over text.
-- When editing \`mockCode\`, keep it valid TSX that defines a function named \`MockScene({ branding })\` and follows the Remotion sandbox rules:
+- When editing \`mockCode\`, keep it valid TSX following the Remotion sandbox rules:
+
+  ### 🚨 FUNCTION NAME = \`MockScene\` 🚨
+
+  Every \`mockCode\` MUST start with EXACTLY this signature:
+  \`\`\`tsx
+  function MockScene({ branding }) {
+    // ... body ...
+    return <Remotion.AbsoluteFill className='...'> ... </Remotion.AbsoluteFill>
+  }
+  \`\`\`
+
+  Not \`Scene1\`, not \`MyComponent\`, not \`const Scene = (...)\`. The literal name \`MockScene\` is required because the Remotion bundle does \`new Function(...source...; return MockScene)\`. Any other name → \`MockScene is not defined\` → compile fails.
 
   ### 🚨 OUTER \`<Remotion.AbsoluteFill>\` MUST BE TRANSPARENT 🚨
 
