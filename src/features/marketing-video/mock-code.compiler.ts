@@ -74,6 +74,33 @@ function lintRuntimeReferences(source: string): string | null {
   // Icons.X is intentionally not linted — every lucide name is valid at
   // runtime via the Proxy + Wrapped fallback in DynamicScene.
 
+  // Inline <svg> is forbidden — every icon must come from Remotion.Icons.
+  // Ad-hoc inline SVGs end up rendering as visual junk (off-size, wrong
+  // stroke, no animation hooks). This catches the LLM smuggling them in.
+  if (/<svg\b/i.test(source)) {
+    errors.push('Inline <svg> tag is forbidden — use Remotion.Icons.X (any lucide icon name) instead')
+  }
+
+  // AnimatedCursor uses leftPct/topPct numeric props — the LLM keeps
+  // inventing a path={[...]} array API that doesn't exist. Catch it.
+  if (/<Remotion\.AnimatedCursor[^>]*\bpath\s*=/.test(source)) {
+    errors.push('Remotion.AnimatedCursor takes leftPct + topPct numbers (0-100), not a path array. The cursor stays at one anchored spot per scene.')
+  }
+
+  // Outer AbsoluteFill must be transparent — no background of any kind.
+  // Match the FIRST AbsoluteFill in the source (always the outer per
+  // the prompt's required structure) and reject if it has bg utilities
+  // or an inline background style.
+  const outerMatch = source.match(/<Remotion\.AbsoluteFill\b[^>]*>/)
+  if (outerMatch) {
+    const outer = outerMatch[0]
+    const hasBgUtility = /\bclassName\s*=\s*['"`][^'"`]*\bbg-(?:slate|zinc|gray|neutral|stone|white|black|gradient-to)/.test(outer)
+    const hasBgStyle = /\bstyle\s*=\s*\{\s*\{[^}]*\bbackground\s*:/.test(outer)
+    if (hasBgUtility || hasBgStyle) {
+      errors.push('Outer Remotion.AbsoluteFill must be transparent (no background, no bg-*-utility). The video canvas is branding.bgColor — paint backdrops INSIDE a card / MockFrame, not on the outer.')
+    }
+  }
+
   const chartRefs = source.matchAll(/\bRemotion\.Charts\s*\.\s*([A-Za-z_$][\w$]*)/g)
   for (const m of chartRefs) {
     const name = m[1]!

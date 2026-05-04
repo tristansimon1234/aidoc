@@ -436,10 +436,16 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 #### Hard rules — non-negotiable, the previous render had ALL of these wrong
 
 1. **Light mode ONLY** — use \`<Remotion.MockFrame tone='light'>\`. No \`tone='dark'\`. Even for terminal-style scenes, use a light-on-dark INSIDE block, not a dark frame. The video lives on a white canvas; dark frames look like glued-on cards.
-2. **Outer AbsoluteFill has NO background and NO \`overflow: hidden\`.** Use \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` (or p-12). NO \`background:\` property, NO \`overflow-hidden\` className. The outer must stay TRANSPARENT so the FeatureScene canvas (\`branding.bgColor\`) shows through and the mock blends with the rest of the video. The MockFrame's drop-shadow extends ~80px past its edges; clipping it with overflow-hidden cuts the shadow at the panel boundary and looks abrupt. Let it spill onto the surrounding canvas — that's the soft falloff that makes the frame feel anchored.
+2. **Outer AbsoluteFill MUST be transparent.** Use ONLY \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` (or p-12). The outer is the canvas pass-through layer and MUST have:
+   - NO \`style={{ background: ... }}\` of any kind
+   - NO Tailwind background utility (\`bg-slate-900\`, \`bg-gray-50\`, \`bg-white\`, \`bg-gradient-to-br\`, \`bg-zinc-100\` are ALL forbidden on the outer)
+   - NO \`overflow-hidden\`
+   The video canvas is already \`branding.bgColor\`. Painting a different background on the outer creates a visible colored panel inside the video that doesn't match the rest — exactly the "panel coupé du fond" complaint. If you want depth, layer it INSIDE a MockFrame or a card; never on the outer.
 3. **Use Tailwind className for static styling.** Inline \`style={{}}\` ONLY for dynamic interpolated values (opacity, transform, computed colors). Everything static (padding, rounded corners, shadows, layout, colors that don't depend on frame) → \`className='rounded-2xl p-6 bg-white shadow-2xl ...'\`. Twind is installed; every Tailwind utility works at runtime.
 
    **Backgrounds that span the canvas vs. cards on top of it.** Anything full-bleed (a backdrop, a section that fills the panel) must use \`branding.bgColor\` — NEVER hardcode \`white\` / \`#fff\` / \`bg-white\` for that, because the canvas color isn't always white. Only the inner UI cards / MockFrame surfaces representing a literal product window may stay white — those read as a screenshot of a UI on top of the canvas.
+
+3a. **NEVER write inline \`<svg>\` tags.** Every icon must come from \`Remotion.Icons.X\` (any lucide name works, see below). The runtime stripped your inline SVGs from a recent render and showed missing icons. Inline SVG is forbidden full stop. If you need a custom shape that isn't in lucide, compose it from divs + tailwind utilities + the AccentGlow / Pill helpers — but most "missing" icons are in lucide under a slightly different name.
 4. **NEVER use \`<Remotion.AccentGlow>\`.** The blurred colored circle bleeds onto the canvas and reads as a render glitch ("halo behind the window"). It is deprecated. Mocks render on a clean white canvas — UI modes use the MockFrame's drop-shadow for depth, abstract modes use the project's accent on the focal element (giant typography, gradient logo) for impact. Period. Do not call AccentGlow.
 
 5. **Cursor-click rule — populated UI, not isolated button.** When using \`<Remotion.AnimatedCursor>\`:
