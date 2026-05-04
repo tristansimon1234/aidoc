@@ -130,7 +130,8 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
       // result to the frontend even if the user closes the tab.
       const { findRunById } = await import('../run/run.repository.js')
       const { findPageById } = await import('../page/page.repository.js')
-      const { createJob, updateJobStatus } = await import('../run/job.repository.js')
+      const { updateJobStatus } = await import('../run/job.repository.js')
+      const { ensureExclusiveJob, AlreadyRunningError } = await import('../run/job.service.js')
 
       const run = await findRunById(params.data.id)
       if (!run) {
@@ -149,7 +150,11 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
 
       let jobId: string | null = null
       try {
-        const job = await createJob({
+        // ensureExclusiveJob auto-reclaims jobs older than 10min (Vercel
+        // timeout / crashed-mid-flight) so a stale "running" row doesn't
+        // permanently lock the page. createJob alone left users stuck on
+        // JOB_ALREADY_RUNNING for jobs that died ages ago.
+        const job = await ensureExclusiveJob({
           runId: params.data.id,
           pageId: run.docPageId,
           projectId: page.projectId,
@@ -158,26 +163,19 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
         })
         jobId = job.id
       } catch (err) {
-        const errMsg = (err as Error).message ?? ''
-        // Distinguish the unique-index conflict (a job is already running
-        // for this page) from any other failure. Without this split a
-        // missing migration / schema cache miss / FK violation got
-        // surfaced as "JOB_ALREADY_RUNNING" with the real error in the
-        // details field — confusing to debug and wrong status code.
-        const isDuplicate = /duplicate key|unique constraint|23505/i.test(errMsg)
-        if (isDuplicate) {
+        if (err instanceof AlreadyRunningError) {
           res.status(409).json({
             error: 'A marketing-video generation is already running for this page.',
             code: 'JOB_ALREADY_RUNNING',
-            details: errMsg,
+            details: err.running,
           })
-        } else {
-          res.status(500).json({
-            error: 'Failed to start marketing-video job',
-            code: 'JOB_CREATE_FAILED',
-            details: errMsg,
-          })
+          return
         }
+        res.status(500).json({
+          error: 'Failed to start marketing-video job',
+          code: 'JOB_CREATE_FAILED',
+          details: (err as Error).message ?? '',
+        })
         return
       }
 
@@ -299,7 +297,8 @@ marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Respo
       // the loader off when the job completes.
       const { findRunById } = await import('../run/run.repository.js')
       const { findPageById } = await import('../page/page.repository.js')
-      const { createJob, updateJobStatus } = await import('../run/job.repository.js')
+      const { updateJobStatus } = await import('../run/job.repository.js')
+      const { ensureExclusiveJob, AlreadyRunningError } = await import('../run/job.service.js')
 
       const run = await findRunById(params.data.id)
       if (!run) {
@@ -318,7 +317,9 @@ marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Respo
 
       let jobId: string | null = null
       try {
-        const job = await createJob({
+        // ensureExclusiveJob auto-reclaims stale jobs >10min old, so a
+        // dead refine doesn't permanently lock the page.
+        const job = await ensureExclusiveJob({
           runId: params.data.id,
           pageId: run.docPageId,
           projectId: page.projectId,
@@ -330,21 +331,19 @@ marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Respo
         })
         jobId = job.id
       } catch (err) {
-        const errMsg = (err as Error).message ?? ''
-        const isDuplicate = /duplicate key|unique constraint|23505/i.test(errMsg)
-        if (isDuplicate) {
+        if (err instanceof AlreadyRunningError) {
           res.status(409).json({
             error: 'A marketing-video operation is already running for this page.',
             code: 'JOB_ALREADY_RUNNING',
-            details: errMsg,
+            details: err.running,
           })
-        } else {
-          res.status(500).json({
-            error: 'Failed to start marketing-video edit job',
-            code: 'JOB_CREATE_FAILED',
-            details: errMsg,
-          })
+          return
         }
+        res.status(500).json({
+          error: 'Failed to start marketing-video edit job',
+          code: 'JOB_CREATE_FAILED',
+          details: (err as Error).message ?? '',
+        })
         return
       }
 

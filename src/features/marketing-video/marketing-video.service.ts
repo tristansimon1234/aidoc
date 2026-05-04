@@ -209,6 +209,79 @@ function flattenScriptToNarration(script: import('./marketing-video.types.js').M
 }
 
 /**
+ * Deterministic, hand-written fallback mock used when every Gemini path
+ * (initial generate, rescue retry, Pro→Flash fallback) fails to produce
+ * compilable TSX for a scene. It just reveals the headline word-by-word
+ * against the canvas bgColor — no model, no surprises, no failure mode.
+ *
+ * Better to ship a clean typographic scene than a blank panel. The
+ * voice-over still plays over it; the video doesn't break.
+ */
+async function applyDeterministicFallback(
+  scene: { headline: string; mockCode?: string; mockCompiledCode?: string },
+  compile: (src: string) => Promise<{ compiled: string }>,
+): Promise<void> {
+  try {
+    const tsx = buildFallbackMockTsx(scene.headline)
+    const { compiled } = await compile(tsx)
+    scene.mockCode = tsx
+    scene.mockCompiledCode = compiled
+  } catch (err) {
+    // Should never happen — the fallback is hand-written and tested.
+    // If it ever does, log loudly and leave the scene empty (worst-case
+    // matches the old behaviour, with a clear signal in the logs).
+    console.error(`[marketing-video] Deterministic fallback compile failed for "${scene.headline}": ${(err as Error).message}`)
+    scene.mockCode = undefined
+    scene.mockCompiledCode = undefined
+  }
+}
+
+function buildFallbackMockTsx(headline: string): string {
+  // Escape backticks/backslashes/${} so the headline doesn't break the
+  // template literal in the generated source. The headline is user-
+  // facing copy that's already passed through Gemini, but a stray
+  // backtick from a quoted name (`Stripe`) would be enough to break
+  // the TSX.
+  const safe = headline
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${')
+  return `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const words = ${JSON.stringify(safe)}.split(/\\s+/).filter(Boolean)
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12' style={{ background: branding.bgColor }}>
+      <div className='flex flex-wrap items-center justify-center gap-x-4 gap-y-2 max-w-[80%]'>
+        {words.map((w, i) => {
+          const t = Remotion.spring({ frame: f - i * 6, fps, config: { damping: 18, stiffness: 110 } })
+          const op = Remotion.interpolate(t, [0, 1], [0, 1])
+          const y = Remotion.interpolate(t, [0, 1], [18, 0])
+          return (
+            <span
+              key={i}
+              style={{
+                opacity: op,
+                transform: \`translateY(\${y}px)\`,
+                color: i % 3 === 1 ? branding.accentColor : branding.textColor,
+                fontFamily: branding.fontFamily,
+                fontSize: 84,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.1,
+              }}
+            >
+              {w}
+            </span>
+          )
+        })}
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}`
+}
+
+/**
  * Full marketing-video pipeline: pulls the doc + branding + screenshots,
  * asks Gemini for a 60s script, synthesizes the narration via ElevenLabs
  * (optional), uploads the audio, and persists a manifest on the run summary.
@@ -289,7 +362,8 @@ export async function generateMarketingVideoForRun(
           scene.mockCompiledCode = compiled
           console.log(`[marketing-video] Backfilled mockCode for scene "${scene.headline}"`)
         } catch (err) {
-          console.warn(`[marketing-video] Backfill failed for scene "${scene.headline}": ${(err as Error).message}`)
+          console.warn(`[marketing-video] Backfill failed for scene "${scene.headline}": ${(err as Error).message} — using deterministic fallback`)
+          await applyDeterministicFallback(scene, compileMockCode)
         }
         continue
       }
@@ -309,8 +383,8 @@ export async function generateMarketingVideoForRun(
           scene.mockCompiledCode = compiled
           console.log(`[marketing-video] Rescued mockCode for scene "${scene.headline}"`)
         } catch (rescueErr) {
-          console.warn(`[marketing-video] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message}`)
-          delete scene.mockCompiledCode
+          console.warn(`[marketing-video] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message} — using deterministic fallback`)
+          await applyDeterministicFallback(scene, compileMockCode)
         }
       }
     }
@@ -822,7 +896,8 @@ Return ONLY valid JSON matching the response schema.`
         scene.mockCompiledCode = c.compiled
         console.log(`[marketing-edit] Backfilled mockCode for scene "${scene.headline}"`)
       } catch (err) {
-        console.warn(`[marketing-edit] Backfill failed for scene "${scene.headline}": ${(err as Error).message}`)
+        console.warn(`[marketing-edit] Backfill failed for scene "${scene.headline}": ${(err as Error).message} — using deterministic fallback`)
+        await applyDeterministicFallback(scene, compileMockCode)
       }
       continue
     }
@@ -852,8 +927,9 @@ Return ONLY valid JSON matching the response schema.`
           scene.mockCompiledCode = prev.mockCompiledCode
           console.log(`[marketing-edit] Reverted scene "${scene.headline}" to its pre-edit version`)
         } else {
-          scene.mockCode = undefined
-          scene.mockCompiledCode = undefined
+          // No pre-edit version either — last resort, ship the
+          // deterministic headline-burst mock so the scene isn't blank.
+          await applyDeterministicFallback(scene, compileMockCode)
         }
       }
     }
