@@ -103,6 +103,12 @@ export interface MarketingScript {
    *  Used to pick the matching ElevenLabs voice and to keep the script in
    *  the doc's language rather than the UI language. */
   language: string
+  /** Architect-picked aesthetic for the whole video — one of the
+   *  STYLE_SEEDS labels (editorial, brutalist, data-density, etc.).
+   *  Drives the visual vocabulary the designer agents lean on, on top
+   *  of each scene's per-scene visualBrief. Optional for backwards-
+   *  compat with manifests generated before the architect-picked seed. */
+  styleSeed?: string
 }
 
 export interface MarketingScreenshot {

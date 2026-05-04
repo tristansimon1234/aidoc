@@ -62,6 +62,11 @@ export const SKELETON_RESPONSE_SCHEMA: ResponseSchema = {
     },
     totalDurationSeconds: { type: SchemaType.NUMBER },
     language: { type: SchemaType.STRING },
+    // Architect-picked aesthetic for the whole video. One of
+    // STYLE_SEEDS labels — orchestrator looks up the brief and feeds
+    // it to designer agents. Optional: when the model omits it, the
+    // orchestrator falls back to a random seed.
+    styleSeed: { type: SchemaType.STRING },
   },
   required: ['hook', 'scenes', 'cta', 'totalDurationSeconds', 'language'],
 }
@@ -418,10 +423,12 @@ interface SceneMode {
    *  visible) or 4 UI tours (boring). */
   isAbstract: boolean
   description: string
-  /** TSX reference example. The per-scene prompt instructs the model
-   *  to ADAPT this pattern to the scene's headline — same shape and
-   *  motion vocabulary, different copy + visual specifics. */
-  reference: string
+  /** TSX reference variants. The per-scene prompt shows ALL of them
+   *  with the framing "here's how others have solved this — pick one,
+   *  mix, or push further". Multiple variants per mode is the lever
+   *  against the "every hero-stat looks identical across videos"
+   *  failure mode of single-reference prompts. */
+  references: readonly string[]
 }
 
 const SCENE_MODES: readonly SceneMode[] = [
@@ -430,14 +437,14 @@ const SCENE_MODES: readonly SceneMode[] = [
     isAbstract: true,
     description:
       'NO browser frame. Tiny eyebrow label + GIANT accent-colored number / metric (text-[100px]+ font-black) + one-line subhead. Counter ticks up across 1.6s then keeps drifting upward (~+1 every 30 frames) so the metric feels live the whole scene. Use for any "look at this number" / metric beat.',
-    reference: `function MockScene({ branding }) {
+    references: [
+      `function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
   const labelT = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 100 } })
   const numT = Remotion.spring({ frame: f - 8, fps, config: { damping: 14, stiffness: 90 } })
   const subT = Remotion.spring({ frame: f - 22, fps, config: { damping: 16, stiffness: 100 } })
   const labelOp = Remotion.interpolate(labelT, [0, 1], [0, 1])
-  const labelY = Remotion.interpolate(labelT, [0, 1], [12, 0])
   const numOp = Remotion.interpolate(numT, [0, 1], [0, 1])
   const numY = Remotion.interpolate(numT, [0, 1], [24, 0])
   const subOp = Remotion.interpolate(subT, [0, 1], [0, 1])
@@ -446,27 +453,51 @@ const SCENE_MODES: readonly SceneMode[] = [
   const value = Math.round(12_847 * ease + post / 30)
   return (
     <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
-      <div className='relative flex flex-col items-center gap-5 text-center'>
-        <div className='text-[11px] font-bold tracking-[0.18em] uppercase text-zinc-500' style={{ opacity: labelOp, transform: \`translateY(\${labelY}px)\` }}>
-          Queries this month
-        </div>
-        <div className='text-[120px] font-black leading-none tracking-tight tabular-nums' style={{ color: branding.accentColor, opacity: numOp, transform: \`translateY(\${numY}px)\`, textShadow: \`0 8px 40px \${branding.accentColor}44\` }}>
-          {value.toLocaleString()}
-        </div>
-        <div className='text-[20px] font-medium text-zinc-700 tracking-tight max-w-[600px]' style={{ opacity: subOp }}>
-          and growing — your docs are answering for you.
-        </div>
+      <div className='flex flex-col items-center gap-5 text-center'>
+        <div className='text-[11px] font-bold tracking-[0.18em] uppercase text-zinc-500' style={{ opacity: labelOp }}>Queries this month</div>
+        <div className='text-[120px] font-black leading-none tracking-tight tabular-nums' style={{ color: branding.accentColor, opacity: numOp, transform: \`translateY(\${numY}px)\`, textShadow: \`0 8px 40px \${branding.accentColor}44\` }}>{value.toLocaleString()}</div>
+        <div className='text-[20px] font-medium text-zinc-700 tracking-tight max-w-[600px]' style={{ opacity: subOp }}>and growing — your docs are answering for you.</div>
       </div>
     </Remotion.AbsoluteFill>
   )
 }`,
+      // Variant: percentage with progress bar that fills + a comparison
+      // line ("vs last week 64%"). Different visual rhythm — fewer
+      // numbers, more "see the proof" via the bar drawing in.
+      `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const labelOp = Remotion.interpolate(f, [0, 12], [0, 1], { extrapolateRight: 'clamp' })
+  const numEase = Remotion.interpolate(f, [10, 10 + fps * 1.4], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const target = 92
+  const value = Math.round(target * (1 - Math.pow(1 - numEase, 3)))
+  const barFill = Remotion.interpolate(f, [20, 20 + fps * 1.6], [0, target / 100], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const cmpOp = Remotion.interpolate(f, [50, 65], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
+      <div className='flex flex-col items-start gap-6 w-[640px]'>
+        <div className='text-[11px] font-bold tracking-[0.18em] uppercase text-zinc-500' style={{ opacity: labelOp }}>Resolution rate</div>
+        <div className='flex items-baseline gap-3'>
+          <div className='text-[140px] font-black leading-none tracking-tight tabular-nums' style={{ color: branding.accentColor }}>{value}</div>
+          <div className='text-[64px] font-black leading-none tracking-tight' style={{ color: branding.accentColor, opacity: 0.6 }}>%</div>
+        </div>
+        <div className='w-full h-3 rounded-full overflow-hidden bg-zinc-100'>
+          <div className='h-full rounded-full' style={{ width: \`\${barFill * 100}%\`, background: \`linear-gradient(90deg, \${branding.accentColor}, \${branding.accentColor}CC)\`, boxShadow: \`0 0 24px \${branding.accentColor}66\` }} />
+        </div>
+        <div className='text-[14px] font-medium text-zinc-600' style={{ opacity: cmpOp }}>vs 64% last week — <span style={{ color: branding.accentColor, fontWeight: 700 }}>+28pts</span></div>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}`,
+    ],
   },
   {
     id: 'bento',
     isAbstract: false,
     description:
       'Browser frame WITH perspective tilt (rotateY -3deg, rotateX 2deg). Mixed-size grid: one big tall card on the left (col-span-2 row-span-2) tinted in branding.accentColor, two smaller stacked cards on the right. Counter ticks live, latency jitters within a tight band, active-pill dot pulses — all CONTINUOUS motion through the whole scene.',
-    reference: `function MockScene({ branding }) {
+    references: [
+      `function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
   const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
@@ -501,13 +532,69 @@ const SCENE_MODES: readonly SceneMode[] = [
     </Remotion.AbsoluteFill>
   )
 }`,
+      // Variant: vertical bento with activity feed on the left + 2x2 grid
+      // on the right. Different rhythm — feed scrolls (sustained motion
+      // via translateY) while right-side stat cards pop in.
+      `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
+  const enter = (t) => ({ opacity: Remotion.interpolate(t, [0, 1], [0, 1]) })
+  const feedScroll = -Remotion.interpolate(f, [40, 200], [0, 60], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const items = [
+    { who: 'Sarah K.', what: 'asked about API limits', t: '12s ago' },
+    { who: 'Mateo L.', what: 'opened "Auth setup"', t: '34s ago' },
+    { who: 'Emma D.', what: 'completed onboarding', t: '1m ago' },
+    { who: 'Ravi P.', what: 'shared a link', t: '2m ago' },
+  ]
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <div className='w-[820px]' style={{ transform: 'perspective(1400px) rotateX(2deg)' }}>
+        <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app\`} tone='light'>
+          <div className='p-4 grid grid-cols-5 gap-3 h-full'>
+            <div className='col-span-3 rounded-2xl bg-white border border-zinc-200/80 p-4 overflow-hidden flex flex-col' style={{ ...enter(ease(0)), boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+              <div className='flex items-center gap-2 pb-3 border-b border-zinc-100'>
+                <Remotion.Icons.Activity size={14} color={branding.accentColor} />
+                <div className='text-[12px] font-bold tracking-tight text-zinc-900'>Live activity</div>
+                <Remotion.Pill tone='success' dot style={{ marginLeft: 'auto', opacity: 0.6 + 0.4 * Math.sin(f / 12) }}>live</Remotion.Pill>
+              </div>
+              <div className='relative flex-1 overflow-hidden mt-2'>
+                <div style={{ transform: \`translateY(\${feedScroll}px)\` }}>
+                  {items.map((it, i) => (
+                    <div key={i} className='flex items-center gap-3 py-2.5 border-b border-zinc-100/70'>
+                      <div className='w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0' style={{ background: branding.accentColor }}>{it.who.split(' ').map(p => p[0]).join('')}</div>
+                      <div className='flex-1 min-w-0'><div className='text-[12px] font-semibold text-zinc-900 truncate'>{it.who}</div><div className='text-[11px] text-zinc-500 truncate'>{it.what}</div></div>
+                      <div className='text-[10px] text-zinc-400'>{it.t}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className='col-span-2 grid grid-rows-2 gap-3'>
+              <div className='rounded-2xl p-4 flex flex-col justify-between' style={{ ...enter(ease(10)), background: \`linear-gradient(135deg, \${branding.accentColor}, \${branding.accentColor}CC)\` }}>
+                <div className='text-[10px] font-bold tracking-widest uppercase text-white/80'>Resolved</div>
+                <div className='text-[42px] font-black tracking-tight leading-none tabular-nums text-white'>{Math.floor(f / 8)}</div>
+              </div>
+              <div className='rounded-2xl bg-zinc-50 border border-zinc-200/70 p-4 flex flex-col justify-between' style={enter(ease(22))}>
+                <div className='text-[10px] font-semibold uppercase tracking-wider text-zinc-500'>Avg time</div>
+                <div className='text-[28px] font-bold tracking-tight tabular-nums text-zinc-900'>{(2.4 + 0.05 * Math.sin(f / 14)).toFixed(1)}s</div>
+              </div>
+            </div>
+          </div>
+        </Remotion.MockFrame>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}`,
+    ],
   },
   {
     id: 'chat',
     isAbstract: false,
     description:
       'Browser frame, chat UI. User bubble (top, right-aligned, accentColor background) + AI typing dots → AI reply, all in PRE-ALLOCATED slots so nothing reflows. The typing-dots placeholder cross-fades into the reply in the SAME slot via absolute positioning. Bubble copy fits ONE line at max-w-[75%]. Container is justify-start (top-aligned), NOT vertically centered. Cursor blink in user bubble for sustained motion.',
-    reference: `function MockScene({ branding }) {
+    references: [
+      `function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
   const userT = Remotion.spring({ frame: f - 6, fps, config: { damping: 16, stiffness: 90 } })
@@ -548,13 +635,63 @@ const SCENE_MODES: readonly SceneMode[] = [
     </Remotion.AbsoluteFill>
   )
 }`,
+      // Variant: question + multi-step "thinking" pills (3 steps appear
+      // sequentially — "Reading docs...", "Found relevant section",
+      // "Drafting answer") + final answer reveals. More cinematic feel
+      // than typing dots; emphasises the AI reasoning.
+      `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const qT = Remotion.spring({ frame: f - 4, fps, config: { damping: 16, stiffness: 90 } })
+  const qOp = Remotion.interpolate(qT, [0, 1], [0, 1])
+  const stepIn = (start) => Remotion.interpolate(f, [start, start + 8], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const ansT = Remotion.spring({ frame: f - 90, fps, config: { damping: 16, stiffness: 90 } })
+  const ansOp = Remotion.interpolate(ansT, [0, 1], [0, 1])
+  const steps = [
+    { icon: 'BookOpen', label: 'Reading documentation', start: 22 },
+    { icon: 'Filter', label: 'Found 3 relevant sections', start: 44 },
+    { icon: 'PenTool', label: 'Drafting answer', start: 66 },
+  ]
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/ask\`} tone='light'>
+        <div className='h-full flex flex-col p-6 gap-3'>
+          <div className='self-end max-w-[80%]' style={{ opacity: qOp }}>
+            <div className='rounded-2xl rounded-br-md px-4 py-2.5 text-[14px] text-white' style={{ background: branding.accentColor }}>What's the difference between teams and orgs?</div>
+          </div>
+          <div className='flex flex-col gap-2 mt-1'>
+            {steps.map((s, i) => {
+              const Ico = Remotion.Icons[s.icon]
+              const op = stepIn(s.start)
+              const done = f > s.start + 18
+              return (
+                <div key={i} className='flex items-center gap-2.5' style={{ opacity: op }}>
+                  <div className='w-6 h-6 rounded-full flex items-center justify-center' style={{ background: done ? branding.accentColor : \`\${branding.accentColor}22\` }}>
+                    {done ? <Remotion.Icons.Check size={12} color='#FFFFFF' /> : <Ico size={12} color={branding.accentColor} />}
+                  </div>
+                  <span className='text-[12px] font-medium text-zinc-700'>{s.label}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div className='mt-auto rounded-2xl rounded-tl-md px-4 py-3 border' style={{ opacity: ansOp, background: \`\${branding.accentColor}08\`, borderColor: \`\${branding.accentColor}33\` }}>
+            <div className='text-[10px] font-bold tracking-widest uppercase mb-1' style={{ color: branding.accentColor }}>Answer</div>
+            <div className='text-[14px] text-zinc-800 leading-snug'>Teams scope billing and projects; orgs scope teams and SSO. Switch in Settings → Workspace.</div>
+          </div>
+        </div>
+      </Remotion.MockFrame>
+    </Remotion.AbsoluteFill>
+  )
+}`,
+    ],
   },
   {
     id: 'chart',
     isAbstract: false,
     description:
       'Browser frame with a Recharts area/line/bar chart. Data is computed each frame from Remotion.interpolate so the chart appears to draw left-to-right. Disable Recharts isAnimationActive — drive everything via the frame instead. Use for "stats / growth / metrics" beats.',
-    reference: `function MockScene({ branding }) {
+    references: [
+      `function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
   const base = [120, 140, 175, 168, 220, 260, 245, 310, 360, 380, 420, 480]
@@ -590,13 +727,57 @@ const SCENE_MODES: readonly SceneMode[] = [
     </Remotion.AbsoluteFill>
   )
 }`,
+      // Variant: bar chart with values popping in left-to-right + the
+      // tallest bar getting an accent halo. Different visual rhythm —
+      // categorical comparison vs continuous growth.
+      `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const cats = [
+    { name: 'Mon', v: 240 }, { name: 'Tue', v: 380 }, { name: 'Wed', v: 320 },
+    { name: 'Thu', v: 520 }, { name: 'Fri', v: 680 }, { name: 'Sat', v: 410 }, { name: 'Sun', v: 480 },
+  ]
+  const peakIdx = cats.reduce((m, c, i) => (c.v > cats[m].v ? i : m), 0)
+  const headerOp = Remotion.interpolate(f, [0, 14], [0, 1], { extrapolateRight: 'clamp' })
+  const sumEase = Remotion.interpolate(f, [10, 10 + fps * 1.4], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const total = Math.round(cats.reduce((a, c) => a + c.v, 0) * sumEase)
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/dashboard\`} tone='light'>
+        <div className='p-6 flex flex-col gap-3 h-full'>
+          <div className='flex items-baseline gap-3' style={{ opacity: headerOp }}>
+            <div className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>This week</div>
+            <div className='ml-auto text-[12px] font-medium text-zinc-500'>peak <span style={{ color: branding.accentColor, fontWeight: 700 }}>{cats[peakIdx].name}</span></div>
+          </div>
+          <div className='text-[44px] font-black tracking-tight tabular-nums' style={{ color: branding.accentColor }}>{total.toLocaleString()}<span className='text-[16px] text-zinc-500 font-medium ml-2'>resolutions</span></div>
+          <div className='flex-1 flex items-end gap-2 pt-2'>
+            {cats.map((c, i) => {
+              const t = Remotion.interpolate(f, [20 + i * 5, 20 + i * 5 + 18], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+              const h = (c.v / 700) * 220 * t
+              const isPeak = i === peakIdx
+              const pulse = isPeak ? 0.9 + 0.1 * Math.sin(f / 14) : 1
+              return (
+                <div key={i} className='flex-1 flex flex-col items-center gap-2'>
+                  <div className='w-full rounded-t-md' style={{ height: \`\${h}px\`, background: isPeak ? branding.accentColor : \`\${branding.accentColor}55\`, boxShadow: isPeak ? \`0 0 24px \${branding.accentColor}88\` : 'none', opacity: pulse }} />
+                  <span className='text-[10px] font-medium text-zinc-500'>{c.name}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </Remotion.MockFrame>
+    </Remotion.AbsoluteFill>
+  )
+}`,
+    ],
   },
   {
     id: 'cursor-click',
     isAbstract: false,
     description:
       'Browser frame with a POPULATED product surface — header bar with title and pill, an empty-state line, a CTA button. Cursor flies in from top-right and clicks the CTA at ~frame 70 with a ripple. NEVER an isolated button on an empty page. Maximum ONE Remotion.AnimatedCursor per scene; uses leftPct + topPct numbers (0-100), NOT a path array.',
-    reference: `function MockScene({ branding }) {
+    references: [
+      `function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
   const headerT = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 90 } })
@@ -636,13 +817,53 @@ const SCENE_MODES: readonly SceneMode[] = [
     </Remotion.AbsoluteFill>
   )
 }`,
+      // Variant: cursor lands on a search input, types a query
+      // character-by-character, then a result card highlights below.
+      // Different action vocabulary — "search" not "click button".
+      `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const headerOp = Remotion.interpolate(f, [0, 14], [0, 1], { extrapolateRight: 'clamp' })
+  const curT = Remotion.spring({ frame: f - 14, fps, config: { damping: 16, stiffness: 70 } })
+  const curL = Remotion.interpolate(curT, [0, 1], [82, 50])
+  const curTp = Remotion.interpolate(curT, [0, 1], [12, 30])
+  const query = 'how do I deploy?'
+  const charsShown = Math.max(0, Math.floor(Remotion.interpolate(f, [40, 90], [0, query.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })))
+  const resultOp = Remotion.interpolate(f, [95, 110], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const blink = (f % 30) < 15 ? 1 : 0
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app\`} tone='light'>
+        <div className='h-full flex flex-col p-6 gap-4' style={{ opacity: headerOp }}>
+          <div className='rounded-2xl border border-zinc-200 px-4 py-3 flex items-center gap-3 bg-white'>
+            <Remotion.Icons.Search size={16} color='#A1A1AA' />
+            <span className='text-[15px] text-zinc-900'>{query.slice(0, charsShown)}<span className='inline-block w-[2px] h-[16px] ml-0.5 align-middle' style={{ background: branding.accentColor, opacity: blink }} /></span>
+          </div>
+          <div className='rounded-2xl p-4 border flex items-start gap-3' style={{ opacity: resultOp, background: \`\${branding.accentColor}08\`, borderColor: \`\${branding.accentColor}33\` }}>
+            <div className='w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0' style={{ background: branding.accentColor }}>
+              <Remotion.Icons.Rocket size={16} color='#FFFFFF' />
+            </div>
+            <div className='flex-1'>
+              <div className='text-[13px] font-bold text-zinc-900 tracking-tight'>Deploy guide</div>
+              <div className='text-[12px] text-zinc-600 leading-snug mt-0.5'>vercel deploy + env setup, 4 steps · 2 min read</div>
+            </div>
+            <Remotion.Pill tone='accent' accentColor={branding.accentColor}>top match</Remotion.Pill>
+          </div>
+        </div>
+      </Remotion.MockFrame>
+      <Remotion.AnimatedCursor leftPct={curL} topPct={curTp} ripple={false} rippleRadius={0} rippleOpacity={0} accentColor={branding.accentColor} />
+    </Remotion.AbsoluteFill>
+  )
+}`,
+    ],
   },
   {
     id: 'flow-diagram',
     isAbstract: true,
     description:
       'NO browser frame. Three connected nodes representing a 3-step process (e.g. "Your docs" → "AI reads" → "Better answers"). Animated arrows between them. Traveling dot along each connector — fps*1.6 cycle so the diagram stays alive the whole scene. Middle node is the accent-colored hero (gradient bg + glow shadow).',
-    reference: `function MockScene({ branding }) {
+    references: [
+      `function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
   const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
@@ -681,13 +902,68 @@ const SCENE_MODES: readonly SceneMode[] = [
     </Remotion.AbsoluteFill>
   )
 }`,
+      // Variant: vertical converging flow — 3 inputs (doc, video,
+      // markdown) feed into a central AI core which emits ONE output
+      // (chat answer). Different layout shape (Y converging) + different
+      // story (many-to-one transformation).
+      `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
+  const inputs = [
+    { label: 'Recordings', icon: 'Video' },
+    { label: 'Markdown',   icon: 'FileText' },
+    { label: 'Screenshots', icon: 'Image' },
+  ]
+  const corePulse = 1 + 0.04 * Math.sin(f / 14)
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <div className='flex items-center gap-10'>
+        <div className='flex flex-col gap-3'>
+          {inputs.map((n, i) => {
+            const t = ease(i * 8)
+            const op = Remotion.interpolate(t, [0, 1], [0, 1])
+            const x = Remotion.interpolate(t, [0, 1], [-30, 0])
+            const Ico = Remotion.Icons[n.icon]
+            return (
+              <div key={i} className='flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white border border-zinc-200/70' style={{ opacity: op, transform: \`translateX(\${x}px)\`, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+                <Ico size={18} color={branding.accentColor} />
+                <span className='text-[13px] font-semibold text-zinc-800'>{n.label}</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className='relative w-20 h-32'>
+          {[0,1,2].map(i => {
+            const dotT = (f - 30 - i * 8) / (fps * 1.4)
+            const t = ((dotT % 1) + 1) % 1
+            const op = dotT > 0 ? 1 : 0
+            const yPos = (i - 1) * 38 + 64 - t * ((i - 1) * 38)
+            return <div key={i} className='absolute w-2 h-2 rounded-full' style={{ left: \`\${t * 100}%\`, top: yPos, background: branding.accentColor, opacity: op, boxShadow: \`0 0 12px \${branding.accentColor}\` }} />
+          })}
+        </div>
+        <div className='w-[140px] h-[140px] rounded-3xl flex items-center justify-center relative' style={{ background: \`linear-gradient(135deg, \${branding.accentColor}, \${branding.accentColor}AA)\`, transform: \`scale(\${corePulse})\`, boxShadow: \`0 24px 60px -8px \${branding.accentColor}66\` }}>
+          <Remotion.Icons.Cpu size={56} color='#FFFFFF' />
+        </div>
+        <div className='flex items-center gap-2'>
+          <Remotion.Icons.ArrowRight size={20} color={branding.accentColor} />
+          <div className='px-4 py-3 rounded-2xl rounded-tl-md' style={{ opacity: Remotion.interpolate(f, [80, 96], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }), background: branding.accentColor }}>
+            <div className='text-[12px] font-bold text-white tracking-tight'>Instant answer</div>
+          </div>
+        </div>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}`,
+    ],
   },
   {
     id: 'headline-burst',
     isAbstract: true,
     description:
       'NO browser frame, NO UI. Word-by-word reveal of a 3-6 word tagline, each word springs in with a 6-frame stagger, ONE accent-colored word for emphasis (the most important one). text-[80-100px] font-black tracking-tight leading-none. Maximum visual punch with minimum content.',
-    reference: `function MockScene({ branding }) {
+    references: [
+      `function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
   const words = ['Docs', 'that', 'answer', 'for', 'you']
@@ -708,13 +984,44 @@ const SCENE_MODES: readonly SceneMode[] = [
     </Remotion.AbsoluteFill>
   )
 }`,
+      // Variant: stacked-line poster format — each word on its own line,
+      // alternating black / accent / black with a slight horizontal slide
+      // on entry. Different shape (vertical poster vs horizontal banner).
+      `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const lines = [
+    { text: 'STOP', color: 'black' },
+    { text: 'WRITING', color: 'mute' },
+    { text: 'BAD DOCS', color: 'accent' },
+  ]
+  const sweep = Remotion.interpolate(f, [10, 70], [-100, 100], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center relative overflow-hidden'>
+      <div className='absolute inset-0 pointer-events-none' style={{ background: \`linear-gradient(115deg, transparent 0%, transparent \${sweep - 5}%, \${branding.accentColor}11 \${sweep}%, transparent \${sweep + 8}%)\` }} />
+      <div className='flex flex-col items-start gap-2 px-12'>
+        {lines.map((l, i) => {
+          const t = Remotion.spring({ frame: f - (6 + i * 10), fps, config: { damping: 14, stiffness: 90 } })
+          const op = Remotion.interpolate(t, [0, 1], [0, 1])
+          const x = Remotion.interpolate(t, [0, 1], [-60, 0])
+          const color = l.color === 'accent' ? branding.accentColor : (l.color === 'mute' ? '#71717A' : '#0B0B0F')
+          return (
+            <span key={i} className='text-[110px] font-black leading-[0.95] tracking-tight' style={{ color, opacity: op, transform: \`translateX(\${x}px)\`, textShadow: l.color === 'accent' ? \`0 12px 40px \${branding.accentColor}55\` : 'none' }}>{l.text}</span>
+          )
+        })}
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}`,
+    ],
   },
   {
     id: 'logo-hero',
     isAbstract: true,
     description:
       "NO browser frame. The PROJECT'S real logo (branding.logoUrl via Remotion.Img at 140-180px) + small uppercase product name + tagline below. NEVER fabricate a fake brand icon (lucide pictogram in a rounded square — reads as a stock placeholder). If logoUrl is null, fall back to clean overlapping geometric shapes with a gradient.",
-    reference: `function MockScene({ branding }) {
+    references: [
+      `function MockScene({ branding }) {
   const f = Remotion.useCurrentFrame()
   const { fps } = Remotion.useVideoConfig()
   const markT = Remotion.spring({ frame: f, fps, config: { damping: 14, stiffness: 90 } })
@@ -743,8 +1050,99 @@ const SCENE_MODES: readonly SceneMode[] = [
     </Remotion.AbsoluteFill>
   )
 }`,
+      // Variant: animated logo reveal with shimmer wipe + the tagline
+      // appears as a shorter en-dash counterpoint to the right.
+      // Different layout (horizontal) + different motion (shimmer).
+      `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const wipeX = Remotion.interpolate(f, [10, 50], [-120, 220], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const taglineOp = Remotion.interpolate(f, [40, 56], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const lineW = Remotion.interpolate(f, [38, 60], [0, 80], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center'>
+      <div className='flex items-center gap-8'>
+        <div className='relative overflow-hidden rounded-3xl' style={{ height: 140, width: 140 }}>
+          {branding.logoUrl ? (
+            <Remotion.Img src={branding.logoUrl} style={{ height: 140, width: 140, objectFit: 'contain' }} />
+          ) : (
+            <div className='absolute inset-0' style={{ background: \`linear-gradient(135deg, \${branding.accentColor}, \${branding.accentColor}AA)\` }} />
+          )}
+          <div className='absolute inset-y-0 w-16 pointer-events-none' style={{ left: \`\${wipeX}%\`, background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent)', mixBlendMode: 'screen' }} />
+        </div>
+        <div className='h-[2px] rounded-full' style={{ width: \`\${lineW}px\`, background: branding.accentColor, opacity: 0.6 }} />
+        <div className='flex flex-col gap-2' style={{ opacity: taglineOp }}>
+          <div className='text-[11px] font-bold tracking-[0.2em] uppercase' style={{ color: branding.accentColor }}>{branding.productName}</div>
+          <div className='text-[40px] font-black tracking-tight leading-[1.05] text-zinc-900 max-w-[400px]'>Docs that ship<br />themselves.</div>
+        </div>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}`,
+    ],
   },
 ] as const
+
+/** A single TSX example in the cross-mode design library shown to the
+ *  designer. The point of having a flat library (rather than locking
+ *  each scene to its mode's references) is that the designer browses
+ *  many products' visual treatments and INVENTS rather than copies. */
+interface DesignInspiration {
+  /** Loose tag for logs / debugging — e.g. "hero-stat-counter",
+   *  "bento-activity-feed". Not shown to the designer. */
+  tag: string
+  /** Which mode this inspiration is structurally aligned with —
+   *  used to bias the sample so a hero-stat scene at least sees
+   *  one hero-stat-shaped example. */
+  mode: string
+  /** TSX source of the example. */
+  tsx: string
+}
+
+/** Flat library of all TSX inspirations across all modes. Computed
+ *  from SCENE_MODES.references so adding a variant in SCENE_MODES
+ *  automatically adds it to the library — single source of truth. */
+const DESIGN_INSPIRATIONS: DesignInspiration[] = SCENE_MODES.flatMap((mode) =>
+  mode.references.map((tsx, i) => ({
+    tag: `${mode.id}-v${i + 1}`,
+    mode: mode.id,
+    tsx,
+  })),
+)
+
+/** Synthetic mode used when the architect outputs visualMode === 'custom'.
+ *  No structural template — the designer composes freely from the brief
+ *  + the cross-mode design library. Used as the escape hatch when none
+ *  of the 8 catalog modes structurally fit the scene's idea (e.g.
+ *  "split-screen before/after", "isometric stack", "kanban motion"). */
+const CUSTOM_MODE: SceneMode = {
+  id: 'custom',
+  isAbstract: false,
+  description:
+    "No structural template — the architect determined that none of the standard modes structurally fit this scene's idea, so you have full creative latitude. Compose freely from the design library and the brief. The brief is the ENTIRE spec; if it's vague, default to a clean composition that visually illustrates the headline + voiceover.",
+  references: [],
+}
+
+/** Pick N inspirations to show the designer. Bias: 1 mode-matching
+ *  (so a hero-stat scene sees at least one hero-stat-shaped example,
+ *  preserving structural quality floor) + N-1 random from anywhere
+ *  (so the designer always sees cross-product variety, breaking the
+ *  "every hero-stat looks identical" failure mode). */
+function pickInspirations(modeId: string, count: number): DesignInspiration[] {
+  const shuffle = <T,>(arr: readonly T[]): T[] => [...arr].sort(() => Math.random() - 0.5)
+  const matching = DESIGN_INSPIRATIONS.filter((i) => i.mode === modeId)
+  const others = DESIGN_INSPIRATIONS.filter((i) => i.mode !== modeId)
+  const picked = [
+    ...shuffle(matching).slice(0, 1),
+    ...shuffle(others).slice(0, Math.max(0, count - 1)),
+  ]
+  // Top up with whatever's left (matching pool was empty, etc.).
+  const remaining = DESIGN_INSPIRATIONS.filter((i) => !picked.find((p) => p.tag === i.tag))
+  while (picked.length < count && remaining.length > 0) {
+    picked.push(remaining.shift()!)
+  }
+  return shuffle(picked.slice(0, count))
+}
 
 /** Pick N distinct scene modes. With 2-4 scenes (the typical range) we
  *  force at least one UI mode + at least one abstract mode so the
@@ -865,7 +1263,7 @@ function buildSceneMockPrompt(args: BuildSceneMockPromptArgs): string {
     .replace('<DURATION>', String(scene.durationSeconds))
     .replace('<FRAMES>', String(frameCount))
   const styleSeedBlock = styleSeed
-    ? `\n## Style direction for this video\n\n${styleSeed}\n\nThis is directional — your assigned mode above is the structural shape; the style seed nudges visual language (color, type weight, density). Apply both.\n`
+    ? `\n## Style direction for this video\n\n${styleSeed}\n\nThis is a vibe nudge, not a constraint — the brief is still the spec.\n`
     : ''
   // The brief is THE source of truth for what's on screen. When the
   // architect provided one, point the designer at it as the primary
@@ -881,6 +1279,22 @@ The headline and voiceover above are context — the brief is the spec. Implemen
 
 The animation must visually illustrate what the headline + voice-over are SAYING. If the voiceover is "your docs answer for you", show docs flowing into an AI module flowing into a chat reply — don't render lorem-ipsum unrelated to the scene.`
 
+  // Cross-product design library: 4 examples drawn from across all
+  // modes (1 mode-matching + 3 random). The point is that the
+  // designer browses a DIVERSE vocabulary instead of cloning one
+  // template. Different inspirations on every call → different look
+  // across videos.
+  const inspirations = pickInspirations(mode.id, 4)
+  const inspirationsBlock = inspirations
+    .map(
+      (insp, i) => `### Inspiration ${i + 1} (${insp.tag})
+
+\`\`\`tsx
+${insp.tsx}
+\`\`\``,
+    )
+    .join('\n\n')
+
   return `You are a DESIGNER agent writing the TSX for ONE scene of a marketing video. An ARCHITECT agent wrote the script + a per-scene visual brief; your job is to turn that brief into a Remotion-compatible MockScene component. Your output is the value of a single \`mockCode\` field — raw TSX that defines a function named \`MockScene\` taking \`{ branding }\` as its only prop.
 
 This is a SANDBOX: the code runs inside a \`new Function(...)\` call with React + Remotion + branding bound. Imports, network access, and DOM mutation are forbidden.
@@ -894,15 +1308,19 @@ ${scene.subhead ? `- **Subhead:** "${scene.subhead}"\n` : ''}- **Voice-over (nar
 
 ${briefBlock}
 
-## Assigned visual mode: ${mode.id}
+## Structural directive: ${mode.id}
 
 ${mode.description}
 
-Reference TSX for this mode (FOLLOW this pattern — same shape, same motion vocabulary, same code structure — but populate it with the brief's specifics):
+This is the SHAPE the architect picked for this scene. Respect the structural rule (frame vs no-frame, vertical vs horizontal, bento vs hero) — but design the contents fresh.
 
-\`\`\`tsx
-${mode.reference}
-\`\`\`
+## Design library — inspirations from other products
+
+These are 4 TSX examples drawn from across different marketing-video aesthetics (analytics dashboards, hero counters, AI chat surfaces, deploy flows, search interfaces, brand opens). They are sampled randomly per call, so what you see here is not what other designers see — every video gets a different mix.
+
+**These are NOT templates to copy. They are vocabulary to remix.** Steal a layout idea from one, a motion idiom from another, a type treatment from a third, and compose YOUR scene with the brief as the spec. A designer that ships a near-copy of any single inspiration is failing the brief — push further, mix elements, invent the combination that hasn't been done before.
+
+${inspirationsBlock}
 ${styleSeedBlock}
 ## Hard rules — non-negotiable
 
@@ -978,7 +1396,7 @@ async function generateSceneMockCode(args: BuildSceneMockPromptArgs): Promise<st
 // Stage 1: Skeleton generation (script structure only — no mockCode)
 // =============================================================================
 
-function buildSkeletonPrompt(input: GenerateMarketingScriptInput, styleSeedLabel: string | null): string {
+function buildSkeletonPrompt(input: GenerateMarketingScriptInput): string {
   const captionList = input.screenshotCaptions
     .map((c, i) => `  [${i}] ${c}`)
     .join('\n')
@@ -987,8 +1405,23 @@ function buildSkeletonPrompt(input: GenerateMarketingScriptInput, styleSeedLabel
     ? `\n## Creative brief from the user (HIGHEST PRIORITY for framing — but never overrides the documentation as factual ground truth)\n\n${input.userPrompt.trim()}\n\nRespect this brief: pick the angle, audience, tone shift, and which capabilities to emphasize from it. If the brief asks for something the documentation doesn't support, stay grounded in the docs and pivot the framing — don't invent features to satisfy the brief.\n`
     : ''
 
-  const styleSeedBlock = styleSeedLabel
-    ? `\n## Style direction for this generation\n\n**Style: ${styleSeedLabel}** — this steers the per-scene visual mix later (mockCode is generated in a separate parallel pass). For the skeleton, this means the voiceover should LEAD with the angle the style implies (editorial → typographic punch, metric-driven → numbers, conversational → casual ask). Do NOT mention the style label in the output.\n`
+  // Catalog of aesthetic directions the architect picks from. Each
+  // label maps to a one-line brief that the designers receive
+  // alongside the per-scene visualBrief. Architect-picked (instead of
+  // orchestrator-random) so the seed is coherent with the brand /
+  // audience / creative brief.
+  const styleSeedCatalog = STYLE_SEEDS
+    .map((s) => `- **${s.label}**: ${s.brief}`)
+    .join('\n')
+  const styleSeedBlock = input.visualMode === 'mocks'
+    ? `\n## Whole-video aesthetic — pick a style seed
+
+Pick ONE label from the catalog below as the \`styleSeed\` field. This sets the visual vocabulary the designers lean on across all scenes. Pick based on the brand vibe + the creative brief + the audience — NOT at random. If the doc says "for technical CTOs" → data-density or high-contrast; "for designers" → editorial; "for solo founders" → conversational; "metrics-heavy product" → metric-driven; "AI/chat product" → conversational or brand-first. The right seed makes every scene feel coherent.
+
+${styleSeedCatalog}
+
+Output as \`styleSeed: "<label>"\` at the top level. Do NOT mention the label in the voiceover or headlines — it's a designer cue, not user-facing copy.
+`
     : ''
 
   // Mode catalog the architect picks from. Just id + kind + description —
@@ -1010,8 +1443,9 @@ Set \`screenshotIndex: null\` for every scene (mocks mode never references doc s
 ### Mode catalog (pick ONE per scene, NEVER repeat)
 
 ${modeCatalog}
+- **custom** (escape hatch): pick this when none of the 8 modes structurally fits the scene's idea — e.g. split-screen before/after, isometric stack, kanban-style motion, thread-of-tweets, an ASCII art reveal. The designer drops the structural template and composes from the brief alone, so your visualBrief MUST be especially concrete (every element + motion spelled out). Use sparingly: prefer a real catalog mode when one fits. The 'never repeat' rule still applies — only ONE custom scene per video.
 
-Heuristic: a "look at this number" beat → hero-stat. A "the product does X" beat → bento / cursor-click / chart / chat. A "here's how it works" beat → flow-diagram. A "make a strong claim" beat → headline-burst. A brand / opener beat → logo-hero. The right mode depends on what the headline is actually saying, not on a fixed quota.
+Heuristic: a "look at this number" beat → hero-stat. A "the product does X" beat → bento / cursor-click / chart / chat. A "here's how it works" beat → flow-diagram. A "make a strong claim" beat → headline-burst. A brand / opener beat → logo-hero. A "no template fits this idea" beat → custom. The right mode depends on what the headline is actually saying, not on a fixed quota.
 
 Example of a tight per-scene output (illustrative — adapt the specifics to YOUR product):
 \`\`\`json
@@ -1109,9 +1543,8 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
 
 async function generateScriptSkeleton(
   input: GenerateMarketingScriptInput,
-  styleSeedLabel: string | null,
 ): Promise<MarketingScript> {
-  const userPrompt = buildSkeletonPrompt(input, styleSeedLabel)
+  const userPrompt = buildSkeletonPrompt(input)
 
   const result = await generateText({
     userPrompt,
@@ -1226,9 +1659,7 @@ async function generateScriptSkeleton(
 export async function generateMarketingScript(
   input: GenerateMarketingScriptInput,
 ): Promise<MarketingScript> {
-  const styleSeed = input.visualMode === 'mocks' ? pickStyleSeed() : null
-
-  const skeleton = await generateScriptSkeleton(input, styleSeed?.label ?? null)
+  const skeleton = await generateScriptSkeleton(input)
 
   // Screenshots mode: no mockCode generation — every scene uses a
   // real doc screenshot, the renderer falls back to ScreenshotFrame.
@@ -1236,13 +1667,28 @@ export async function generateMarketingScript(
     return skeleton
   }
 
+  // Resolve the whole-video aesthetic from the architect's pick. Fall
+  // back to a random orchestrator-side seed when the architect dropped
+  // the field or picked an unknown label.
+  const archSeedLabel = skeleton.styleSeed
+  const archSeed = archSeedLabel ? STYLE_SEEDS.find((s) => s.label === archSeedLabel) : undefined
+  const fallbackSeed = pickStyleSeed()
+  const resolvedSeed = archSeed ?? fallbackSeed
+  if (archSeedLabel && !archSeed) {
+    console.warn(
+      `[marketing-script] architect picked unknown styleSeed "${archSeedLabel}" — falling back to "${fallbackSeed.label}"`,
+    )
+  }
+
   // Resolve each scene's mode from the architect's pick, with a
   // fallback to a random orchestrator-side assignment when the model
-  // dropped the field. Look up the SceneMode object by id so the
-  // designer call gets the matching reference template.
+  // dropped the field. Architect can also pick "custom" when none of
+  // the catalog modes structurally fit — that bypasses the lookup and
+  // hands the designer a free-composition prompt.
   const fallbackModes = pickSceneModes(skeleton.scenes.length)
   const resolvedModes: SceneMode[] = skeleton.scenes.map((scene, i) => {
     const archPick = scene.visualMode
+    if (archPick === 'custom') return CUSTOM_MODE
     if (archPick) {
       const found = SCENE_MODES.find((m) => m.id === archPick)
       if (found) return found
@@ -1252,7 +1698,7 @@ export async function generateMarketingScript(
     }
     return fallbackModes[i] ?? fallbackModes[0]!
   })
-  const styleSeedBrief = styleSeed?.brief ?? ''
+  const styleSeedBrief = resolvedSeed.brief
   console.info(
     `[marketing-script] stage 2: ${skeleton.scenes.length} parallel mockCode calls, modes=[${resolvedModes.map((m) => m.id).join(', ')}], briefs=[${skeleton.scenes.map((s) => (s.visualBrief ? 'yes' : 'no')).join(', ')}]`,
   )
@@ -1276,6 +1722,10 @@ export async function generateMarketingScript(
 
   return {
     ...skeleton,
+    // Persist the resolved seed (architect-picked or orchestrator
+    // fallback) so a later "regenerate scene N with same look" UX
+    // can reuse it.
+    styleSeed: resolvedSeed.label,
     scenes: skeleton.scenes.map((s, i) => {
       const mockCode = mockCodes[i]
       return mockCode ? { ...s, mockCode } : s

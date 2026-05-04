@@ -132,6 +132,10 @@ export const MarketingScriptSchema = z.object({
   }),
   totalDurationSeconds: z.number().positive(),
   language: z.string().default('en'),
+  /** Architect-picked aesthetic for the whole video — one of the
+   *  STYLE_SEEDS labels. Optional for backwards-compat with manifests
+   *  generated before the architect-picked seed. */
+  styleSeed: z.string().max(40).optional(),
 })
 
 /** Voice-over tone presets. Each maps to a tuned (stability, style,
