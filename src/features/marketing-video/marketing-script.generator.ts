@@ -778,25 +778,19 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
 
   const result = await generateText({
     userPrompt,
-    // Mocks mode benefits dramatically from Pro: Flash produces the
-    // safe-but-dated "browser frame + centered card" output even with
-    // explicit Linear-style directives, while Pro actually uses bento
-    // layouts, perspective tilts, and proper type hierarchy. Costs
-    // ~3-5x more per call (~€0.04 vs €0.01) and adds ~10-20s latency,
-    // worth it for the visible quality jump on a marketing video.
-    // Screenshots mode stays on Flash — script-only generation doesn't
-    // need Pro.
-    model: input.visualMode === 'mocks' ? GEMINI_PRO_MODEL : undefined,
-    // Mocks mode emits ~2KB of TSX per scene + the JSON envelope — at 4
-    // scenes that's already ~10k tokens, leaving very little headroom in
-    // a 16k cap. The model was silently dropping mockCode on later scenes
-    // when it ran out of room. 32k gives comfortable margin.
-    // maxTokens: required by Gemini, billed only on actually-generated
-    // tokens — set high so we never get truncated mid-scene. With 14
-    // templates and rich slot content, output regularly hits 25-30k.
-    // Pro's hard ceiling is 65536. Templates mode uses the full budget;
-    // screenshots mode (no template content) stays modest.
-    maxTokens: input.visualMode === 'mocks' ? 65_000 : 16_384,
+    // Both modes use Flash now. The original Pro selection was justified
+    // when the LLM had to write TSX for every scene (Pro had better visual
+    // taste). With templates, the LLM only picks a `kind` and fills slot
+    // strings — there's nothing left for Pro's reasoning to shine on, and
+    // its thinking budget burned ~30k output tokens on a script that
+    // should be ~3-4k of actual JSON. Flash is 5-10× faster (~3-5s vs
+    // ~30-180s), ~10× cheaper, and the quality matches because the visual
+    // craftsmanship lives in our hand-written components.
+    // model: undefined → falls back to GEMINI_MODEL (Flash) in gemini.client.
+    // maxTokens: comfortable for templated JSON (4 scenes × ~500 tokens of
+    // slots + the script envelope = ~3-4k typical, 16k cap leaves headroom
+    // without inviting Flash to ramble).
+    maxTokens: 16_384,
     // Mocks need a touch of extra variance — but 0.85 was over the line:
     // the model started emitting TSX with subtle syntax errors / banned
     // patterns often enough that all 4 scenes would fall back to the
