@@ -67,6 +67,19 @@ export type MarketingScene = {
    *  in a `new Function(...)` with React + Remotion + branding bound,
    *  evaluates, and renders the resulting component. */
   mockCompiledCode?: string
+  /** Architect-picked visual mode for this scene — one of
+   *  hero-stat / bento / chat / chart / cursor-click / flow-diagram /
+   *  headline-burst / logo-hero. Set by the skeleton stage so the
+   *  per-scene designer call knows which template to follow. Optional
+   *  for backwards-compat with manifests generated before the
+   *  architect/designer split. */
+  visualMode?: string
+  /** Concrete visual brief written by the architect (skeleton stage)
+   *  for this scene — 2-3 sentences naming the specific elements,
+   *  numbers, words, and motion the designer should put on screen.
+   *  The designer call turns this into TSX. Optional for the same
+   *  backwards-compat reason. */
+  visualBrief?: string
 }
 
 export interface MarketingScript {

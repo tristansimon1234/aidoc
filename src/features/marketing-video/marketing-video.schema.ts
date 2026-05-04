@@ -105,6 +105,16 @@ export const MarketingSceneSchema = z.object({
    *  a `new Function(...)` with React + Remotion + branding bound,
    *  evaluates, and renders the resulting component. */
   mockCompiledCode: z.string().max(20_000).optional(),
+  /** Architect-picked visual mode for this scene (hero-stat / bento /
+   *  chat / …). Skeleton stage 1 fills it; stage 2 reads it to pick
+   *  the right reference template. Kept loose (z.string) so a future
+   *  mode addition doesn't break existing manifests. */
+  visualMode: z.string().max(40).optional(),
+  /** Concrete visual brief written by the architect — 2-3 sentences
+   *  describing the exact elements / numbers / motion the designer
+   *  should put on screen. Forwarded into the per-scene mockCode
+   *  prompt. */
+  visualBrief: z.string().max(800).optional(),
 })
 
 export const MarketingScriptSchema = z.object({

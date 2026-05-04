@@ -39,6 +39,13 @@ export const SKELETON_RESPONSE_SCHEMA: ResponseSchema = {
           subhead: { type: SchemaType.STRING },
           screenshotIndex: { type: SchemaType.INTEGER, nullable: true },
           durationSeconds: { type: SchemaType.NUMBER },
+          // Architect-picked mode for the per-scene designer call.
+          // One of the 8 ids in SCENE_MODES. Stage 2 looks up the
+          // matching reference template by id.
+          visualMode: { type: SchemaType.STRING },
+          // Concrete brief: 2-3 sentences naming specific elements,
+          // numbers, motion. Stage 2 implements this brief in TSX.
+          visualBrief: { type: SchemaType.STRING },
         },
         required: ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds'],
       },
@@ -844,10 +851,15 @@ interface BuildSceneMockPromptArgs {
    *  (editorial, high-contrast, etc.) WITHOUT overriding the assigned
    *  mode. Empty string when no seed picked. */
   styleSeed: string
+  /** Architect-written brief naming exact elements / numbers / motion
+   *  for THIS scene. Empty string when the architect didn't provide
+   *  one (older manifest, model dropped the field) — designer falls
+   *  back to inventing from headline + voiceover. */
+  visualBrief: string
 }
 
 function buildSceneMockPrompt(args: BuildSceneMockPromptArgs): string {
-  const { scene, mode, productName, styleSeed } = args
+  const { scene, mode, productName, styleSeed, visualBrief } = args
   const frameCount = Math.round(scene.durationSeconds * 30)
   const idioms = ANIMATION_IDIOMS
     .replace('<DURATION>', String(scene.durationSeconds))
@@ -855,8 +867,21 @@ function buildSceneMockPrompt(args: BuildSceneMockPromptArgs): string {
   const styleSeedBlock = styleSeed
     ? `\n## Style direction for this video\n\n${styleSeed}\n\nThis is directional — your assigned mode above is the structural shape; the style seed nudges visual language (color, type weight, density). Apply both.\n`
     : ''
+  // The brief is THE source of truth for what's on screen. When the
+  // architect provided one, point the designer at it as the primary
+  // spec. When missing, fall back to inferring from headline +
+  // voiceover (legacy / failure-mode path).
+  const briefBlock = visualBrief.trim()
+    ? `## Architect's visual brief (THIS is what you build)
 
-  return `You are writing the TSX for ONE scene of a marketing video. Your output is the value of a single \`mockCode\` field — raw TSX that defines a function named \`MockScene\` taking \`{ branding }\` as its only prop.
+${visualBrief.trim()}
+
+The headline and voiceover above are context — the brief is the spec. Implement EVERY concrete element the brief names (specific numbers, exact text, the focal element, the motion idea). Don't invent unrelated content; don't drop elements the brief specified.`
+    : `## What to put on screen
+
+The animation must visually illustrate what the headline + voice-over are SAYING. If the voiceover is "your docs answer for you", show docs flowing into an AI module flowing into a chat reply — don't render lorem-ipsum unrelated to the scene.`
+
+  return `You are a DESIGNER agent writing the TSX for ONE scene of a marketing video. An ARCHITECT agent wrote the script + a per-scene visual brief; your job is to turn that brief into a Remotion-compatible MockScene component. Your output is the value of a single \`mockCode\` field — raw TSX that defines a function named \`MockScene\` taking \`{ branding }\` as its only prop.
 
 This is a SANDBOX: the code runs inside a \`new Function(...)\` call with React + Remotion + branding bound. Imports, network access, and DOM mutation are forbidden.
 
@@ -867,13 +892,13 @@ ${scene.subhead ? `- **Subhead:** "${scene.subhead}"\n` : ''}- **Voice-over (nar
 - **Duration:** ${scene.durationSeconds}s (${frameCount} frames at 30fps)
 - **Product:** ${productName}
 
-The animation must visually illustrate what the headline + voice-over are SAYING. If the voiceover is "your docs answer for you", show docs flowing into an AI module flowing into a chat reply — don't render lorem-ipsum unrelated to the scene.
+${briefBlock}
 
 ## Assigned visual mode: ${mode.id}
 
 ${mode.description}
 
-Reference TSX (ADAPT this pattern — same shape, same motion vocabulary, but rewrite the copy + visual specifics to fit THIS scene's headline / voiceover):
+Reference TSX for this mode (FOLLOW this pattern — same shape, same motion vocabulary, same code structure — but populate it with the brief's specifics):
 
 \`\`\`tsx
 ${mode.reference}
@@ -966,9 +991,41 @@ function buildSkeletonPrompt(input: GenerateMarketingScriptInput, styleSeedLabel
     ? `\n## Style direction for this generation\n\n**Style: ${styleSeedLabel}** — this steers the per-scene visual mix later (mockCode is generated in a separate parallel pass). For the skeleton, this means the voiceover should LEAD with the angle the style implies (editorial → typographic punch, metric-driven → numbers, conversational → casual ask). Do NOT mention the style label in the output.\n`
     : ''
 
+  // Mode catalog the architect picks from. Just id + kind + description —
+  // the TSX reference stays in stage 2 where the designer agent uses it.
+  const modeCatalog = SCENE_MODES
+    .map((m) => `- **${m.id}** (${m.isAbstract ? 'abstract — no browser frame' : 'UI — browser frame inside'}): ${m.description}`)
+    .join('\n')
+
   const visualsLine = input.visualMode === 'mocks'
-    ? `**Visuals = MOCKS.** Stage-1 output is the script structure ONLY — no \`mockCode\` field. Per-scene visuals are generated in a parallel stage-2 pass once this skeleton is approved. Set \`screenshotIndex: null\` for every scene (mocks mode never references doc screenshots).`
-    : `**Visuals = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}). If a scene has no relevant screenshot, set \`screenshotIndex: null\` and the renderer shows an accent gradient placeholder.`
+    ? `**Visuals = MOCKS.** You are the ARCHITECT. You write the script structure AND a per-scene visual brief that 3-4 designer agents will execute IN PARALLEL into TSX. Each designer agent ONLY sees: the scene's headline, voiceover, your visualMode pick, and your visualBrief — it does NOT see the other scenes or the rest of the script. So the brief must be self-contained and concrete.
+
+Set \`screenshotIndex: null\` for every scene (mocks mode never references doc screenshots).
+
+### Per-scene fields you MUST output (in addition to headline/voiceover/duration)
+
+- **\`visualMode\`** — pick the BEST mode for THIS scene's idea from the catalog below. NEVER reuse a mode across scenes within the same video — variety is the headline goal of this architecture. With 3 scenes, mix at least 1 UI + 1 abstract; with 4 scenes, aim for 2 of each.
+- **\`visualBrief\`** — 2-3 sentences naming the SPECIFIC elements / numbers / words / motion the designer should put on screen. Be concrete: a designer reading "show that it's fast" can't act on it; a designer reading "Counter ticking from 0 to 12,847 across 1.6s, then drifting +1 every 30 frames. Eyebrow label 'QUERIES THIS MONTH'. Subhead 'and growing'. Use accentColor on the number." builds exactly the right scene. ALWAYS include: the exact text/numbers to show, the focal element (what the eye lands on), and one line on motion.
+
+### Mode catalog (pick ONE per scene, NEVER repeat)
+
+${modeCatalog}
+
+Heuristic: a "look at this number" beat → hero-stat. A "the product does X" beat → bento / cursor-click / chart / chat. A "here's how it works" beat → flow-diagram. A "make a strong claim" beat → headline-burst. A brand / opener beat → logo-hero. The right mode depends on what the headline is actually saying, not on a fixed quota.
+
+Example of a tight per-scene output (illustrative — adapt the specifics to YOUR product):
+\`\`\`json
+{
+  "headline": "10× faster docs",
+  "voiceover": "Stop writing docs nobody reads — record once, ship in MINUTES.",
+  "subhead": "From 4 hours to 4 minutes.",
+  "screenshotIndex": null,
+  "durationSeconds": 8,
+  "visualMode": "hero-stat",
+  "visualBrief": "Eyebrow label 'AVG TIME TO PUBLISH' in tracking-widest uppercase. Below it a giant accent-colored number that ticks from 240 down to 4 across 1.6s, then settles. Suffix 'minutes' inline. Subhead 'and dropping'. Sustained motion: tiny ±1 jitter on the number after it settles."
+}
+\`\`\``
+    : `**Visuals = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}). If a scene has no relevant screenshot, set \`screenshotIndex: null\` and the renderer shows an accent gradient placeholder. Do NOT output \`visualMode\` or \`visualBrief\` in screenshots mode.`
 
   return `You are writing the SKELETON of a 45-second marketing video script for a SaaS product feature.
 
@@ -1141,19 +1198,25 @@ async function generateScriptSkeleton(
 // =============================================================================
 
 /**
- * Two-stage generation.
- *  1. Skeleton call returns the script structure (hook + scene
- *     headlines/voiceovers/timing + cta).
- *  2. For each scene, an independent parallel call generates the
- *     mockCode TSX (mocks visual mode only). The orchestrator
- *     pre-assigns one of N distinct scene modes per scene so the
- *     video doesn't end up as 4 carbon-copy bento dashboards.
+ * Two-stage generation — architect / designer pattern.
+ *  1. Architect (skeleton call): one Flash call. Returns the full
+ *     script structure (hook + scene voiceovers + headlines + timing
+ *     + cta) AND, per scene, a `visualMode` pick + a concrete
+ *     `visualBrief` (2-3 sentences naming exact elements / numbers /
+ *     motion). The architect sees the WHOLE video so it can enforce
+ *     variety + visual coherence between scenes.
+ *  2. Designers (per-scene calls): N parallel Pro calls, one per
+ *     scene. Each designer ONLY sees its own scene + the architect's
+ *     brief + the assigned mode's reference template. It implements
+ *     the brief in TSX.
  *
- * Wall-clock latency is max(skeleton, max(scene mockCodes)) instead
- * of the cumulative time of the old monolithic prompt. Quality
- * climbs because each per-scene call's prompt FOCUSES on the
- * structural rules (MockScene name, transparent outer, sustained
- * motion) instead of burying them under 500 lines of mode catalog.
+ * Wall-clock latency = max(skeleton, max(designer)) instead of the
+ * cumulative time of the old monolithic prompt. Quality climbs
+ * because:
+ *  - The architect picks coherent modes across scenes (no
+ *    orchestrator-side random assignment that ignores headline fit).
+ *  - Each designer's prompt is FOCUSED on a single scene + brief,
+ *    not buried under a 500-line mode catalog.
  *
  * Per-scene failure is non-fatal: the service-side compile + rescue
  * loop calls repairMockCode (or the deterministic fallback) on any
@@ -1173,25 +1236,38 @@ export async function generateMarketingScript(
     return skeleton
   }
 
-  // Mocks mode: parallel per-scene mockCode generation. Pre-assign
-  // one distinct mode per scene so the orchestrator (not the model)
-  // enforces variety.
-  const sceneModes = pickSceneModes(skeleton.scenes.length)
+  // Resolve each scene's mode from the architect's pick, with a
+  // fallback to a random orchestrator-side assignment when the model
+  // dropped the field. Look up the SceneMode object by id so the
+  // designer call gets the matching reference template.
+  const fallbackModes = pickSceneModes(skeleton.scenes.length)
+  const resolvedModes: SceneMode[] = skeleton.scenes.map((scene, i) => {
+    const archPick = scene.visualMode
+    if (archPick) {
+      const found = SCENE_MODES.find((m) => m.id === archPick)
+      if (found) return found
+      console.warn(
+        `[marketing-script/scene-${i}] architect picked unknown visualMode "${archPick}" — falling back to "${fallbackModes[i]?.id}"`,
+      )
+    }
+    return fallbackModes[i] ?? fallbackModes[0]!
+  })
   const styleSeedBrief = styleSeed?.brief ?? ''
   console.info(
-    `[marketing-script] stage 2: ${skeleton.scenes.length} parallel mockCode calls, modes=[${sceneModes.map((m) => m.id).join(', ')}]`,
+    `[marketing-script] stage 2: ${skeleton.scenes.length} parallel mockCode calls, modes=[${resolvedModes.map((m) => m.id).join(', ')}], briefs=[${skeleton.scenes.map((s) => (s.visualBrief ? 'yes' : 'no')).join(', ')}]`,
   )
 
   const mockCodes = await Promise.all(
     skeleton.scenes.map((scene, i) =>
       generateSceneMockCode({
         scene,
-        mode: sceneModes[i] ?? sceneModes[0]!,
+        mode: resolvedModes[i] ?? resolvedModes[0]!,
         productName: input.productName,
         styleSeed: styleSeedBrief,
+        visualBrief: scene.visualBrief ?? '',
       }).catch((err) => {
         console.warn(
-          `[marketing-script/scene-${i}/${sceneModes[i]?.id ?? '?'}] mockCode gen failed: ${(err as Error).message}`,
+          `[marketing-script/scene-${i}/${resolvedModes[i]?.id ?? '?'}] mockCode gen failed: ${(err as Error).message}`,
         )
         return undefined
       }),
