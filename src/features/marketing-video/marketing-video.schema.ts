@@ -95,7 +95,12 @@ export const MarketingSceneSchema = z.object({
   mock: MarketingMockSchema.optional(),
   /** Free TSX written by Gemini for this scene's animation. Compiled
    *  server-side; the bundle never sees this directly. */
-  mockCode: z.string().max(6_000).optional(),
+  // 10k chars upper bound — when the model rewrites with rich
+  // animations (charts + chat threads + cursors + cards) the TSX
+  // legitimately runs ~5-9k chars. 6k was too tight and rejected
+  // valid creative rewrites. The compile step still rejects > 10k
+  // separately as a safety net.
+  mockCode: z.string().max(10_000).optional(),
   /** esbuild output of mockCode. Remotion's <DynamicScene> wraps it in
    *  a `new Function(...)` with React + Remotion + branding bound,
    *  evaluates, and renders the resulting component. */

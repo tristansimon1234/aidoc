@@ -908,11 +908,15 @@ Your response MUST contain a complete \`script\` object with EVERY field present
       "durationSeconds": <number>
     }
   },
-  "branding": { /* optional, partial patch with just the fields you want to change */ }
+  "branding": { /* optional, partial patch with ONLY the fields you actually want to change */ }
 }
 \`\`\`
 
-**Common failure**: on creative rewrites you regenerate \`mockCode\` but forget to copy \`durationSeconds\` / \`screenshotIndex\` from the existing scene → the validator sees \`undefined\` → the whole edit fails. Don't do that. Carry every existing field through to your output, then layer your changes on top.
+**Common failures to avoid:**
+
+1. **Dropping per-scene fields on creative rewrites.** When you regenerate \`mockCode\` from scratch, you forget to copy \`durationSeconds\` / \`screenshotIndex\` from the existing scene → validator sees \`undefined\` → edit aborts. Carry every existing field through, then layer your changes on top.
+
+2. **Null instead of omit on branding.** \`branding\` is a partial patch: include ONLY the fields you want to change. Don't set unchanged fields to \`null\` to "signal no change" — that's invalid. \`{ "branding": { "accentColor": "#0070f3" } }\` is correct (only accent changed). \`{ "branding": { "accentColor": "#0070f3", "bgColor": null, "textColor": null } }\` is WRONG — those nulls fail validation. Just omit unchanged fields entirely. If branding is unchanged, omit the whole \`branding\` key.
 
 ## Edit philosophy
 The user gives you a **direction**, not a diff. Read it for INTENT.
@@ -1006,12 +1010,41 @@ Return ONLY valid JSON: { "message": string, "script": <full edited script>, "br
     }
   }
 
+  // Diagnostic log: what shape did the AI actually return? Helps
+  // distinguish "model dropped a field" from "model returned a different
+  // structure than asked". Logs the top-level keys + per-scene field
+  // presence + raw text preview.
+  const aiScript = parsed.script as Record<string, unknown> | undefined
+  const aiTopKeys = aiScript ? Object.keys(aiScript) : []
+  const aiScenes = (aiScript?.scenes as Array<Record<string, unknown>> | undefined) ?? []
+  const sceneFieldSummary = aiScenes.map((s, i) => {
+    const fields = Object.keys(s)
+    const required = ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds']
+    const missing = required.filter((k) => !(k in s) || s[k] === undefined)
+    return `[${i}] keys=${fields.join(',')}${missing.length ? ` MISSING=${missing.join(',')}` : ''}`
+  })
+  console.log(`[marketing-edit] AI output shape: top=${aiTopKeys.join(',')} scenes=${aiScenes.length}`)
+  console.log(`[marketing-edit] AI scenes:\n  ${sceneFieldSummary.join('\n  ')}`)
+  if (aiScript?.hook) {
+    const h = aiScript.hook as Record<string, unknown>
+    console.log(`[marketing-edit] AI hook keys: ${Object.keys(h).join(',')}`)
+  }
+  if (aiScript?.cta) {
+    const c = aiScript.cta as Record<string, unknown>
+    console.log(`[marketing-edit] AI cta keys: ${Object.keys(c).join(',')}`)
+  }
+
   const { UpdateMarketingManifestSchema } = await import('./marketing-video.schema.js')
   const validated = UpdateMarketingManifestSchema.safeParse({
     script: parsed.script,
     ...(parsed.branding ? { branding: parsed.branding } : {}),
   })
   if (!validated.success) {
+    // Full Zod issues with paths so we can see EXACTLY which field at
+    // which path is undefined. flatten().fieldErrors only gives a
+    // summary by top-level key.
+    console.error('[marketing-edit] Zod issues (full):', JSON.stringify(validated.error.issues, null, 2))
+    console.error('[marketing-edit] AI raw text (first 2000 chars):', result.text.slice(0, 2000))
     throw new Error(`AI produced an invalid manifest: ${JSON.stringify(validated.error.flatten().fieldErrors).slice(0, 300)}`)
   }
 

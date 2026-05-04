@@ -138,7 +138,7 @@ function lintRuntimeReferences(source: string): string | null {
 export async function compileMockCode(source: string): Promise<CompiledMock> {
   const trimmed = source.trim()
   if (trimmed.length === 0) throw new Error('mockCode is empty')
-  if (trimmed.length > 6_000) throw new Error(`mockCode too large (${trimmed.length} bytes, cap 6_000)`)
+  if (trimmed.length > 10_000) throw new Error(`mockCode too large (${trimmed.length} bytes, cap 10_000)`)
 
   // Naive but cheap dangerous-pattern check. We're not running this in a
   // browser sandbox — it executes inside the Remotion bundle running in
