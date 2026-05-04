@@ -759,7 +759,13 @@ export async function updateMarketingManifestForRun(
     ...existing.manifest,
     script: patch.script as MarketingManifest['script'],
     ...(patch.screenshots ? { screenshots: patch.screenshots } : {}),
-    ...(patch.branding ? { branding: patch.branding } : {}),
+    // Merge partial branding patches with the existing branding so the
+    // model can change just one field (e.g. accentColor) without having
+    // to re-emit the whole branding object. The Zod schema accepts a
+    // partial; we layer it on top of `existing.manifest.branding`.
+    ...(patch.branding
+      ? { branding: { ...existing.manifest.branding, ...patch.branding } }
+      : {}),
     ...(typeof patch.musicVolume === 'number' ? { musicVolume: patch.musicVolume } : {}),
     generatedAt: new Date().toISOString(),
   }

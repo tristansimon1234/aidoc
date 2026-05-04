@@ -156,10 +156,16 @@ const MarketingBrandingSchema = z.object({
   logoUrl: z.string().nullable(),
 })
 
+/** Partial branding patch — used by the AI edit endpoint where the
+ *  model often returns ONLY the field it changed (e.g. accentColor
+ *  when the user asked for less purple). The full schema fields stay
+ *  required for the source-of-truth manifest persistence. */
+const MarketingBrandingPatchSchema = MarketingBrandingSchema.partial()
+
 export const UpdateMarketingManifestSchema = z.object({
   script: MarketingScriptSchema,
   screenshots: z.array(MarketingScreenshotSchema).optional(),
-  branding: MarketingBrandingSchema.optional(),
+  branding: MarketingBrandingPatchSchema.optional(),
   // Voice-over / music URLs are NOT user-editable here — re-synthesize via
   // POST /:id/marketing-video/voiceover. Accepting the fields would let
   // the user point Remotion at an arbitrary URL.
