@@ -4,7 +4,8 @@ import {
   MousePointer, Send, Loader, Bell, User, Lock, Globe,
   ChevronRight, Plus, X, Copy, Play, Pause, Volume2, Image as ImageIcon,
   ArrowRight, Activity, Cpu, Layers, Database, GitBranch, FileText,
-  Cloud, Workflow, Boxes, ArrowUpRight, type LucideIcon,
+  Cloud, Workflow, Boxes, ArrowUpRight, BarChart2, BarChart3,
+  TrendingUp, TrendingDown, Star, Heart, type LucideIcon,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -290,6 +291,10 @@ export const Icons = {
   Mic:     thin(Mic),
   Check:   thin(Check),
   Message: thin(MessageSquare),
+  // Lucide-native alias — the LLM naturally uses MessageSquare from its
+  // training corpus, so accept it directly instead of forcing the
+  // shorter alias.
+  MessageSquare: thin(MessageSquare),
   Search:  thin(Search),
   Zap:     thin(Zap),
   Code:    thin(Code),
@@ -308,6 +313,7 @@ export const Icons = {
   Play:    thin(Play),
   Pause:   thin(Pause),
   Volume:  thin(Volume2),
+  Volume2: thin(Volume2),
   Image:   thin(ImageIcon),
   ArrowRight: thin(ArrowRight),
   ArrowUpRight: thin(ArrowUpRight),
@@ -320,6 +326,14 @@ export const Icons = {
   Cloud:   thin(Cloud),
   Workflow: thin(Workflow),
   Boxes:   thin(Boxes),
+  // Common chart / metric icons the LLM reaches for in data scenes.
+  BarChart: thin(BarChart2),
+  BarChart2: thin(BarChart2),
+  BarChart3: thin(BarChart3),
+  TrendingUp: thin(TrendingUp),
+  TrendingDown: thin(TrendingDown),
+  Star: thin(Star),
+  Heart: thin(Heart),
 } as const
 
 /** Recharts components exposed for the LLM. Animations driven by

@@ -31,11 +31,14 @@ const REMOTION_NAMESPACE = new Set([
 ])
 
 const ICON_NAMES = new Set([
-  'Plug', 'Mic', 'Check', 'Message', 'Search', 'Zap', 'Code', 'Settings',
-  'MousePointer', 'Send', 'Loader', 'Bell', 'User', 'Lock', 'Globe',
-  'ChevronRight', 'Plus', 'X', 'Copy', 'Play', 'Pause', 'Volume', 'Image',
-  'ArrowRight', 'ArrowUpRight', 'Activity', 'Cpu', 'Layers', 'Database',
-  'GitBranch', 'FileText', 'Cloud', 'Workflow', 'Boxes',
+  'Plug', 'Mic', 'Check', 'Message', 'MessageSquare', 'Search', 'Zap',
+  'Code', 'Settings', 'MousePointer', 'Send', 'Loader', 'Bell', 'User',
+  'Lock', 'Globe', 'ChevronRight', 'Plus', 'X', 'Copy', 'Play', 'Pause',
+  'Volume', 'Volume2', 'Image', 'ArrowRight', 'ArrowUpRight', 'Activity',
+  'Cpu', 'Layers', 'Database', 'GitBranch', 'FileText', 'Cloud',
+  'Workflow', 'Boxes',
+  'BarChart', 'BarChart2', 'BarChart3', 'TrendingUp', 'TrendingDown',
+  'Star', 'Heart',
 ])
 
 const CHART_NAMES = new Set([

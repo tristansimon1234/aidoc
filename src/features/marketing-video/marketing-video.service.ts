@@ -738,18 +738,31 @@ Return ONLY valid JSON matching the response schema.`
   }
 
   // Recompile any mockCode the AI rewrote — Remotion runs the compiled
-  // output, not the TSX source.
+  // output, not the TSX source. On failure, give it ONE rescue attempt
+  // before dropping (same logic as the initial generate path).
   const { compileMockCode } = await import('./mock-code.compiler.js')
+  const { repairMockCode } = await import('./marketing-script.generator.js')
   for (const scene of validated.data.script.scenes) {
-    if (scene.mockCode && scene.mockCode.length > 0) {
+    if (!scene.mockCode || scene.mockCode.length === 0) continue
+    try {
+      const c = await compileMockCode(scene.mockCode)
+      scene.mockCompiledCode = c.compiled
+    } catch (err) {
+      const firstErr = (err as Error).message
+      console.warn(`[marketing-edit] mockCode compile failed for scene "${scene.headline}": ${firstErr} — attempting one rescue`)
       try {
-        const c = await compileMockCode(scene.mockCode)
+        const rescued = await repairMockCode({
+          scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode },
+          compileError: firstErr,
+        })
+        const c = await compileMockCode(rescued)
+        scene.mockCode = rescued
         scene.mockCompiledCode = c.compiled
-      } catch (err) {
-        // Drop the new mockCode + its compiled output if the AI emitted
-        // something that won't compile — better to keep the previous
-        // visual than break the render.
-        console.warn(`[marketing-edit] mockCode compile failed, dropping: ${(err as Error).message}`)
+        console.log(`[marketing-edit] Rescued mockCode for scene "${scene.headline}"`)
+      } catch (rescueErr) {
+        console.warn(`[marketing-edit] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message}`)
+        // Drop the new mockCode entirely — keep the previous visual rather
+        // than break the render.
         scene.mockCode = undefined
         scene.mockCompiledCode = undefined
       }
