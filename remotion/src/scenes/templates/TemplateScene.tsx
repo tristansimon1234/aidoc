@@ -135,7 +135,11 @@ const KpiReveal: React.FC<{
   const labelT = useSpringEntry(0)
   const valueT = useSpringEntry(8)
   const subT = useSpringEntry(20)
+  const accentT = useSpringEntry(28)
   const trendIcon = trend === 'up' ? 'TrendingUp' : trend === 'down' ? 'TrendingDown' : null
+  // Trend color stays semantic (green/red), but the VALUE itself stays
+  // in textColor. Size + weight do the popping; the accent is a quiet
+  // signal underneath, not the main attraction.
   const trendColor = trend === 'up' ? '#16a34a' : trend === 'down' ? '#dc2626' : branding.textColor
   return (
     <AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 96 }}>
@@ -148,18 +152,28 @@ const KpiReveal: React.FC<{
             fontSize: 22, letterSpacing: '0.05em', textTransform: 'uppercase', margin: 0, fontWeight: 500,
           }}
         >{metric}</p>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16, position: 'relative' }}>
           <span
             style={{
               ...entryStyle(valueT, 24),
-              color: branding.accentColor,
+              color: branding.textColor,
               fontFamily: branding.fontFamily,
               fontSize: 220, fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 0.95,
             }}
           >{value}</span>
+          {/* Subtle accent underline that draws in below the value — the
+              accent is a tag/signature, not a fill. */}
+          <div
+            style={{
+              position: 'absolute', left: 0, bottom: -8, height: 6, borderRadius: 3,
+              background: branding.accentColor,
+              width: `${interpolate(accentT, [0, 1], [0, 100])}%`,
+              maxWidth: '70%',
+            }}
+          />
           {trendIcon && (
-            <span style={{ ...entryStyle(valueT, 8), color: trendColor }}>
-              <IconFromName name={trendIcon} size={48} color={trendColor} />
+            <span style={{ ...entryStyle(valueT, 8), color: trendColor, opacity: 0.85 }}>
+              <IconFromName name={trendIcon} size={44} color={trendColor} />
             </span>
           )}
         </div>
@@ -167,9 +181,9 @@ const KpiReveal: React.FC<{
           <p
             style={{
               ...entryStyle(subT),
-              color: branding.textColor, opacity: 0.6,
+              color: branding.textColor, opacity: 0.55,
               fontFamily: branding.fontFamily,
-              fontSize: 28, fontWeight: 400, margin: 0, marginTop: 12,
+              fontSize: 26, fontWeight: 400, margin: 0, marginTop: 16,
             }}
           >{sub}</p>
         )}
@@ -207,17 +221,21 @@ const ListReveal: React.FC<{
                   ...entryStyle(t, 16),
                   display: 'flex', alignItems: 'center', gap: 20,
                   padding: '20px 28px',
-                  borderRadius: 16,
-                  background: `${branding.accentColor}0A`,
-                  border: `1px solid ${branding.accentColor}1F`,
+                  borderRadius: 14,
+                  // Neutral white card with hairline border. The accent
+                  // shows up only on the icon dot — that's enough to read
+                  // as "branded list" without painting every row purple.
+                  background: '#FFFFFF',
+                  border: '1px solid rgba(0,0,0,0.06)',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.02)',
                 }}
               >
                 {item.icon && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 48, height: 48, borderRadius: 12, background: `${branding.accentColor}1A` }}>
-                    <IconFromName name={item.icon} size={24} color={branding.accentColor} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 44, height: 44, borderRadius: 11, background: `${branding.accentColor}14` }}>
+                    <IconFromName name={item.icon} size={22} color={branding.accentColor} />
                   </div>
                 )}
-                <span style={{ color: branding.textColor, fontFamily: branding.fontFamily, fontSize: 28, fontWeight: 500 }}>
+                <span style={{ color: branding.textColor, fontFamily: branding.fontFamily, fontSize: 26, fontWeight: 500 }}>
                   {item.text}
                 </span>
               </div>
@@ -310,10 +328,13 @@ const ChatBubble: React.FC<{
                 {question}
               </div>
             </div>
-            <div style={{ ...entryStyle(aT), display: 'flex', justifyContent: 'flex-start' }}>
-              <div style={{ background: branding.accentColor, color: '#fff', padding: '14px 18px', borderRadius: 18, maxWidth: '80%', fontSize: 20, fontWeight: 500 }}>
+            <div style={{ ...entryStyle(aT), display: 'flex', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 10 }}>
+              {/* Small accent dot avatar — signals "AI is typing" without
+                  painting the entire bubble in accent. */}
+              <div style={{ width: 28, height: 28, borderRadius: '50%', background: branding.accentColor, flexShrink: 0, marginTop: 4 }} />
+              <div style={{ background: '#FAFAFA', color: branding.textColor, padding: '14px 18px', borderRadius: 18, maxWidth: '80%', fontSize: 20, fontWeight: 500, border: '1px solid rgba(0,0,0,0.06)' }}>
                 {visibleAnswer}
-                {charCount < answer.length && <span style={{ display: 'inline-block', width: 2, height: 18, background: '#fff', verticalAlign: 'middle', marginLeft: 4, opacity: Math.round(frame / 8) % 2 }} />}
+                {charCount < answer.length && <span style={{ display: 'inline-block', width: 2, height: 18, background: branding.accentColor, verticalAlign: 'middle', marginLeft: 4, opacity: Math.round(frame / 8) % 2 }} />}
               </div>
             </div>
           </div>
@@ -329,9 +350,14 @@ const FlowDiagram: React.FC<{
   nodes: { icon: string; label: string; accent?: boolean }[]
   branding: Branding
 }> = ({ nodes, branding }) => {
+  // Modern flow: cards stay neutral white with hairline borders. The
+  // "accent" node gets a SUBTLE accent ring + accent-tinted background
+  // (~6% alpha) — feels like a tag, not a candy button. Arrows are
+  // muted gray; the eye reads the SEQUENCE, not "look at this colored
+  // thing".
   return (
     <AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 96 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
         {nodes.map((node, i) => {
           const nodeT = useSpringEntry(i * 18)
           const arrowT = useSpringEntry(i * 18 + 10)
@@ -343,22 +369,30 @@ const FlowDiagram: React.FC<{
                   ...entryStyle(nodeT, 20),
                   width: 200, height: 200,
                   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                  gap: 16,
-                  borderRadius: 28,
+                  gap: 14,
+                  borderRadius: 24,
                   padding: 24,
-                  background: accent ? `linear-gradient(135deg, ${branding.accentColor}, ${branding.accentColor}DD)` : '#fff',
-                  border: `1px solid ${accent ? 'transparent' : 'rgba(0,0,0,0.08)'}`,
-                  boxShadow: accent ? `0 24px 48px -12px ${branding.accentColor}55` : '0 8px 24px -8px rgba(0,0,0,0.10)',
+                  background: accent ? `${branding.accentColor}0F` : '#FFFFFF',
+                  border: `1px solid ${accent ? `${branding.accentColor}40` : 'rgba(0,0,0,0.08)'}`,
+                  boxShadow: '0 12px 28px -10px rgba(0,0,0,0.10)',
                 }}
               >
-                <IconFromName name={node.icon} size={56} color={accent ? '#fff' : branding.accentColor} />
-                <span style={{ color: accent ? '#fff' : branding.textColor, fontFamily: branding.fontFamily, fontSize: 20, fontWeight: 600, textAlign: 'center', lineHeight: 1.2 }}>
+                <div
+                  style={{
+                    width: 56, height: 56, borderRadius: 14,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: accent ? branding.accentColor : 'rgba(0,0,0,0.04)',
+                  }}
+                >
+                  <IconFromName name={node.icon} size={28} color={accent ? '#FFFFFF' : branding.textColor} />
+                </div>
+                <span style={{ color: branding.textColor, fontFamily: branding.fontFamily, fontSize: 19, fontWeight: 600, textAlign: 'center', lineHeight: 1.2 }}>
                   {node.label}
                 </span>
               </div>
               {i < nodes.length - 1 && (
-                <div style={{ ...entryStyle(arrowT, 0), opacity: interpolate(arrowT, [0, 1], [0, 0.7]) }}>
-                  <IconFromName name="ArrowRight" size={36} color={branding.accentColor} />
+                <div style={{ ...entryStyle(arrowT, 0), opacity: interpolate(arrowT, [0, 1], [0, 0.4]) }}>
+                  <IconFromName name="ArrowRight" size={28} color={branding.textColor} />
                 </div>
               )}
             </React.Fragment>
@@ -437,20 +471,29 @@ const BeforeAfter: React.FC<{
   const labelTop = useSpringEntry(0)
   return (
     <AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 80 }}>
-      <div style={{ width: '85%', maxWidth: 1280, height: 540, borderRadius: 20, overflow: 'hidden', display: 'flex', position: 'relative', boxShadow: '0 24px 48px -16px rgba(0,0,0,0.18)', border: '1px solid rgba(0,0,0,0.06)' }}>
-        {/* Before half */}
-        <div style={{ flex: 1, background: '#F6F6F6', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, padding: 32, opacity: beforeOpacity }}>
-          {beforeIcon && <IconFromName name={beforeIcon} size={64} color="#9CA3AF" />}
-          <span style={{ fontFamily: branding.fontFamily, fontSize: 28, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{beforeLabel}</span>
-          {beforeText && <span style={{ fontFamily: branding.fontFamily, fontSize: 22, color: '#6B7280', textAlign: 'center', lineHeight: 1.4, maxWidth: '90%' }}>{beforeText}</span>}
+      <div style={{ width: '85%', maxWidth: 1280, height: 540, borderRadius: 20, overflow: 'hidden', display: 'flex', position: 'relative', boxShadow: '0 24px 48px -16px rgba(0,0,0,0.10)', border: '1px solid rgba(0,0,0,0.06)' }}>
+        {/* Before half — desaturated gray */}
+        <div style={{ flex: 1, background: '#F4F4F4', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32, opacity: beforeOpacity }}>
+          {beforeIcon && <IconFromName name={beforeIcon} size={56} color="#9CA3AF" />}
+          <span style={{ fontFamily: branding.fontFamily, fontSize: 14, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Before</span>
+          <span style={{ fontFamily: branding.fontFamily, fontSize: 32, fontWeight: 700, color: '#374151', letterSpacing: '-0.01em' }}>{beforeLabel}</span>
+          {beforeText && <span style={{ fontFamily: branding.fontFamily, fontSize: 18, color: '#6B7280', textAlign: 'center', lineHeight: 1.4, maxWidth: '85%' }}>{beforeText}</span>}
         </div>
-        {/* Divider */}
-        <div style={{ width: 4, background: branding.accentColor, position: 'absolute', left: `${wipePct}%`, top: 0, bottom: 0, transform: 'translateX(-50%)', boxShadow: `0 0 24px ${branding.accentColor}` }} />
-        {/* After half */}
-        <div style={{ flex: 1, background: `linear-gradient(135deg, ${branding.accentColor}, ${branding.accentColor}DD)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, padding: 32, transform: `scale(${afterScale})` }}>
-          {afterIcon && <IconFromName name={afterIcon} size={64} color="#fff" />}
-          <span style={{ fontFamily: branding.fontFamily, fontSize: 32, fontWeight: 700, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.05em', ...entryStyle(labelTop, 12) }}>{afterLabel}</span>
-          {afterText && <span style={{ fontFamily: branding.fontFamily, fontSize: 22, color: '#fff', opacity: 0.9, textAlign: 'center', lineHeight: 1.4, maxWidth: '90%' }}>{afterText}</span>}
+        {/* Divider — hairline accent, no glow */}
+        <div style={{ width: 2, background: `${branding.accentColor}`, position: 'absolute', left: `${wipePct}%`, top: 0, bottom: 0, transform: 'translateX(-50%)' }} />
+        {/* After half — neutral with accent micro-tag at the top, NOT a full color half */}
+        <div style={{ flex: 1, background: '#FFFFFF', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, padding: 32, transform: `scale(${afterScale})`, position: 'relative' }}>
+          {/* Accent radial glow in the top-right corner, very subtle —
+              signals "this side is the answer" without painting it loud. */}
+          <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(circle at 80% 20%, ${branding.accentColor}1A 0%, transparent 50%)`, pointerEvents: 'none' }} />
+          {afterIcon && (
+            <div style={{ width: 72, height: 72, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${branding.accentColor}14`, border: `1px solid ${branding.accentColor}33` }}>
+              <IconFromName name={afterIcon} size={32} color={branding.accentColor} />
+            </div>
+          )}
+          <span style={{ fontFamily: branding.fontFamily, fontSize: 14, fontWeight: 600, color: branding.accentColor, textTransform: 'uppercase', letterSpacing: '0.08em', ...entryStyle(labelTop, 12) }}>After</span>
+          <span style={{ fontFamily: branding.fontFamily, fontSize: 36, fontWeight: 700, color: branding.textColor, letterSpacing: '-0.01em', textAlign: 'center', ...entryStyle(labelTop, 8) }}>{afterLabel}</span>
+          {afterText && <span style={{ fontFamily: branding.fontFamily, fontSize: 18, color: branding.textColor, opacity: 0.65, textAlign: 'center', lineHeight: 1.4, maxWidth: '85%' }}>{afterText}</span>}
         </div>
       </div>
     </AbsoluteFill>
@@ -578,11 +621,14 @@ const StepProgression: React.FC<{
             >
               <div
                 style={{
-                  width: 68, height: 68, borderRadius: '50%',
+                  width: 64, height: 64, borderRadius: '50%',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  background: `linear-gradient(135deg, ${branding.accentColor}, ${branding.accentColor}DD)`,
-                  color: '#fff', fontSize: 28, fontWeight: 700,
-                  boxShadow: `0 12px 24px -8px ${branding.accentColor}55`,
+                  // Neutral white circle with a hairline accent ring +
+                  // accent number — modern badge, not candy button.
+                  background: '#FFFFFF',
+                  border: `1.5px solid ${branding.accentColor}55`,
+                  color: branding.accentColor, fontSize: 26, fontWeight: 700,
+                  boxShadow: '0 4px 12px -4px rgba(0,0,0,0.08)',
                   flexShrink: 0, zIndex: 1,
                 }}
               >{i + 1}</div>
@@ -622,14 +668,25 @@ const BigStat: React.FC<{
             ...entryStyle(valueT, 40),
             fontSize: 360,
             fontWeight: 800,
-            background: `linear-gradient(135deg, ${branding.accentColor}, ${branding.accentColor}AA)`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
+            // Solid textColor — the SIZE makes the number pop, not a
+            // gradient. Modern stat designs (Linear, Stripe metrics
+            // dashboards) keep big numbers in neutral and let scale +
+            // negative space do the work. The accent shows up below as
+            // a thin underline (rendered after this span).
+            color: branding.textColor,
             letterSpacing: '-0.04em',
             lineHeight: 0.9,
           }}
         >{value}</span>
+        {/* Subtle accent underline that draws in under the number. */}
+        <div
+          style={{
+            height: 6, borderRadius: 3,
+            background: branding.accentColor,
+            width: `${interpolate(useSpringEntry(20), [0, 1], [0, 96])}px`,
+            marginTop: 8,
+          }}
+        />
         {sub && (
           <span style={{ ...entryStyle(subT), fontSize: 28, color: branding.textColor, opacity: 0.7, fontWeight: 400, marginTop: 8 }}>
             {sub}
