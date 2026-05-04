@@ -528,6 +528,13 @@ app.post('/render-marketing-video', async (req, res) => {
       // Concurrency null = let Remotion pick (cores - 1). On a 2-vCPU box
       // a 60s 1080p render lands in ~2-5 min; on 4-vCPU it's closer to 90s.
       concurrency: null,
+      // Bump the per-frame render timeout. Default is 30s, which busts on
+      // single frames that have heavy 3D transforms (perspective + rotateY
+      // + multi-card composition stacks Chromium's software rasterizer).
+      // 120s gives the bento + chat scenes (which use perspective tilts
+      // for the magazine look) comfortable headroom — and we'd rather wait
+      // than drop the 3D transforms that make the mocks feel designed.
+      timeoutInMilliseconds: 120_000,
     })
 
     console.log('[render-marketing] Render done, uploading…')
