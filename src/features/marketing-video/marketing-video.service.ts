@@ -389,6 +389,22 @@ export async function generateMarketingVideoForRun(
 
   console.log(`[marketing-video] Run ${runId}: ${screenshots.length} screenshots, lang=${language}, product="${branding.productName}"`)
 
+  // Server-side guard: visualMode='screenshots' is meaningless when the
+  // run has no screenshots available — every scene would emit
+  // `screenshotIndex: null` and the renderer would fall back to a blank
+  // bgColor canvas. Auto-promote to 'mocks' so we always produce visible
+  // scenes. The conversational pre-flight is supposed to default to
+  // mocks but the AI picks 'screenshots' sometimes; this is the safety
+  // net regardless of where the request came from.
+  const requestedVisualMode = options.visualMode ?? 'screenshots'
+  const effectiveVisualMode: 'mocks' | 'screenshots' =
+    requestedVisualMode === 'screenshots' && screenshots.length === 0
+      ? 'mocks'
+      : requestedVisualMode
+  if (effectiveVisualMode !== requestedVisualMode) {
+    console.warn(`[marketing-video] No screenshots — forcing visualMode=mocks (was ${requestedVisualMode})`)
+  }
+
   const script = await generateMarketingScript({
     productName: branding.productName,
     pageTitle: page.title,
@@ -400,7 +416,7 @@ export async function generateMarketingVideoForRun(
     // the voice (ElevenLabs settings). Without this the script comes out
     // flat and even an expressive voice setting reads it flat.
     tone: options.tone ?? 'punchy',
-    visualMode: options.visualMode ?? 'screenshots',
+    visualMode: effectiveVisualMode,
     userPrompt: options.userPrompt,
   })
 
@@ -417,7 +433,7 @@ export async function generateMarketingVideoForRun(
   // to either FIX broken code or GENERATE from scratch when no source is
   // provided). Without this, scenes 2/3 in a 4-scene script silently
   // render as a blank panel since mocks mode has no screenshot fallback.
-  if (options.visualMode === 'mocks') {
+  if (effectiveVisualMode === 'mocks') {
     const { compileMockCode } = await import('./mock-code.compiler.js')
     const { repairMockCode } = await import('./marketing-script.generator.js')
 
@@ -1183,7 +1199,7 @@ When you've got enough to commit to a plan:
 - One question per turn. Never bundle 3 questions in one message — overwhelms.
 - If the user gives you everything in their first message ("I want a 45s video aimed at solo devs, focus on the 1-line API call, confident tone"), skip straight to ready:true with the plan.
 - Don't ask about visualMode / music explicitly — infer from the user's vibe (developer-y → "mocks" + tech music; storytelling → mocks + inspirational; product showcase → screenshots if available).
-- For visualMode: default to "mocks" unless the user explicitly mentions screenshots or a specific UI shot.
+- For visualMode: ALWAYS pick "mocks" UNLESS the user has already produced a screen recording for this page AND explicitly asks to use real screenshots. If you're unsure, "mocks" is correct — the templates produce designed visuals that work without any UI source material. "screenshots" mode requires actual product screenshots and produces blank scenes if none exist.
 - For musicTrackId: pick the AI music style that fits the tone (cinematic for inspirational, lofi for conversational, etc.). Avoid 'none' unless the user explicitly asks for silent.
 - Keep replies under ~40 words. The chat UI is small.`
 
