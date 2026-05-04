@@ -1,19 +1,11 @@
 import React from 'react'
-import {
-  Plug, Mic, Check, MessageSquare, Search, Zap, Code, Settings,
-  MousePointer, Send, Loader, Bell, User, Lock, Globe,
-  ChevronRight, Plus, X, Copy, Play, Pause, Volume2, Image as ImageIcon,
-  ArrowRight, Activity, Cpu, Layers, Database, GitBranch, FileText,
-  Cloud, Workflow, Boxes, ArrowUpRight, BarChart2, BarChart3,
-  TrendingUp, TrendingDown, Star, Heart,
-  // Common icons the LLM reaches for in marketing mocks. Adding them
-  // to the export so dynamic access (Icons[name]) finds something.
-  Video, BookOpen, Users, Mail, Calendar, Tag, Filter, Bookmark,
-  Camera, Clock, Edit, Trash2, Save, Upload, Download, Share2,
-  Eye, Sparkles, Rocket, Target, Award, Briefcase, ShoppingCart,
-  Home, Folder, File, Inbox, Hash, AtSign, ExternalLink,
-  type LucideIcon,
-} from 'lucide-react'
+// Wildcard import — every lucide-react icon is now reachable as
+// Icons[name] at runtime. Bundle cost ~500KB but the Remotion bundle is
+// cached server-side and shipped once per deploy, not per render. Trade
+// pays for itself the first time the LLM picks an icon we hadn't
+// pre-listed (was 70, lucide has ~1500).
+import * as LucideIcons from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import {
   ResponsiveContainer,
   LineChart, Line,
@@ -288,95 +280,46 @@ function thin(Icon: LucideIcon): React.FC<React.ComponentProps<LucideIcon>> {
   return Wrapped
 }
 
-/** Curated subset of lucide-react icons exposed by name, wrapped with a
- *  thin 1.5 stroke. Sparkles deliberately NOT exported — every render
- *  the LLM picked it the result was a generic "AI sparkle" cliché.
- *  Cpu / Workflow / Layers / Boxes / Atom-style shapes do the same job
- *  with way more visual personality. */
-export const Icons = {
-  Plug:    thin(Plug),
-  Mic:     thin(Mic),
-  Check:   thin(Check),
-  Message: thin(MessageSquare),
-  // Lucide-native alias — the LLM naturally uses MessageSquare from its
-  // training corpus, so accept it directly instead of forcing the
-  // shorter alias.
-  MessageSquare: thin(MessageSquare),
-  Search:  thin(Search),
-  Zap:     thin(Zap),
-  Code:    thin(Code),
-  Settings: thin(Settings),
-  MousePointer: thin(MousePointer),
-  Send:    thin(Send),
-  Loader:  thin(Loader),
-  Bell:    thin(Bell),
-  User:    thin(User),
-  Lock:    thin(Lock),
-  Globe:   thin(Globe),
-  ChevronRight: thin(ChevronRight),
-  Plus:    thin(Plus),
-  X:       thin(X),
-  Copy:    thin(Copy),
-  Play:    thin(Play),
-  Pause:   thin(Pause),
-  Volume:  thin(Volume2),
-  Volume2: thin(Volume2),
-  Image:   thin(ImageIcon),
-  ArrowRight: thin(ArrowRight),
-  ArrowUpRight: thin(ArrowUpRight),
-  Activity: thin(Activity),
-  Cpu:     thin(Cpu),
-  Layers:  thin(Layers),
-  Database: thin(Database),
-  GitBranch: thin(GitBranch),
-  FileText: thin(FileText),
-  Cloud:   thin(Cloud),
-  Workflow: thin(Workflow),
-  Boxes:   thin(Boxes),
-  // Common chart / metric icons the LLM reaches for in data scenes.
-  BarChart: thin(BarChart2),
-  BarChart2: thin(BarChart2),
-  BarChart3: thin(BarChart3),
-  TrendingUp: thin(TrendingUp),
-  TrendingDown: thin(TrendingDown),
-  Star: thin(Star),
-  Heart: thin(Heart),
-  // Common marketing-mock icons the LLM picks via dynamic
-  // Icons[name] access — surfaced directly so unknown-name lookups
-  // don't return undefined and crash render.
-  Video: thin(Video),
-  BookOpen: thin(BookOpen),
-  Users: thin(Users),
-  Mail: thin(Mail),
-  Calendar: thin(Calendar),
-  Tag: thin(Tag),
-  Filter: thin(Filter),
-  Bookmark: thin(Bookmark),
-  Camera: thin(Camera),
-  Clock: thin(Clock),
-  Edit: thin(Edit),
-  Trash: thin(Trash2),
-  Trash2: thin(Trash2),
-  Save: thin(Save),
-  Upload: thin(Upload),
-  Download: thin(Download),
-  Share: thin(Share2),
-  Share2: thin(Share2),
-  Eye: thin(Eye),
-  Sparkles: thin(Sparkles),
-  Rocket: thin(Rocket),
-  Target: thin(Target),
-  Award: thin(Award),
-  Briefcase: thin(Briefcase),
-  ShoppingCart: thin(ShoppingCart),
-  Home: thin(Home),
-  Folder: thin(Folder),
-  File: thin(File),
-  Inbox: thin(Inbox),
-  Hash: thin(Hash),
-  AtSign: thin(AtSign),
-  ExternalLink: thin(ExternalLink),
-} as const
+/** Every lucide-react icon, lazily wrapped with a thin 1.5px stroke
+ *  the first time the LLM accesses it. We expose the full lucide
+ *  catalog (~1500 icons) so the model isn't forced to pick from a
+ *  curated subset — restricting creativity for marketing visuals
+ *  was producing more failures (icon-not-found → blank render) than
+ *  the curation was worth.
+ *
+ *  Aliases preserved for the LLM's natural vocabulary:
+ *    Message → MessageSquare, Volume → Volume2, BarChart →
+ *    BarChart2, Trash → Trash2, Share → Share2, Image → ImageIcon.
+ */
+const wrapped = new Map<string, React.FC<React.ComponentProps<LucideIcon>>>()
+const ALIASES: Record<string, string> = {
+  Message: 'MessageSquare',
+  Volume: 'Volume2',
+  BarChart: 'BarChart2',
+  Trash: 'Trash2',
+  Share: 'Share2',
+}
+function resolveLucideIcon(name: string): LucideIcon | null {
+  const all = LucideIcons as unknown as Record<string, unknown>
+  const aliased = ALIASES[name]
+  const candidate = (aliased && all[aliased]) ?? all[name]
+  if (typeof candidate !== 'function' && typeof candidate !== 'object') return null
+  // lucide-react exports a forwardRef wrapper (object with $$typeof) — both
+  // function and object are valid React components.
+  return candidate as LucideIcon
+}
+export const Icons = new Proxy({} as Record<string, React.FC<React.ComponentProps<LucideIcon>>>, {
+  get(_target, prop) {
+    if (typeof prop !== 'string') return undefined
+    const cached = wrapped.get(prop)
+    if (cached) return cached
+    const Icon = resolveLucideIcon(prop)
+    if (!Icon) return undefined
+    const Wrapped = thin(Icon)
+    wrapped.set(prop, Wrapped)
+    return Wrapped
+  },
+}) as Record<string, React.FC<React.ComponentProps<LucideIcon>>>
 
 /** Recharts components exposed for the LLM. Animations driven by
  *  Remotion frame, not Recharts' internal tweening — the LLM passes

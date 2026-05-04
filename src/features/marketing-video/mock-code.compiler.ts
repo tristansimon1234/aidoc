@@ -30,21 +30,13 @@ const REMOTION_NAMESPACE = new Set([
   'MockFrame', 'Pill', 'AccentGlow', 'AnimatedCursor', 'Icons', 'Charts',
 ])
 
-const ICON_NAMES = new Set([
-  'Plug', 'Mic', 'Check', 'Message', 'MessageSquare', 'Search', 'Zap',
-  'Code', 'Settings', 'MousePointer', 'Send', 'Loader', 'Bell', 'User',
-  'Lock', 'Globe', 'ChevronRight', 'Plus', 'X', 'Copy', 'Play', 'Pause',
-  'Volume', 'Volume2', 'Image', 'ArrowRight', 'ArrowUpRight', 'Activity',
-  'Cpu', 'Layers', 'Database', 'GitBranch', 'FileText', 'Cloud',
-  'Workflow', 'Boxes',
-  'BarChart', 'BarChart2', 'BarChart3', 'TrendingUp', 'TrendingDown',
-  'Star', 'Heart',
-  'Video', 'BookOpen', 'Users', 'Mail', 'Calendar', 'Tag', 'Filter',
-  'Bookmark', 'Camera', 'Clock', 'Edit', 'Trash', 'Trash2', 'Save',
-  'Upload', 'Download', 'Share', 'Share2', 'Eye', 'Sparkles', 'Rocket',
-  'Target', 'Award', 'Briefcase', 'ShoppingCart', 'Home', 'Folder',
-  'File', 'Inbox', 'Hash', 'AtSign', 'ExternalLink',
-])
+// Icons whitelist removed — Remotion now exposes the full lucide-react
+// catalog via a Proxy and a runtime fallback (DynamicScene wraps unknown
+// names in a generic square outline). The lint can no longer usefully
+// flag specific icon names; if the LLM picks an obscure one, lucide
+// almost certainly has it, and if it doesn't the runtime won't crash.
+// We keep the Charts whitelist because that namespace is a small fixed
+// recharts subset, not a 1500-component library.
 
 const CHART_NAMES = new Set([
   'ResponsiveContainer', 'LineChart', 'Line', 'AreaChart', 'Area',
@@ -79,13 +71,8 @@ function lintRuntimeReferences(source: string): string | null {
     }
   }
 
-  const iconRefs = source.matchAll(/\bRemotion\.Icons\s*\.\s*([A-Za-z_$][\w$]*)/g)
-  for (const m of iconRefs) {
-    const name = m[1]!
-    if (!ICON_NAMES.has(name)) {
-      errors.push(`Remotion.Icons.${name} does not exist (allowed: ${[...ICON_NAMES].join(', ')})`)
-    }
-  }
+  // Icons.X is intentionally not linted — every lucide name is valid at
+  // runtime via the Proxy + Wrapped fallback in DynamicScene.
 
   const chartRefs = source.matchAll(/\bRemotion\.Charts\s*\.\s*([A-Za-z_$][\w$]*)/g)
   for (const m of chartRefs) {
