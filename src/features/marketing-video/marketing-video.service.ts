@@ -770,12 +770,34 @@ Return ONLY valid JSON matching the response schema.`
   const { compileMockCode } = await import('./mock-code.compiler.js')
   const { repairMockCode } = await import('./marketing-script.generator.js')
   const isMocksMode = validated.data.script.scenes.some((s) => s.mockCode || s.mockCompiledCode)
+  // Index the PREVIOUS manifest's scenes by headline so we can fall back
+  // to the working pre-edit version of any scene whose new mockCode +
+  // rescue both fail. Better to render the "before" of one scene than
+  // to render an empty panel — the user iterates on the rest.
+  const previousByHeadline = new Map<string, { mockCode?: string; mockCompiledCode?: string }>()
+  for (const s of existing.manifest.script.scenes) {
+    if (s.mockCode || s.mockCompiledCode) {
+      previousByHeadline.set(s.headline, {
+        mockCode: s.mockCode,
+        mockCompiledCode: s.mockCompiledCode,
+      })
+    }
+  }
   for (const scene of validated.data.script.scenes) {
     const missingMock = !scene.mockCode || scene.mockCode.length === 0
     if (missingMock) {
       // Only backfill in mocks mode AND when there's no screenshot to
       // fall back on (so we don't generate mocks for a screenshot scene).
       if (!isMocksMode || scene.screenshotIndex !== null) continue
+      // First: try to inherit from the previous manifest. If the AI just
+      // didn't touch this scene, its mockCode lives unchanged in the
+      // previous manifest under the same headline.
+      const prev = previousByHeadline.get(scene.headline)
+      if (prev?.mockCode && prev?.mockCompiledCode) {
+        scene.mockCode = prev.mockCode
+        scene.mockCompiledCode = prev.mockCompiledCode
+        continue
+      }
       console.warn(`[marketing-edit] mockCode missing for scene "${scene.headline}" — generating one`)
       try {
         const generated = await repairMockCode({
@@ -808,10 +830,18 @@ Return ONLY valid JSON matching the response schema.`
         console.log(`[marketing-edit] Rescued mockCode for scene "${scene.headline}"`)
       } catch (rescueErr) {
         console.warn(`[marketing-edit] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message}`)
-        // Drop the new mockCode entirely — keep the previous visual rather
-        // than break the render.
-        scene.mockCode = undefined
-        scene.mockCompiledCode = undefined
+        // Fall back to the PREVIOUS working version of this scene if
+        // we have one (matched by headline). Better to ship the before-
+        // state of the scene than render an empty panel.
+        const prev = previousByHeadline.get(scene.headline)
+        if (prev?.mockCode && prev?.mockCompiledCode) {
+          scene.mockCode = prev.mockCode
+          scene.mockCompiledCode = prev.mockCompiledCode
+          console.log(`[marketing-edit] Reverted scene "${scene.headline}" to its pre-edit version`)
+        } else {
+          scene.mockCode = undefined
+          scene.mockCompiledCode = undefined
+        }
       }
     }
   }

@@ -320,12 +320,15 @@ Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding pros
   // Try Pro first; fall back to Flash if Pro returns empty (503 silently
   // swallowed) or throws on overload. Flash is faster and almost always
   // good enough for a single-scene mock. Cheaper too.
+  // maxTokens: 4500 — Flash is more verbose than Pro and was getting
+  // truncated mid-TSX at 2500 (`Expected "}" but found end of file`).
+  // The compiler still rejects above 6000 chars, so this is safe.
   let code: string
   try {
     const result = await generateText({
       userPrompt,
       model: GEMINI_PRO_MODEL,
-      maxTokens: 2_500,
+      maxTokens: 4_500,
       temperature: 0.4,
       json: false,
     })
@@ -335,7 +338,7 @@ Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding pros
       const flashResult = await generateText({
         userPrompt,
         // No model override = Flash (default).
-        maxTokens: 2_500,
+        maxTokens: 4_500,
         temperature: 0.4,
         json: false,
       })
@@ -348,7 +351,7 @@ Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding pros
       console.warn(`[repairMockCode] Pro errored (${message.slice(0, 80)}) — falling back to Flash`)
       const flashResult = await generateText({
         userPrompt,
-        maxTokens: 2_500,
+        maxTokens: 4_500,
         temperature: 0.4,
         json: false,
       })
