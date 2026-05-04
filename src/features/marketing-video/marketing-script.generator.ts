@@ -1499,7 +1499,11 @@ ${modeCatalog}
 
 Heuristic: a "look at this number" beat → hero-stat. A "the product does X" beat → bento / cursor-click / chart / chat. A "here's how it works" beat → flow-diagram. A "make a strong claim" beat → headline-burst. A brand / opener beat → logo-hero. A "no template fits this idea" beat → custom. The right mode depends on what the headline is actually saying, not on a fixed quota.
 
-Example of a tight per-scene output (illustrative — adapt the specifics to YOUR product):
+### Per-scene examples — pick fresh, don't clone
+
+These are 6 examples drawn from DIFFERENT modes and DIFFERENT product shapes (analytics, devtool, support, video, design tool, brand opener). They show what concrete looks like — exact text, focal element, motion idea. Your scenes' briefs should be at this level of specificity but the SHAPES should be your own choices for THIS product, not copies of these.
+
+**1. hero-stat — metric reveal (analytics product):**
 \`\`\`json
 {
   "headline": "10× faster docs",
@@ -1508,9 +1512,85 @@ Example of a tight per-scene output (illustrative — adapt the specifics to YOU
   "screenshotIndex": null,
   "durationSeconds": 8,
   "visualMode": "hero-stat",
-  "visualBrief": "Eyebrow label 'AVG TIME TO PUBLISH' in tracking-widest uppercase. Below it a giant accent-colored number that ticks from 240 down to 4 across 1.6s, then settles. Suffix 'minutes' inline. Subhead 'and dropping'. Sustained motion: tiny ±1 jitter on the number after it settles."
+  "visualBrief": "Eyebrow 'AVG TIME TO PUBLISH' in tracking-widest uppercase zinc-500. Giant accent-colored number ticks DOWN from 240 to 4 across 1.6s, then settles with a tiny ±1 jitter. Suffix 'minutes' inline at half size. Subhead 'and dropping' fades in last. Focal: the number; eye lands on the dramatic descent."
 }
-\`\`\``
+\`\`\`
+
+**2. bento — analytics dashboard (data product):**
+\`\`\`json
+{
+  "headline": "See every question users ask",
+  "voiceover": "Spot the gaps. Fix them in minutes — your docs get smarter every week.",
+  "subhead": "Live insights, your team's edge.",
+  "screenshotIndex": null,
+  "durationSeconds": 9,
+  "visualMode": "bento",
+  "visualBrief": "Browser frame at perspective(2000px) rotateY(-3deg). Big tinted card upper-left with '4,820 queries this week' counter ticking up live + a small sparkline below. Top-right small card: list of top 3 user questions with hover-style accent on top one. Bottom-right small card: sentiment pie chart at 78% positive, with the dot pulsing to feel real-time. Focal: the counter."
+}
+\`\`\`
+
+**3. chat — support / RAG product:**
+\`\`\`json
+{
+  "headline": "Answers in your voice",
+  "voiceover": "Your widget answers like your team would. [calm] Grounded in YOUR docs, no hallucination.",
+  "subhead": "24/7 support that scales with you.",
+  "screenshotIndex": null,
+  "durationSeconds": 10,
+  "visualMode": "chat",
+  "visualBrief": "Browser frame, chat UI top-aligned. User bubble (top-right, accent bg): 'How do I revoke an API key?'. Three pulsing typing dots cross-fade into AI reply: 'Settings → API Keys → click the trash icon next to the key. Revocation is instant.' Cursor blink at end of user text. Avatar dot stays subtly pulsing for live feel."
+}
+\`\`\`
+
+**4. flow-diagram — devtool / pipeline:**
+\`\`\`json
+{
+  "headline": "From CLI to live preview",
+  "voiceover": "One command. — Three steps. Your branch deploys before your coffee's done.",
+  "screenshotIndex": null,
+  "durationSeconds": 8,
+  "visualMode": "flow-diagram",
+  "visualBrief": "Three horizontal nodes: 'git push' (Code icon) → 'CI builds' (Cpu icon, accent hero with gradient + glow) → 'Live preview' (Globe icon). Animated arrows connect them; a small accent dot travels along each arrow on a 1.6s loop so the pipeline feels alive. Hero pulses gently."
+}
+\`\`\`
+
+**5. cursor-click — onboarding moment:**
+\`\`\`json
+{
+  "headline": "One click to invite your team",
+  "voiceover": "Click ONCE. — Your whole team's in. [excited] No emails to copy, no IT tickets.",
+  "screenshotIndex": null,
+  "durationSeconds": 7,
+  "visualMode": "cursor-click",
+  "visualBrief": "Browser frame on a 'Team Members' page. Header bar with 'Members · 1' pill. Empty-state illustration with 'No teammates yet' line + accent-colored 'Invite via SSO' CTA button. Cursor flies in from top-right and clicks the button at frame 70 with a ripple. Header pill flashes to 'Members · 12' just as the click lands."
+}
+\`\`\`
+
+**6. headline-burst — bold claim opener:**
+\`\`\`json
+{
+  "headline": "STOP. WRITING. DOCS.",
+  "voiceover": "[building] Stop wasting your sprints on documentation nobody reads.",
+  "screenshotIndex": null,
+  "durationSeconds": 5,
+  "visualMode": "headline-burst",
+  "visualBrief": "NO frame. Three words on three stacked lines, each text-[110px] font-black. 'STOP.' enters first (zinc-900). 'WRITING.' enters second (zinc-500, smaller). 'DOCS.' enters last (accent color, with a subtle glow + scale punch). Background has a subtle accent sweep behind. Each word springs in 8 frames apart."
+}
+\`\`\`
+
+**7. custom (escape hatch) — split-screen before/after:**
+\`\`\`json
+{
+  "headline": "Before vs after",
+  "voiceover": "Old way: weeks. — New way: minutes. The same guide, written ten times faster.",
+  "screenshotIndex": null,
+  "durationSeconds": 8,
+  "visualMode": "custom",
+  "visualBrief": "Vertical split 50/50 at center. LEFT half (zinc-100 bg, slightly desaturated): a shaky stick-figure timeline labelled 'Week 1 / Week 2 / Week 3 / Week 4', dim red CROSS over it. RIGHT half (accent bg gradient): a clean horizontal stat 'DAY 1 — Published' with the accent number large, plus a green check pulsing. Center divider is a thin accent line that fades in. Both halves enter simultaneously from opposite sides."
+}
+\`\`\`
+
+**Note on variety:** these examples span 7 modes and 7 different product types intentionally. Across YOUR 3-4 scenes, vary the modes (the 'never repeat' rule), and let the content of each brief be specific to the doc — not a copy of these. A brief that names actual numbers / actual UI labels / actual user actions from the source doc is always better than a generic one.`
     : `**Visuals = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}). If a scene has no relevant screenshot, set \`screenshotIndex: null\` and the renderer shows an accent gradient placeholder. Do NOT output \`visualMode\` or \`visualBrief\` in screenshots mode.`
 
   return `You are writing the SKELETON of a 45-second marketing video script for a SaaS product feature.
