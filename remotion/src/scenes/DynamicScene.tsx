@@ -102,11 +102,9 @@ class SafeMockBoundary extends React.Component<
 }
 
 const SceneFallback: React.FC<{ branding: Branding }> = ({ branding }) => {
-  return (
-    <AbsoluteFill
-      style={{
-        background: `linear-gradient(135deg, ${branding.accentColor}55, #0B0B0F)`,
-      }}
-    />
-  )
+  // Used when the LLM mock throws at render time (uncaught exception
+  // inside the new Function() factory or its return value). We match
+  // the canvas bgColor so the failure is invisible — the headline +
+  // brand mark from the surrounding FeatureScene still carry the scene.
+  return <AbsoluteFill style={{ background: branding.bgColor }} />
 }

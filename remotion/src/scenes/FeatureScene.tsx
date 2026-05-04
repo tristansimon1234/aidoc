@@ -291,9 +291,12 @@ const ScreenshotFrame: React.FC<ScreenshotFrameProps> = ({ screenshot, branding,
             }}
           />
         ) : (
-          <AbsoluteFill
-            style={{ background: `linear-gradient(135deg, ${branding.accentColor}55, ${branding.bgColor})` }}
-          />
+          // No screenshot AND no mock — this is the silent-failure state
+          // (mocks-mode scene whose mockCode was missing or both rescue
+          // attempts failed). Render just the canvas bgColor so the
+          // empty visual slot blends with the rest of the video instead
+          // of flashing a colored gradient that looks like a glitch.
+          <AbsoluteFill style={{ background: branding.bgColor }} />
         )}
       </div>
     </>

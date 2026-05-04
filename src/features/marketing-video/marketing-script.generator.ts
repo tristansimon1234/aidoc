@@ -300,8 +300,7 @@ ${args.scene.mockCode}
 
 Rewrite this scene's mockCode.`
 
-  const result = await generateText({
-    userPrompt: `${promptHeader}
+  const userPrompt = `${promptHeader}
 
 Hard rules (the same rules the original prompt enforced):
 - Define a function exactly named \`MockScene\` taking \`{ branding }\` as its only prop.
@@ -316,17 +315,55 @@ Hard rules (the same rules the original prompt enforced):
 - Static styling via Tailwind \`className\`; inline \`style={{}}\` only for animated values.
 - Stay under 2500 characters.
 
-Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding prose). It will be passed straight to esbuild.`,
-    model: GEMINI_PRO_MODEL,
-    maxTokens: 2_500,
-    temperature: 0.4,
-    json: false,
-  })
+Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding prose). It will be passed straight to esbuild.`
+
+  // Try Pro first; fall back to Flash if Pro returns empty (503 silently
+  // swallowed) or throws on overload. Flash is faster and almost always
+  // good enough for a single-scene mock. Cheaper too.
+  let code: string
+  try {
+    const result = await generateText({
+      userPrompt,
+      model: GEMINI_PRO_MODEL,
+      maxTokens: 2_500,
+      temperature: 0.4,
+      json: false,
+    })
+    code = result.text.trim()
+    if (code.length === 0) {
+      console.warn('[repairMockCode] Pro returned empty — falling back to Flash')
+      const flashResult = await generateText({
+        userPrompt,
+        // No model override = Flash (default).
+        maxTokens: 2_500,
+        temperature: 0.4,
+        json: false,
+      })
+      code = flashResult.text.trim()
+    }
+  } catch (err) {
+    const message = (err as Error).message
+    // 503 / overload / 429 → retry on Flash.
+    if (/503|429|overload/i.test(message)) {
+      console.warn(`[repairMockCode] Pro errored (${message.slice(0, 80)}) — falling back to Flash`)
+      const flashResult = await generateText({
+        userPrompt,
+        maxTokens: 2_500,
+        temperature: 0.4,
+        json: false,
+      })
+      code = flashResult.text.trim()
+    } else {
+      throw err
+    }
+  }
 
   // Strip markdown fences if the model added them anyway.
-  let code = result.text.trim()
   if (code.startsWith('```')) {
     code = code.replace(/^```(?:tsx|jsx|ts|js)?\s*\n/, '').replace(/\n```\s*$/, '').trim()
+  }
+  if (code.length === 0) {
+    throw new Error('repairMockCode: both Pro and Flash returned empty text')
   }
   return code
 }
@@ -392,8 +429,10 @@ For each scene you write a small TSX component as the value of \`mockCode\`. The
 #### Hard rules — non-negotiable, the previous render had ALL of these wrong
 
 1. **Light mode ONLY** — use \`<Remotion.MockFrame tone='light'>\`. No \`tone='dark'\`. Even for terminal-style scenes, use a light-on-dark INSIDE block, not a dark frame. The video lives on a white canvas; dark frames look like glued-on cards.
-2. **Outer AbsoluteFill has NO background and NO \`overflow: hidden\`.** Use \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` (or p-12). NO \`background:\` property, NO \`overflow-hidden\` className. The MockFrame's drop-shadow extends ~80px past its edges; clipping it with overflow-hidden cuts the shadow at the panel boundary and looks abrupt ("shadow coupé par la bordure"). Let it spill onto the surrounding canvas — that's the soft falloff that makes the frame feel anchored.
+2. **Outer AbsoluteFill has NO background and NO \`overflow: hidden\`.** Use \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` (or p-12). NO \`background:\` property, NO \`overflow-hidden\` className. The outer must stay TRANSPARENT so the FeatureScene canvas (\`branding.bgColor\`) shows through and the mock blends with the rest of the video. The MockFrame's drop-shadow extends ~80px past its edges; clipping it with overflow-hidden cuts the shadow at the panel boundary and looks abrupt. Let it spill onto the surrounding canvas — that's the soft falloff that makes the frame feel anchored.
 3. **Use Tailwind className for static styling.** Inline \`style={{}}\` ONLY for dynamic interpolated values (opacity, transform, computed colors). Everything static (padding, rounded corners, shadows, layout, colors that don't depend on frame) → \`className='rounded-2xl p-6 bg-white shadow-2xl ...'\`. Twind is installed; every Tailwind utility works at runtime.
+
+   **Backgrounds that span the canvas vs. cards on top of it.** Anything full-bleed (a backdrop, a section that fills the panel) must use \`branding.bgColor\` — NEVER hardcode \`white\` / \`#fff\` / \`bg-white\` for that, because the canvas color isn't always white. Only the inner UI cards / MockFrame surfaces representing a literal product window may stay white — those read as a screenshot of a UI on top of the canvas.
 4. **NEVER use \`<Remotion.AccentGlow>\`.** The blurred colored circle bleeds onto the canvas and reads as a render glitch ("halo behind the window"). It is deprecated. Mocks render on a clean white canvas — UI modes use the MockFrame's drop-shadow for depth, abstract modes use the project's accent on the focal element (giant typography, gradient logo) for impact. Period. Do not call AccentGlow.
 
 5. **Cursor-click rule — populated UI, not isolated button.** When using \`<Remotion.AnimatedCursor>\`:
