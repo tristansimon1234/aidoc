@@ -675,31 +675,6 @@ export const api = {
           method: 'POST',
           body: JSON.stringify({ jpegBase64 }),
         }),
-      /** Conversational pre-flight before /generate. Returns either a
-       *  question to keep the dialogue going or a final plan ready to
-       *  fire generation with. */
-      converse: (
-        id: string,
-        history: { role: 'user' | 'assistant'; content: string }[],
-      ): Promise<
-        | { kind: 'question'; reply: string }
-        | {
-            kind: 'plan'
-            reply: string
-            plan: {
-              userPrompt: string
-              tone: 'punchy' | 'calm' | 'playful' | 'serious' | 'confident' | 'inspirational' | 'conversational'
-              visualMode: 'mocks' | 'screenshots'
-              withVoiceover: boolean
-              musicTrackId: string
-              musicVolume: number
-            }
-          }
-      > =>
-        request(`/runs/${id}/marketing-video/converse`, {
-          method: 'POST',
-          body: JSON.stringify({ history }),
-        }),
       updateVoice: (
         id: string,
         opts: { voiceId?: string; tone?: 'punchy' | 'calm' | 'playful' | 'serious' | 'confident' | 'inspirational' | 'conversational' },
