@@ -272,6 +272,34 @@ async function synthesizeMarketingVoiceover(
   return { voiceoverPath, voiceoverUrl, voiceoverDurationSeconds }
 }
 
+/**
+ * Merge an AI-edited script over the existing manifest script, filling
+ * in any fields the AI dropped from its output. This is the safety net
+ * for the edit path: even if the model omits durationSeconds /
+ * screenshotIndex / subhead etc., the merged result has them from the
+ * source-of-truth manifest. Scenes match by INDEX (the AI rarely
+ * reorders).
+ *
+ * Returns a plain object the Zod validator can parse.
+ */
+function mergeWithExistingScript(
+  aiScript: Record<string, unknown>,
+  existing: import('./marketing-video.types.js').MarketingScript,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = {
+    language: aiScript.language ?? existing.language,
+    totalDurationSeconds: aiScript.totalDurationSeconds ?? existing.totalDurationSeconds,
+    hook: { ...existing.hook, ...((aiScript.hook as object) ?? {}) },
+    cta:  { ...existing.cta,  ...((aiScript.cta as object)  ?? {}) },
+  }
+  const aiScenes = Array.isArray(aiScript.scenes) ? aiScript.scenes as Array<Record<string, unknown>> : []
+  merged.scenes = existing.scenes.map((existingScene, i) => {
+    const aiScene = aiScenes[i] ?? {}
+    return { ...existingScene, ...aiScene }
+  })
+  return merged
+}
+
 function flattenScriptToNarration(script: import('./marketing-video.types.js').MarketingScript): string {
   const parts: string[] = [script.hook.voiceover]
   for (const scene of script.scenes) parts.push(scene.voiceover)
@@ -967,9 +995,20 @@ Return ONLY valid JSON: { "message": string, "script": <full edited script>, "br
     }
   }
 
+  // Post-process: merge missing fields from the existing manifest into
+  // the AI's output. Gemini occasionally drops durationSeconds /
+  // screenshotIndex / subhead / etc. on creative rewrites despite the
+  // prompt rule that tells it to preserve them. Belt + suspenders: we
+  // backfill from the existing manifest before Zod validates so a
+  // dropped field doesn't kill the whole edit.
+  const mergedScript = mergeWithExistingScript(
+    parsed.script as Record<string, unknown>,
+    existing.manifest.script,
+  )
+
   const { UpdateMarketingManifestSchema } = await import('./marketing-video.schema.js')
   const validated = UpdateMarketingManifestSchema.safeParse({
-    script: parsed.script,
+    script: mergedScript,
     ...(parsed.branding ? { branding: parsed.branding } : {}),
   })
   if (!validated.success) {
