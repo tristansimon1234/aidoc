@@ -97,6 +97,29 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
   const [editing, setEditing] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
 
+  // === Conversational pre-flight (chat-first UX) ===
+  // When no manifest exists, the panel shows a chat instead of the form.
+  // AI asks 2-4 questions, then proposes a plan; the user accepts → we
+  // apply the plan to the form state and fire the existing generate
+  // pipeline. The chat history isn't persisted server-side: it's just
+  // a discovery dialogue, the resulting plan IS persisted via the
+  // generate call.
+  const HOOK_GREETING = `Hey 👋 — what's the angle for this video? Who's the audience, and what's the ONE moment you want them to remember?`
+  type ChatTurn = { role: 'user' | 'assistant'; content: string }
+  type ChatPlan = {
+    userPrompt: string
+    tone: VoiceTone
+    visualMode: 'mocks' | 'screenshots'
+    withVoiceover: boolean
+    musicTrackId: string
+    musicVolume: number
+  }
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([{ role: 'assistant', content: HOOK_GREETING }])
+  const [chatInput, setChatInput] = useState('')
+  const [chatThinking, setChatThinking] = useState(false)
+  const [chatPlan, setChatPlan] = useState<ChatPlan | null>(null)
+  const [chatError, setChatError] = useState<string | null>(null)
+
   useEffect(() => {
     let cancelled = false
     // The summary read (Supabase direct, ~50-200ms) and the music presets
@@ -195,9 +218,20 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
    * The user can close the tab, navigate, refresh — work continues
    * server-side and the result is durable in storage + DB.
    */
-  const handleGenerateAndRender = async (): Promise<void> => {
+  const handleGenerateAndRender = async (overrides?: Partial<ChatPlan>): Promise<void> => {
     setError(null)
     setWorking(true)
+
+    // Resolve effective options — plan overrides (from chat acceptance)
+    // take precedence over form state. Lets us bypass React's async
+    // setState timing when the chat path fires generation right after
+    // accepting a plan (form state hasn't propagated yet).
+    const effUserPrompt = overrides?.userPrompt?.trim() ?? userPrompt.trim()
+    const effTone = overrides?.tone ?? tone
+    const effVisualMode = overrides?.visualMode ?? visualMode
+    const effWithVoiceover = overrides?.withVoiceover ?? withVoiceover
+    const effMusicChoice = overrides?.musicTrackId ?? musicChoice
+    const effMusicVolume = overrides?.musicVolume ?? musicVolume
 
     try {
       // No run on this page yet (manually-typed content, no video) —
@@ -224,30 +258,24 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         musicVolume?: number
         aiMusicPrompt?: string
       } = {}
-      if (musicChoice === 'upload' && musicUploadPath) {
+      if (effMusicChoice === 'upload' && musicUploadPath) {
         musicOpts.musicUploadPath = musicUploadPath
-        musicOpts.musicVolume = musicVolume
-      } else if (musicChoice === 'ai' || musicChoice.startsWith('ai-')) {
-        // AI music — either tone-derived ('ai') or a named style ('ai-xxx').
-        // The brief field works on top of either: extends the prompt with
-        // user-specified steering ("more drums", "softer outro", ...).
-        musicOpts.musicTrackId = musicChoice
-        musicOpts.musicVolume = musicVolume
+        musicOpts.musicVolume = effMusicVolume
+      } else if (effMusicChoice === 'ai' || effMusicChoice.startsWith('ai-')) {
+        musicOpts.musicTrackId = effMusicChoice
+        musicOpts.musicVolume = effMusicVolume
         if (aiMusicPrompt.trim()) musicOpts.aiMusicPrompt = aiMusicPrompt.trim()
-      } else if (musicChoice !== 'none' && musicChoice !== 'upload') {
-        musicOpts.musicTrackId = musicChoice
-        musicOpts.musicVolume = musicVolume
+      } else if (effMusicChoice !== 'none' && effMusicChoice !== 'upload') {
+        musicOpts.musicTrackId = effMusicChoice
+        musicOpts.musicVolume = effMusicVolume
       }
 
-      // Fire-and-forget: 202 returns in ~1s, pipeline finishes in the
-      // background. JobTracker card stays running until Realtime flips
-      // it to completed/failed.
       await api.runs.marketingVideo.generate(activeRunId, {
-        userPrompt: userPrompt.trim() || undefined,
-        withVoiceover,
+        userPrompt: effUserPrompt || undefined,
+        withVoiceover: effWithVoiceover,
         voiceId: voiceId || undefined,
-        tone,
-        visualMode,
+        tone: effTone,
+        visualMode: effVisualMode,
         ...musicOpts,
       })
     } catch (err) {
@@ -264,6 +292,60 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       // run while this one is still finishing in the background.
       setWorking(false)
     }
+  }
+
+  /** Conversational pre-flight: send the user's message, await the
+   *  AI's next reply (a question or a final plan). Auto-creates a stub
+   *  run on first send so the converse endpoint has a runId scope. */
+  const handleChatSend = async (): Promise<void> => {
+    const message = chatInput.trim()
+    if (!message || chatThinking) return
+    setChatError(null)
+    const next: ChatTurn[] = [...chatHistory, { role: 'user', content: message }]
+    setChatHistory(next)
+    setChatInput('')
+    setChatThinking(true)
+    try {
+      let activeRunId = runId
+      if (!activeRunId) {
+        const stub = await api.runs.create({
+          featureName: `[Marketing] ${pageTitle}`,
+          startUrl: fallbackStartUrl || 'https://example.com',
+          goal: `Marketing video for ${pageTitle}`,
+          docPageId: pageId,
+        })
+        activeRunId = stub.id
+        setRunId(activeRunId)
+      }
+      const result = await api.runs.marketingVideo.converse(activeRunId, next)
+      setChatHistory([...next, { role: 'assistant', content: result.reply }])
+      if (result.kind === 'plan') {
+        setChatPlan(result.plan)
+      }
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : (err as Error).message
+      setChatError(msg)
+      // Roll back the optimistic user message so they can retype.
+      setChatHistory(chatHistory)
+    } finally {
+      setChatThinking(false)
+    }
+  }
+
+  /** User accepted the AI's plan — apply it to the form state (so the
+   *  values are visible if they fall through to the form view later)
+   *  and fire the generation pipeline with the plan as overrides. */
+  const handleAcceptPlan = async (): Promise<void> => {
+    if (!chatPlan) return
+    setUserPrompt(chatPlan.userPrompt)
+    setTone(chatPlan.tone)
+    setVisualMode(chatPlan.visualMode)
+    setWithVoiceover(chatPlan.withVoiceover)
+    setMusicChoice(chatPlan.musicTrackId)
+    setMusicVolume(chatPlan.musicVolume)
+    const planSnapshot = chatPlan
+    setChatPlan(null)
+    await handleGenerateAndRender(planSnapshot)
   }
 
   // Render only — re-runs the Remotion render against the current
@@ -457,6 +539,95 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         }`}
       >
         <div className={styles.formColumn}>
+
+      {/* === Chat-first pre-flight ===
+        *  Until the user has generated a video at least once, the form is
+        *  hidden in favour of a focused conversation: the AI gathers
+        *  audience / angle / tone in 2-4 turns, proposes a plan, the user
+        *  accepts → fire generate. Once a manifest exists OR a job is
+        *  in flight, fall through to the form (kept for power users +
+        *  refines on existing videos). */}
+      {!hasManifest && !showProgress ? (
+        <div className={styles.card}>
+          <div className={styles.cardHeader}>
+            <span className={styles.cardTitle}>Plan your video</span>
+            <p className={styles.cardDescription}>
+              I'll ask you 2-3 quick questions, then propose a plan you can validate before generating.
+            </p>
+          </div>
+
+          <div className={styles.refineHistory} style={{ maxHeight: 'none', minHeight: 240 }}>
+            {chatHistory.map((m, i) => (
+              <div
+                key={i}
+                className={m.role === 'user' ? styles.refineMsgUser : styles.refineMsgAssistant}
+              >
+                {m.content}
+              </div>
+            ))}
+            {chatThinking && (
+              <div className={styles.refineMsgAssistant}>
+                <span className={styles.refineThinking}>Thinking…</span>
+              </div>
+            )}
+          </div>
+
+          {chatError && (
+            <div className={`${styles.statusBanner} ${styles.statusError}`}>{chatError}</div>
+          )}
+
+          {chatPlan ? (
+            <div className={styles.actions}>
+              <Button
+                variant="primary"
+                onClick={() => void handleAcceptPlan()}
+                disabled={formLocked}
+              >
+                Generate this plan
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  // User wants to pivot — clear the plan, keep the
+                  // conversation open so they can type a tweak.
+                  setChatPlan(null)
+                }}
+                disabled={formLocked}
+              >
+                Tweak first
+              </Button>
+            </div>
+          ) : (
+            <div className={styles.refineInputWrap}>
+              <textarea
+                className={styles.refineInput}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void handleChatSend()
+                  }
+                }}
+                placeholder="Type your answer…"
+                rows={2}
+                disabled={chatThinking}
+              />
+              <button
+                className={styles.refineSend}
+                onClick={() => void handleChatSend()}
+                disabled={!chatInput.trim() || chatThinking}
+                aria-label="Send"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
 
       {/* === Brief === */}
       <div className={styles.card}>
@@ -667,13 +838,15 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         <div className={styles.actions}>
           <Button
             variant="primary"
-            onClick={handleGenerateAndRender}
+            onClick={() => void handleGenerateAndRender()}
             disabled={formLocked || (musicChoice === 'upload' && !musicUploadPath)}
           >
             {showProgress ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
           </Button>
         </div>
       </div>
+        </>
+      )}
         </div>{/* /formColumn */}
 
       {/* === Preview column === */}

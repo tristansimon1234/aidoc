@@ -16,6 +16,7 @@ import {
   updateMarketingManifestForRun,
   editMarketingManifestWithAi,
   setMarketingThumbnailForRun,
+  converseMarketingVideo,
   MUSIC_PRESETS,
   AI_MUSIC_STYLES,
 } from './marketing-video.service.js'
@@ -401,6 +402,36 @@ marketingVideoRouter.post('/:id/marketing-video/render', (req: Request, res: Res
  * thumbnailUrl is updated. Used as the player's poster, og:image, and
  * social card. Body: { jpegBase64: string } (data URL or raw base64).
  */
+/**
+ * POST /runs/:id/marketing-video/converse
+ * Conversational pre-flight before /generate. Body: { history: [{ role,
+ * content }, ...] }. Returns either { kind: 'question', reply } to keep
+ * the dialogue going OR { kind: 'plan', reply, plan } when the AI has
+ * enough context to ship. The frontend then calls /generate with the
+ * plan (after user confirmation).
+ */
+const ConverseBodySchema = z.object({
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().min(1).max(2000),
+  })).min(1).max(20),
+})
+marketingVideoRouter.post('/:id/marketing-video/converse', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = ConverseBodySchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const result = await converseMarketingVideo(params.data.id, body.data.history)
+      res.status(200).json(result)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 const ThumbnailBodySchema = z.object({
   jpegBase64: z.string().min(100).max(4_000_000),
 })
