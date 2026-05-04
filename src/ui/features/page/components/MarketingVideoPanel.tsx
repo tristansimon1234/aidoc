@@ -335,6 +335,18 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         </div>
       )}
 
+      {/* Two-column when there's a preview (running pipeline or rendered video):
+       *  form on the left, preview on the right. Otherwise the form gets the
+       *  whole row — no awkward empty right column on first visit. */}
+      <div
+        className={`${styles.layout} ${
+          (ourJob?.status === 'running' || (hasManifest && summary && !working))
+            ? styles.layoutWithPreview
+            : ''
+        }`}
+      >
+        <div className={styles.formColumn}>
+
       {/* === Brief === */}
       <div className={styles.card}>
         <div className={styles.cardHeader}>
@@ -551,6 +563,11 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           </Button>
         </div>
       </div>
+        </div>{/* /formColumn */}
+
+      {/* === Preview column === */}
+      {(ourJob?.status === 'running' || (hasManifest && summary && !working)) && (
+        <div className={styles.previewColumn}>
 
       {/* === Pipeline progress (during) === */}
       {ourJob?.status === 'running' && (
@@ -685,6 +702,9 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           </div>
         </div>
       )}
+        </div>
+      )}
+      </div>
     </div>
   )
 }
