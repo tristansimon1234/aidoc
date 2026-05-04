@@ -1396,6 +1396,58 @@ async function generateSceneMockCode(args: BuildSceneMockPromptArgs): Promise<st
 // Stage 1: Skeleton generation (script structure only — no mockCode)
 // =============================================================================
 
+/**
+ * Public wrapper around `generateSceneMockCode` for callers OUTSIDE the
+ * fresh-generation orchestrator (specifically the edit/refine path in
+ * marketing-video.service). Resolves mode + style seed from string
+ * labels (which is what's persisted on the manifest) and falls back
+ * sensibly when those labels are missing or unknown.
+ *
+ * Used by the AI-edit path: after the architect rewrites the script's
+ * visualBrief / visualMode, we regenerate mockCode for the changed
+ * scenes via this helper rather than asking the editor LLM to write
+ * 4 mockCodes in one monolithic call (which dropped 3/4 in practice).
+ */
+export async function regenerateSceneMockCode(args: {
+  scene: {
+    headline: string
+    voiceover: string
+    subhead?: string
+    durationSeconds: number
+    visualMode?: string
+    visualBrief?: string
+  }
+  productName: string
+  /** Style-seed label from the existing manifest (e.g. "editorial").
+   *  When missing or unknown, the helper picks a random seed so the
+   *  designer still has a vibe to lean on. */
+  styleSeedLabel?: string
+}): Promise<string> {
+  const modeId = args.scene.visualMode
+  let mode: SceneMode
+  if (modeId === 'custom') {
+    mode = CUSTOM_MODE
+  } else {
+    const found = modeId ? SCENE_MODES.find((m) => m.id === modeId) : undefined
+    mode = found ?? pickSceneModes(1)[0]!
+  }
+  const seed = args.styleSeedLabel
+    ? STYLE_SEEDS.find((s) => s.label === args.styleSeedLabel) ?? pickStyleSeed()
+    : pickStyleSeed()
+  return generateSceneMockCode({
+    scene: {
+      headline: args.scene.headline,
+      voiceover: args.scene.voiceover,
+      subhead: args.scene.subhead,
+      durationSeconds: args.scene.durationSeconds,
+    },
+    mode,
+    productName: args.productName,
+    styleSeed: seed.brief,
+    visualBrief: args.scene.visualBrief ?? '',
+  })
+}
+
 function buildSkeletonPrompt(input: GenerateMarketingScriptInput): string {
   const captionList = input.screenshotCaptions
     .map((c, i) => `  [${i}] ${c}`)
