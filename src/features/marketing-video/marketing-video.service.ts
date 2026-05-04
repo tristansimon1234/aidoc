@@ -823,15 +823,29 @@ export async function editMarketingManifestWithAi(
 
   const { generateText } = await import('../../shared/ai/gemini.client.js')
 
-  // Trim mockCompiledCode out of the snapshot we feed Gemini — it's
-  // esbuild output, not human-edited, and inflates the prompt by ~2-3×
-  // for no signal. We re-compile it server-side after the edit lands.
+  // Detect creative instructions — "plus dynamic", "make it pop", "plus
+  // wahou", "rewrite the scenes", etc. — vs surgical ones ("change X
+  // to Y", "shorten scene 2"). For creative refines we STRIP the existing
+  // mockCode from what we feed the model: anchoring bias is the #1 reason
+  // creative refines come back as marginal tweaks. Without the existing
+  // TSX in context, Gemini writes from scratch using just the headline +
+  // voice-over, exactly like the initial generation.
+  const CREATIVE_KEYWORDS = /\b(plus|more|wahou|wow|dynamic|dynamique|animation|animations|moderne|modern|punch|pop|alive|vivant|riche|rich|creative|créatif|fou|dingue|époustouflant|spectaculaire|impressive|jazzy|bold|vibrant|fresh|pop|rewrite|repense|recompose|reimagine)\b/i
+  const isCreativeRefine = CREATIVE_KEYWORDS.test(input.instruction)
+
+  // Trim mockCompiledCode always (esbuild output, no signal). Trim
+  // mockCode too on creative refines so the model doesn't anchor on
+  // the existing animation choreography.
   const editableScript = {
     ...existing.manifest.script,
     scenes: existing.manifest.script.scenes.map((s) => ({
       ...s,
       mockCompiledCode: undefined,
+      ...(isCreativeRefine ? { mockCode: undefined } : {}),
     })),
+  }
+  if (isCreativeRefine) {
+    console.log('[marketing-edit] Creative refine detected — stripping existing mockCode to avoid anchoring')
   }
 
   const historyBlock = (input.history ?? [])
