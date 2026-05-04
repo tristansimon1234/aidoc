@@ -940,13 +940,35 @@ RULES:
 - Keep totalDurationSeconds === hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds.
 - Keep word counts realistic at ~2.3 words/sec for voice-over text.
 - When editing \`mockCode\`, keep it valid TSX that defines a function named \`MockScene({ branding })\` and follows the Remotion sandbox rules:
+
+  ### 🚨 OUTER \`<Remotion.AbsoluteFill>\` MUST BE TRANSPARENT 🚨
+
+  The OUTERMOST \`<Remotion.AbsoluteFill>\` is the canvas pass-through layer. It MUST NOT have any background — neither inline \`style={{ background: ... }}\` nor a Tailwind background utility (\`bg-slate-900\`, \`bg-gray-50\`, \`bg-white\`, \`bg-gradient-to-br\`, etc.). Painting a background on the outer creates a colored panel that doesn't match the rest of the video — the lint catches it and the whole compile fails. **Always:**
+
+  ✅ CORRECT (outer transparent, backdrop INSIDE):
+  \`\`\`tsx
+  <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
+    <div className='bg-slate-900 rounded-3xl p-8 shadow-2xl'>
+      {/* dark backdrop is INSIDE this card, not on the outer */}
+    </div>
+  </Remotion.AbsoluteFill>
+  \`\`\`
+
+  ❌ WRONG (outer has background — REJECTED at compile):
+  \`\`\`tsx
+  <Remotion.AbsoluteFill className='bg-slate-900 flex items-center'>
+    {/* lint error: outer must be transparent */}
+  </Remotion.AbsoluteFill>
+  \`\`\`
+
+  ### Other sandbox constraints
   - No \`import\` / \`require\` / \`fetch\` / \`new Function\` / \`eval\`.
   - Only access \`branding.{productName, accentColor, bgColor, textColor, fontFamily}\`.
   - Only invoke \`Remotion.{interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio, MockFrame, Pill, AccentGlow, AnimatedCursor, Icons, Charts}\`.
-  - \`Remotion.Icons.X\` accepts any lucide-react icon name.
-  - Outer AbsoluteFill must be transparent — no \`background:\`, no bg-utility classNames. Backdrops go inside cards / MockFrame.
+  - \`Remotion.Icons.X\` accepts any lucide-react icon name. Pass \`size\` (number, in px), NOT \`fontSize\` (CSS doesn't apply to lucide SVGs).
   - No inline \`<svg>\` tags — use \`Remotion.Icons.X\` instead.
   - \`AnimatedCursor\` takes \`leftPct\` + \`topPct\` numbers, NOT a path array.
+  - \`Remotion.Charts.LineChart\` / \`AreaChart\` / \`BarChart\` take RECHARTS children (\`<Line>\`, \`<XAxis>\`, etc.), not props like \`color\` / \`width\` / \`progress\`. Wrap in \`<ResponsiveContainer width='100%' height='100%'>\`.
 - If the instruction is unclear or impossible, return the manifest unchanged and explain in the message.
 - Voice-over audio + music URLs are NOT yours to change — those are regenerated separately.
 
