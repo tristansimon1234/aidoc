@@ -803,11 +803,12 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     // slots + the script envelope = ~3-4k typical, 16k cap leaves headroom
     // without inviting Flash to ramble).
     maxTokens: 16_384,
-    // Mocks need a touch of extra variance — but 0.85 was over the line:
-    // the model started emitting TSX with subtle syntax errors / banned
-    // patterns often enough that all 4 scenes would fall back to the
-    // gradient placeholder. The style seed already provides directional
-    // variety, so 0.7 is enough top-up.
+    // Disable Flash 2.5's thinking — for templated JSON output we don't
+    // need internal reasoning, and thinking tokens silently eat the
+    // maxOutputTokens budget. Last log showed Flash burning 13k of 16k
+    // tokens on thinking before getting cut off mid-scene 2. With
+    // thinkingBudget=0 the same generation outputs ~3-4k of pure JSON.
+    thinkingBudget: 0,
     temperature: input.visualMode === 'mocks' ? 0.7 : 0.6,
     json: true,
     responseSchema: RESPONSE_SCHEMA,

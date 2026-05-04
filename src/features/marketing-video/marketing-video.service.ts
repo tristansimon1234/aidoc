@@ -1190,6 +1190,8 @@ Your turn — emit the JSON object for the next response.`
     systemPrompt,
     userPrompt,
     maxTokens: 1_500,
+    // Structured JSON output, no reasoning needed → disable thinking.
+    thinkingBudget: 0,
     temperature: 0.5,
     json: true,
   })

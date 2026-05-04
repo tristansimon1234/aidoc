@@ -60,6 +60,12 @@ export async function generateText(opts: {
    *  fields, no wrong types, no extra envelope keys. Use for any JSON we
    *  Zod-validate downstream so the model can't drift the shape. */
   responseSchema?: ResponseSchema
+  /** Thinking budget cap. Gemini 2.5 Flash + Pro both have "thinking"
+   *  on by default, which silently consumes maxOutputTokens. For
+   *  structured-JSON tasks (template fills, schema-constrained extracts)
+   *  thinking adds nothing and just eats budget — pass `0` to disable.
+   *  For open-ended reasoning (chat, code-rewrites) leave undefined. */
+  thinkingBudget?: number
 }): Promise<{ text: string; usage: GeminiUsage }> {
   const genAI = getGenAI()
   const model = genAI.getGenerativeModel({
@@ -75,7 +81,12 @@ export async function generateText(opts: {
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.json ? { responseMimeType: 'application/json' } : {}),
         ...(opts.responseSchema ? { responseSchema: opts.responseSchema } : {}),
-      },
+        // thinkingConfig is a Gemini 2.5 feature — set thinkingBudget=0
+        // to disable internal reasoning tokens for structured tasks.
+        ...(opts.thinkingBudget !== undefined
+          ? { thinkingConfig: { thinkingBudget: opts.thinkingBudget } }
+          : {}),
+      } as Record<string, unknown>,
     }),
   )
 
