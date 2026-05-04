@@ -770,20 +770,32 @@ Return ONLY valid JSON matching the response schema.`
   const { compileMockCode } = await import('./mock-code.compiler.js')
   const { repairMockCode } = await import('./marketing-script.generator.js')
   const isMocksMode = validated.data.script.scenes.some((s) => s.mockCode || s.mockCompiledCode)
-  // Index the PREVIOUS manifest's scenes by headline so we can fall back
-  // to the working pre-edit version of any scene whose new mockCode +
-  // rescue both fail. Better to render the "before" of one scene than
-  // to render an empty panel — the user iterates on the rest.
+  // Index the PREVIOUS manifest's scenes for fallback when an edit
+  // breaks a scene. We try TWO lookups:
+  //   1. By headline — the AI usually keeps headlines stable across
+  //      refines.
+  //   2. By index — if the AI rewrote the headline ("From Screen…" →
+  //      "Instant Docs…"), headline lookup misses and we'd lose the
+  //      working pre-edit code. Index match catches that since the
+  //      AI rarely reorders scenes.
+  // Better to render the "before" of one scene than ship an empty panel.
   const previousByHeadline = new Map<string, { mockCode?: string; mockCompiledCode?: string }>()
+  const previousByIndex: Array<{ mockCode?: string; mockCompiledCode?: string }> = []
   for (const s of existing.manifest.script.scenes) {
+    const entry = { mockCode: s.mockCode, mockCompiledCode: s.mockCompiledCode }
     if (s.mockCode || s.mockCompiledCode) {
-      previousByHeadline.set(s.headline, {
-        mockCode: s.mockCode,
-        mockCompiledCode: s.mockCompiledCode,
-      })
+      previousByHeadline.set(s.headline, entry)
     }
+    previousByIndex.push(entry)
   }
-  for (const scene of validated.data.script.scenes) {
+  function findPreviousScene(headline: string, index: number): { mockCode?: string; mockCompiledCode?: string } | undefined {
+    const byHeadline = previousByHeadline.get(headline)
+    if (byHeadline?.mockCode && byHeadline?.mockCompiledCode) return byHeadline
+    const byIndex = previousByIndex[index]
+    if (byIndex?.mockCode && byIndex?.mockCompiledCode) return byIndex
+    return undefined
+  }
+  for (const [index, scene] of validated.data.script.scenes.entries()) {
     const missingMock = !scene.mockCode || scene.mockCode.length === 0
     if (missingMock) {
       // Only backfill in mocks mode AND when there's no screenshot to
@@ -791,8 +803,9 @@ Return ONLY valid JSON matching the response schema.`
       if (!isMocksMode || scene.screenshotIndex !== null) continue
       // First: try to inherit from the previous manifest. If the AI just
       // didn't touch this scene, its mockCode lives unchanged in the
-      // previous manifest under the same headline.
-      const prev = previousByHeadline.get(scene.headline)
+      // previous manifest under the same headline (or same index if
+      // headline was rewritten).
+      const prev = findPreviousScene(scene.headline, index)
       if (prev?.mockCode && prev?.mockCompiledCode) {
         scene.mockCode = prev.mockCode
         scene.mockCompiledCode = prev.mockCompiledCode
@@ -830,10 +843,10 @@ Return ONLY valid JSON matching the response schema.`
         console.log(`[marketing-edit] Rescued mockCode for scene "${scene.headline}"`)
       } catch (rescueErr) {
         console.warn(`[marketing-edit] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message}`)
-        // Fall back to the PREVIOUS working version of this scene if
-        // we have one (matched by headline). Better to ship the before-
-        // state of the scene than render an empty panel.
-        const prev = previousByHeadline.get(scene.headline)
+        // Fall back to the PREVIOUS working version of this scene
+        // (matched by headline or, if the AI rewrote the headline, by
+        // index). Better to ship the before-state than an empty panel.
+        const prev = findPreviousScene(scene.headline, index)
         if (prev?.mockCode && prev?.mockCompiledCode) {
           scene.mockCode = prev.mockCode
           scene.mockCompiledCode = prev.mockCompiledCode

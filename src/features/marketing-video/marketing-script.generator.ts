@@ -320,15 +320,19 @@ Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding pros
   // Try Pro first; fall back to Flash if Pro returns empty (503 silently
   // swallowed) or throws on overload. Flash is faster and almost always
   // good enough for a single-scene mock. Cheaper too.
-  // maxTokens: 4500 — Flash is more verbose than Pro and was getting
-  // truncated mid-TSX at 2500 (`Expected "}" but found end of file`).
-  // The compiler still rejects above 6000 chars, so this is safe.
+  // maxTokens is REQUIRED by Gemini, but you only pay for actually-
+  // generated tokens — set it high so we never get a truncated mid-TSX
+  // response ("Unexpected end of file"). The compiler caps the SOURCE
+  // at 6000 chars (~1500 tokens), so even if the model goes long, the
+  // input rejection bounds it. Gemini 2.5 Pro / Flash both support up
+  // to 65536 output tokens.
+  const MAX_OUT = 32_000
   let code: string
   try {
     const result = await generateText({
       userPrompt,
       model: GEMINI_PRO_MODEL,
-      maxTokens: 4_500,
+      maxTokens: MAX_OUT,
       temperature: 0.4,
       json: false,
     })
@@ -338,7 +342,7 @@ Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding pros
       const flashResult = await generateText({
         userPrompt,
         // No model override = Flash (default).
-        maxTokens: 4_500,
+        maxTokens: MAX_OUT,
         temperature: 0.4,
         json: false,
       })
@@ -351,7 +355,7 @@ Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding pros
       console.warn(`[repairMockCode] Pro errored (${message.slice(0, 80)}) — falling back to Flash`)
       const flashResult = await generateText({
         userPrompt,
-        maxTokens: 4_500,
+        maxTokens: MAX_OUT,
         temperature: 0.4,
         json: false,
       })

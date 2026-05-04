@@ -98,9 +98,21 @@ export async function generateText(opts: {
   //     content (very long input vs very small maxTokens)
   //   - finishReason: 'OTHER' → model error, often a 503 retry path
   //   - no candidates → the request itself was rejected (prompt block)
+  // Surface anomalous finishReasons EVEN when text is non-empty.
+  // MAX_TOKENS with non-empty text means the response was TRUNCATED —
+  // callers compiling TSX would get "Unexpected end of file" without
+  // knowing why. SAFETY/RECITATION mid-response is rarer but still
+  // worth logging.
+  const candidates = result.response.candidates ?? []
+  const finishReason = candidates[0]?.finishReason ?? 'NO_CANDIDATES'
+  if (text && text.trim().length > 0 && finishReason && finishReason !== 'STOP') {
+    console.warn(
+      `[gemini] Truncated response from ${opts.model ?? GEMINI_MODEL}: finishReason=${finishReason} ` +
+      `inputTokens=${usage?.promptTokenCount ?? '?'} outputTokens=${usage?.candidatesTokenCount ?? '?'} ` +
+      `(consider raising maxTokens above ${opts.maxTokens ?? '?'})`,
+    )
+  }
   if (!text || text.trim().length === 0) {
-    const candidates = result.response.candidates ?? []
-    const finishReason = candidates[0]?.finishReason ?? 'NO_CANDIDATES'
     const safetyRatings = candidates[0]?.safetyRatings ?? []
     const blockedRatings = safetyRatings.filter((r) =>
       r.probability && r.probability !== 'NEGLIGIBLE' && r.probability !== 'LOW',
