@@ -413,6 +413,74 @@ function pickStyleSeed(): typeof STYLE_SEEDS[number] {
 }
 
 /**
+ * Cheap pre-Zod fixup for the slot-name drift the model produces between
+ * similar templates. The discriminated union has 14 kinds and overlapping
+ * vocabulary (multiple templates have a "title", "text" appears in both
+ * quote and chat contexts, etc.) — when the model picks the wrong field
+ * name, Zod fails the whole script. Map the obvious typos here so a
+ * single drift doesn't kill the generation.
+ *
+ * Mutates the input. Anything we don't recognize is left alone so Zod
+ * can still flag it clearly.
+ */
+function normalizeTemplateSlots(parsed: unknown): void {
+  if (!parsed || typeof parsed !== 'object') return
+  const root = parsed as Record<string, unknown>
+  const scenes = root.scenes
+  if (!Array.isArray(scenes)) return
+
+  const renameIfMissing = (obj: Record<string, unknown>, target: string, candidates: string[]): void => {
+    if (typeof obj[target] === 'string' && obj[target]) return
+    for (const c of candidates) {
+      if (typeof obj[c] === 'string' && obj[c]) {
+        obj[target] = obj[c]
+        delete obj[c]
+        return
+      }
+    }
+  }
+
+  for (const scene of scenes) {
+    if (!scene || typeof scene !== 'object') continue
+    const t = (scene as Record<string, unknown>).template
+    if (!t || typeof t !== 'object') continue
+    const template = t as Record<string, unknown>
+    const kind = template.kind
+    switch (kind) {
+      case 'chat-bubble':
+        // Model bleeds in `text` from quote's vocabulary, or invents
+        // `content` / `message` / `body`. Map them onto `answer`.
+        renameIfMissing(template, 'answer', ['text', 'content', 'message', 'body', 'response'])
+        // `prompt` / `query` / `userMessage` → question
+        renameIfMissing(template, 'question', ['prompt', 'query', 'userMessage', 'ask'])
+        break
+      case 'quote':
+        renameIfMissing(template, 'text', ['quote', 'body', 'content', 'message'])
+        renameIfMissing(template, 'author', ['name', 'by'])
+        break
+      case 'hero-text':
+        renameIfMissing(template, 'headline', ['title', 'heading', 'text'])
+        break
+      case 'big-stat':
+        renameIfMissing(template, 'value', ['number', 'stat', 'metric'])
+        break
+      case 'kpi-reveal':
+        // metric ↔ label confusion: keep `metric` if both exist; promote
+        // `label` to `metric` if metric is missing.
+        renameIfMissing(template, 'metric', ['label', 'name'])
+        break
+      case 'live-typing':
+        // Some models emit a single `code` string instead of a `lines` array.
+        if (!Array.isArray(template.lines) && typeof template.code === 'string') {
+          template.lines = (template.code as string).split('\n').slice(0, 8)
+          delete template.code
+        }
+        break
+    }
+  }
+}
+
+/**
  * Single-scene rescue path. Two modes:
  *  - REPAIR: existing mockCode failed to compile/lint — feed the error
  *    + the broken code and ask Gemini to fix it.
@@ -575,6 +643,8 @@ You may set "screenshotIndex" to any integer between 0 and ${Math.max(0, input.a
 ${input.visualMode === 'mocks'
   ? `**Mode = MOCKS.** For each scene, pick ONE template kind and fill its slots. The Remotion bundle has fixed React components for each kind — animations, layout, branding (accent / text / bg colors, fontFamily) are all handled by the template. You only choose the kind and the content. Always set \`screenshotIndex: null\` in this mode.
 
+**Slot names are exact.** Each template kind takes a fixed set of slot names — using \`text\` instead of \`answer\` (or vice versa) drops the slot. The names aren't interchangeable between kinds, even when the meaning is similar.
+
 ### Available templates
 
 \`hero-text\` — big animated headline, optional subhead. Layout variants: \`center\` (default), \`left\` (left-aligned), \`burst\` (word-by-word reveal, accent on every other word).
@@ -721,7 +791,12 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     // scenes that's already ~10k tokens, leaving very little headroom in
     // a 16k cap. The model was silently dropping mockCode on later scenes
     // when it ran out of room. 32k gives comfortable margin.
-    maxTokens: input.visualMode === 'mocks' ? 32_000 : 16_384,
+    // maxTokens: required by Gemini, billed only on actually-generated
+    // tokens — set high so we never get truncated mid-scene. With 14
+    // templates and rich slot content, output regularly hits 25-30k.
+    // Pro's hard ceiling is 65536. Templates mode uses the full budget;
+    // screenshots mode (no template content) stays modest.
+    maxTokens: input.visualMode === 'mocks' ? 65_000 : 16_384,
     // Mocks need a touch of extra variance — but 0.85 was over the line:
     // the model started emitting TSX with subtle syntax errors / banned
     // patterns often enough that all 4 scenes would fall back to the
@@ -801,6 +876,16 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     console.error('[marketing-script] Missing top-level fields after parse:', missingTop)
     console.error('[marketing-script] Raw text (first 800 chars):', result.text.slice(0, 800))
   }
+
+  // Normalize common slot-name drifts the model produces between similar
+  // templates. Cheap pre-Zod fixup so we don't fail the whole script for
+  // a one-letter rename. Currently catches:
+  //   - chat-bubble.{text,content,message} → answer (model bleeds in
+  //     `text` from quote-template's vocabulary)
+  //   - quote.{quote,body,content} → text
+  //   - hero-text.{title,heading} → headline
+  // Anything we don't expect is left alone for Zod to flag clearly.
+  normalizeTemplateSlots(parsedJson)
 
   const parsed = MarketingScriptSchema.safeParse(parsedJson)
   if (!parsed.success) {
