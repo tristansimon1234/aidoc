@@ -42,33 +42,6 @@ export interface MarketingMock {
   elements: MockElement[]
 }
 
-/** Structured scene templates. The LLM picks one of these and fills the
- *  slots; the Remotion bundle renders a fixed React component for each
- *  kind. Zero compile/runtime risk: the model can't write components
- *  that don't exist or break the layout, because it doesn't write any
- *  components at all. */
-export type SceneTemplate =
-  | { kind: 'hero-text'; headline: string; subhead?: string; layout?: 'center' | 'left' | 'burst' }
-  | { kind: 'kpi-reveal'; metric: string; value: string; sub?: string; trend?: 'up' | 'down' | 'flat' }
-  | { kind: 'list-reveal'; title: string; items: { text: string; icon?: string }[] }
-  | { kind: 'mock-frame'; url?: string; appName?: string; cards: { title: string; subtitle?: string; pillText?: string; pillTone?: 'accent' | 'success' | 'warning' | 'danger' | 'muted' }[] }
-  | { kind: 'chat-bubble'; appName?: string; question: string; answer: string }
-  | { kind: 'flow-diagram'; nodes: { icon: string; label: string; accent?: boolean }[] }
-  | { kind: 'chart'; type: 'bar' | 'line'; title?: string; points: { label: string; value: number }[] }
-  | { kind: 'before-after'; beforeLabel: string; afterLabel: string; beforeText?: string; afterText?: string; beforeIcon?: string; afterIcon?: string }
-  | { kind: 'comparison-bars'; leftLabel: string; rightLabel: string; rows: { feature: string; left: boolean; right: boolean }[] }
-  | { kind: 'quote'; text: string; author: string; role?: string; company?: string; avatarUrl?: string }
-  | { kind: 'step-progression'; steps: { title: string; description?: string }[] }
-  | { kind: 'big-stat'; value: string; label?: string; sub?: string }
-  | { kind: 'live-typing'; language?: 'shell' | 'js' | 'json' | 'http'; lines: string[] }
-  | { kind: 'dual-screen'; leftUrl?: string; rightUrl?: string; leftCards: { title: string; subtitle?: string; pillText?: string; pillTone?: 'accent' | 'success' | 'warning' | 'danger' | 'muted' }[]; rightCards: { title: string; subtitle?: string; pillText?: string; pillTone?: 'accent' | 'success' | 'warning' | 'danger' | 'muted' }[] }
-  | { kind: 'chat-thread'; appName?: string; messages: { role: 'user' | 'assistant'; content: string }[] }
-  | { kind: 'dashboard-mock'; appName?: string; sidebarItems: string[]; metrics: { label: string; value: string; trend?: 'up' | 'down' | 'flat' }[] }
-  | { kind: 'analytics-card'; metric: string; value: string; delta?: string; trend?: 'up' | 'down' | 'flat'; sparkline?: number[] }
-  | { kind: 'command-palette'; placeholder?: string; query?: string; results: { label: string; hint?: string; icon?: string }[]; selectedIndex?: number }
-  | { kind: 'notification-toast'; title: string; body?: string; icon?: string; tone?: 'success' | 'info' | 'warning' | 'accent' }
-  | { kind: 'data-table'; appName?: string; columns: string[]; rows: string[][] }
-
 export type MarketingScene = {
   /** Plain text the narrator says during this scene. ElevenLabs reads this
    *  verbatim — keep it short, punchy, no audio tags (the marketing voice
@@ -80,20 +53,19 @@ export type MarketingScene = {
   subhead?: string
   /** Index into manifest.screenshots — which doc screenshot to feature in
    *  this scene. Null = no screenshot, headline-only scene. Ignored when
-   *  a `template` (or `mockCode`) is set. */
+   *  `mockCode` is set. */
   screenshotIndex: number | null
   /** Duration of this scene in seconds. The Remotion composition uses these
    *  to compute frame ranges so scene timings line up with the voice-over. */
   durationSeconds: number
-  /** Structured visual template — preferred path. The Remotion bundle
-   *  has a fixed React component per `kind`; the LLM only fills slots. */
-  template?: SceneTemplate
-  /** Legacy DSL mock — backwards-compat only. */
+  /** Legacy DSL mock — backwards-compat with persisted manifests. */
   mock?: MarketingMock
-  /** Free TSX the LLM wrote (escape hatch for scenes a template can't
-   *  express). Diagnostics only — Remotion runs mockCompiledCode. */
+  /** Raw TSX the LLM wrote for this scene's animation. Diagnostics
+   *  only — Remotion runs `mockCompiledCode`. */
   mockCode?: string
-  /** esbuild output of mockCode. */
+  /** esbuild output of mockCode. Remotion's `<DynamicScene>` wraps it
+   *  in a `new Function(...)` with React + Remotion + branding bound,
+   *  evaluates, and renders the resulting component. */
   mockCompiledCode?: string
 }
 

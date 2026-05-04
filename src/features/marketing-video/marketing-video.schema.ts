@@ -83,177 +83,6 @@ const MarketingMockSchema = z.object({
   elements: z.array(MockElementSchema).max(20),
 })
 
-// Template helpers
-const TemplateListItemSchema = z.object({
-  text: z.string().min(1).max(160),
-  icon: z.string().max(40).optional(),
-})
-const TemplateFlowNodeSchema = z.object({
-  icon: z.string().min(1).max(40),
-  label: z.string().min(1).max(40),
-  accent: z.boolean().optional(),
-})
-const TemplateChartPointSchema = z.object({
-  label: z.string().min(1).max(20),
-  value: z.number(),
-})
-const TemplateMockFrameCardSchema = z.object({
-  title: z.string().min(1).max(60),
-  subtitle: z.string().max(120).optional(),
-  pillText: z.string().max(20).optional(),
-  pillTone: z.enum(['accent', 'success', 'warning', 'danger', 'muted']).optional(),
-})
-
-/** Discriminated union of structured visual templates. The LLM picks a
- *  `kind` and fills the slots; the Remotion bundle has a fixed React
- *  component per kind. Zero TSX generation, zero compile/runtime risk. */
-export const SceneTemplateSchema = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('hero-text'),
-    headline: z.string().min(1).max(120),
-    subhead: z.string().max(160).optional(),
-    layout: z.enum(['center', 'left', 'burst']).optional(),
-  }),
-  z.object({
-    kind: z.literal('kpi-reveal'),
-    metric: z.string().min(1).max(40),
-    value: z.string().min(1).max(20),
-    sub: z.string().max(80).optional(),
-    trend: z.enum(['up', 'down', 'flat']).optional(),
-  }),
-  z.object({
-    kind: z.literal('list-reveal'),
-    title: z.string().min(1).max(80),
-    items: z.array(TemplateListItemSchema).min(1).max(8),
-  }),
-  z.object({
-    kind: z.literal('mock-frame'),
-    url: z.string().max(80).optional(),
-    appName: z.string().max(40).optional(),
-    cards: z.array(TemplateMockFrameCardSchema).min(1).max(6),
-  }),
-  z.object({
-    kind: z.literal('chat-bubble'),
-    appName: z.string().max(40).optional(),
-    question: z.string().min(1).max(200),
-    answer: z.string().min(1).max(400),
-  }),
-  z.object({
-    kind: z.literal('flow-diagram'),
-    nodes: z.array(TemplateFlowNodeSchema).min(2).max(3),
-  }),
-  z.object({
-    kind: z.literal('chart'),
-    type: z.enum(['bar', 'line']),
-    title: z.string().max(80).optional(),
-    points: z.array(TemplateChartPointSchema).min(2).max(12),
-  }),
-  // Phase 3
-  z.object({
-    kind: z.literal('before-after'),
-    beforeLabel: z.string().min(1).max(40),
-    afterLabel: z.string().min(1).max(40),
-    beforeText: z.string().max(120).optional(),
-    afterText: z.string().max(120).optional(),
-    beforeIcon: z.string().max(40).optional(),
-    afterIcon: z.string().max(40).optional(),
-  }),
-  z.object({
-    kind: z.literal('comparison-bars'),
-    leftLabel: z.string().min(1).max(40),
-    rightLabel: z.string().min(1).max(40),
-    rows: z.array(z.object({
-      feature: z.string().min(1).max(60),
-      left: z.boolean(),
-      right: z.boolean(),
-    })).min(2).max(6),
-  }),
-  z.object({
-    kind: z.literal('quote'),
-    text: z.string().min(1).max(300),
-    author: z.string().min(1).max(40),
-    role: z.string().max(60).optional(),
-    company: z.string().max(40).optional(),
-    avatarUrl: z.string().url().optional(),
-  }),
-  z.object({
-    kind: z.literal('step-progression'),
-    steps: z.array(z.object({
-      title: z.string().min(1).max(60),
-      description: z.string().max(120).optional(),
-    })).min(2).max(5),
-  }),
-  z.object({
-    kind: z.literal('big-stat'),
-    value: z.string().min(1).max(12),
-    label: z.string().max(60).optional(),
-    sub: z.string().max(80).optional(),
-  }),
-  z.object({
-    kind: z.literal('live-typing'),
-    language: z.enum(['shell', 'js', 'json', 'http']).optional(),
-    lines: z.array(z.string().max(120)).min(1).max(8),
-  }),
-  z.object({
-    kind: z.literal('dual-screen'),
-    leftUrl: z.string().max(80).optional(),
-    rightUrl: z.string().max(80).optional(),
-    leftCards: z.array(TemplateMockFrameCardSchema).min(1).max(3),
-    rightCards: z.array(TemplateMockFrameCardSchema).min(1).max(3),
-  }),
-  // Phase 4 — lean passe-partout rich UI templates
-  z.object({
-    kind: z.literal('chat-thread'),
-    appName: z.string().max(40).optional(),
-    messages: z.array(z.object({
-      role: z.enum(['user', 'assistant']),
-      content: z.string().min(1).max(280),
-    })).min(2).max(6),
-  }),
-  z.object({
-    kind: z.literal('dashboard-mock'),
-    appName: z.string().max(40).optional(),
-    sidebarItems: z.array(z.string().min(1).max(30)).min(2).max(6),
-    metrics: z.array(z.object({
-      label: z.string().min(1).max(40),
-      value: z.string().min(1).max(20),
-      trend: z.enum(['up', 'down', 'flat']).optional(),
-    })).min(1).max(4),
-  }),
-  z.object({
-    kind: z.literal('analytics-card'),
-    metric: z.string().min(1).max(40),
-    value: z.string().min(1).max(20),
-    delta: z.string().max(20).optional(),
-    trend: z.enum(['up', 'down', 'flat']).optional(),
-    sparkline: z.array(z.number()).min(3).max(20).optional(),
-  }),
-  z.object({
-    kind: z.literal('command-palette'),
-    placeholder: z.string().max(60).optional(),
-    query: z.string().max(60).optional(),
-    results: z.array(z.object({
-      label: z.string().min(1).max(60),
-      hint: z.string().max(40).optional(),
-      icon: z.string().max(40).optional(),
-    })).min(2).max(5),
-    selectedIndex: z.number().int().min(0).optional(),
-  }),
-  z.object({
-    kind: z.literal('notification-toast'),
-    title: z.string().min(1).max(60),
-    body: z.string().max(160).optional(),
-    icon: z.string().max(40).optional(),
-    tone: z.enum(['success', 'info', 'warning', 'accent']).optional(),
-  }),
-  z.object({
-    kind: z.literal('data-table'),
-    appName: z.string().max(40).optional(),
-    columns: z.array(z.string().min(1).max(20)).min(2).max(4),
-    rows: z.array(z.array(z.string().max(40))).min(2).max(6),
-  }),
-])
-
 /** Zod for what Gemini returns as the marketing script. Field names mirror
  *  MarketingScript so the parsed output drops straight into the service. */
 export const MarketingSceneSchema = z.object({
@@ -262,14 +91,14 @@ export const MarketingSceneSchema = z.object({
   subhead: z.string().optional(),
   screenshotIndex: z.number().int().nullable(),
   durationSeconds: z.number().positive(),
-  /** Structured template — preferred. */
-  template: SceneTemplateSchema.optional(),
+  /** Legacy DSL mock — backwards-compat for any persisted manifests. */
   mock: MarketingMockSchema.optional(),
-  /** Free TSX (escape hatch). Compiled server-side; bundle reads
-   *  mockCompiledCode. */
+  /** Free TSX written by Gemini for this scene's animation. Compiled
+   *  server-side; the bundle never sees this directly. */
   mockCode: z.string().max(6_000).optional(),
-  /** Compiled JS — populated by the service after esbuild runs. Not
-   *  emitted by the LLM; we set it on the manifest before save. */
+  /** esbuild output of mockCode. Remotion's <DynamicScene> wraps it in
+   *  a `new Function(...)` with React + Remotion + branding bound,
+   *  evaluates, and renders the resulting component. */
   mockCompiledCode: z.string().max(20_000).optional(),
 })
 

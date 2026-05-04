@@ -1,8 +1,7 @@
 import { SchemaType, type ResponseSchema } from '@google/generative-ai'
-import { generateText } from '../../shared/ai/gemini.client.js'
+import { generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
 import { MarketingScriptSchema } from './marketing-video.schema.js'
 import type { MarketingScript } from './marketing-video.types.js'
-import { normalizeTemplateSlots } from './marketing-script.recovery.js'
 
 /**
  * Native Gemini schema mirroring MarketingScriptSchema. Passed as
@@ -33,228 +32,12 @@ export const RESPONSE_SCHEMA: ResponseSchema = {
           subhead: { type: SchemaType.STRING },
           screenshotIndex: { type: SchemaType.INTEGER, nullable: true },
           durationSeconds: { type: SchemaType.NUMBER },
-          // template: structured visual the LLM picks. Flat OBJECT with
-          // every possible slot listed as optional — Gemini's
-          // responseSchema doesn't model discriminated unions cleanly,
-          // so we describe the universe of slots here and let Zod
-          // enforce the per-kind shape downstream. The `kind` discriminator
-          // tells Zod which subset is expected.
-          template: {
-            type: SchemaType.OBJECT,
-            properties: {
-              kind: {
-                type: SchemaType.STRING,
-                format: 'enum',
-                enum: [
-                  'hero-text', 'kpi-reveal', 'list-reveal', 'mock-frame', 'chat-bubble', 'flow-diagram', 'chart',
-                  'before-after', 'comparison-bars', 'quote', 'step-progression', 'big-stat', 'live-typing', 'dual-screen',
-                  // Phase 4 — rich UI
-                  'chat-thread', 'dashboard-mock', 'analytics-card', 'command-palette', 'notification-toast',
-                ],
-              },
-              // hero-text + everywhere a headline-like field reads natural
-              headline: { type: SchemaType.STRING },
-              subhead: { type: SchemaType.STRING },
-              layout: { type: SchemaType.STRING, format: 'enum', enum: ['center', 'left', 'burst'] },
-              // kpi-reveal + big-stat
-              metric: { type: SchemaType.STRING },
-              value: { type: SchemaType.STRING },
-              sub: { type: SchemaType.STRING },
-              trend: { type: SchemaType.STRING, format: 'enum', enum: ['up', 'down', 'flat'] },
-              // big-stat (label) — also used by other templates
-              label: { type: SchemaType.STRING },
-              // list-reveal + chart + flow-diagram + mock-frame have a title
-              title: { type: SchemaType.STRING },
-              items: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    text: { type: SchemaType.STRING },
-                    icon: { type: SchemaType.STRING },
-                  },
-                  required: ['text'],
-                },
-              },
-              // mock-frame
-              url: { type: SchemaType.STRING },
-              appName: { type: SchemaType.STRING },
-              cards: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    title: { type: SchemaType.STRING },
-                    subtitle: { type: SchemaType.STRING },
-                    pillText: { type: SchemaType.STRING },
-                    pillTone: { type: SchemaType.STRING, format: 'enum', enum: ['accent', 'success', 'warning', 'danger', 'muted'] },
-                  },
-                  required: ['title'],
-                },
-              },
-              // chat-bubble
-              question: { type: SchemaType.STRING },
-              answer: { type: SchemaType.STRING },
-              // flow-diagram
-              nodes: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    icon: { type: SchemaType.STRING },
-                    label: { type: SchemaType.STRING },
-                    accent: { type: SchemaType.BOOLEAN },
-                  },
-                  required: ['icon', 'label'],
-                },
-              },
-              // chart
-              type: { type: SchemaType.STRING, format: 'enum', enum: ['bar', 'line'] },
-              points: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    label: { type: SchemaType.STRING },
-                    value: { type: SchemaType.NUMBER },
-                  },
-                  required: ['label', 'value'],
-                },
-              },
-              // before-after
-              beforeLabel: { type: SchemaType.STRING },
-              afterLabel: { type: SchemaType.STRING },
-              beforeText: { type: SchemaType.STRING },
-              afterText: { type: SchemaType.STRING },
-              beforeIcon: { type: SchemaType.STRING },
-              afterIcon: { type: SchemaType.STRING },
-              // comparison-bars
-              leftLabel: { type: SchemaType.STRING },
-              rightLabel: { type: SchemaType.STRING },
-              rows: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    feature: { type: SchemaType.STRING },
-                    left: { type: SchemaType.BOOLEAN },
-                    right: { type: SchemaType.BOOLEAN },
-                  },
-                  required: ['feature', 'left', 'right'],
-                },
-              },
-              // quote
-              text: { type: SchemaType.STRING },
-              author: { type: SchemaType.STRING },
-              role: { type: SchemaType.STRING },
-              company: { type: SchemaType.STRING },
-              avatarUrl: { type: SchemaType.STRING },
-              // step-progression
-              steps: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    title: { type: SchemaType.STRING },
-                    description: { type: SchemaType.STRING },
-                  },
-                  required: ['title'],
-                },
-              },
-              // live-typing
-              language: { type: SchemaType.STRING, format: 'enum', enum: ['shell', 'js', 'json', 'http'] },
-              lines: {
-                type: SchemaType.ARRAY,
-                items: { type: SchemaType.STRING },
-              },
-              // dual-screen
-              leftUrl: { type: SchemaType.STRING },
-              rightUrl: { type: SchemaType.STRING },
-              leftCards: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    title: { type: SchemaType.STRING },
-                    subtitle: { type: SchemaType.STRING },
-                    pillText: { type: SchemaType.STRING },
-                    pillTone: { type: SchemaType.STRING, format: 'enum', enum: ['accent', 'success', 'warning', 'danger', 'muted'] },
-                  },
-                  required: ['title'],
-                },
-              },
-              rightCards: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    title: { type: SchemaType.STRING },
-                    subtitle: { type: SchemaType.STRING },
-                    pillText: { type: SchemaType.STRING },
-                    pillTone: { type: SchemaType.STRING, format: 'enum', enum: ['accent', 'success', 'warning', 'danger', 'muted'] },
-                  },
-                  required: ['title'],
-                },
-              },
-              // Phase 4 — rich UI templates
-              // chat-thread: messages array
-              messages: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    role: { type: SchemaType.STRING, format: 'enum', enum: ['user', 'assistant'] },
-                    content: { type: SchemaType.STRING },
-                  },
-                  required: ['role', 'content'],
-                },
-              },
-              // dashboard-mock: sidebarItems + metrics
-              sidebarItems: {
-                type: SchemaType.ARRAY,
-                items: { type: SchemaType.STRING },
-              },
-              metrics: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    label: { type: SchemaType.STRING },
-                    value: { type: SchemaType.STRING },
-                    trend: { type: SchemaType.STRING, format: 'enum', enum: ['up', 'down', 'flat'] },
-                  },
-                  required: ['label', 'value'],
-                },
-              },
-              // analytics-card: delta + sparkline (metric/value/trend already declared above)
-              delta: { type: SchemaType.STRING },
-              sparkline: {
-                type: SchemaType.ARRAY,
-                items: { type: SchemaType.NUMBER },
-              },
-              // command-palette: placeholder + query + results + selectedIndex
-              placeholder: { type: SchemaType.STRING },
-              query: { type: SchemaType.STRING },
-              // results is reused by both search-results (legacy) and command-palette
-              results: {
-                type: SchemaType.ARRAY,
-                items: {
-                  type: SchemaType.OBJECT,
-                  properties: {
-                    label: { type: SchemaType.STRING },
-                    hint: { type: SchemaType.STRING },
-                    icon: { type: SchemaType.STRING },
-                  },
-                  required: ['label'],
-                },
-              },
-              selectedIndex: { type: SchemaType.NUMBER },
-              // notification-toast: body + tone
-              body: { type: SchemaType.STRING },
-              tone: { type: SchemaType.STRING, format: 'enum', enum: ['success', 'info', 'warning', 'accent'] },
-            },
-            required: ['kind'],
-          },
+          // mockCode: TSX source the LLM writes for this scene's
+          // animation. The backend compiles it via esbuild + bundles
+          // it server-side; Remotion runs the compiled JS at render
+          // time. Just a string in the response schema — Gemini emits
+          // it as plain code, no nested structure to constrain.
+          mockCode: { type: SchemaType.STRING },
         },
         required: ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds'],
       },
@@ -308,6 +91,16 @@ interface GenerateMarketingScriptInput {
  *  expressive tags, calm/serious want pacing tags. Length matters: 2-3
  *  tags per 45-second script is the sweet spot — more and it sounds
  *  performative, fewer and it reads flat. */
+const TONE_TAG_DIRECTION: Record<NonNullable<GenerateMarketingScriptInput['tone']>, string> = {
+  punchy:         'Lean expressive: [excited], [happy gasp], [laughs] sparingly. Use CAPS for one or two key words. Em-dashes (—) for punchy beats. 2-3 audio tags total across the script.',
+  calm:           'Lean restrained: [short pause] for breathing room, occasional [calm] or [whispers]. Ellipses (...) once or twice MAX (they add real silence). 1-2 audio tags total.',
+  playful:        'Lean cheeky: [laughs], [giggles], [whispers], occasional [sarcastic]. Use rising intonation (questions OK here, sparingly). 2-3 audio tags total.',
+  serious:        'Lean understated: [short pause] for emphasis, no exclamation tags. CAPS only for one critical word. No [laughs] or [excited]. 1-2 audio tags total.',
+  confident:      'Lean warm-authority: [short pause] between key claims, occasional CAPS for emphasis. No [laughs] or [excited] — too performative for founder pitch. 2 audio tags total.',
+  inspirational:  'Lean building: [building] / [excited] sparingly, CAPS on the climax word, em-dashes for breaths between rising phrases. 2-3 audio tags total.',
+  conversational: 'Lean natural-podcast: [short pause] for thinking pauses, occasional rising intonation, no exclamatory tags. CAPS rare. 1-2 audio tags total.',
+}
+
 /** Concrete voiceover examples per tone. Pasted into the prompt so Gemini
  *  pattern-matches against tagged prose instead of clean prose. The
  *  earlier prompt described the rules abstractly and Gemini still output
@@ -483,6 +276,119 @@ function pickStyleSeed(): typeof STYLE_SEEDS[number] {
   return STYLE_SEEDS[Math.floor(Math.random() * STYLE_SEEDS.length)]!
 }
 
+/**
+ * Single-scene rescue path. Two modes:
+ *  - REPAIR: existing mockCode failed to compile/lint — feed the error
+ *    + the broken code and ask Gemini to fix it.
+ *  - GENERATE: mockCode is missing entirely (token budget exhausted in
+ *    the main script generation) — pass an empty string and a generate-
+ *    from-scratch directive in compileError. The prompt branches on
+ *    whether mockCode is non-empty.
+ *  One shot only — if it fails again, the renderer falls back to the
+ *  gradient placeholder.
+ */
+export async function repairMockCode(args: {
+  scene: { headline: string; voiceover: string; mockCode: string }
+  compileError: string
+}): Promise<string> {
+  const isFromScratch = args.scene.mockCode.trim().length === 0
+  const promptHeader = isFromScratch
+    ? `Generate the mockCode for one scene of a marketing video. The main script generator skipped this scene — context: ${args.compileError}
+
+The scene:
+- Headline: "${args.scene.headline}"
+- Voice-over: "${args.scene.voiceover}"
+
+Write a fresh MockScene component that visually illustrates the headline + voice-over.`
+    : `You wrote invalid TSX for one scene of a marketing video. The compiler rejected it with this error:
+
+${args.compileError}
+
+The scene:
+- Headline: "${args.scene.headline}"
+- Voice-over: "${args.scene.voiceover}"
+
+Your previous (broken) code:
+\`\`\`tsx
+${args.scene.mockCode}
+\`\`\`
+
+Rewrite this scene's mockCode.`
+
+  const userPrompt = `${promptHeader}
+
+Hard rules (the same rules the original prompt enforced):
+- Define a function exactly named \`MockScene\` taking \`{ branding }\` as its only prop.
+- DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters.
+- DO NOT call \`fetch\`, \`new XMLHttpRequest\`, \`eval\`, \`new Function\`, \`document.write\`, \`window.open\`.
+- DO NOT use \`<Remotion.AccentGlow>\` (deprecated).
+- Only access these branding fields: productName, accentColor, bgColor, textColor, fontFamily.
+- Only invoke these Remotion symbols: interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio, MockFrame, Pill, AnimatedCursor, Icons, Charts.
+- Icons: \`Remotion.Icons[NAME]\` accepts ANY lucide-react icon name (e.g. Cpu, BookOpen, Sparkles, Workflow, Rocket, TrendingUp, Database, Video, Camera, Inbox — pick what fits the scene). The full lucide catalog is exposed; if the icon exists in lucide-react, you can use it. Aliases also work: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2, Trash → Trash2, Share → Share2.
+- Outer element: \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` — no background, no overflow-hidden.
+- Use \`<Remotion.MockFrame tone='light'>\` for UI mocks.
+- Static styling via Tailwind \`className\`; inline \`style={{}}\` only for animated values.
+- Stay under 2500 characters.
+
+Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding prose). It will be passed straight to esbuild.`
+
+  // Try Pro first; fall back to Flash if Pro returns empty (503 silently
+  // swallowed) or throws on overload. Flash is faster and almost always
+  // good enough for a single-scene mock. Cheaper too.
+  // maxTokens is REQUIRED by Gemini, but you only pay for actually-
+  // generated tokens — set it high so we never get a truncated mid-TSX
+  // response ("Unexpected end of file"). The compiler caps the SOURCE
+  // at 6000 chars (~1500 tokens), so even if the model goes long, the
+  // input rejection bounds it. Gemini 2.5 Pro / Flash both support up
+  // to 65536 output tokens.
+  const MAX_OUT = 32_000
+  let code: string
+  try {
+    const result = await generateText({
+      userPrompt,
+      model: GEMINI_PRO_MODEL,
+      maxTokens: MAX_OUT,
+      temperature: 0.4,
+      json: false,
+    })
+    code = result.text.trim()
+    if (code.length === 0) {
+      console.warn('[repairMockCode] Pro returned empty — falling back to Flash')
+      const flashResult = await generateText({
+        userPrompt,
+        // No model override = Flash (default).
+        maxTokens: MAX_OUT,
+        temperature: 0.4,
+        json: false,
+      })
+      code = flashResult.text.trim()
+    }
+  } catch (err) {
+    const message = (err as Error).message
+    // 503 / overload / 429 → retry on Flash.
+    if (/503|429|overload/i.test(message)) {
+      console.warn(`[repairMockCode] Pro errored (${message.slice(0, 80)}) — falling back to Flash`)
+      const flashResult = await generateText({
+        userPrompt,
+        maxTokens: MAX_OUT,
+        temperature: 0.4,
+        json: false,
+      })
+      code = flashResult.text.trim()
+    } else {
+      throw err
+    }
+  }
+
+  // Strip markdown fences if the model added them anyway.
+  if (code.startsWith('```')) {
+    code = code.replace(/^```(?:tsx|jsx|ts|js)?\s*\n/, '').replace(/\n```\s*$/, '').trim()
+  }
+  if (code.length === 0) {
+    throw new Error('repairMockCode: both Pro and Flash returned empty text')
+  }
+  return code
+}
 
 export async function generateMarketingScript(
   input: GenerateMarketingScriptInput,
@@ -519,8 +425,6 @@ Product: ${input.productName}
 Feature page: ${input.pageTitle}
 
 Markdown content (use as the ONLY source of truth — don't invent features):
-
-**HARD RULE — never invent statistics or numbers.** If you write a kpi-reveal or big-stat or any specific quantity ("14 hours", "3×", "47%", "$2M"), the value MUST come from the source documentation above OR be a generic descriptor ("FAST", "AUTOMATED", "ZERO setup"). Do NOT fabricate stats like "users save 14 hours per week" unless that exact figure is in the doc. Hallucinated numbers are the #1 trust-breaker on a marketing video.
 ${input.pageMarkdown.slice(0, 6000)}
 ${briefBlock}${styleSeedBlock}
 
@@ -530,105 +434,561 @@ ${captionList || '(no screenshots available — every scene MUST have screenshot
 
 You may set "screenshotIndex" to any integer between 0 and ${Math.max(0, input.availableScreenshots - 1)}, OR to null if a scene works better headline-only (e.g. the hook). Reuse a screenshot if the same view illustrates two benefits.
 
-## Visuals — ${input.visualMode === 'mocks' ? 'pick a template per scene' : 'real screenshots (every scene)'}
+## Visuals — ${input.visualMode === 'mocks' ? 'TSX animations you write (every scene)' : 'real screenshots (every scene)'}
 
 ${input.visualMode === 'mocks'
-  ? `**Mode = MOCKS.** For each scene, pick ONE template kind and fill its slots. The Remotion bundle has fixed React components for each kind — animations, layout, branding (accent / text / bg colors, fontFamily) are all handled by the template. You only choose the kind and the content. Always set \`screenshotIndex: null\` in this mode.
+  ? `**Mode = MOCKS.** For every scene you write a small TSX component in the field \`mockCode\`. The component renders an ANIMATED illustration of the scene's idea — text typing into a prompt, a progress bar filling, a notification toast popping in, a chat bubble appearing, a chart drawing in, a giant headline bursting word-by-word, a flow diagram revealing node-by-node. Compose freely; you control the visuals. Always set \`screenshotIndex: null\` in this mode. DO NOT also fill the legacy \`mock\` field.`
+  : `**Mode = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}) and MUST NOT include \`mock\` or \`mockCode\`. If a scene has no relevant screenshot you may set \`screenshotIndex: null\` and the renderer will show an accent gradient placeholder.`}
 
-**Slot names are exact.** Each template kind takes a fixed set of slot names — using \`text\` instead of \`answer\` (or vice versa) drops the slot. The names aren't interchangeable between kinds, even when the meaning is similar.
+${input.visualMode === 'mocks' ? `### Mock code — REQUIRED for every scene
 
-### Available templates
+For each scene you write a small TSX component as the value of \`mockCode\`. The component receives the project branding via props and uses Remotion's frame-based animation API to draw an animated illustration of what the scene is talking about.
 
-\`hero-text\` — big animated headline, optional subhead. Layout variants: \`center\` (default), \`left\` (left-aligned), \`burst\` (word-by-word reveal, accent on every other word).
-  Use for: opener, transitional moments, "make a big claim" scenes, the CTA-style beat before the next demo.
-  Slots: \`{ kind: 'hero-text', headline: string, subhead?: string, layout?: 'center' | 'left' | 'burst' }\`
-  **CRITICAL**: \`template.headline\` MUST DIFFER from \`scene.headline\`. They both render at the same time. If they're the same text, the scene reads as the same phrase printed twice — looks broken. Use \`scene.headline\` for the on-screen big text, then use \`template.headline\` to ELABORATE / RIFF / RESTATE differently. Example: scene.headline="See user behavior" → template.headline="What are they getting stuck on?" (a question that elaborates).
+#### Hard constraints (non-negotiable — your code is sandboxed)
 
-\`kpi-reveal\` — giant accent-colored number with a label above and an optional trend arrow + sub-text below.
-  Use for: stat-driven moments ("3 minutes to ship", "0 lines of code", "10x faster").
-  Slots: \`{ kind: 'kpi-reveal', metric: string, value: string, sub?: string, trend?: 'up' | 'down' | 'flat' }\`
+- Define a function (or const arrow) named exactly \`MockScene\` that takes \`{ branding }\` as its only prop. The component returns a single root element.
+- DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters; everything you need lives on those.
+#### Hard rules — non-negotiable, the previous render had ALL of these wrong
 
-\`list-reveal\` — titled list, items stagger in with optional icons in accent-tinted boxes.
-  Use for: feature checklists, "what you get" enumerations, step-by-step capabilities.
-  Slots: \`{ kind: 'list-reveal', title: string, items: { text: string, icon?: string }[] }\` (1-8 items, icon = any lucide name)
+1. **Light mode ONLY** — use \`<Remotion.MockFrame tone='light'>\`. No \`tone='dark'\`. Even for terminal-style scenes, use a light-on-dark INSIDE block, not a dark frame. The video lives on a white canvas; dark frames look like glued-on cards.
+2. **Outer AbsoluteFill MUST be transparent.** Use ONLY \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` (or p-12). The outer is the canvas pass-through layer and MUST have:
+   - NO \`style={{ background: ... }}\` of any kind
+   - NO Tailwind background utility (\`bg-slate-900\`, \`bg-gray-50\`, \`bg-white\`, \`bg-gradient-to-br\`, \`bg-zinc-100\` are ALL forbidden on the outer)
+   - NO \`overflow-hidden\`
+   The video canvas is already \`branding.bgColor\`. Painting a different background on the outer creates a visible colored panel inside the video that doesn't match the rest — exactly the "panel coupé du fond" complaint. If you want depth, layer it INSIDE a MockFrame or a card; never on the outer.
+3. **Use Tailwind className for static styling.** Inline \`style={{}}\` ONLY for dynamic interpolated values (opacity, transform, computed colors). Everything static (padding, rounded corners, shadows, layout, colors that don't depend on frame) → \`className='rounded-2xl p-6 bg-white shadow-2xl ...'\`. Twind is installed; every Tailwind utility works at runtime.
 
-\`mock-frame\` — browser-chromed product window with a grid of cards (title, optional subtitle, optional pill).
-  Use for: product UI shots ("dashboard", "settings", "list of items"). The frame's URL hints at the product.
-  Slots: \`{ kind: 'mock-frame', appName?: string, url?: string, cards: { title, subtitle?, pillText?, pillTone?: 'accent'|'success'|'warning'|'danger'|'muted' }[] }\` (1-6 cards)
+   **Backgrounds that span the canvas vs. cards on top of it.** Anything full-bleed (a backdrop, a section that fills the panel) must use \`branding.bgColor\` — NEVER hardcode \`white\` / \`#fff\` / \`bg-white\` for that, because the canvas color isn't always white. Only the inner UI cards / MockFrame surfaces representing a literal product window may stay white — those read as a screenshot of a UI on top of the canvas.
 
-\`chat-bubble\` — Q&A inside a product chat window: user question on the right, AI answer types in on the left.
-  Use for: AI assistant beats, support widget demos.
-  Slots: \`{ kind: 'chat-bubble', appName?: string, question: string, answer: string }\`
+3a. **NEVER write inline \`<svg>\` tags.** Every icon must come from \`Remotion.Icons.X\` (any lucide name works, see below). The runtime stripped your inline SVGs from a recent render and showed missing icons. Inline SVG is forbidden full stop. If you need a custom shape that isn't in lucide, compose it from divs + tailwind utilities + the AccentGlow / Pill helpers — but most "missing" icons are in lucide under a slightly different name.
+4. **NEVER use \`<Remotion.AccentGlow>\`.** The blurred colored circle bleeds onto the canvas and reads as a render glitch ("halo behind the window"). It is deprecated. Mocks render on a clean white canvas — UI modes use the MockFrame's drop-shadow for depth, abstract modes use the project's accent on the focal element (giant typography, gradient logo) for impact. Period. Do not call AccentGlow.
 
-\`flow-diagram\` — 2-3 nodes with icons + labels chained by arrows. One node can be \`accent: true\` (the focal one).
-  Use for: pipelines, "input → AI → output" beats, A → B → C transformations.
-  Slots: \`{ kind: 'flow-diagram', nodes: { icon: string, label: string, accent?: boolean }[] }\` (icon = any lucide name)
-  **HARD CAP: 3 nodes max.** 4+ feels like a corporate diagram, not a marketing beat. If you have 4 things to show, pick a different template (\`list-reveal\` or \`mock-frame\` with cards).
+5. **Cursor-click rule — populated UI, not isolated button.** When using \`<Remotion.AnimatedCursor>\`:
+   - The MockFrame interior must show a REALISTIC product surface — header bar with title, an empty-state message or a list of items, AND the call-to-action button. NEVER just a button alone in an empty frame (looks like a blank page with a stray button).
+   - The click target stays at a stable position: put it inside a flex-centered region so the cursor's terminal coords (50% / 55%) land on it consistently.
+   - Pattern: \`<div className='h-full flex flex-col'><header className='p-4 border-b border-zinc-200 flex items-center'><span className='text-[14px] font-bold text-zinc-900'>API Tokens</span></header><div className='flex-1 flex flex-col items-center justify-center gap-3'><span className='text-[13px] text-zinc-500'>No tokens yet</span><button className='...'>Create token</button></div></div>\` — header at top + empty-state at center, button is the visual anchor.
+   - Maximum ONE \`<Remotion.AnimatedCursor>\` per scene, maximum ONE \`<Remotion.MockFrame>\` per scene.
 
-\`chart\` — recharts bar / line with progressive draw-in.
-  Use for: growth, comparisons, before/after metrics.
-  Slots: \`{ kind: 'chart', type: 'bar' | 'line', title?: string, points: { label, value: number }[] }\` (2-12 points)
+6. **LAYOUT STABILITY — entries NEVER displace siblings.** The user has explicitly flagged "layout shift" in chat-style mocks. ZERO tolerance for this. Concrete rules:
+   - **Reserve the full layout from frame 0.** Every element that will eventually be visible must already occupy its final slot at frame 0, even if its opacity is 0. \`opacity\` and \`transform\` do NOT affect layout — those are the ONLY props you should animate to enter elements. NEVER animate \`width\`, \`height\`, \`padding\`, \`margin\`, or use conditional \`{cond && <div>}\` for things that will appear later — it pushes siblings around when it mounts.
+   - **Chat / message bubbles: pick short copy that fits ONE line at the bubble's max-width.** A typed-on user prompt that wraps to a second line shifts the AI bubble below it as the bubble's height jumps from 1 to 2 lines. Prefer 5-9 words. If you need longer copy, fade in the WHOLE bubble (no per-character typing).
+   - **AI typing → AI reply transition: stack both in the SAME slot, one absolute-positioned, cross-fade.** \`<div className='relative min-h-[44px]'><div className='absolute inset-0' style={{opacity: dotsOp}}>typing-dots</div><div style={{opacity: replyOp}}>reply text</div></div>\`. The slot's \`min-height\` accommodates the taller of the two; nothing reflows when the reply replaces the dots.
+   - **Chat container: fixed height + \`justify-start\`, NOT vertical centering.** Center-aligned chat regions push existing bubbles up when new ones enter at the bottom. Use \`<div className='h-full p-6 flex flex-col gap-4'>\` (top-aligned) so new bubbles append into empty space below.
+   - **Bento / dashboard cards: fixed grid template, no conditional cells.** All cells render from frame 0 with opacity:0; they fade in via spring delays. Don't lazy-mount cards — empty grid space is fine, mounting one mid-scene reflows the rest.
+- Available React: \`React.useMemo\`, \`React.useEffect\` will not work usefully (frames re-render fresh) — for animation use Remotion only.
+- Available Remotion namespace (use as \`Remotion.foo\`):
+  - \`Remotion.useCurrentFrame()\` → number, the current frame within the scene's sub-timeline (NOT the whole video). Frame 0 is the start of THIS scene.
+  - \`Remotion.useVideoConfig()\` → \`{ fps, durationInFrames, width, height }\`.
+  - \`Remotion.interpolate(input, [in1, in2, …], [out1, out2, …], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })\` — the workhorse for animation.
+  - \`Remotion.spring({ frame, fps, config: { damping, stiffness, mass } })\` — natural easing.
+  - \`Remotion.AbsoluteFill\` (component) — fills its parent.
+  - \`Remotion.Img\` (component) — for remote images, use sparingly.
 
-\`before-after\` — split panel: left = "old way" (gray, neutral icon), right = "with the product" (accent gradient, success icon).
-  Use for: pain → solution beats, "manual writing" → "AI-generated", any transformation.
-  Slots: \`{ kind: 'before-after', beforeLabel: string, afterLabel: string, beforeText?: string, afterText?: string, beforeIcon?: string, afterIcon?: string }\`
+  **Pre-built designed helpers (USE THESE — saves boilerplate, ensures consistency):**
 
-\`comparison-bars\` — 2-column feature matrix (Doclee vs alternative) with check / X marks.
-  Use for: competitive positioning, "what we do that they don't".
-  Slots: \`{ kind: 'comparison-bars', leftLabel: string, rightLabel: string, rows: { feature: string, left: bool, right: bool }[] }\` (2-6 rows; right = your product)
+  - \`<Remotion.MockFrame url='app.example.com/path' tone='light' | 'dark' style={...}>{children}</Remotion.MockFrame>\`
+    Designed browser-window chrome with macOS traffic lights + URL bar + content area. THE OUTERMOST element of every mock — saves you ~30 lines of chrome boilerplate per scene. Children fill the area below the chrome bar. \`tone='dark'\` for terminal/code, \`'light'\` for product UI.
 
-\`quote\` — testimonial card with big quote text, avatar circle, author + role.
-  Use for: social proof scenes, customer voice moments.
-  Slots: \`{ kind: 'quote', text: string, author: string, role?: string, company?: string, avatarUrl?: string }\` (no avatarUrl = initials fallback in accent color)
+  - \`<Remotion.Pill tone='success' | 'warning' | 'danger' | 'accent' | 'muted' dot accentColor={branding.accentColor}>connected</Remotion.Pill>\`
+    Status pill matching the MCPMock "connected" indicator. Dot prefix optional. accentColor is required when tone='accent'.
 
-\`step-progression\` — vertical timeline with numbered steps; progress bar fills as steps appear.
-  Use for: "how it works in 3 steps", onboarding flow narration.
-  Slots: \`{ kind: 'step-progression', steps: { title: string, description?: string }[] }\` (2-5 steps)
+  - \`<Remotion.AnimatedCursor leftPct={50} topPct={55} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
+    Animated mouse cursor SVG + optional click ripple. \`leftPct\` / \`topPct\` are percentages (0-100) of the parent panel. Use ONLY in cursor-click mode and ONLY when the click target is inside a populated UI (see rule 5). For a flex-centered button inside a full-height MockFrame, the target center is approximately leftPct=50, topPct=55.
 
-\`big-stat\` — single giant number filling 80% of the screen with a gradient text effect; tiny label above, sub-line below.
-  Use for: maxi-impact stat moments. Higher emphasis than \`kpi-reveal\` (no chart, no trend, just the number).
-  Slots: \`{ kind: 'big-stat', value: string, label?: string, sub?: string }\` (value ≤ 12 chars: "10×", "0", "$2.5M", "5min")
+  - \`<Remotion.Icons.Cpu size={14} color='currentColor' />\` — accepts ANY lucide-react icon name, pre-wrapped with a thin 1.5px stroke (Linear/Vercel weight). The full lucide catalog (~1500 icons) is exposed: pick whatever fits the scene (Cpu, BookOpen, Workflow, Rocket, TrendingUp, Database, Video, Camera, Layers, Inbox, Boxes, Briefcase, Target, Shield, …). Aliases for natural typing also work: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2, Trash → Trash2, Share → Share2. They take \`size\` (px) and standard SVG props (stroke is already 1.5; override only if you really need a heavier weight).
+    Style hint: avoid the generic "Sparkles" cliché for AI moments. Cpu / Workflow / Atom / CircuitBoard / Layers / Boxes carry way more visual personality for AI / processing beats. For analytics, BarChart3 / TrendingUp / LineChart read sharper than a generic chart icon.
 
-\`live-typing\` — terminal / API call / code typed out character by character, dark background, prompt prefix.
-  Use for: developer-flavoured beats, API demos, "one command" moments.
-  Slots: \`{ kind: 'live-typing', language?: 'shell' | 'js' | 'json' | 'http', lines: string[] }\` (1-8 lines, ≤120 chars each)
+  - \`Remotion.Charts\` — recharts components for data-driven scenes. Available: \`ResponsiveContainer\`, \`LineChart\`, \`Line\`, \`AreaChart\`, \`Area\`, \`BarChart\`, \`Bar\`, \`PieChart\`, \`Pie\`, \`Cell\`, \`XAxis\`, \`YAxis\`, \`CartesianGrid\`, \`Tooltip\`. Wrap charts in \`<Remotion.Charts.ResponsiveContainer width='100%' height='100%'>...</Remotion.Charts.ResponsiveContainer>\` inside a fixed-size parent (e.g. a card body 280×140). Disable Recharts' built-in animation (\`isAnimationActive={false}\`) and instead drive the data via \`Remotion.interpolate(frame, ...)\` so the chart "draws in" frame by frame:
 
-\`dual-screen\` — two MockFrames side-by-side with subtle perspective tilt (left tilts right, right tilts left).
-  Use for: "old workflow vs new", "their app vs ours", desktop + mobile.
-  Slots: \`{ kind: 'dual-screen', leftUrl?: string, rightUrl?: string, leftCards: [{ title, subtitle?, pillText? }], rightCards: [{ ... }] }\` (1-3 cards each side)
+    \`\`\`tsx
+    const progress = Remotion.interpolate(f, [10, 60], [0, 1], { extrapolateRight: 'clamp' })
+    const data = baseData.map((d, i) => ({ x: d.x, y: d.y * (i / data.length <= progress ? 1 : 0) }))
+    <Remotion.Charts.LineChart data={data}>...</Remotion.Charts.LineChart>
+    \`\`\`
+- Inline styles ONLY. NO Tailwind class names, NO \`className\`, NO external CSS. Everything goes through \`style={{...}}\`.
+- NO event handlers (\`onClick\`, \`onMouseMove\`, …). The output is rendered server-side, no interaction.
+- NO network access (\`fetch\`, \`XMLHttpRequest\`). NO timers (\`setTimeout\`, \`setInterval\`).
+- Code length: HARD CAP **2500 characters per mockCode value**. Enough room for layered backgrounds + 2-3 animated elements + a striking treatment, but tight enough to fit four rich scenes in the response token budget.
+- Minify-friendly style: prefer one-liners with semicolons over multi-line bodies. The compiler runs esbuild on it anyway.
 
-### Picking template per scene
+#### Canvas dimensions — IMPORTANT for alignment
 
-Match the scene's idea to the template that expresses it most directly:
-- "We turn X into Y" → \`flow-diagram\` with X / AI / Y nodes
-- "Get instant answers" → \`chat-bubble\`
-- "X% faster" / "0 to N in T" / metric in context → \`kpi-reveal\`
-- "Built-in features" / capability list → \`list-reveal\`
-- "See the dashboard" / product surface → \`mock-frame\`
-- "Growth chart" / "tickets dropped" → \`chart\`
-- Hooks, CTAs, transitions, claims → \`hero-text\` (often \`burst\`)
-- "Old way → new way" / pain → solution → \`before-after\`
-- "Us vs them" / competitive feature matrix → \`comparison-bars\`
-- Customer voice / social proof → \`quote\`
-- "How it works in 3 steps" / sequential process → \`step-progression\`
-- Single dominant statistic / "0 lines of code" / "10× faster" claim → \`big-stat\` (one number, no chart needed)
-- API / CLI / code demo / developer beat → \`live-typing\`
-- "Side-by-side" / two product surfaces compared → \`dual-screen\`
+Your mock renders inside a **920 wide × 580 tall** panel (the visual half of the scene; the text headline sits in the OTHER half). That's your full coordinate space — NOT 1920×1080. Position everything relative to this.
 
-A typical 3-4 scene video uses 3 different template kinds. Don't pick the same template twice unless the content genuinely calls for it.
+**Prefer flex centering over absolute pixel coordinates** — drifting elements are the #1 source of "looks broken" renders. Pattern:
 
-### Icons (when a template has icon slots)
+\`\`\`tsx
+// Outer container: full panel, flex center
+<Remotion.AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+  <div style={{ width: 280, height: 80, ... }}>Headline</div>
+</Remotion.AbsoluteFill>
+\`\`\`
 
-Any lucide-react icon name works. Reach for what fits semantically:
-- AI / processing → \`Cpu\`, \`Workflow\`, \`Sparkles\`, \`Atom\`
-- Documentation → \`BookOpen\`, \`FileText\`, \`Edit\`
-- Communication → \`MessageSquare\`, \`Send\`, \`Mail\`
-- Insights → \`TrendingUp\`, \`Activity\`, \`Search\`, \`Eye\`
-- Recording → \`Video\`, \`Camera\`, \`Mic\`
-- Integration → \`Plug\`, \`Link\`, \`Database\`, \`Cloud\`
+#### Visual style — aim for Linear / Vercel / Cursor 2026, NOT Bootstrap 2018
 
-Pick whatever fits. If the icon doesn't exist in lucide the runtime renders a generic square — better to pick well.`
-  : `**Mode = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}) and MUST NOT include a template. If a scene has no relevant screenshot you may set \`screenshotIndex: null\` and the renderer will show the canvas color.`}
+The previous renders looked like generic SaaS dashboards from 2018 — flat gray cards, centered single-column layouts, conservative type. STOP doing that. Modern marketing-video mocks (Linear, Vercel, Cursor, Arc, Raycast) follow these moves:
+
+**A. EXTREME type contrast.** A tiny uppercase eyebrow label (\`text-[11px] tracking-widest uppercase text-zinc-500\`) right above a HUGE hero number / headline (\`text-[80px] to text-[140px] font-black tracking-tight leading-none\`). The size jump is what makes the content read as "magazine cover", not "settings page". DO use sizes you wouldn't normally — 96px, 110px, 130px. Set \`fontWeight: 800-900\` for the hero.
+
+**B. Rich color, not gray.** Use \`branding.accentColor\` AT FULL SATURATION on the hero element (giant text, big pill, focal card). Background gradients in the accent: \`background: \`linear-gradient(135deg, \${branding.accentColor}15, transparent)\`\` or \`linear-gradient(180deg, transparent, \${branding.accentColor}10)\`. Tailwind alternatives like \`bg-gradient-to-br from-violet-50 via-white to-fuchsia-50\` are fine when the project's accent isn't the focal element. AVOID staying in zinc-50 / zinc-200 / white only — looks dated.
+
+**C. Bento + composition, not stacked rows.** Mix card sizes within one mock: e.g. one big tall card on the left, two smaller cards stacked on the right. Or one wide card on top, three small ones below. CSS grid with \`grid-cols-3\` and \`col-span-2\` / \`row-span-2\` is your friend. Stacked-row layouts (\`flex flex-col\`) read as "form" — bento reads as "designed".
+
+**D. Perspective tilt on the hero card.** Slightly rotate the focal element to break the perfect-square feel: \`transform: 'rotate(-1.5deg)'\` or \`'perspective(800px) rotateY(-3deg)'\`. Subtle — 1-3 degrees max — but it's the difference between "screenshot" and "designed mock".
+
+**E. Multi-layer shadows.** A single shadow looks 2010. Stack two: a tight inner one + a wide colored one in the accent. \`boxShadow: '0 1px 2px rgba(0,0,0,0.06), 0 24px 60px -8px \${branding.accentColor}33'\`.
+
+**F. Browser-frame chrome — yes, BUT optional and only for scenes that genuinely show a product surface.** A counter / stat reveal / hero headline scene does NOT need a browser frame. A "look at this dashboard" scene does. Pick deliberately, don't reflexively wrap everything.
+
+**G. Spring entries + light shimmer.** Stagger every element by 0.15-0.3s. Add a subtle accent-color shimmer on the hero number (\`background: linear-gradient(90deg, accent 0%, color-mix(in srgb, accent, white 30%) 50%, accent 100%)\` + \`backgroundSize: '200% 100%'\` + animated backgroundPosition).
+- Scene duration in seconds is given as \`durationSeconds\` per scene. The frame range for your component is \`0 .. fps × durationSeconds\`.
+
+#### Branding object you receive
+
+\`\`\`ts
+branding: {
+  productName: string   // "${input.productName}"
+  accentColor: string   // hex e.g. "#9755ce"
+  bgColor: string       // hex
+  textColor: string     // hex
+  fontFamily: string    // CSS font stack
+  logoUrl: string | null
+}
+\`\`\`
+
+Use \`branding.accentColor\` for highlights, \`branding.textColor\` for prose, \`branding.fontFamily\` (chained with system-ui fallback) for typography.
+
+#### Animation idioms (steal these)
+
+- Stagger fade + slide for entries:
+  \`const opacity = Remotion.interpolate(frame, [start, start+12], [0, 1], { extrapolateRight: 'clamp' })\`
+- Type-on text:
+  \`const charsShown = Math.floor(Remotion.interpolate(frame, [0, 60], [0, fullText.length], { extrapolateRight: 'clamp' }))\`
+  then render \`fullText.slice(0, charsShown)\`.
+- Pulse / blink:
+  \`const blink = (frame % 30) < 15 ? 1 : 0\`
+
+**SUSTAINED MOTION — non-negotiable. Entry animations alone are not enough.** Each scene runs 5-12 seconds (150-360 frames at 30fps). The user keeps flagging "bancale" mocks because the entry animation finishes in the first 1-2 seconds and the rest of the scene is dead-static. Layer in CONTINUOUS motion that runs for the WHOLE scene duration. Pick at least one of these per scene:
+
+- **Traveling dot along an arrow / connection** (flow-diagram): a small \`<div>\` whose left % cycles from 0→100 every \`fps * 2\` frames, drawing the eye along the flow.
+  \`const t = (f % (fps * 2)) / (fps * 2)\` then \`left: \`\${t * 100}%\`\`
+- **Counter ticking up** (bento, hero-stat): a number that animates from 0 to its target across 1.5s and then SLOWLY KEEPS ticking by ±1 every ~30 frames, so the dashboard feels live.
+- **AI typing dots** (chat): three pulsing dots BEFORE the AI reply renders. Each dot's opacity cycles \`0.3 → 1 → 0.3\` with a stagger of 6 frames between the three.
+- **Cursor blink** in any input/text bubble: \`opacity: (f % 30) < 15 ? 1 : 0\`.
+- **Subtle accent pulse on the focal element**: \`scale: 1 + 0.02 * Math.sin(f / 18)\` or \`boxShadow blur: 24 + 8 * Math.sin(f / 14)\`.
+- **Recurring entry waves** (bento with multiple cards): instead of all 3 cards entering at frame 0/8/16 and freezing, stagger entries across a wider window (frame 0/30/60) AND have one or two cards subtly re-enter / re-pulse later in the scene.
+- **Live indicator dot** on a "connected / active" pill: \`opacity: 0.6 + 0.4 * Math.sin(f / 12)\` — small but it sells "this is real-time".
+
+Avoid the failure mode: do NOT cram all entry animations into the first 30 frames and then leave the canvas frozen. The viewer's eye needs continuous motion to stay engaged for 12 seconds.
+
+#### Reference example A — hero stat reveal (Linear-style, NO frame, type hero)
+
+This is a "look at the number" scene. No browser frame — the canvas IS the content. Tiny eyebrow label, gigantic accent-colored number, single-line subhead. Maximum type contrast. Your default for ANY scene that's about a metric or a single big idea.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const labelT = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 100 } })
+  const numT = Remotion.spring({ frame: f - 8, fps, config: { damping: 14, stiffness: 90 } })
+  const subT = Remotion.spring({ frame: f - 22, fps, config: { damping: 16, stiffness: 100 } })
+  const labelOp = Remotion.interpolate(labelT, [0, 1], [0, 1])
+  const labelY = Remotion.interpolate(labelT, [0, 1], [12, 0])
+  const numOp = Remotion.interpolate(numT, [0, 1], [0, 1])
+  const numY = Remotion.interpolate(numT, [0, 1], [24, 0])
+  const subOp = Remotion.interpolate(subT, [0, 1], [0, 1])
+  const ease = 1 - Math.pow(1 - Remotion.interpolate(f, [12, 12 + fps * 1.6], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }), 3)
+  // SUSTAINED MOTION: counter ticks up to the target across 1.6s, then
+  // keeps drifting upward (~+1 every 30 frames) so the dashboard feels
+  // live for the full scene duration instead of freezing on a number.
+  const post = Math.max(0, f - (12 + fps * 1.6))
+  const value = Math.round(12_847 * ease + post / 30)
+  const glow = 0.35 + 0.15 * Math.sin(f / 14)
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
+      <div className='relative flex flex-col items-center gap-5 text-center'>
+        <div className='text-[11px] font-bold tracking-[0.18em] uppercase text-zinc-500' style={{ opacity: labelOp, transform: \`translateY(\${labelY}px)\` }}>
+          Queries this month
+        </div>
+        <div className='text-[120px] font-black leading-none tracking-tight tabular-nums' style={{ color: branding.accentColor, opacity: numOp, transform: \`translateY(\${numY}px)\`, textShadow: \`0 8px 40px \${branding.accentColor}44\` }}>
+          {value.toLocaleString()}
+        </div>
+        <div className='text-[20px] font-medium text-zinc-700 tracking-tight max-w-[600px]' style={{ opacity: subOp }}>
+          and growing — your docs are answering for you.
+        </div>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example B — bento dashboard (mixed card sizes, perspective tilt)
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
+  const enter = (t) => ({ opacity: Remotion.interpolate(t, [0, 1], [0, 1]), transform: \`translateY(\${Remotion.interpolate(t, [0, 1], [16, 0])}px)\` })
+  const tilt = Remotion.interpolate(ease(0), [0, 1], [-2, -1])
+  // SUSTAINED MOTION: counter ticks up live, latency jitters within
+  // a tight band, the active-pill dot pulses. Without these the bento
+  // freezes after entry and the scene reads dead for 8+ seconds.
+  const liveCount = 4 + Math.floor(f / 90)
+  const latency = Math.round(178 + 6 * Math.sin(f / 16))
+  const dotPulse = 0.55 + 0.45 * Math.sin(f / 12)
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <div className='relative w-[800px]' style={{ transform: \`perspective(1400px) rotateY(\${tilt}deg) rotateX(2deg)\` }}>
+        <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/analytics\`} tone='light'>
+          <div className='p-5 grid grid-cols-3 gap-3 h-full'>
+            <div className='col-span-2 row-span-2 rounded-2xl p-5 flex flex-col justify-end' style={{ ...enter(ease(8)), background: \`linear-gradient(135deg, \${branding.accentColor}15, \${branding.accentColor}05)\`, border: \`1px solid \${branding.accentColor}25\` }}>
+              <div className='text-[10px] font-bold tracking-widest uppercase' style={{ color: branding.accentColor }}>This week</div>
+              <div className='text-[64px] font-black tracking-tight leading-none tabular-nums mt-1' style={{ color: branding.accentColor }}>+38%</div>
+              <div className='text-[13px] font-medium text-zinc-600 mt-1.5'>Doc queries answered</div>
+            </div>
+            <div className='rounded-2xl bg-white border border-zinc-200/80 p-4 flex flex-col gap-1' style={{ ...enter(ease(20)), boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+              <div className='text-[10px] font-semibold uppercase tracking-wider text-zinc-500'>Connected</div>
+              <div className='text-[28px] font-bold tabular-nums text-zinc-900'>{liveCount}</div>
+              <Remotion.Pill tone='success' dot style={{ opacity: dotPulse }}>active</Remotion.Pill>
+            </div>
+            <div className='rounded-2xl bg-zinc-900 p-4 flex flex-col gap-1' style={enter(ease(28))}>
+              <div className='text-[10px] font-semibold uppercase tracking-wider text-zinc-400'>Latency</div>
+              <div className='text-[28px] font-bold tabular-nums text-white'>{latency}ms</div>
+              <div className='text-[11px] text-emerald-400 font-medium'>↓ 12ms</div>
+            </div>
+          </div>
+        </Remotion.MockFrame>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example C — cursor clicks CTA inside a populated UI
+
+The frame interior shows a real product surface: header bar with title, an empty-state line, the call-to-action button. Cursor flies in from top-right and clicks the CTA. NO AccentGlow — the frame's shadow is the only depth.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const headerT = Remotion.spring({ frame: f, fps, config: { damping: 16, stiffness: 90 } })
+  const headerOp = Remotion.interpolate(headerT, [0, 1], [0, 1])
+  const btnT = Remotion.spring({ frame: f - 12, fps, config: { damping: 16, stiffness: 90 } })
+  const btnOp = Remotion.interpolate(btnT, [0, 1], [0, 1])
+  const btnScale = Remotion.interpolate(btnT, [0, 1], [0.96, 1])
+  const curT = Remotion.spring({ frame: f - 28, fps, config: { damping: 16, stiffness: 70 } })
+  // Cursor terminal coords (50, 55) align with the flex-centered button in the body.
+  const curL = Remotion.interpolate(curT, [0, 1], [82, 50])
+  const curTp = Remotion.interpolate(curT, [0, 1], [12, 55])
+  const click = f >= 70 && f < 78
+  const ripple = Remotion.interpolate(f, [70, 92], [0, 70], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const rippleOp = Remotion.interpolate(f, [70, 92], [0.55, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const press = click ? 0.96 : 1
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/settings/tokens\`} tone='light'>
+        <div className='h-full flex flex-col' style={{ opacity: headerOp }}>
+          <header className='px-6 py-4 border-b border-zinc-200 flex items-center gap-3'>
+            <Remotion.Icons.Lock size={16} color={branding.accentColor} />
+            <span className='text-[14px] font-bold tracking-tight text-zinc-900'>API Tokens</span>
+            <span className='ml-auto'><Remotion.Pill tone='muted'>0 active</Remotion.Pill></span>
+          </header>
+          <div className='flex-1 flex flex-col items-center justify-center gap-4 px-6'>
+            <div className='w-12 h-12 rounded-2xl flex items-center justify-center' style={{ background: \`\${branding.accentColor}15\` }}>
+              <Remotion.Icons.Plus size={22} color={branding.accentColor} />
+            </div>
+            <div className='text-center flex flex-col gap-1'>
+              <div className='text-[15px] font-semibold text-zinc-900 tracking-tight'>No tokens yet</div>
+              <div className='text-[13px] text-zinc-500'>Generate a token to authorize Claude.</div>
+            </div>
+            <button className='px-6 py-3 rounded-xl text-white text-[14px] font-bold' style={{ background: branding.accentColor, boxShadow: \`0 1px 2px rgba(0,0,0,0.06), 0 14px 32px -4px \${branding.accentColor}55\`, opacity: btnOp, transform: \`scale(\${btnScale * press})\` }}>Create token</button>
+          </div>
+        </div>
+      </Remotion.MockFrame>
+      <Remotion.AnimatedCursor leftPct={curL} topPct={curTp} ripple={click} rippleRadius={ripple} rippleOpacity={rippleOp} accentColor={branding.accentColor} />
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example D — chart drawing in via Recharts
+
+Use this pattern for any "stats / metrics / growth" scene. The data array is computed each frame from \`Remotion.interpolate\` so the chart appears to "draw" left-to-right.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const base = [120, 140, 175, 168, 220, 260, 245, 310, 360, 380, 420, 480]
+  const progress = Remotion.interpolate(f, [10, 90], [0, base.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const data = base.map((v, i) => ({ d: i + 1, v: i < progress ? v : null }))
+  const labelT = Remotion.spring({ frame: f - 24, fps, config: { damping: 16, stiffness: 100 } })
+  const labelOp = Remotion.interpolate(labelT, [0, 1], [0, 1])
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <Remotion.MockFrame url={\`\${branding.productName.toLowerCase()}.app/analytics\`} tone='light'>
+        <div className='p-6 flex flex-col gap-3 h-full'>
+          <div className='flex items-center gap-2.5'>
+            <Remotion.Icons.Zap size={14} color={branding.accentColor} />
+            <span className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>Last 12 days</span>
+            <span className='ml-auto' style={{ opacity: labelOp }}><Remotion.Pill tone='success' dot>+38%</Remotion.Pill></span>
+          </div>
+          <div className='text-3xl font-bold tabular-nums tracking-tight' style={{ opacity: labelOp, color: branding.accentColor }}>4,820 queries</div>
+          <div className='flex-1 -mx-2'>
+            <Remotion.Charts.ResponsiveContainer width='100%' height='100%'>
+              <Remotion.Charts.AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id='g' x1='0' y1='0' x2='0' y2='1'>
+                    <stop offset='0%' stopColor={branding.accentColor} stopOpacity={0.55} />
+                    <stop offset='100%' stopColor={branding.accentColor} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <Remotion.Charts.Area type='monotone' dataKey='v' stroke={branding.accentColor} strokeWidth={2.5} fill='url(#g)' isAnimationActive={false} />
+              </Remotion.Charts.AreaChart>
+            </Remotion.Charts.ResponsiveContainer>
+          </div>
+        </div>
+      </Remotion.MockFrame>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example E — abstract flow diagram (NO frame, motion-graphic feel)
+
+Three connected nodes representing a process. NO browser frame — pure motion graphic. Use for "how it works" / "Doc → AI → Answer" / "before-during-after" type beats. Way more expressive than a UI screenshot of the same idea. **Note the traveling dot on each arrow — that's the sustained motion that keeps the diagram alive after the entry. Without it the scene goes static after 1s and reads "bancale".**
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const ease = (start) => Remotion.spring({ frame: f - start, fps, config: { damping: 16, stiffness: 90 } })
+  const nodes = [
+    { label: 'Your docs',   icon: 'Code',     delay: 0 },
+    { label: 'AI reads',    icon: 'Cpu',      delay: 18, accent: true },
+    { label: 'Better answers', icon: 'Check', delay: 36 },
+  ]
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
+      <div className='relative flex items-center gap-3'>
+        {nodes.map((n, i) => {
+          const t = ease(n.delay)
+          const op = Remotion.interpolate(t, [0, 1], [0, 1])
+          const sc = Remotion.interpolate(t, [0, 1], [0.85, 1])
+          const Ico = Remotion.Icons[n.icon]
+          const arrowT = i < nodes.length - 1 ? ease(n.delay + 8) : null
+          const arrowOp = arrowT !== null ? Remotion.interpolate(arrowT, [0, 1], [0, 1]) : 0
+          return (
+            <React.Fragment key={i}>
+              <div className={\`w-[160px] h-[160px] rounded-3xl flex flex-col items-center justify-center gap-3 \${n.accent ? '' : 'bg-white border border-zinc-200/70'}\`} style={{ opacity: op, transform: \`scale(\${sc})\`, boxShadow: n.accent ? \`0 1px 2px rgba(0,0,0,0.06), 0 24px 48px -8px \${branding.accentColor}55\` : '0 1px 2px rgba(0,0,0,0.04), 0 12px 32px -8px rgba(0,0,0,0.10)', background: n.accent ? \`linear-gradient(135deg, \${branding.accentColor}, \${branding.accentColor}CC)\` : undefined }}>
+                <Ico size={36} color={n.accent ? '#FFFFFF' : branding.accentColor} />
+                <div className={\`text-[14px] font-bold tracking-tight \${n.accent ? 'text-white' : 'text-zinc-900'}\`}>{n.label}</div>
+              </div>
+              {arrowT !== null && (
+                <div className='relative flex items-center' style={{ opacity: arrowOp }}>
+                  <div className='h-[2px] w-12 rounded' style={{ background: \`\${branding.accentColor}55\` }} />
+                  <Remotion.Icons.ArrowRight size={20} color={branding.accentColor} />
+                  {/* SUSTAINED MOTION: dot that travels along the connector
+                      every fps*1.6 frames so the diagram stays alive
+                      after entry. */}
+                  <div className='absolute top-1/2 -mt-1 w-2 h-2 rounded-full' style={{ background: branding.accentColor, left: \`\${((f - n.delay - 8) / (fps * 1.6) % 1 + 1) % 1 * 80}%\`, opacity: arrowOp, boxShadow: \`0 0 12px \${branding.accentColor}\` }} />
+                </div>
+              )}
+            </React.Fragment>
+          )
+        })}
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example F — headline-burst (word-by-word reveal, NO frame)
+
+Maximum visual punch with minimum content. NO frame, NO UI — just words springing in with stagger over an accent gradient. Use for the hook scene, CTA-style beats, or any "make a strong claim" moment.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const words = ['Docs', 'that', 'answer', 'for', 'you']
+  const accentIdx = 2
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center'>
+      <div className='relative flex items-baseline gap-3 flex-wrap justify-center px-12'>
+        {words.map((w, i) => {
+          const t = Remotion.spring({ frame: f - (8 + i * 6), fps, config: { damping: 14, stiffness: 90 } })
+          const op = Remotion.interpolate(t, [0, 1], [0, 1])
+          const y = Remotion.interpolate(t, [0, 1], [40, 0])
+          const isAccent = i === accentIdx
+          return (
+            <span key={i} className='text-[88px] font-black leading-none tracking-tight' style={{ color: isAccent ? branding.accentColor : '#0B0B0F', opacity: op, transform: \`translateY(\${y}px)\`, textShadow: isAccent ? \`0 8px 32px \${branding.accentColor}44\` : 'none' }}>{w}</span>
+          )
+        })}
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example G — logo-hero (project's REAL logo, big, NO frame)
+
+A "logo lockup" beat. Use the project's actual brand mark — \`branding.logoUrl\` rendered at 140-180px. NEVER fabricate a fake brand icon (rounded square + lucide sparkle, etc.) — that reads as a stock placeholder. If \`branding.logoUrl\` is null, fall back to a CLEAN geometric mark (overlapping shapes, NOT a lucide pictogram) so it still looks designed instead of decorative.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const markT = Remotion.spring({ frame: f, fps, config: { damping: 14, stiffness: 90 } })
+  const textT = Remotion.spring({ frame: f - 14, fps, config: { damping: 16, stiffness: 90 } })
+  const markOp = Remotion.interpolate(markT, [0, 1], [0, 1])
+  const markSc = Remotion.interpolate(markT, [0, 1], [0.7, 1])
+  const textOp = Remotion.interpolate(textT, [0, 1], [0, 1])
+  const textY = Remotion.interpolate(textT, [0, 1], [24, 0])
+  return (
+    <Remotion.AbsoluteFill className='flex flex-col items-center justify-center gap-8'>
+      <div style={{ opacity: markOp, transform: \`scale(\${markSc})\` }}>
+        {branding.logoUrl ? (
+          <Remotion.Img src={branding.logoUrl} style={{ height: 160, width: 'auto', maxWidth: 360, objectFit: 'contain' }} />
+        ) : (
+          // Fallback: layered geometric shapes — NEVER a lucide pictogram.
+          <div className='relative w-[160px] h-[160px]'>
+            <div className='absolute inset-0 rounded-[36px]' style={{ background: \`linear-gradient(135deg, \${branding.accentColor}, \${branding.accentColor}AA)\` }} />
+            <div className='absolute -bottom-6 -right-6 w-[110px] h-[110px] rounded-full' style={{ background: \`\${branding.accentColor}33\`, mixBlendMode: 'multiply' }} />
+            <div className='absolute top-4 left-4 w-12 h-12 rounded-2xl bg-white/15' />
+          </div>
+        )}
+      </div>
+      <div className='flex flex-col items-center gap-3' style={{ opacity: textOp, transform: \`translateY(\${textY}px)\` }}>
+        <div className='text-[11px] font-bold tracking-widest uppercase text-zinc-500'>{branding.productName}</div>
+        <div className='text-[44px] font-bold tracking-tight text-zinc-900'>Smarter answers, instantly.</div>
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+#### Reference example H — chat (NO layout shifts)
+
+User question + AI typing dots + AI reply, all in pre-allocated slots. Bubbles fade in (opacity only); the typing-dots placeholder cross-fades into the reply in the SAME slot via absolute positioning, so nothing ever reflows. Container is top-aligned (\`justify-start\`), NOT vertically centered, so new content below doesn't push existing content up. NEVER use \`font-mono\` on the bubble text — chat is prose.
+
+\`\`\`tsx
+function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const userT = Remotion.spring({ frame: f - 6, fps, config: { damping: 16, stiffness: 90 } })
+  const userOp = Remotion.interpolate(userT, [0, 1], [0, 1])
+  const userY = Remotion.interpolate(userT, [0, 1], [12, 0])
+  // Typing dots appear at frame 28, fade out as reply takes over at frame 70.
+  const dotsOp = Remotion.interpolate(f, [22, 28, 64, 70], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
+  const replyT = Remotion.spring({ frame: f - 70, fps, config: { damping: 16, stiffness: 90 } })
+  const replyOp = Remotion.interpolate(replyT, [0, 1], [0, 1])
+  // SUSTAINED MOTION: three pulsing dots (staggered) + cursor blink in user bubble.
+  const dot = (i) => 0.3 + 0.7 * Math.abs(Math.sin((f - i * 6) / 8))
+  const blink = (f % 30) < 15 ? 1 : 0
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-10'>
+      <Remotion.MockFrame url='claude.ai/chat' tone='light'>
+        <div className='h-full flex flex-col p-6 gap-4'>
+          <div className='flex items-center gap-2'>
+            <Remotion.Icons.Cpu size={14} color={branding.accentColor} />
+            <span className='text-[12px] font-bold tracking-tight text-zinc-900'>{branding.productName}</span>
+            <span className='ml-auto'><Remotion.Pill tone='success' dot>connected</Remotion.Pill></span>
+          </div>
+          {/* User bubble — fixed slot, opacity+transform only */}
+          <div className='self-end max-w-[75%]' style={{ opacity: userOp, transform: \`translateY(\${userY}px)\` }}>
+            <div className='rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] text-white' style={{ background: branding.accentColor }}>
+              How do I connect Stripe?<span className='inline-block w-[2px] h-[14px] ml-0.5 align-middle bg-white' style={{ opacity: blink }} />
+            </div>
+          </div>
+          {/* AI bubble area — typing dots ↔ reply share the SAME slot */}
+          <div className='self-start max-w-[75%] flex items-start gap-2.5'>
+            <div className='w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0' style={{ background: branding.accentColor }}>AI</div>
+            <div className='relative min-h-[44px] flex-1'>
+              <div className='absolute inset-0 flex items-center gap-1.5 px-4 rounded-2xl rounded-tl-md bg-zinc-100 border border-zinc-200/70' style={{ opacity: dotsOp }}>
+                {[0,1,2].map(i => <span key={i} className='w-2 h-2 rounded-full bg-zinc-500' style={{ opacity: dot(i) }} />)}
+              </div>
+              <div className='rounded-2xl rounded-tl-md px-4 py-2.5 bg-zinc-100 border border-zinc-200/70 text-[15px] text-zinc-800' style={{ opacity: replyOp }}>
+                Open Settings → Integrations, paste your key, hit save.
+              </div>
+            </div>
+          </div>
+        </div>
+      </Remotion.MockFrame>
+    </Remotion.AbsoluteFill>
+  )
+}
+\`\`\`
+
+These eight examples are your baseline. EVERY scene must:
+1. Use \`<Remotion.MockFrame tone='light'>\` (light, never dark).
+2. Have NO outer background — the AbsoluteFill is transparent.
+3. Use Tailwind \`className\` for static styling, \`style={{...}}\` only for animated values.
+4. **DO NOT call \`<Remotion.AccentGlow>\`.** It is deprecated — the halo on the canvas reads as a render glitch.
+   - **MAXIMUM ONE \`<Remotion.MockFrame>\` per scene.** Never nest or stack two MockFrames. Pick one product surface per scene; the next scene gets the next surface. Stacked frames read as a render glitch.
+   - **MAXIMUM ONE \`<Remotion.AnimatedCursor>\` per scene** (used only in cursor-click mode), and ONLY when the MockFrame interior shows a populated UI — never an isolated button on an empty page.
+   - **For logo-hero scenes: use \`branding.logoUrl\` via \`<Remotion.Img>\`.** NEVER fabricate a fake brand icon (rounded square + lucide-sparkle, etc.). If logoUrl is null, fall back to a clean geometric composition (overlapping shapes), not a pictogram.
+5. **Typography — Geist by default, NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\` or any other stack — that overrides our config and the result looks like a 2014 system-monospace dump. Use the className \`font-mono\` ONLY for actual code, URLs, or terminal lines. NEVER use mono for prose, chat bubbles, button labels, or headings.
+6. **Type at scale — make it feel modern.** Headlines \`text-[32px]\` to \`text-[44px]\` (\`font-bold tracking-tight\`). Big numbers / counters \`text-[64px]\` to \`text-[96px]\` (\`tabular-nums tracking-tight\`). Body / chat text \`text-[15px]\` to \`text-[18px]\`. Labels / status pills \`text-[11px] font-bold tracking-widest uppercase\`. Tight letter-spacing on big text is what makes typography feel premium vs. dated.
+
+6b. **Icons — thin (1.5px stroke), and NEVER Sparkles.** \`Remotion.Icons.*\` are pre-wrapped at strokeWidth=1.5 (Linear/Vercel weight). Do NOT pass \`strokeWidth={2}\` — the heavier stroke is what makes lucide read as "Bootstrap admin 2018". The Sparkles icon is deliberately removed from the export; use Cpu / Workflow / Layers / Boxes / Database for AI/data/process beats. Generic "AI sparkle in a rounded square" is the #1 cliché the user has banned.
+7. **Vary scene MODES — pick the most relevant per scene, never repeat the same mode.**
+   You have a palette of 8 modes below. For each scene, pick the ONE that best serves THAT scene's headline — don't force a quota of UI vs. abstract, just pick what's most pertinent. The only hard constraint: never use the same mode twice in one video. Variety alone is what stops it from feeling like a settings-page tour.
+
+   **UI modes** (browser frame inside) — pick when the scene's value is "look, the product does X":
+   - **bento**         — example B. Browser frame WITH perspective tilt, mixed-size grid, one accent-tinted hero card.
+   - **chat**          — example H. User bubble + AI typing dots ↔ AI reply, all in pre-allocated slots so nothing reflows. Bubble copy must fit ONE line at max-width or the wrap shifts the layout.
+   - **chart**         — example D (Recharts). Browser frame, area/line/bar chart with frame-driven data sweep.
+   - **cursor-click**  — example C. Browser frame with a populated product surface (header + empty-state + CTA button), cursor flies in and clicks the CTA.
+
+   **Abstract modes** (NO browser frame, the canvas IS the content) — pick when the scene's idea is bigger than any one screen (a claim, a process, a metric, a feeling):
+   - **hero-stat**       — example A. Giant accent-colored number / metric, eyebrow label, subhead.
+   - **flow-diagram**    — example E. 3 connected nodes ("Your docs" → "AI sees them" → "Better answers"), animated arrows between them.
+   - **headline-burst**  — example F. Word-by-word reveal of a 3-6 word tagline, each word springs in, accent gradient backdrop.
+   - **logo-hero**       — example G. The PROJECT'S real logo (\`branding.logoUrl\`) at 140-180px, tagline below. NO fabricated icons (no lucide-sparkle-in-a-rounded-square fakes — they read as stock placeholders). Fall back to a clean geometric mark only if logoUrl is null.
+
+   Heuristic: a "we ship X feature" beat → UI mode. A "here's how it works" / "the result" / "the claim" beat → abstract mode. Pick scene-by-scene; the right answer depends on what the headline is actually saying.
+
+Use these as the visual baseline. Each scene picks ONE of these patterns (or a sibling — counter, progress bar, code line typing, notification toast, stat cards) and adapts the copy to the scene's headline. Don't downgrade — match this level of polish.
+
+End of TSX section.
+` : ''}
+
+## Language
+
+Write the entire script in **${input.language}**. Do not switch languages mid-script. UI labels in another language stay verbatim in quotes.
+
+## Tone
+
+Confident, specific, benefit-driven. No buzzwords ("revolutionary", "next-gen", "game-changer" → all banned). Active voice. Concrete verbs.
+
+## Voice-over delivery — ElevenLabs v3 formatting (CRITICAL)
+
+The voiceover strings in the JSON output will be fed to ElevenLabs v3 TTS as a single concatenated narration. Without delivery cues the read comes out flat regardless of voice settings. Bake in the cues:
+
+**Punctuation drives delivery:**
+- Em dash (—) creates a short, punchy pause. Use it for emphasis or beat changes.
+- Ellipsis (...) creates trailing silence — uses real seconds, so use SPARINGLY (max once across the whole script).
+- CAPS for one or two key words signal vocal stress (NOT whole sentences).
+- Questions (with ?) create natural rising intonation; only use if the tone allows.
+
+**Audio tags are stage directions** — they MUST appear in the voiceover strings, placed BETWEEN sentences (never mid-sentence). The whole point of this script is that ElevenLabs reads it expressively, not flat. A voiceover string with NO tags AND no emphatic punctuation is a FAILED output and will be regenerated.
+
+Available tags:
+Emotional: [excited], [happy], [calm]
+Reactions: [laughs], [giggles], [happy gasp], [sighs]
+Delivery: [whispers], [cheerfully], [sarcastic]
+Pacing: [short pause]
+
+Tags go inside the relevant voiceover string (hook.voiceover / scenes[i].voiceover / cta.voiceover). They count as 0 spoken words for the word-count budget.
+
+### REQUIRED for the selected voice tone (${input.tone ?? 'punchy'})
+
+${TONE_TAG_DIRECTION[input.tone ?? 'punchy']}
+
+This is a MUST, not a suggestion. Across the 5 voiceover strings (1 hook + 3-4 scenes + 1 cta), you MUST land 2-3 audio tags total + at least one CAPS-emphasized word + at least one em-dash for a punchy beat. Don't skip them on the grounds of "the prose reads fine without them" — flat prose is the bug we are fixing.
 
 ### Concrete voiceover examples for tone="${input.tone ?? 'punchy'}"
 
@@ -653,7 +1013,7 @@ Return ONLY valid JSON matching this exact shape, no markdown fences, no preambl
       "subhead": "Optional supporting line under headline",
 ${input.visualMode === 'mocks'
   ? `      "screenshotIndex": null,
-      "template": { "kind": "<one of hero-text|kpi-reveal|list-reveal|mock-frame|chat-bubble|flow-diagram|chart>", "...slots for that kind...": "..." },`
+      "mockCode": "<full TSX defining function MockScene({ branding }), see the 'Mock code' section above for two paste-as-template examples>",`
   : `      "screenshotIndex": 0,`}
       "durationSeconds": 10
     }
@@ -672,25 +1032,25 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
 
   const result = await generateText({
     userPrompt,
-    // Both modes use Flash now. The original Pro selection was justified
-    // when the LLM had to write TSX for every scene (Pro had better visual
-    // taste). With templates, the LLM only picks a `kind` and fills slot
-    // strings — there's nothing left for Pro's reasoning to shine on, and
-    // its thinking budget burned ~30k output tokens on a script that
-    // should be ~3-4k of actual JSON. Flash is 5-10× faster (~3-5s vs
-    // ~30-180s), ~10× cheaper, and the quality matches because the visual
-    // craftsmanship lives in our hand-written components.
-    // model: undefined → falls back to GEMINI_MODEL (Flash) in gemini.client.
-    // maxTokens: comfortable for templated JSON (4 scenes × ~500 tokens of
-    // slots + the script envelope = ~3-4k typical, 16k cap leaves headroom
-    // without inviting Flash to ramble).
-    maxTokens: 16_384,
-    // Disable Flash 2.5's thinking — for templated JSON output we don't
-    // need internal reasoning, and thinking tokens silently eat the
-    // maxOutputTokens budget. Last log showed Flash burning 13k of 16k
-    // tokens on thinking before getting cut off mid-scene 2. With
-    // thinkingBudget=0 the same generation outputs ~3-4k of pure JSON.
-    thinkingBudget: 0,
+    // Mocks mode benefits dramatically from Pro: Flash produces the
+    // safe-but-dated "browser frame + centered card" output even with
+    // explicit Linear-style directives, while Pro actually uses bento
+    // layouts, perspective tilts, and proper type hierarchy. Costs
+    // ~3-5x more per call (~€0.04 vs €0.01) and adds ~10-20s latency,
+    // worth it for the visible quality jump on a marketing video.
+    // Screenshots mode stays on Flash — script-only generation doesn't
+    // need Pro.
+    model: input.visualMode === 'mocks' ? GEMINI_PRO_MODEL : undefined,
+    // Mocks mode emits ~2KB of TSX per scene + the JSON envelope — at 4
+    // scenes that's already ~10k tokens, leaving very little headroom in
+    // a 16k cap. The model was silently dropping mockCode on later scenes
+    // when it ran out of room. 32k gives comfortable margin.
+    maxTokens: input.visualMode === 'mocks' ? 32_000 : 16_384,
+    // Mocks need a touch of extra variance — but 0.85 was over the line:
+    // the model started emitting TSX with subtle syntax errors / banned
+    // patterns often enough that all 4 scenes would fall back to the
+    // gradient placeholder. The style seed already provides directional
+    // variety, so 0.7 is enough top-up.
     temperature: input.visualMode === 'mocks' ? 0.7 : 0.6,
     json: true,
     responseSchema: RESPONSE_SCHEMA,
@@ -765,16 +1125,6 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     console.error('[marketing-script] Missing top-level fields after parse:', missingTop)
     console.error('[marketing-script] Raw text (first 800 chars):', result.text.slice(0, 800))
   }
-
-  // Normalize common slot-name drifts the model produces between similar
-  // templates. Cheap pre-Zod fixup so we don't fail the whole script for
-  // a one-letter rename. Currently catches:
-  //   - chat-bubble.{text,content,message} → answer (model bleeds in
-  //     `text` from quote-template's vocabulary)
-  //   - quote.{quote,body,content} → text
-  //   - hero-text.{title,heading} → headline
-  // Anything we don't expect is left alone for Zod to flag clearly.
-  normalizeTemplateSlots(parsedJson)
 
   const parsed = MarketingScriptSchema.safeParse(parsedJson)
   if (!parsed.success) {
