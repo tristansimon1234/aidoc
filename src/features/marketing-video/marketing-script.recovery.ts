@@ -46,7 +46,8 @@ export function normalizeTemplateSlots(parsed: unknown): void {
 
   for (const scene of scenes) {
     if (!scene || typeof scene !== 'object') continue
-    const t = (scene as Record<string, unknown>).template
+    const sceneObj = scene as Record<string, unknown>
+    const t = sceneObj.template
     if (!t || typeof t !== 'object') continue
     const template = t as Record<string, unknown>
     const kind = template.kind
@@ -74,6 +75,60 @@ export function normalizeTemplateSlots(parsed: unknown): void {
           delete template.code
         }
         break
+    }
+  }
+
+  // Second pass: any template still missing REQUIRED fields after the
+  // rename step gets nuked and replaced with a hero-text fallback derived
+  // from the scene's headline. This is the most aggressive layer of
+  // recovery — better to ship a clean hero-text than fail the whole
+  // script because one scene picked a wrong template kind (e.g.
+  // "list-reveal" with a `value` slot instead of `items`).
+  // Without this, a single broken scene takes down the entire
+  // generation: Zod fails on the discriminated-union check and the
+  // pipeline aborts.
+  const REQUIRED_BY_KIND: Record<string, string[]> = {
+    'hero-text':       ['headline'],
+    'kpi-reveal':      ['metric', 'value'],
+    'list-reveal':     ['title', 'items'],
+    'mock-frame':      ['cards'],
+    'chat-bubble':     ['question', 'answer'],
+    'flow-diagram':    ['nodes'],
+    'chart':           ['type', 'points'],
+    'before-after':    ['beforeLabel', 'afterLabel'],
+    'comparison-bars': ['leftLabel', 'rightLabel', 'rows'],
+    'quote':           ['text', 'author'],
+    'step-progression':['steps'],
+    'big-stat':        ['value'],
+    'live-typing':     ['lines'],
+    'dual-screen':     ['leftCards', 'rightCards'],
+  }
+  const isEmpty = (v: unknown): boolean => {
+    if (v === undefined || v === null) return true
+    if (typeof v === 'string' && v.trim().length === 0) return true
+    if (Array.isArray(v) && v.length === 0) return true
+    return false
+  }
+  for (const scene of scenes) {
+    if (!scene || typeof scene !== 'object') continue
+    const sceneObj = scene as Record<string, unknown>
+    const t = sceneObj.template
+    if (!t || typeof t !== 'object') continue
+    const template = t as Record<string, unknown>
+    const kind = template.kind
+    if (typeof kind !== 'string') continue
+    const required = REQUIRED_BY_KIND[kind]
+    if (!required) {
+      // Unknown kind — replace with hero-text fallback so Zod doesn't
+      // fail on discriminated-union match.
+      const headline = typeof sceneObj.headline === 'string' ? sceneObj.headline : 'Highlight'
+      sceneObj.template = { kind: 'hero-text', headline, layout: 'burst' }
+      continue
+    }
+    const missing = required.filter((f) => isEmpty(template[f]))
+    if (missing.length > 0) {
+      const headline = typeof sceneObj.headline === 'string' ? sceneObj.headline : 'Highlight'
+      sceneObj.template = { kind: 'hero-text', headline, layout: 'burst' }
     }
   }
 }
