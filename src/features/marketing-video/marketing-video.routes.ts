@@ -291,8 +291,77 @@ marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Respo
       const teamId = await findTeamIdByRunId(params.data.id)
       if (teamId) await enforceQuotaOrThrow(teamId)
 
-      const result = await editMarketingManifestWithAi(params.data.id, body.data)
-      res.status(200).json(result)
+      // Background job — same pattern as /generate-marketing. The combined
+      // edit (Gemini Pro) + per-scene rescue (1 Pro call per failure) +
+      // render (Remotion) can exceed 300s on slow days; we don't want the
+      // refine to die mid-flight and we don't want the user blocked on
+      // the request. The frontend listens via useJobs realtime + flips
+      // the loader off when the job completes.
+      const { findRunById } = await import('../run/run.repository.js')
+      const { findPageById } = await import('../page/page.repository.js')
+      const { createJob, updateJobStatus } = await import('../run/job.repository.js')
+
+      const run = await findRunById(params.data.id)
+      if (!run) {
+        res.status(404).json({ error: 'Run not found', code: 'RUN_NOT_FOUND' })
+        return
+      }
+      if (!run.docPageId) {
+        res.status(400).json({ error: 'Run has no doc page — cannot track marketing video edit job', code: 'NO_DOC_PAGE' })
+        return
+      }
+      const page = await findPageById(run.docPageId)
+      if (!page) {
+        res.status(404).json({ error: 'Doc page not found', code: 'PAGE_NOT_FOUND' })
+        return
+      }
+
+      let jobId: string | null = null
+      try {
+        const job = await createJob({
+          runId: params.data.id,
+          pageId: run.docPageId,
+          projectId: page.projectId,
+          // Reuse 'marketing-video' so the per-page UNIQUE WHERE running
+          // index blocks concurrent generates AND refines on the same
+          // page — we never want both racing for the manifest.
+          type: 'marketing-video',
+          triggeredByUserId: (req as Request & { userId?: string }).userId ?? null,
+        })
+        jobId = job.id
+      } catch (err) {
+        const errMsg = (err as Error).message ?? ''
+        const isDuplicate = /duplicate key|unique constraint|23505/i.test(errMsg)
+        if (isDuplicate) {
+          res.status(409).json({
+            error: 'A marketing-video operation is already running for this page.',
+            code: 'JOB_ALREADY_RUNNING',
+            details: errMsg,
+          })
+        } else {
+          res.status(500).json({
+            error: 'Failed to start marketing-video edit job',
+            code: 'JOB_CREATE_FAILED',
+            details: errMsg,
+          })
+        }
+        return
+      }
+
+      res.status(202).json({ runId: params.data.id, jobId, status: 'running' })
+
+      const { waitUntil } = await import('@vercel/functions')
+      waitUntil((async () => {
+        try {
+          await editMarketingManifestWithAi(params.data.id, body.data)
+          await renderMarketingVideoForRun(params.data.id)
+          if (jobId) await updateJobStatus(jobId, 'completed').catch(() => {})
+        } catch (err) {
+          const message = (err as Error).message
+          console.error(`[marketing-edit] Background pipeline failed for ${params.data.id}: ${message}`)
+          if (jobId) await updateJobStatus(jobId, 'failed', message).catch(() => {})
+        }
+      })())
     } catch (err) {
       next(err)
     }

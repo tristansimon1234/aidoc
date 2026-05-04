@@ -143,6 +143,9 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         const fresh = await fetchMarketingVideo(runId)
         if (!cancelled) setSummary(fresh)
       } catch { /* keep stale summary; banner will show if there was an error */ }
+      // Refine loader is anchored on refineStartedAt; clear it now that
+      // the job (generate or refine) has settled.
+      if (!cancelled) setRefineStartedAt(null)
     })()
     return () => { cancelled = true }
   }, [runId, ourJobStatus])
@@ -279,59 +282,46 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
     }
   }
 
-  // AI-driven manifest refinement. Calls /marketing-video/edit with the
-  // user's instruction + recent history; Gemini Pro returns the updated
-  // manifest. Server validates + persists + resets renderStatus, so on
-  // success we automatically chain a render — the user shouldn't need
-  // a separate click to see their refinement applied. The manual
-  // "Re-render now" button stays as a fallback for cases where the
-  // auto-render failed.
+  // AI-driven manifest refinement. Fires the edit + render as a single
+  // background job (same pattern as the initial generate): server returns
+  // 202 + jobId immediately, the actual edit-then-render runs in
+  // waitUntil, and the frontend listens via useJobs realtime to flip the
+  // ProgressLoader off when the job completes (a useEffect below
+  // re-fetches the marketing summary on the running → completed
+  // transition). Survives Vercel's 300s cap and tab close.
   const handleEditWithAi = async (): Promise<void> => {
     const instruction = editInput.trim()
     if (!instruction || editing || !runId) return
     setEditError(null)
     // Optimistic: push the user message immediately so the chat feels
-    // responsive even before Gemini answers.
+    // responsive even before the request returns. We don't push an
+    // assistant message — the response is whatever the user sees in the
+    // re-rendered video.
     const nextHistory = [...editHistory, { role: 'user' as const, content: instruction }]
     setEditHistory(nextHistory)
     setEditInput('')
     setEditing(true)
     setRefineStartedAt(Date.now())
     try {
-      const result = await api.runs.marketingVideo.editWithAi(runId, {
+      await api.runs.marketingVideo.editWithAi(runId, {
         instruction,
         history: editHistory,
       })
-      setEditHistory([...nextHistory, { role: 'assistant', content: result.message }])
-      setSummary(result.summary)
-      // Chain the render. Don't await it inside the same try/catch — if
-      // the render fails, surface that as a render error (the manifest
-      // edit itself succeeded). The button text on the input flips back
-      // immediately so the user can queue another instruction.
-      setEditing(false)
-      void (async () => {
-        setRerendering(true)
-        try {
-          const fresh = await api.runs.marketingVideo.render(runId)
-          setSummary(fresh)
-        } catch (renderErr) {
-          const message = renderErr instanceof ApiError ? renderErr.message : (renderErr as Error).message
-          setError(`Render after refine failed: ${message}`)
-        } finally {
-          setRerendering(false)
-          setRefineStartedAt(null)
-        }
-      })()
-      return
+      // Job is created + accepted (202 returned). Flip editing off — the
+      // marketing-video job realtime now drives the loader (ourJob.status
+      // === 'running'). The existing useEffect that watches the job will
+      // refetch the summary on completion.
     } catch (err) {
       const message = err instanceof ApiError ? err.message : (err as Error).message
       setEditError(message)
       // Roll back the optimistic user message so the input doesn't show
       // an unanswered prompt — the failure is surfaced via editError.
       setEditHistory(editHistory)
-      setRefineStartedAt(null)
     } finally {
       setEditing(false)
+      // refineStartedAt stays set — we want the elapsed counter on the
+      // loader to keep climbing across the refine + render. It's reset
+      // when ourJob completes (see ourJobStatus effect below).
     }
   }
 

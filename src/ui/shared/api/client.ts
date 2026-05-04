@@ -687,13 +687,16 @@ export const api = {
        *  the updated manifest + a one-line summary of changes. The
        *  manifest is persisted server-side (same path as updateManifest)
        *  and renderStatus resets to 'idle'. */
+      /** Background job — returns 202 + jobId, the actual edit + render
+       *  runs in waitUntil. Frontend listens via useJobs realtime to flip
+       *  the loader off and re-fetch the summary on completion. */
       editWithAi: (
         id: string,
         input: {
           instruction: string
           history?: { role: 'user' | 'assistant'; content: string }[]
         },
-      ): Promise<{ summary: MarketingVideoSummaryDTO; message: string }> =>
+      ): Promise<{ runId: string; jobId: string; status: 'running' }> =>
         request(`/runs/${id}/marketing-video/edit`, {
           method: 'POST',
           body: JSON.stringify(input),
