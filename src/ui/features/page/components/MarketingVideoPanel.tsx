@@ -305,19 +305,41 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
     setChatHistory(next)
     setChatInput('')
     setChatThinking(true)
+
+    // Resolve a usable runId. Three cases:
+    //  1. We have one and it's valid → use it.
+    //  2. We have one but the server says RUN_NOT_FOUND (stale state
+    //     after a manual cleanup) → fall back to creating a new stub.
+    //  3. We don't have one → create a stub.
+    const ensureRun = async (current: string | null): Promise<string> => {
+      if (current) return current
+      const stub = await api.runs.create({
+        featureName: `[Marketing] ${pageTitle}`,
+        startUrl: fallbackStartUrl || 'https://example.com',
+        goal: `Marketing video for ${pageTitle}`,
+        docPageId: pageId,
+      })
+      setRunId(stub.id)
+      return stub.id
+    }
+
     try {
-      let activeRunId = runId
-      if (!activeRunId) {
-        const stub = await api.runs.create({
-          featureName: `[Marketing] ${pageTitle}`,
-          startUrl: fallbackStartUrl || 'https://example.com',
-          goal: `Marketing video for ${pageTitle}`,
-          docPageId: pageId,
-        })
-        activeRunId = stub.id
-        setRunId(activeRunId)
+      let activeRunId = await ensureRun(runId)
+      let result
+      try {
+        result = await api.runs.marketingVideo.converse(activeRunId, next)
+      } catch (err) {
+        const isStale = err instanceof ApiError && (
+          err.code === 'RUN_NOT_FOUND' ||
+          /run not found/i.test(err.message)
+        )
+        if (!isStale) throw err
+        // Local runId points to a deleted run. Drop it, mint a fresh
+        // stub, and retry the converse once.
+        setRunId(null)
+        activeRunId = await ensureRun(null)
+        result = await api.runs.marketingVideo.converse(activeRunId, next)
       }
-      const result = await api.runs.marketingVideo.converse(activeRunId, next)
       setChatHistory([...next, { role: 'assistant', content: result.reply }])
       if (result.kind === 'plan') {
         setChatPlan(result.plan)
@@ -325,7 +347,6 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
     } catch (err) {
       const msg = err instanceof ApiError ? err.message : (err as Error).message
       setChatError(msg)
-      // Roll back the optimistic user message so they can retype.
       setChatHistory(chatHistory)
     } finally {
       setChatThinking(false)

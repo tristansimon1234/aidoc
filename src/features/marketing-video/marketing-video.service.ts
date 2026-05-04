@@ -3,6 +3,7 @@ import { findStepsByRunId } from '../run/run.repository.js'
 import { findPageById } from '../page/page.repository.js'
 import { getPublicUrl, uploadToStorage } from '../../shared/db/storage.repository.js'
 import { synthesizeSpeech, generateMusic, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
+import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 import { generateMarketingScript } from './marketing-script.generator.js'
 import { saveMarketingVideo } from './marketing-video.repository.js'
 import type {
@@ -1115,7 +1116,13 @@ export async function converseMarketingVideo(
   history: ConverseTurn[],
 ): Promise<ConverseResultQuestion | ConverseResultPlan> {
   const run = await findRunById(runId)
-  if (!run) throw new Error('Run not found')
+  if (!run) {
+    // Stale runId — the frontend panel is referencing a run that's been
+    // deleted (manual cleanup, SQL drop, etc.). Surface a typed error
+    // (code → 'RUN_NOT_FOUND') so the UI can clear its local state and
+    // create a fresh stub run on the next chat turn.
+    throw new NotFoundError('Run')
+  }
   if (!run.docPageId) {
     throw new Error('This run has no linked page. Marketing video needs the page documentation as input.')
   }
