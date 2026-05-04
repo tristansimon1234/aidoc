@@ -260,6 +260,10 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
   // Cheap (~render cost only) and fast (2-5min). Used after an AI edit
   // to apply the new manifest without burning the full pipeline.
   const [rerendering, setRerendering] = useState(false)
+  // Stable timestamp for the refine + auto-render ProgressLoader. Set
+  // when the user fires a refine; cleared when the chained render
+  // completes (so the next refine starts a fresh elapsed counter).
+  const [refineStartedAt, setRefineStartedAt] = useState<number | null>(null)
   const handleRerenderOnly = async (): Promise<void> => {
     if (!runId || rerendering) return
     setRerendering(true)
@@ -292,6 +296,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
     setEditHistory(nextHistory)
     setEditInput('')
     setEditing(true)
+    setRefineStartedAt(Date.now())
     try {
       const result = await api.runs.marketingVideo.editWithAi(runId, {
         instruction,
@@ -314,6 +319,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           setError(`Render after refine failed: ${message}`)
         } finally {
           setRerendering(false)
+          setRefineStartedAt(null)
         }
       })()
       return
@@ -323,6 +329,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       // Roll back the optimistic user message so the input doesn't show
       // an unanswered prompt — the failure is surfaced via editError.
       setEditHistory(editHistory)
+      setRefineStartedAt(null)
     } finally {
       setEditing(false)
     }
@@ -338,6 +345,17 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
 
   const hasManifest = summary !== null
   const renderStatus = summary?.renderStatus ?? 'idle'
+
+  // Form-wide lockout. The whole tab freezes during any operation that
+  // produces a new render (full pipeline, AI refine, or auto-render
+  // chained after a refine) so the user can't queue conflicting edits
+  // mid-flight — the manifest would race with itself.
+  const formLocked =
+    working || ourJob?.status === 'running' || editing || rerendering
+
+  // Distinct from formLocked: should the blue progress loader be shown?
+  // Yes for the full pipeline AND for refine + auto-render chains.
+  const showProgress = ourJob?.status === 'running' || editing || rerendering
 
   return (
     <div className={styles.container}>
@@ -361,7 +379,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
        *  whole row — no awkward empty right column on first visit. */}
       <div
         className={`${styles.layout} ${
-          (ourJob?.status === 'running' || (hasManifest && summary && !working))
+          (showProgress || (hasManifest && summary && !working))
             ? styles.layoutWithPreview
             : ''
         }`}
@@ -383,7 +401,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           onChange={(e) => setUserPrompt(e.target.value)}
           placeholder="e.g. Focus on the AI agent. Audience: B2B PMs. Tone: confident, slightly cheeky."
           maxLength={800}
-          disabled={working}
+          disabled={formLocked}
         />
       </div>
 
@@ -403,7 +421,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             { id: 'mocks' as const,       title: 'Designed mocks',    subtitle: 'AI-designed animated panels' },
           ]).map((opt) => {
             const selected = visualMode === opt.id
-            const optDisabled = working || (opt.id === 'screenshots' && !runId)
+            const optDisabled = formLocked || (opt.id === 'screenshots' && !runId)
             return (
               <button
                 key={opt.id}
@@ -435,7 +453,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             type="checkbox"
             checked={withVoiceover}
             onChange={(e) => setWithVoiceover(e.target.checked)}
-            disabled={working}
+            disabled={formLocked}
           />
           Generate AI voice narration
         </label>
@@ -448,7 +466,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
                 className={styles.select}
                 value={voiceId}
                 onChange={(e) => setVoiceId(e.target.value)}
-                disabled={working || voices.length === 0}
+                disabled={formLocked || voices.length === 0}
               >
                 <option value="">
                   {voices.length === 0 ? 'Loading voices…' : 'Default — Sarah (clear, professional)'}
@@ -466,7 +484,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
                 className={styles.select}
                 value={tone}
                 onChange={(e) => setTone(e.target.value as VoiceTone)}
-                disabled={working}
+                disabled={formLocked}
               >
                 {(Object.keys(TONE_LABELS) as VoiceTone[]).map((t) => (
                   <option key={t} value={t}>{TONE_LABELS[t]}</option>
@@ -490,7 +508,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             className={styles.select}
             value={musicChoice}
             onChange={(e) => setMusicChoice(e.target.value)}
-            disabled={working}
+            disabled={formLocked}
           >
             <option value="none">None — voice-over only</option>
             {musicPresets.map((p) => (
@@ -511,7 +529,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
                 step={0.01}
                 value={musicVolume}
                 onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-                disabled={working}
+                disabled={formLocked}
                 title="0–50% — kept low so the voice-over stays audible"
                 className={styles.volumeSlider}
               />
@@ -531,7 +549,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
               onChange={(e) => setAiMusicPrompt(e.target.value)}
               placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
               maxLength={300}
-              disabled={working}
+              disabled={formLocked}
             />
           </div>
         )}
@@ -545,7 +563,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
                 const file = e.target.files?.[0]
                 if (file) void handleMusicUpload(file)
               }}
-              disabled={musicUploading || working}
+              disabled={musicUploading || formLocked}
             />
             {musicUploading && <Spinner size="sm" />}
             {musicUploadName && !musicUploading && <span className={styles.uploadOk}>✓ {musicUploadName}</span>}
@@ -578,19 +596,19 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           <Button
             variant="primary"
             onClick={handleGenerateAndRender}
-            disabled={working || ourJob?.status === 'running' || (musicChoice === 'upload' && !musicUploadPath)}
+            disabled={formLocked || (musicChoice === 'upload' && !musicUploadPath)}
           >
-            {(working || ourJob?.status === 'running') ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
+            {showProgress ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
           </Button>
         </div>
       </div>
         </div>{/* /formColumn */}
 
       {/* === Preview column === */}
-      {(ourJob?.status === 'running' || (hasManifest && summary && !working)) && (
+      {(showProgress || (hasManifest && summary && !working)) && (
         <div className={styles.previewColumn}>
 
-      {/* === Pipeline progress (during) === */}
+      {/* === Pipeline progress (during full pipeline) === */}
       {ourJob?.status === 'running' && (
         <ProgressLoader
           startedAt={ourJob.startedAt}
@@ -601,6 +619,19 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             { label: 'Rendering the video', estimatedSeconds: 80 },
           ]}
           activeStep={0}
+          done={false}
+        />
+      )}
+
+      {/* === Refine + auto-render progress === */}
+      {ourJob?.status !== 'running' && (editing || rerendering) && (
+        <ProgressLoader
+          startedAt={refineStartedAt ?? Date.now()}
+          steps={[
+            { label: 'Updating the manifest', estimatedSeconds: 10 },
+            { label: 'Rendering the video', estimatedSeconds: 80 },
+          ]}
+          activeStep={editing ? 0 : 1}
           done={false}
         />
       )}
@@ -620,21 +651,11 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             />
           )}
 
-          {/* Re-render in flight — show a clear progress indicator above
-            *  the stale preview so the user knows their refine is being
-            *  applied without a manual click. */}
-          {rerendering && (
-            <div className={styles.staleBanner}>
-              <span className={styles.staleBannerText}>
-                <span className={styles.refineThinking}>Applying your refine — re-rendering the video…</span>
-              </span>
-            </div>
-          )}
-
-          {/* Stale banner is now only shown when render is NOT auto-chained
-            *  (e.g. an earlier render failed and we want to expose a
-            *  manual retry). Hidden while a re-render is in flight. */}
-          {summary.videoUrl && renderStatus === 'idle' && !rerendering && (
+          {/* Stale banner only shows when no auto-render is running — the
+            *  ProgressLoader above already conveys the in-flight state
+            *  for refines and full pipelines. The manual retry button
+            *  remains as a fallback if an auto-render previously failed. */}
+          {summary.videoUrl && renderStatus === 'idle' && !rerendering && !editing && (
             <div className={styles.staleBanner}>
               <span className={styles.staleBannerText}>
                 Preview is from before your last edit.
@@ -720,12 +741,12 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
                 }}
                 placeholder='e.g. "shorten scene 2 by 2 seconds and make it punchier"'
                 rows={2}
-                disabled={editing}
+                disabled={formLocked}
               />
               <button
                 className={styles.refineSend}
                 onClick={() => void handleEditWithAi()}
-                disabled={!editInput.trim() || editing}
+                disabled={!editInput.trim() || formLocked}
                 aria-label="Send"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
