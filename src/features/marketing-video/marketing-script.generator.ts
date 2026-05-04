@@ -262,19 +262,30 @@ function pickStyleSeed(): typeof STYLE_SEEDS[number] {
 }
 
 /**
- * Single-scene rescue path. When the LLM emits TSX that fails compile
- * (banned pattern, syntax error, missing `MockScene` definition), this
- * asks the model to fix just that scene's mockCode given the compiler
- * error. Cheaper + more targeted than re-running the whole script
- * generation. One shot only — if it fails again, the renderer falls
- * back to the gradient.
+ * Single-scene rescue path. Two modes:
+ *  - REPAIR: existing mockCode failed to compile/lint — feed the error
+ *    + the broken code and ask Gemini to fix it.
+ *  - GENERATE: mockCode is missing entirely (token budget exhausted in
+ *    the main script generation) — pass an empty string and a generate-
+ *    from-scratch directive in compileError. The prompt branches on
+ *    whether mockCode is non-empty.
+ *  One shot only — if it fails again, the renderer falls back to the
+ *  gradient placeholder.
  */
 export async function repairMockCode(args: {
   scene: { headline: string; voiceover: string; mockCode: string }
   compileError: string
 }): Promise<string> {
-  const result = await generateText({
-    userPrompt: `You wrote invalid TSX for one scene of a marketing video. The compiler rejected it with this error:
+  const isFromScratch = args.scene.mockCode.trim().length === 0
+  const promptHeader = isFromScratch
+    ? `Generate the mockCode for one scene of a marketing video. The main script generator skipped this scene — context: ${args.compileError}
+
+The scene:
+- Headline: "${args.scene.headline}"
+- Voice-over: "${args.scene.voiceover}"
+
+Write a fresh MockScene component that visually illustrates the headline + voice-over.`
+    : `You wrote invalid TSX for one scene of a marketing video. The compiler rejected it with this error:
 
 ${args.compileError}
 
@@ -287,11 +298,19 @@ Your previous (broken) code:
 ${args.scene.mockCode}
 \`\`\`
 
-Rewrite ONLY this scene's mockCode. Hard rules (the same rules the original prompt enforced):
+Rewrite this scene's mockCode.`
+
+  const result = await generateText({
+    userPrompt: `${promptHeader}
+
+Hard rules (the same rules the original prompt enforced):
 - Define a function exactly named \`MockScene\` taking \`{ branding }\` as its only prop.
 - DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters.
 - DO NOT call \`fetch\`, \`new XMLHttpRequest\`, \`eval\`, \`new Function\`, \`document.write\`, \`window.open\`.
 - DO NOT use \`<Remotion.AccentGlow>\` (deprecated).
+- Only access these branding fields: productName, accentColor, bgColor, textColor, fontFamily.
+- Only invoke these Remotion symbols: interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio, MockFrame, Pill, AnimatedCursor, Icons, Charts.
+- Icons available (lucide naming accepted): Plug, Mic, Check, Message/MessageSquare, Search, Zap, Code, Settings, MousePointer, Send, Loader, Bell, User, Lock, Globe, ChevronRight, Plus, X, Copy, Play, Pause, Volume/Volume2, Image, ArrowRight, ArrowUpRight, Activity, Cpu, Layers, Database, GitBranch, FileText, Cloud, Workflow, Boxes, BarChart/BarChart2/BarChart3, TrendingUp, TrendingDown, Star, Heart.
 - Outer element: \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` — no background, no overflow-hidden.
 - Use \`<Remotion.MockFrame tone='light'>\` for UI mocks.
 - Static styling via Tailwind \`className\`; inline \`style={{}}\` only for animated values.
@@ -956,7 +975,11 @@ Final check before returning: hook.durationSeconds + sum(scenes[].durationSecond
     // Screenshots mode stays on Flash — script-only generation doesn't
     // need Pro.
     model: input.visualMode === 'mocks' ? GEMINI_PRO_MODEL : undefined,
-    maxTokens: 16_384,
+    // Mocks mode emits ~2KB of TSX per scene + the JSON envelope — at 4
+    // scenes that's already ~10k tokens, leaving very little headroom in
+    // a 16k cap. The model was silently dropping mockCode on later scenes
+    // when it ran out of room. 32k gives comfortable margin.
+    maxTokens: input.visualMode === 'mocks' ? 32_000 : 16_384,
     // Mocks need a touch of extra variance — but 0.85 was over the line:
     // the model started emitting TSX with subtle syntax errors / banned
     // patterns often enough that all 4 scenes would fall back to the

@@ -260,27 +260,48 @@ export async function generateMarketingVideoForRun(
 
   console.log(`[marketing-video] Script: ${script.scenes.length} scenes, ${script.totalDurationSeconds}s total`)
 
-  // Compile any TSX mockCode the LLM emitted. Failures are isolated:
-  // a scene that fails to compile is given ONE rescue attempt (single
-  // Gemini call with the compiler error in context) before being dropped
-  // entirely. Without the rescue, every scene whose mock fails shows the
-  // gradient placeholder — and with mocks mode having no screenshot
-  // fallback, all-failures = a video that's just purple gradients.
+  // Compile any TSX mockCode the LLM emitted. Two failure modes are
+  // both routed through the same rescue path:
+  //   1. mockCode is missing entirely — the model exhausted its token
+  //      budget before reaching this scene, or skipped it. With ~2KB of
+  //      mockCode per scene + 4 scenes + the rest of the script, 16k
+  //      maxTokens is tight and this happens.
+  //   2. mockCode is present but won't compile / lints invalid.
+  // Both cases: send the scene to repairMockCode (which is now overloaded
+  // to either FIX broken code or GENERATE from scratch when no source is
+  // provided). Without this, scenes 2/3 in a 4-scene script silently
+  // render as a blank panel since mocks mode has no screenshot fallback.
   if (options.visualMode === 'mocks') {
     const { compileMockCode } = await import('./mock-code.compiler.js')
     const { repairMockCode } = await import('./marketing-script.generator.js')
 
     for (const scene of script.scenes) {
-      if (!scene.mockCode || scene.mockCode.trim().length === 0) continue
+      const missingMock = !scene.mockCode || scene.mockCode.trim().length === 0
+      if (missingMock) {
+        console.warn(`[marketing-video] mockCode missing for scene "${scene.headline}" — generating one`)
+        try {
+          const generated = await repairMockCode({
+            scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: '' },
+            compileError: 'mockCode was missing — the script generator skipped this scene (likely token budget exhaustion). Generate a NEW MockScene from scratch that illustrates the headline + voice-over.',
+          })
+          const { compiled } = await compileMockCode(generated)
+          scene.mockCode = generated
+          scene.mockCompiledCode = compiled
+          console.log(`[marketing-video] Backfilled mockCode for scene "${scene.headline}"`)
+        } catch (err) {
+          console.warn(`[marketing-video] Backfill failed for scene "${scene.headline}": ${(err as Error).message}`)
+        }
+        continue
+      }
       try {
-        const { compiled } = await compileMockCode(scene.mockCode)
+        const { compiled } = await compileMockCode(scene.mockCode!)
         scene.mockCompiledCode = compiled
       } catch (err) {
         const firstErr = (err as Error).message
         console.warn(`[marketing-video] mockCode compile failed for scene "${scene.headline}": ${firstErr} — attempting one rescue`)
         try {
           const rescued = await repairMockCode({
-            scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode },
+            scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode! },
             compileError: firstErr,
           })
           const { compiled } = await compileMockCode(rescued)
