@@ -253,7 +253,7 @@ export function stripBrokenAudioTags(text: string): string {
 const STYLE_SEEDS = [
   {
     label: 'editorial',
-    brief: 'Lead with a giant typographic headline (headline-burst or hero-stat). Magazine-grade type hierarchy, generous whitespace, restrained color. The video should feel like a premium product page, not a SaaS dashboard tour. Lean abstract; cap UI scenes at 1.',
+    brief: 'Magazine-grade type hierarchy on the headline panel + minimal restrained mocks (hero-stat with eyebrow + giant number, logo-hero, clean flow-diagram). Generous whitespace, restrained color. Feel like a premium product page, not a SaaS dashboard tour. Lean abstract; cap UI scenes at 1.',
   },
   {
     label: 'product-tour',
@@ -277,7 +277,7 @@ const STYLE_SEEDS = [
   },
   {
     label: 'high-contrast',
-    brief: 'Brutalist energy: oversized accent-color blocks, type at extreme scale (text-[80px]+ on hero numbers / words), minimal frames. Mostly abstract modes (headline-burst, hero-stat). When a UI scene appears, push it small and to the side — the canvas dominates.',
+    brief: 'Brutalist energy: oversized accent-color blocks, type at extreme scale (text-[80px]+ on hero numbers), minimal frames. Mostly abstract modes (hero-stat with giant numbers, logo-hero, bold flow-diagram). When a UI scene appears, push it small and to the side — the canvas dominates.',
   },
   {
     label: 'data-density',
@@ -958,64 +958,6 @@ const SCENE_MODES: readonly SceneMode[] = [
     ],
   },
   {
-    id: 'headline-burst',
-    isAbstract: true,
-    description:
-      'NO browser frame, NO UI. Word-by-word reveal of a 3-6 word tagline, each word springs in with a 6-frame stagger, ONE accent-colored word for emphasis (the most important one). text-[80-100px] font-black tracking-tight leading-none. Maximum visual punch with minimum content.',
-    references: [
-      `function MockScene({ branding }) {
-  const f = Remotion.useCurrentFrame()
-  const { fps } = Remotion.useVideoConfig()
-  const words = ['Docs', 'that', 'answer', 'for', 'you']
-  const accentIdx = 2
-  return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center'>
-      <div className='relative flex items-baseline gap-3 flex-wrap justify-center px-12'>
-        {words.map((w, i) => {
-          const t = Remotion.spring({ frame: f - (8 + i * 6), fps, config: { damping: 14, stiffness: 90 } })
-          const op = Remotion.interpolate(t, [0, 1], [0, 1])
-          const y = Remotion.interpolate(t, [0, 1], [40, 0])
-          const isAccent = i === accentIdx
-          return (
-            <span key={i} className='text-[88px] font-black leading-none tracking-tight' style={{ color: isAccent ? branding.accentColor : '#0B0B0F', opacity: op, transform: \`translateY(\${y}px)\`, textShadow: isAccent ? \`0 8px 32px \${branding.accentColor}44\` : 'none' }}>{w}</span>
-          )
-        })}
-      </div>
-    </Remotion.AbsoluteFill>
-  )
-}`,
-      // Variant: stacked-line poster format — each word on its own line,
-      // alternating black / accent / black with a slight horizontal slide
-      // on entry. Different shape (vertical poster vs horizontal banner).
-      `function MockScene({ branding }) {
-  const f = Remotion.useCurrentFrame()
-  const { fps } = Remotion.useVideoConfig()
-  const lines = [
-    { text: 'STOP', color: 'black' },
-    { text: 'WRITING', color: 'mute' },
-    { text: 'BAD DOCS', color: 'accent' },
-  ]
-  const sweep = Remotion.interpolate(f, [10, 70], [-100, 100], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center relative overflow-hidden'>
-      <div className='absolute inset-0 pointer-events-none' style={{ background: \`linear-gradient(115deg, transparent 0%, transparent \${sweep - 5}%, \${branding.accentColor}11 \${sweep}%, transparent \${sweep + 8}%)\` }} />
-      <div className='flex flex-col items-start gap-2 px-12'>
-        {lines.map((l, i) => {
-          const t = Remotion.spring({ frame: f - (6 + i * 10), fps, config: { damping: 14, stiffness: 90 } })
-          const op = Remotion.interpolate(t, [0, 1], [0, 1])
-          const x = Remotion.interpolate(t, [0, 1], [-60, 0])
-          const color = l.color === 'accent' ? branding.accentColor : (l.color === 'mute' ? '#71717A' : '#0B0B0F')
-          return (
-            <span key={i} className='text-[110px] font-black leading-[0.95] tracking-tight' style={{ color, opacity: op, transform: \`translateX(\${x}px)\`, textShadow: l.color === 'accent' ? \`0 12px 40px \${branding.accentColor}55\` : 'none' }}>{l.text}</span>
-          )
-        })}
-      </div>
-    </Remotion.AbsoluteFill>
-  )
-}`,
-    ],
-  },
-  {
     id: 'logo-hero',
     isAbstract: true,
     description:
@@ -1230,10 +1172,21 @@ const ANIMATION_IDIOMS = `**SUSTAINED MOTION — non-negotiable.** This scene ru
 
 Do NOT cram all entry animations into the first 30 frames and then leave the canvas frozen.
 
-Animation idioms (steal these):
-- Stagger fade + slide for entries: \`const op = Remotion.interpolate(frame, [start, start+12], [0, 1], { extrapolateRight: 'clamp' })\`
+**SMOOTH MOTION — avoid the choppy / saccadée failure mode.** Past renders looked jerky because of:
+1. **Too-tight interpolate windows.** \`interpolate(f, [0, 4], [0, 1])\` ramps in 4 frames = 0.13s = a hard cut perceived as a snap. Use **at least 12 frames** for any opacity / position change (~0.4s). Springs help — they ease in and out naturally.
+2. **Stepped opacity flips.** \`opacity: f > 60 ? 1 : 0\` is a binary cut. Use \`Remotion.interpolate(f, [55, 70], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })\` instead — same intent, smooth.
+3. **Stacking 5+ entry animations all at the same start frame.** They visually compete and each one is half-finished when the next starts. Stagger entries every 6-12 frames so the eye lands on one element at a time.
+4. **Spring with low damping bouncing forever.** Use \`damping: 14-18\` (most cases) or \`16-20\` (settled / serious tone). \`damping: 8\` will visibly oscillate.
+5. **Sin-based motion at the wrong frequency.** \`Math.sin(f / 6)\` cycles every ~37 frames = 1.2s = visibly fast / nervous. Use \`Math.sin(f / 14-22)\` for ambient pulses (~3-5s cycles), \`Math.sin(f / 30+)\` for slow drifts.
+6. **Stepped patterns (blink, pulse) on big elements.** \`(f % 30) < 15 ? 1 : 0\` is a hard 50/50 strobe — fine on a tiny cursor or live-indicator dot, distracting on anything bigger. For a ~30-frame visible cycle on a card, prefer the smooth sin form: \`opacity: 0.6 + 0.4 * Math.sin(f / 14)\`.
+
+Animation idioms (steal these — all SMOOTH by construction):
+- Stagger fade + slide for entries: \`const op = Remotion.interpolate(frame, [start, start+12], [0, 1], { extrapolateRight: 'clamp' })\` — 12-frame fade is the floor.
+- Spring entries: \`const t = Remotion.spring({ frame: frame - delay, fps, config: { damping: 16, stiffness: 90 } })\` then derive opacity / scale / translateY from \`t\`. Springs naturally ease.
 - Type-on text: \`const charsShown = Math.floor(Remotion.interpolate(frame, [0, 60], [0, fullText.length], { extrapolateRight: 'clamp' }))\` then \`fullText.slice(0, charsShown)\`.
-- Pulse / blink: \`(frame % 30) < 15 ? 1 : 0\`.
+- Smooth pulse: \`opacity: 0.6 + 0.4 * Math.sin(f / 14)\` (ambient cycle ~3s).
+- Smooth scale-breathe: \`scale: 1 + 0.02 * Math.sin(f / 18)\`.
+- Hard step (use ONLY on small accent elements like a cursor caret or a tiny live dot): \`(f % 30) < 15 ? 1 : 0\`.
 
 **Type at scale.** Headlines text-[32-44px] font-bold tracking-tight. Big numbers text-[64-100px] tabular-nums tracking-tight. Body text-[15-18px]. Labels text-[11px] font-bold tracking-widest uppercase.
 
@@ -1497,11 +1450,17 @@ Set \`screenshotIndex: null\` for every scene (mocks mode never references doc s
 ${modeCatalog}
 - **custom** (escape hatch): pick this when none of the 8 modes structurally fits the scene's idea — e.g. split-screen before/after, isometric stack, kanban-style motion, thread-of-tweets, an ASCII art reveal. The designer drops the structural template and composes from the brief alone, so your visualBrief MUST be especially concrete (every element + motion spelled out). Use sparingly: prefer a real catalog mode when one fits. The 'never repeat' rule still applies — only ONE custom scene per video.
 
-Heuristic: a "look at this number" beat → hero-stat. A "the product does X" beat → bento / cursor-click / chart / chat. A "here's how it works" beat → flow-diagram. A "make a strong claim" beat → headline-burst. A brand / opener beat → logo-hero. A "no template fits this idea" beat → custom. The right mode depends on what the headline is actually saying, not on a fixed quota.
+Heuristic: a "look at this number" beat → hero-stat. A "the product does X" beat → bento / cursor-click / chart / chat. A "here's how it works" beat → flow-diagram. A brand / opener beat → logo-hero. A "no template fits this idea" beat → custom. The right mode depends on what the headline is actually saying, not on a fixed quota.
+
+**IMPORTANT — never duplicate the headline.** The composition layer ALWAYS draws the scene's \`headline\` field in a separate panel beside the mock visual. So the mock visual itself MUST NOT render the headline text again — that would look like two titles glued together. The mock illustrates the IDEA of the headline (a counter for a metric headline, a flow for a process headline, a chat UI for a Q&A headline) — not a giant copy of the same words.
 
 ### Per-scene examples — pick fresh, don't clone
 
 These are 6 examples drawn from DIFFERENT modes and DIFFERENT product shapes (analytics, devtool, support, video, design tool, brand opener). They show what concrete looks like — exact text, focal element, motion idea. Your scenes' briefs should be at this level of specificity but the SHAPES should be your own choices for THIS product, not copies of these.
+
+⚠ **Anti-pattern: a mock that just renders the same headline text again.** The composition draws the scene's headline in a separate panel automatically — the mock must illustrate the IDEA, not duplicate the words. A scene where the mock is "RECORD. PUBLISH." in giant text while the composition also renders "Record once, publish instantly" produces two titles glued together. The mock instead shows a record button + a transformation animation + a published doc.
+
+⚠ **Anti-pattern #2: an abstract scene with only text floating on a blank canvas.** Even text-only modes need a supporting visual element — a parallax motif, a gradient block that animates, an accent geometric shape, a sparkline, an icon cluster, a backdrop sweep, a counter ticking, anything. The brief MUST name this supporting element. "Big stat that says 92%" alone is incomplete — pair the number with a progress bar drawing in, an eyebrow label, a contextual subhead, or a sparkline below.
 
 **1. hero-stat — metric reveal (analytics product):**
 \`\`\`json
@@ -1512,7 +1471,7 @@ These are 6 examples drawn from DIFFERENT modes and DIFFERENT product shapes (an
   "screenshotIndex": null,
   "durationSeconds": 8,
   "visualMode": "hero-stat",
-  "visualBrief": "Eyebrow 'AVG TIME TO PUBLISH' in tracking-widest uppercase zinc-500. Giant accent-colored number ticks DOWN from 240 to 4 across 1.6s, then settles with a tiny ±1 jitter. Suffix 'minutes' inline at half size. Subhead 'and dropping' fades in last. Focal: the number; eye lands on the dramatic descent."
+  "visualBrief": "Eyebrow 'AVG TIME TO PUBLISH' in tracking-widest uppercase zinc-500. Giant accent-colored number ticks DOWN from 240 to 4 across 1.6s, then settles with a tiny ±1 jitter. Suffix 'minutes' inline at half size. Subhead 'and dropping' fades in last. A subtle horizontal sparkline below the number shows the descent curve as a thin accent stroke. Focal: the number; eye lands on the dramatic descent."
 }
 \`\`\`
 
@@ -1566,15 +1525,16 @@ These are 6 examples drawn from DIFFERENT modes and DIFFERENT product shapes (an
 }
 \`\`\`
 
-**6. headline-burst — bold claim opener:**
+**6. chart — growth proof (analytics / metrics product):**
 \`\`\`json
 {
-  "headline": "STOP. WRITING. DOCS.",
-  "voiceover": "[building] Stop wasting your sprints on documentation nobody reads.",
+  "headline": "Resolution rate keeps climbing",
+  "voiceover": "Every week your docs get smarter. — From 64% to 92% in a single quarter.",
+  "subhead": "Live, week-over-week.",
   "screenshotIndex": null,
-  "durationSeconds": 5,
-  "visualMode": "headline-burst",
-  "visualBrief": "NO frame. Three words on three stacked lines, each text-[110px] font-black. 'STOP.' enters first (zinc-900). 'WRITING.' enters second (zinc-500, smaller). 'DOCS.' enters last (accent color, with a subtle glow + scale punch). Background has a subtle accent sweep behind. Each word springs in 8 frames apart."
+  "durationSeconds": 9,
+  "visualMode": "chart",
+  "visualBrief": "Browser frame, single chart card. Eyebrow 'RESOLUTION RATE · LAST 12 WEEKS'. An area chart draws in left-to-right, data sliced by frame so the curve appears point by point. Y-axis hidden, X-axis with subtle week labels. Curve is accent-colored with a soft fill gradient underneath. A pulsing accent dot sits at the latest point with a small '92%' label fading in last. Sustained motion: dot pulses (opacity 0.6 → 1 → 0.6 / 14-frame cycle), latest curve point jitters ±0.5% to feel real-time."
 }
 \`\`\`
 
@@ -1590,7 +1550,9 @@ These are 6 examples drawn from DIFFERENT modes and DIFFERENT product shapes (an
 }
 \`\`\`
 
-**Note on variety:** these examples span 7 modes and 7 different product types intentionally. Across YOUR 3-4 scenes, vary the modes (the 'never repeat' rule), and let the content of each brief be specific to the doc — not a copy of these. A brief that names actual numbers / actual UI labels / actual user actions from the source doc is always better than a generic one.`
+**Note on variety:** these examples span 7 modes and 7 different product types intentionally. Across YOUR 3-4 scenes, vary the modes (the 'never repeat' rule), and let the content of each brief be specific to the doc — not a copy of these. A brief that names actual numbers / actual UI labels / actual user actions from the source doc is always better than a generic one.
+
+**Reminder on richness:** every brief — even on abstract modes — names AT LEAST ONE supporting visual element beyond the text (motif, gradient, sparkline, parallax, geometric shape, animated indicator). A brief that says only "headline X with subhead Y" is incomplete; add the motif. The designer can't add visual richness if the brief doesn't request it.`
     : `**Visuals = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}). If a scene has no relevant screenshot, set \`screenshotIndex: null\` and the renderer shows an accent gradient placeholder. Do NOT output \`visualMode\` or \`visualBrief\` in screenshots mode.`
 
   return `You are writing the SKELETON of a 45-second marketing video script for a SaaS product feature.
