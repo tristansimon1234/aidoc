@@ -885,7 +885,18 @@ Return ONLY valid JSON matching the response schema.`
     result = await generateText({
       userPrompt: prompt,
       model: GEMINI_PRO_MODEL,
-      maxTokens: 16_384,
+      // Edit returns the full edited script (hook + N scenes with
+      // templates + cta) in JSON. With the inline template documentation
+      // the prompt is heavy and the response body needs room. 32k
+      // matches the script-gen budget and stays well under Pro's 65k
+      // ceiling.
+      maxTokens: 32_000,
+      // Disable thinking — structured edit output, reasoning burns budget
+      // for no signal (same logic as script gen + converse). Without
+      // this Pro spent its output budget on internal CoT and emitted a
+      // truncated `script` missing hook / scenes / cta fields →
+      // "expected array, received undefined" Zod failure.
+      thinkingBudget: 0,
       temperature: 0.4,
       json: true,
     })
@@ -899,7 +910,8 @@ Return ONLY valid JSON matching the response schema.`
     result = await generateText({
       userPrompt: prompt,
       // No model override → uses default Flash from gemini.client.
-      maxTokens: 16_384,
+      maxTokens: 32_000,
+      thinkingBudget: 0,
       temperature: 0.4,
       json: true,
     })

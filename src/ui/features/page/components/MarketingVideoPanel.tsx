@@ -492,10 +492,15 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
         instruction,
         history: editHistory,
       })
-      // Job is created + accepted (202 returned). Flip editing off — the
-      // marketing-video job realtime now drives the loader (ourJob.status
-      // === 'running'). The existing useEffect that watches the job will
-      // refetch the summary on completion.
+      // Job is created + accepted (202 returned). Optimistically register
+      // it in the local JobContext so the loader keeps showing without
+      // waiting for the realtime broadcast to land — that broadcast can
+      // take 1-3s, and during the gap `editing === false` AND
+      // `ourJob === undefined` made the loader vanish, which read as
+      // "the refine is done already" and led users to click again →
+      // 409 JOB_ALREADY_RUNNING. Adding the job locally bridges the gap;
+      // realtime reconciles by id when it arrives.
+      addJob({ runId, pageId, pageTitle, type: 'marketing-video', status: 'running' })
     } catch (err) {
       const message = err instanceof ApiError ? err.message : (err as Error).message
       setEditError(message)
