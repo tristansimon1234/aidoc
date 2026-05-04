@@ -893,6 +893,7 @@ When the user asks for "plus wahou", combining 2-3 of these per scene is the rig
 
 RULES:
 - Preserve the overall structure: hook → scenes → cta. Don't add or remove scenes unless the user explicitly asks.
+- **Preserve every existing field on each scene/hook/cta in your output.** Even on a creative rewrite where you're regenerating mockCode from scratch, the response MUST include for each scene: \`voiceover\`, \`headline\`, \`subhead\` (if present), \`screenshotIndex\`, \`durationSeconds\`, plus your new \`mockCode\`. Hook + cta keep their \`voiceover\`, \`headline\`, \`durationSeconds\`. Top-level keeps \`totalDurationSeconds\` and \`language\`. Dropping any of these fails the manifest validator and aborts the whole edit.
 - Keep totalDurationSeconds === hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds.
 - Keep word counts realistic at ~2.3 words/sec for voice-over text.
 - When editing \`mockCode\`, keep it valid TSX that defines a function named \`MockScene({ branding })\` and follows the Remotion sandbox rules:
