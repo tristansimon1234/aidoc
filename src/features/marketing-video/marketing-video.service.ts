@@ -272,34 +272,6 @@ async function synthesizeMarketingVoiceover(
   return { voiceoverPath, voiceoverUrl, voiceoverDurationSeconds }
 }
 
-/**
- * Merge an AI-edited script over the existing manifest script, filling
- * in any fields the AI dropped from its output. This is the safety net
- * for the edit path: even if the model omits durationSeconds /
- * screenshotIndex / subhead etc., the merged result has them from the
- * source-of-truth manifest. Scenes match by INDEX (the AI rarely
- * reorders).
- *
- * Returns a plain object the Zod validator can parse.
- */
-function mergeWithExistingScript(
-  aiScript: Record<string, unknown>,
-  existing: import('./marketing-video.types.js').MarketingScript,
-): Record<string, unknown> {
-  const merged: Record<string, unknown> = {
-    language: aiScript.language ?? existing.language,
-    totalDurationSeconds: aiScript.totalDurationSeconds ?? existing.totalDurationSeconds,
-    hook: { ...existing.hook, ...((aiScript.hook as object) ?? {}) },
-    cta:  { ...existing.cta,  ...((aiScript.cta as object)  ?? {}) },
-  }
-  const aiScenes = Array.isArray(aiScript.scenes) ? aiScript.scenes as Array<Record<string, unknown>> : []
-  merged.scenes = existing.scenes.map((existingScene, i) => {
-    const aiScene = aiScenes[i] ?? {}
-    return { ...existingScene, ...aiScene }
-  })
-  return merged
-}
-
 function flattenScriptToNarration(script: import('./marketing-video.types.js').MarketingScript): string {
   const parts: string[] = [script.hook.voiceover]
   for (const scene of script.scenes) parts.push(scene.voiceover)
@@ -902,6 +874,46 @@ ${input.instruction}
 ## Your job
 Return the updated script (and branding when relevant) along with a one-line summary of what you changed.
 
+## ⚠ NON-NEGOTIABLE OUTPUT CONTRACT — READ THIS FIRST
+
+Your response MUST contain a complete \`script\` object with EVERY field present, even on the most aggressive creative rewrite. The downstream Zod validator throws on a single missing field and aborts the whole edit.
+
+**Required shape (no exceptions):**
+\`\`\`json
+{
+  "message": "<one-line summary>",
+  "script": {
+    "language": "<existing language code>",
+    "totalDurationSeconds": <number>,
+    "hook": {
+      "voiceover": "<string>",
+      "headline": "<string>",
+      "durationSeconds": <number>
+    },
+    "scenes": [
+      {
+        "voiceover": "<string>",
+        "headline": "<string>",
+        "subhead": "<string or omit if originally absent>",
+        "screenshotIndex": <number or null>,
+        "durationSeconds": <number>,
+        "mockCode": "<string TSX>"
+      }
+      // ... one entry per existing scene, SAME ORDER
+    ],
+    "cta": {
+      "voiceover": "<string>",
+      "headline": "<string>",
+      "buttonLabel": "<string>",
+      "durationSeconds": <number>
+    }
+  },
+  "branding": { /* optional, partial patch with just the fields you want to change */ }
+}
+\`\`\`
+
+**Common failure**: on creative rewrites you regenerate \`mockCode\` but forget to copy \`durationSeconds\` / \`screenshotIndex\` from the existing scene → the validator sees \`undefined\` → the whole edit fails. Don't do that. Carry every existing field through to your output, then layer your changes on top.
+
 ## Edit philosophy
 The user gives you a **direction**, not a diff. Read it for INTENT.
 - **Surgical instructions** ("change X to Y", "shorten scene 2", "swap the icon") → minimal diff. Touch only the asked-for fields, leave the rest verbatim.
@@ -921,7 +933,6 @@ When the user asks for "plus wahou", combining 2-3 of these per scene is the rig
 
 RULES:
 - Preserve the overall structure: hook → scenes → cta. Don't add or remove scenes unless the user explicitly asks.
-- **Preserve every existing field on each scene/hook/cta in your output.** Even on a creative rewrite where you're regenerating mockCode from scratch, the response MUST include for each scene: \`voiceover\`, \`headline\`, \`subhead\` (if present), \`screenshotIndex\`, \`durationSeconds\`, plus your new \`mockCode\`. Hook + cta keep their \`voiceover\`, \`headline\`, \`durationSeconds\`. Top-level keeps \`totalDurationSeconds\` and \`language\`. Dropping any of these fails the manifest validator and aborts the whole edit.
 - Keep totalDurationSeconds === hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds.
 - Keep word counts realistic at ~2.3 words/sec for voice-over text.
 - When editing \`mockCode\`, keep it valid TSX that defines a function named \`MockScene({ branding })\` and follows the Remotion sandbox rules:
@@ -995,20 +1006,9 @@ Return ONLY valid JSON: { "message": string, "script": <full edited script>, "br
     }
   }
 
-  // Post-process: merge missing fields from the existing manifest into
-  // the AI's output. Gemini occasionally drops durationSeconds /
-  // screenshotIndex / subhead / etc. on creative rewrites despite the
-  // prompt rule that tells it to preserve them. Belt + suspenders: we
-  // backfill from the existing manifest before Zod validates so a
-  // dropped field doesn't kill the whole edit.
-  const mergedScript = mergeWithExistingScript(
-    parsed.script as Record<string, unknown>,
-    existing.manifest.script,
-  )
-
   const { UpdateMarketingManifestSchema } = await import('./marketing-video.schema.js')
   const validated = UpdateMarketingManifestSchema.safeParse({
-    script: mergedScript,
+    script: parsed.script,
     ...(parsed.branding ? { branding: parsed.branding } : {}),
   })
   if (!validated.success) {
