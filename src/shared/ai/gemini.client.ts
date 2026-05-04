@@ -80,8 +80,41 @@ export async function generateText(opts: {
   )
 
   const usage = result.response.usageMetadata
+  let text = ''
+  try {
+    text = result.response.text()
+  } catch (textErr) {
+    // SDK throws when the response has no text-bearing candidate (e.g.
+    // safety block). We log + return empty rather than propagate, so
+    // upstream rescue paths can fall back gracefully.
+    console.warn(`[gemini] response.text() threw: ${(textErr as Error).message}`)
+  }
+  // When Gemini returns no text, surface WHY upstream — the SDK's text()
+  // returns '' for several distinct reasons and "Pro returned empty"
+  // is too vague to debug:
+  //   - finishReason: 'SAFETY' → safety filter blocked the output
+  //   - finishReason: 'RECITATION' → matched copyrighted training data
+  //   - finishReason: 'MAX_TOKENS' → hit the cap before producing any
+  //     content (very long input vs very small maxTokens)
+  //   - finishReason: 'OTHER' → model error, often a 503 retry path
+  //   - no candidates → the request itself was rejected (prompt block)
+  if (!text || text.trim().length === 0) {
+    const candidates = result.response.candidates ?? []
+    const finishReason = candidates[0]?.finishReason ?? 'NO_CANDIDATES'
+    const safetyRatings = candidates[0]?.safetyRatings ?? []
+    const blockedRatings = safetyRatings.filter((r) =>
+      r.probability && r.probability !== 'NEGLIGIBLE' && r.probability !== 'LOW',
+    )
+    const promptFeedback = result.response.promptFeedback
+    console.warn(
+      `[gemini] Empty response from ${opts.model ?? GEMINI_MODEL}: finishReason=${finishReason}` +
+      (blockedRatings.length ? ` blocked=${blockedRatings.map((r) => `${r.category}:${r.probability}`).join(',')}` : '') +
+      (promptFeedback?.blockReason ? ` promptBlock=${promptFeedback.blockReason}` : '') +
+      ` inputTokens=${usage?.promptTokenCount ?? '?'} outputTokens=${usage?.candidatesTokenCount ?? '?'}`,
+    )
+  }
   return {
-    text: result.response.text(),
+    text,
     usage: {
       inputTokens: usage?.promptTokenCount ?? 0,
       outputTokens: usage?.candidatesTokenCount ?? 0,
