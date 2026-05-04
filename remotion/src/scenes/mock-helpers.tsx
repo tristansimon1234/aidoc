@@ -5,7 +5,14 @@ import {
   ChevronRight, Plus, X, Copy, Play, Pause, Volume2, Image as ImageIcon,
   ArrowRight, Activity, Cpu, Layers, Database, GitBranch, FileText,
   Cloud, Workflow, Boxes, ArrowUpRight, BarChart2, BarChart3,
-  TrendingUp, TrendingDown, Star, Heart, type LucideIcon,
+  TrendingUp, TrendingDown, Star, Heart,
+  // Common icons the LLM reaches for in marketing mocks. Adding them
+  // to the export so dynamic access (Icons[name]) finds something.
+  Video, BookOpen, Users, Mail, Calendar, Tag, Filter, Bookmark,
+  Camera, Clock, Edit, Trash2, Save, Upload, Download, Share2,
+  Eye, Sparkles, Rocket, Target, Award, Briefcase, ShoppingCart,
+  Home, Folder, File, Inbox, Hash, AtSign, ExternalLink,
+  type LucideIcon,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -334,6 +341,41 @@ export const Icons = {
   TrendingDown: thin(TrendingDown),
   Star: thin(Star),
   Heart: thin(Heart),
+  // Common marketing-mock icons the LLM picks via dynamic
+  // Icons[name] access — surfaced directly so unknown-name lookups
+  // don't return undefined and crash render.
+  Video: thin(Video),
+  BookOpen: thin(BookOpen),
+  Users: thin(Users),
+  Mail: thin(Mail),
+  Calendar: thin(Calendar),
+  Tag: thin(Tag),
+  Filter: thin(Filter),
+  Bookmark: thin(Bookmark),
+  Camera: thin(Camera),
+  Clock: thin(Clock),
+  Edit: thin(Edit),
+  Trash: thin(Trash2),
+  Trash2: thin(Trash2),
+  Save: thin(Save),
+  Upload: thin(Upload),
+  Download: thin(Download),
+  Share: thin(Share2),
+  Share2: thin(Share2),
+  Eye: thin(Eye),
+  Sparkles: thin(Sparkles),
+  Rocket: thin(Rocket),
+  Target: thin(Target),
+  Award: thin(Award),
+  Briefcase: thin(Briefcase),
+  ShoppingCart: thin(ShoppingCart),
+  Home: thin(Home),
+  Folder: thin(Folder),
+  File: thin(File),
+  Inbox: thin(Inbox),
+  Hash: thin(Hash),
+  AtSign: thin(AtSign),
+  ExternalLink: thin(ExternalLink),
 } as const
 
 /** Recharts components exposed for the LLM. Animations driven by

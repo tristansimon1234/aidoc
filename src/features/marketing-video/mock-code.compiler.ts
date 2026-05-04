@@ -39,6 +39,11 @@ const ICON_NAMES = new Set([
   'Workflow', 'Boxes',
   'BarChart', 'BarChart2', 'BarChart3', 'TrendingUp', 'TrendingDown',
   'Star', 'Heart',
+  'Video', 'BookOpen', 'Users', 'Mail', 'Calendar', 'Tag', 'Filter',
+  'Bookmark', 'Camera', 'Clock', 'Edit', 'Trash', 'Trash2', 'Save',
+  'Upload', 'Download', 'Share', 'Share2', 'Eye', 'Sparkles', 'Rocket',
+  'Target', 'Award', 'Briefcase', 'ShoppingCart', 'Home', 'Folder',
+  'File', 'Inbox', 'Hash', 'AtSign', 'ExternalLink',
 ])
 
 const CHART_NAMES = new Set([

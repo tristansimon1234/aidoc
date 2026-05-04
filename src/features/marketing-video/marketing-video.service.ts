@@ -759,21 +759,47 @@ Return ONLY valid JSON matching the response schema.`
   }
 
   // Recompile any mockCode the AI rewrote — Remotion runs the compiled
-  // output, not the TSX source. On failure, give it ONE rescue attempt
-  // before dropping (same logic as the initial generate path).
+  // output, not the TSX source. Three failure modes routed through the
+  // same rescue path (mirrors the initial generate flow):
+  //   1. mockCode missing entirely (the edit didn't touch this scene
+  //      and the previous manifest already had no mock — would render
+  //      as a blank canvas otherwise).
+  //   2. mockCode present but compile/lint fails.
+  // Mocks-mode-only: in screenshots-mode the missing mockCode is fine
+  // because the scene falls back to its real screenshot.
   const { compileMockCode } = await import('./mock-code.compiler.js')
   const { repairMockCode } = await import('./marketing-script.generator.js')
+  const isMocksMode = validated.data.script.scenes.some((s) => s.mockCode || s.mockCompiledCode)
   for (const scene of validated.data.script.scenes) {
-    if (!scene.mockCode || scene.mockCode.length === 0) continue
+    const missingMock = !scene.mockCode || scene.mockCode.length === 0
+    if (missingMock) {
+      // Only backfill in mocks mode AND when there's no screenshot to
+      // fall back on (so we don't generate mocks for a screenshot scene).
+      if (!isMocksMode || scene.screenshotIndex !== null) continue
+      console.warn(`[marketing-edit] mockCode missing for scene "${scene.headline}" — generating one`)
+      try {
+        const generated = await repairMockCode({
+          scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: '' },
+          compileError: 'mockCode was missing for this scene during AI edit. Generate a NEW MockScene from scratch that illustrates the headline + voice-over.',
+        })
+        const c = await compileMockCode(generated)
+        scene.mockCode = generated
+        scene.mockCompiledCode = c.compiled
+        console.log(`[marketing-edit] Backfilled mockCode for scene "${scene.headline}"`)
+      } catch (err) {
+        console.warn(`[marketing-edit] Backfill failed for scene "${scene.headline}": ${(err as Error).message}`)
+      }
+      continue
+    }
     try {
-      const c = await compileMockCode(scene.mockCode)
+      const c = await compileMockCode(scene.mockCode!)
       scene.mockCompiledCode = c.compiled
     } catch (err) {
       const firstErr = (err as Error).message
       console.warn(`[marketing-edit] mockCode compile failed for scene "${scene.headline}": ${firstErr} — attempting one rescue`)
       try {
         const rescued = await repairMockCode({
-          scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode },
+          scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode! },
           compileError: firstErr,
         })
         const c = await compileMockCode(rescued)
