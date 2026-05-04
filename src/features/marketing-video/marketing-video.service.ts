@@ -860,6 +860,23 @@ ${input.instruction}
 ## Your job
 Return the updated script (and branding when relevant) along with a one-line summary of what you changed.
 
+## Edit philosophy
+The user gives you a **direction**, not a diff. Read it for INTENT.
+- **Surgical instructions** ("change X to Y", "shorten scene 2", "swap the icon") → minimal diff. Touch only the asked-for fields, leave the rest verbatim.
+- **Creative instructions** ("plus d'animations", "plus wahou", "rends plus dynamic", "more punch", "make it pop", "plus moderne") → REWRITE the scenes' mockCode aggressively. Changing the accent on one element doesn't satisfy "plus wahou" — the user wants visibly different motion, layout, choreography. Don't be timid. Add: parallax, scale-breathe, sequenced reveals, animated charts, cursor flights, gradient pulses, multi-stage transitions.
+
+## Rich animation techniques you can lean into when asked for "more"
+- **Layered entries**: cards stagger in with rotateX 8deg → 0deg, opacity 0 → 1, scale 0.92 → 1, with overlapping spring delays (every 6-8 frames).
+- **Continuous motion**: subtle floating (Math.sin(f / 30) * 4 px), parallax layers moving at different speeds, scale breathe (1 + Math.sin(f / 40) * 0.015).
+- **Cursor-driven moments**: AnimatedCursor at leftPct=N topPct=M with rippleRadius growing 0 → 24 → 0, click ripple on a button, then page transition.
+- **Charts that draw in**: progressive Area / Line — slice data by frame so the curve appears point by point. Add a pulsing dot on the latest point.
+- **Numbers that count up**: Math.round(interpolate(f, [start, end], [0, finalValue])) with tabular-nums for stability. Layer with a sparkline.
+- **Typewriter + caret blink**: charsShown = floor(interpolate(f, [t0, t1], [0, text.length])); caret opacity = (f % 30 < 15) ? 1 : 0.
+- **Gradient sweeps**: backgroundPosition animated 0% → 200% over an accent gradient, with backgroundSize: '200% 100%' and a stagger.
+- **Layered glows**: a soft radial gradient behind the focal element (NOT on the outer AbsoluteFill — inside a wrapping div) that pulses opacity 0.3 → 0.6 → 0.3.
+
+When the user asks for "plus wahou", combining 2-3 of these per scene is the right ambition. Don't just tweak.
+
 RULES:
 - Preserve the overall structure: hook → scenes → cta. Don't add or remove scenes unless the user explicitly asks.
 - Keep totalDurationSeconds === hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds.
@@ -872,7 +889,6 @@ RULES:
   - Outer AbsoluteFill must be transparent — no \`background:\`, no bg-utility classNames. Backdrops go inside cards / MockFrame.
   - No inline \`<svg>\` tags — use \`Remotion.Icons.X\` instead.
   - \`AnimatedCursor\` takes \`leftPct\` + \`topPct\` numbers, NOT a path array.
-- Only change what the instruction asks for. Leave the rest verbatim.
 - If the instruction is unclear or impossible, return the manifest unchanged and explain in the message.
 - Voice-over audio + music URLs are NOT yours to change — those are regenerated separately.
 
