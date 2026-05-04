@@ -48,6 +48,8 @@ export const RESPONSE_SCHEMA: ResponseSchema = {
                 enum: [
                   'hero-text', 'kpi-reveal', 'list-reveal', 'mock-frame', 'chat-bubble', 'flow-diagram', 'chart',
                   'before-after', 'comparison-bars', 'quote', 'step-progression', 'big-stat', 'live-typing', 'dual-screen',
+                  // Phase 4 — rich UI
+                  'chat-thread', 'dashboard-mock', 'analytics-card', 'command-palette', 'notification-toast',
                 ],
               },
               // hero-text + everywhere a headline-like field reads natural
@@ -194,6 +196,62 @@ export const RESPONSE_SCHEMA: ResponseSchema = {
                   required: ['title'],
                 },
               },
+              // Phase 4 — rich UI templates
+              // chat-thread: messages array
+              messages: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    role: { type: SchemaType.STRING, format: 'enum', enum: ['user', 'assistant'] },
+                    content: { type: SchemaType.STRING },
+                  },
+                  required: ['role', 'content'],
+                },
+              },
+              // dashboard-mock: sidebarItems + metrics
+              sidebarItems: {
+                type: SchemaType.ARRAY,
+                items: { type: SchemaType.STRING },
+              },
+              metrics: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    label: { type: SchemaType.STRING },
+                    value: { type: SchemaType.STRING },
+                    trend: { type: SchemaType.STRING, format: 'enum', enum: ['up', 'down', 'flat'] },
+                  },
+                  required: ['label', 'value'],
+                },
+              },
+              // analytics-card: delta + sparkline (metric/value/trend already declared above)
+              delta: { type: SchemaType.STRING },
+              sparkline: {
+                type: SchemaType.ARRAY,
+                items: { type: SchemaType.NUMBER },
+              },
+              // command-palette: placeholder + query + results + selectedIndex
+              placeholder: { type: SchemaType.STRING },
+              query: { type: SchemaType.STRING },
+              // results is reused by both search-results (legacy) and command-palette
+              results: {
+                type: SchemaType.ARRAY,
+                items: {
+                  type: SchemaType.OBJECT,
+                  properties: {
+                    label: { type: SchemaType.STRING },
+                    hint: { type: SchemaType.STRING },
+                    icon: { type: SchemaType.STRING },
+                  },
+                  required: ['label'],
+                },
+              },
+              selectedIndex: { type: SchemaType.NUMBER },
+              // notification-toast: body + tone
+              body: { type: SchemaType.STRING },
+              tone: { type: SchemaType.STRING, format: 'enum', enum: ['success', 'info', 'warning', 'accent'] },
             },
             required: ['kind'],
           },
@@ -461,6 +519,8 @@ Product: ${input.productName}
 Feature page: ${input.pageTitle}
 
 Markdown content (use as the ONLY source of truth — don't invent features):
+
+**HARD RULE — never invent statistics or numbers.** If you write a kpi-reveal or big-stat or any specific quantity ("14 hours", "3×", "47%", "$2M"), the value MUST come from the source documentation above OR be a generic descriptor ("FAST", "AUTOMATED", "ZERO setup"). Do NOT fabricate stats like "users save 14 hours per week" unless that exact figure is in the doc. Hallucinated numbers are the #1 trust-breaker on a marketing video.
 ${input.pageMarkdown.slice(0, 6000)}
 ${briefBlock}${styleSeedBlock}
 
@@ -482,6 +542,7 @@ ${input.visualMode === 'mocks'
 \`hero-text\` — big animated headline, optional subhead. Layout variants: \`center\` (default), \`left\` (left-aligned), \`burst\` (word-by-word reveal, accent on every other word).
   Use for: opener, transitional moments, "make a big claim" scenes, the CTA-style beat before the next demo.
   Slots: \`{ kind: 'hero-text', headline: string, subhead?: string, layout?: 'center' | 'left' | 'burst' }\`
+  **CRITICAL**: \`template.headline\` MUST DIFFER from \`scene.headline\`. They both render at the same time. If they're the same text, the scene reads as the same phrase printed twice — looks broken. Use \`scene.headline\` for the on-screen big text, then use \`template.headline\` to ELABORATE / RIFF / RESTATE differently. Example: scene.headline="See user behavior" → template.headline="What are they getting stuck on?" (a question that elaborates).
 
 \`kpi-reveal\` — giant accent-colored number with a label above and an optional trend arrow + sub-text below.
   Use for: stat-driven moments ("3 minutes to ship", "0 lines of code", "10x faster").
@@ -499,9 +560,10 @@ ${input.visualMode === 'mocks'
   Use for: AI assistant beats, support widget demos.
   Slots: \`{ kind: 'chat-bubble', appName?: string, question: string, answer: string }\`
 
-\`flow-diagram\` — 2-5 nodes with icons + labels chained by arrows. One node can be \`accent: true\` (the focal one).
-  Use for: pipelines, "input → AI → output" beats, multi-step transformations.
+\`flow-diagram\` — 2-3 nodes with icons + labels chained by arrows. One node can be \`accent: true\` (the focal one).
+  Use for: pipelines, "input → AI → output" beats, A → B → C transformations.
   Slots: \`{ kind: 'flow-diagram', nodes: { icon: string, label: string, accent?: boolean }[] }\` (icon = any lucide name)
+  **HARD CAP: 3 nodes max.** 4+ feels like a corporate diagram, not a marketing beat. If you have 4 things to show, pick a different template (\`list-reveal\` or \`mock-frame\` with cards).
 
 \`chart\` — recharts bar / line with progressive draw-in.
   Use for: growth, comparisons, before/after metrics.

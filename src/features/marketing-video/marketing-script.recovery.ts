@@ -88,20 +88,27 @@ export function normalizeTemplateSlots(parsed: unknown): void {
   // generation: Zod fails on the discriminated-union check and the
   // pipeline aborts.
   const REQUIRED_BY_KIND: Record<string, string[]> = {
-    'hero-text':       ['headline'],
-    'kpi-reveal':      ['metric', 'value'],
-    'list-reveal':     ['title', 'items'],
-    'mock-frame':      ['cards'],
-    'chat-bubble':     ['question', 'answer'],
-    'flow-diagram':    ['nodes'],
-    'chart':           ['type', 'points'],
-    'before-after':    ['beforeLabel', 'afterLabel'],
-    'comparison-bars': ['leftLabel', 'rightLabel', 'rows'],
-    'quote':           ['text', 'author'],
-    'step-progression':['steps'],
-    'big-stat':        ['value'],
-    'live-typing':     ['lines'],
-    'dual-screen':     ['leftCards', 'rightCards'],
+    'hero-text':         ['headline'],
+    'kpi-reveal':        ['metric', 'value'],
+    'list-reveal':       ['title', 'items'],
+    'mock-frame':        ['cards'],
+    'chat-bubble':       ['question', 'answer'],
+    'flow-diagram':      ['nodes'],
+    'chart':             ['type', 'points'],
+    'before-after':      ['beforeLabel', 'afterLabel'],
+    'comparison-bars':   ['leftLabel', 'rightLabel', 'rows'],
+    'quote':             ['text', 'author'],
+    'step-progression':  ['steps'],
+    'big-stat':          ['value'],
+    'live-typing':       ['lines'],
+    'dual-screen':       ['leftCards', 'rightCards'],
+    // Phase 4 — rich UI templates
+    'chat-thread':       ['messages'],
+    'dashboard-mock':    ['sidebarItems', 'metrics'],
+    'analytics-card':    ['metric', 'value'],
+    'command-palette':   ['results'],
+    'notification-toast':['title'],
+    'data-table':        ['columns', 'rows'],
   }
   const isEmpty = (v: unknown): boolean => {
     if (v === undefined || v === null) return true

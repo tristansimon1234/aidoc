@@ -212,7 +212,7 @@ export const SceneTemplateSchema = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('flow-diagram'),
-    nodes: z.array(FlowNodeSchema).min(2).max(5),
+    nodes: z.array(FlowNodeSchema).min(2).max(3),
   }),
   z.object({
     kind: z.literal('chart'),
@@ -272,6 +272,57 @@ export const SceneTemplateSchema = z.discriminatedUnion('kind', [
     rightUrl: z.string().max(80).optional(),
     leftCards: z.array(MockFrameCardSchema).min(1).max(3),
     rightCards: z.array(MockFrameCardSchema).min(1).max(3),
+  }),
+  // === Phase 4: rich UI templates — lean passe-partout modern SaaS ===
+  z.object({
+    kind: z.literal('chat-thread'),
+    appName: z.string().max(40).optional(),
+    messages: z.array(z.object({
+      role: z.enum(['user', 'assistant']),
+      content: z.string().max(280),
+    })).min(2).max(6),
+  }),
+  z.object({
+    kind: z.literal('dashboard-mock'),
+    appName: z.string().max(40).optional(),
+    sidebarItems: z.array(z.string().max(30)).min(2).max(6),
+    metrics: z.array(z.object({
+      label: z.string().max(40),
+      value: z.string().max(20),
+      trend: z.enum(['up', 'down', 'flat']).optional(),
+    })).min(1).max(4),
+  }),
+  z.object({
+    kind: z.literal('analytics-card'),
+    metric: z.string().max(40),
+    value: z.string().max(20),
+    delta: z.string().max(20).optional(),
+    trend: z.enum(['up', 'down', 'flat']).optional(),
+    sparkline: z.array(z.number()).min(3).max(20).optional(),
+  }),
+  z.object({
+    kind: z.literal('command-palette'),
+    placeholder: z.string().max(60).optional(),
+    query: z.string().max(60).optional(),
+    results: z.array(z.object({
+      label: z.string().max(60),
+      hint: z.string().max(40).optional(),
+      icon: z.string().max(40).optional(),
+    })).min(2).max(5),
+    selectedIndex: z.number().int().min(0).optional(),
+  }),
+  z.object({
+    kind: z.literal('notification-toast'),
+    title: z.string().max(60),
+    body: z.string().max(160).optional(),
+    icon: z.string().max(40).optional(),
+    tone: z.enum(['success', 'info', 'warning', 'accent']).optional(),
+  }),
+  z.object({
+    kind: z.literal('data-table'),
+    appName: z.string().max(40).optional(),
+    columns: z.array(z.string().max(20)).min(2).max(4),
+    rows: z.array(z.array(z.string().max(40))).min(2).max(6),
   }),
 ])
 

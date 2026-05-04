@@ -62,6 +62,12 @@ export type SceneTemplate =
   | { kind: 'big-stat'; value: string; label?: string; sub?: string }
   | { kind: 'live-typing'; language?: 'shell' | 'js' | 'json' | 'http'; lines: string[] }
   | { kind: 'dual-screen'; leftUrl?: string; rightUrl?: string; leftCards: { title: string; subtitle?: string; pillText?: string; pillTone?: 'accent' | 'success' | 'warning' | 'danger' | 'muted' }[]; rightCards: { title: string; subtitle?: string; pillText?: string; pillTone?: 'accent' | 'success' | 'warning' | 'danger' | 'muted' }[] }
+  | { kind: 'chat-thread'; appName?: string; messages: { role: 'user' | 'assistant'; content: string }[] }
+  | { kind: 'dashboard-mock'; appName?: string; sidebarItems: string[]; metrics: { label: string; value: string; trend?: 'up' | 'down' | 'flat' }[] }
+  | { kind: 'analytics-card'; metric: string; value: string; delta?: string; trend?: 'up' | 'down' | 'flat'; sparkline?: number[] }
+  | { kind: 'command-palette'; placeholder?: string; query?: string; results: { label: string; hint?: string; icon?: string }[]; selectedIndex?: number }
+  | { kind: 'notification-toast'; title: string; body?: string; icon?: string; tone?: 'success' | 'info' | 'warning' | 'accent' }
+  | { kind: 'data-table'; appName?: string; columns: string[]; rows: string[][] }
 
 export type MarketingScene = {
   /** Plain text the narrator says during this scene. ElevenLabs reads this

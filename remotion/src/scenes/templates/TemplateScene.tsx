@@ -33,6 +33,12 @@ export const TemplateScene: React.FC<{ template: SceneTemplate; branding: Brandi
     case 'big-stat':        return <BigStat {...template} branding={branding} />
     case 'live-typing':     return <LiveTyping {...template} branding={branding} />
     case 'dual-screen':     return <DualScreen {...template} branding={branding} />
+    case 'chat-thread':     return <ChatThread {...template} branding={branding} />
+    case 'dashboard-mock':  return <DashboardMock {...template} branding={branding} />
+    case 'analytics-card':  return <AnalyticsCard {...template} branding={branding} />
+    case 'command-palette': return <CommandPalette {...template} branding={branding} />
+    case 'notification-toast': return <NotificationToast {...template} branding={branding} />
+    case 'data-table':      return <DataTable {...template} branding={branding} />
   }
 }
 
@@ -811,6 +817,453 @@ const DualScreen: React.FC<{
       <div style={{ flex: 1, maxWidth: 700, ...entryStyle(rightT, 24), transform: `${entryStyle(rightT, 24).transform} translateX(12px) rotateY(-2deg)` }}>
         <MockFrame url={rightUrl ?? `${branding.productName.toLowerCase().replace(/\s+/g, '')}.app/v2`} tone="light">
           {renderCards(rightCards, 8)}
+        </MockFrame>
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+// === chat-thread ===============================================
+// Multi-message conversation inside a clean window. Each message
+// stagger-fades in; assistant messages get a small accent dot avatar.
+// Lean modern style: gray user bubbles, near-white assistant bubbles
+// with hairline borders. NO accent flooding.
+
+const ChatThread: React.FC<{
+  appName?: string
+  messages: { role: 'user' | 'assistant'; content: string }[]
+  branding: Branding
+}> = ({ appName, messages, branding }) => {
+  const frameT = useSpringEntry(0)
+  return (
+    <AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 80 }}>
+      <div style={{ width: '70%', maxWidth: 880, ...entryStyle(frameT, 24) }}>
+        <MockFrame url={`${(appName ?? branding.productName).toLowerCase().replace(/\s+/g, '')}.app/chat`} tone="light">
+          <div style={{ padding: 24, fontFamily: branding.fontFamily, minHeight: 420, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {messages.map((msg, i) => {
+              const t = useSpringEntry(8 + i * 14)
+              const isUser = msg.role === 'user'
+              return (
+                <div
+                  key={i}
+                  style={{
+                    ...entryStyle(t, 12),
+                    display: 'flex',
+                    justifyContent: isUser ? 'flex-end' : 'flex-start',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                  }}
+                >
+                  {!isUser && (
+                    <div style={{
+                      width: 24, height: 24, borderRadius: '50%',
+                      background: branding.accentColor, flexShrink: 0, marginTop: 4,
+                    }} />
+                  )}
+                  <div
+                    style={{
+                      maxWidth: '78%',
+                      padding: '12px 16px',
+                      borderRadius: 16,
+                      background: isUser ? '#F1F1F1' : '#FAFAFA',
+                      color: branding.textColor,
+                      fontSize: 18,
+                      fontWeight: 500,
+                      lineHeight: 1.4,
+                      border: isUser ? 'none' : '1px solid rgba(0,0,0,0.06)',
+                    }}
+                  >
+                    {msg.content}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </MockFrame>
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+// === dashboard-mock ============================================
+// Sidebar nav + main area with metric cards. Sparkline on each metric.
+// Modern lean: white surfaces, hairlines, accent only on active sidebar
+// item + the sparklines.
+
+const DashboardMock: React.FC<{
+  appName?: string
+  sidebarItems: string[]
+  metrics: { label: string; value: string; trend?: 'up' | 'down' | 'flat' }[]
+  branding: Branding
+}> = ({ appName, sidebarItems, metrics, branding }) => {
+  const frameT = useSpringEntry(0)
+  return (
+    <AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 60 }}>
+      <div style={{ width: '85%', maxWidth: 1280, ...entryStyle(frameT, 24) }}>
+        <MockFrame url={`${(appName ?? branding.productName).toLowerCase().replace(/\s+/g, '')}.app`} tone="light">
+          <div style={{ display: 'flex', minHeight: 480, fontFamily: branding.fontFamily }}>
+            {/* Sidebar */}
+            <div style={{ width: 200, borderRight: '1px solid rgba(0,0,0,0.06)', padding: '20px 12px', background: '#FAFAFA' }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: branding.textColor, opacity: 0.4, textTransform: 'uppercase', letterSpacing: '0.06em', padding: '0 8px 12px' }}>
+                {appName ?? branding.productName}
+              </div>
+              {sidebarItems.map((item, i) => {
+                const t = useSpringEntry(6 + i * 4)
+                const isActive = i === 0
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      ...entryStyle(t, 6),
+                      padding: '8px 12px',
+                      borderRadius: 8,
+                      fontSize: 14,
+                      fontWeight: isActive ? 600 : 500,
+                      color: isActive ? branding.accentColor : branding.textColor,
+                      background: isActive ? `${branding.accentColor}14` : 'transparent',
+                      marginBottom: 2,
+                    }}
+                  >{item}</div>
+                )
+              })}
+            </div>
+            {/* Main */}
+            <div style={{ flex: 1, padding: 28 }}>
+              <div style={{ fontSize: 22, fontWeight: 600, color: branding.textColor, marginBottom: 24 }}>
+                {sidebarItems[0]}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(metrics.length, 3)}, 1fr)`, gap: 14 }}>
+                {metrics.map((m, i) => {
+                  const t = useSpringEntry(20 + i * 8)
+                  const trendColor = m.trend === 'up' ? '#16a34a' : m.trend === 'down' ? '#dc2626' : 'rgba(0,0,0,0.4)'
+                  return (
+                    <div key={i} style={{
+                      ...entryStyle(t, 14),
+                      padding: '16px 18px',
+                      borderRadius: 12,
+                      background: '#FFFFFF',
+                      border: '1px solid rgba(0,0,0,0.06)',
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: branding.textColor, opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                        {m.label}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                        <span style={{ fontSize: 32, fontWeight: 700, color: branding.textColor, letterSpacing: '-0.02em' }}>
+                          {m.value}
+                        </span>
+                        {m.trend && <span style={{ fontSize: 14, color: trendColor, fontWeight: 500 }}>
+                          {m.trend === 'up' ? '↑' : m.trend === 'down' ? '↓' : '→'}
+                        </span>}
+                      </div>
+                      <Sparkline color={branding.accentColor} delay={20 + i * 8} />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </MockFrame>
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+// Tiny sparkline shared by dashboard-mock + analytics-card.
+const Sparkline: React.FC<{ color: string; delay: number; height?: number; data?: number[] }> = ({
+  color, delay, height = 32, data,
+}) => {
+  const frame = useCurrentFrame()
+  const points = data ?? [4, 7, 5, 8, 6, 9, 11, 10, 13, 12, 15]
+  const max = Math.max(...points)
+  const min = Math.min(...points)
+  const range = max - min || 1
+  const reveal = Math.min(1, Math.max(0, (frame - delay) / 30))
+  const visibleCount = Math.max(2, Math.ceil(points.length * reveal))
+  const visible = points.slice(0, visibleCount)
+  const path = visible
+    .map((v, i) => {
+      const x = (i / (points.length - 1)) * 100
+      const y = 100 - ((v - min) / range) * 100
+      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`
+    })
+    .join(' ')
+  return (
+    <div style={{ marginTop: 10, height, width: '100%' }}>
+      <svg width="100%" height={height} viewBox="0 0 100 100" preserveAspectRatio="none">
+        <path d={path} stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </div>
+  )
+}
+
+// === analytics-card ============================================
+// Single big metric in its own card with sparkline + delta. Cleaner
+// than dashboard-mock when the focus is ONE number.
+
+const AnalyticsCard: React.FC<{
+  metric: string
+  value: string
+  delta?: string
+  trend?: 'up' | 'down' | 'flat'
+  sparkline?: number[]
+  branding: Branding
+}> = ({ metric, value, delta, trend, sparkline, branding }) => {
+  const cardT = useSpringEntry(0)
+  const valueT = useSpringEntry(10)
+  const trendColor = trend === 'up' ? '#16a34a' : trend === 'down' ? '#dc2626' : 'rgba(0,0,0,0.5)'
+  return (
+    <AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 80 }}>
+      <div
+        style={{
+          ...entryStyle(cardT, 24),
+          width: 540,
+          padding: 36,
+          borderRadius: 16,
+          background: '#FFFFFF',
+          border: '1px solid rgba(0,0,0,0.08)',
+          boxShadow: '0 24px 60px -16px rgba(0,0,0,0.10)',
+          fontFamily: branding.fontFamily,
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 500, color: branding.textColor, opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 14 }}>
+          {metric}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, ...entryStyle(valueT, 16) }}>
+          <span style={{ fontSize: 84, fontWeight: 800, color: branding.textColor, letterSpacing: '-0.03em', lineHeight: 1 }}>
+            {value}
+          </span>
+          {delta && (
+            <span style={{ fontSize: 22, fontWeight: 600, color: trendColor }}>
+              {trend === 'up' ? '↑ ' : trend === 'down' ? '↓ ' : ''}{delta}
+            </span>
+          )}
+        </div>
+        <Sparkline color={branding.accentColor} delay={20} height={56} data={sparkline} />
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+// === command-palette ===========================================
+// Modal cmd+K palette overlay. Search input at top, results below
+// with one selected (highlighted). Accent color only on the active
+// item bg + the input prompt arrow. Modern Linear / Raycast vibe.
+
+const CommandPalette: React.FC<{
+  placeholder?: string
+  query?: string
+  results: { label: string; hint?: string; icon?: string }[]
+  selectedIndex?: number
+  branding: Branding
+}> = ({ placeholder, query, results, selectedIndex = 0, branding }) => {
+  const frame = useCurrentFrame()
+  const cardT = useSpringEntry(0)
+  const queryText = query ?? ''
+  // Type the query into the input across frames 8-50
+  const visibleQuery = queryText.slice(0, Math.floor(((frame - 8) / 42) * queryText.length))
+  return (
+    <AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 80, background: 'rgba(0,0,0,0.35)' }}>
+      <div
+        style={{
+          ...entryStyle(cardT, 16),
+          width: '60%',
+          maxWidth: 720,
+          background: '#FFFFFF',
+          borderRadius: 14,
+          boxShadow: '0 30px 80px -20px rgba(0,0,0,0.3)',
+          border: '1px solid rgba(0,0,0,0.08)',
+          fontFamily: branding.fontFamily,
+          overflow: 'hidden',
+        }}
+      >
+        {/* Search input */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '18px 20px', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+          <span style={{ color: branding.accentColor, fontSize: 18 }}>›</span>
+          <span style={{ fontSize: 18, color: branding.textColor, fontWeight: 500 }}>
+            {visibleQuery || (
+              <span style={{ opacity: 0.4 }}>{placeholder ?? 'Type a command or search...'}</span>
+            )}
+            {visibleQuery.length < queryText.length && (
+              <span style={{ display: 'inline-block', width: 2, height: 18, background: branding.textColor, marginLeft: 2, verticalAlign: 'middle', opacity: Math.round(frame / 8) % 2 }} />
+            )}
+          </span>
+        </div>
+        {/* Results */}
+        <div style={{ padding: 8 }}>
+          {results.map((r, i) => {
+            const t = useSpringEntry(20 + i * 6)
+            const isSelected = i === selectedIndex
+            return (
+              <div
+                key={i}
+                style={{
+                  ...entryStyle(t, 8),
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  background: isSelected ? `${branding.accentColor}12` : 'transparent',
+                }}
+              >
+                {r.icon && (
+                  <div style={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <IconFromName name={r.icon} size={18} color={isSelected ? branding.accentColor : branding.textColor} />
+                  </div>
+                )}
+                <span style={{ flex: 1, fontSize: 16, fontWeight: 500, color: branding.textColor }}>
+                  {r.label}
+                </span>
+                {r.hint && (
+                  <span style={{ fontSize: 13, fontFamily: 'ui-monospace, Menlo, monospace', color: branding.textColor, opacity: 0.4 }}>
+                    {r.hint}
+                  </span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+// === notification-toast ========================================
+// Slide-in toast in the bottom-right with a colored dot icon, title,
+// optional body. Stays for the scene, doesn't slide out (the scene is
+// short).
+
+const NotificationToast: React.FC<{
+  title: string
+  body?: string
+  icon?: string
+  tone?: 'success' | 'info' | 'warning' | 'accent'
+  branding: Branding
+}> = ({ title, body, icon, tone = 'accent', branding }) => {
+  const slideT = useSpringEntry(0)
+  const slideX = interpolate(slideT, [0, 1], [600, 0])
+  const opacity = interpolate(slideT, [0, 1], [0, 1])
+  const TONES: Record<string, string> = {
+    success: '#16a34a',
+    info:    '#2563eb',
+    warning: '#d97706',
+    accent:  branding.accentColor,
+  }
+  const toneColor = TONES[tone] ?? branding.accentColor
+  return (
+    <AbsoluteFill style={{ background: '#F4F4F5' }}>
+      {/* Subtle backdrop dots so the toast doesn't float on pure white */}
+      <AbsoluteFill style={{
+        background: `radial-gradient(circle at 80% 20%, ${branding.accentColor}10, transparent 50%)`,
+      }} />
+      <div style={{
+        position: 'absolute',
+        right: 60,
+        bottom: 80,
+        width: 380,
+        padding: '16px 18px',
+        borderRadius: 12,
+        background: '#FFFFFF',
+        boxShadow: '0 24px 48px -12px rgba(0,0,0,0.15)',
+        border: '1px solid rgba(0,0,0,0.06)',
+        fontFamily: branding.fontFamily,
+        display: 'flex',
+        gap: 14,
+        opacity,
+        transform: `translateX(${slideX}px)`,
+      }}>
+        <div style={{
+          width: 40, height: 40, borderRadius: 10,
+          background: `${toneColor}1A`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          {icon
+            ? <IconFromName name={icon} size={20} color={toneColor} />
+            : <div style={{ width: 10, height: 10, borderRadius: '50%', background: toneColor }} />
+          }
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: branding.textColor, marginBottom: body ? 4 : 0 }}>
+            {title}
+          </div>
+          {body && (
+            <div style={{ fontSize: 14, color: branding.textColor, opacity: 0.65, lineHeight: 1.4 }}>
+              {body}
+            </div>
+          )}
+        </div>
+      </div>
+    </AbsoluteFill>
+  )
+}
+
+// === data-table ================================================
+// Modern lean table: header row + data rows that fade in stagger.
+// Hairline borders, no zebra stripes, accent only on a tiny dot
+// indicator on the first column.
+
+const DataTable: React.FC<{
+  appName?: string
+  columns: string[]
+  rows: string[][]
+  branding: Branding
+}> = ({ appName, columns, rows, branding }) => {
+  const frameT = useSpringEntry(0)
+  return (
+    <AbsoluteFill style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 80 }}>
+      <div style={{ width: '80%', maxWidth: 1100, ...entryStyle(frameT, 24) }}>
+        <MockFrame url={`${(appName ?? branding.productName).toLowerCase().replace(/\s+/g, '')}.app`} tone="light">
+          <div style={{ padding: 28, fontFamily: branding.fontFamily }}>
+            {/* Header */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
+              padding: '12px 0',
+              borderBottom: '1px solid rgba(0,0,0,0.08)',
+              fontSize: 12,
+              fontWeight: 600,
+              color: branding.textColor,
+              opacity: 0.55,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}>
+              {columns.map((c, i) => (
+                <div key={i} style={{ paddingLeft: i === 0 ? 18 : 0 }}>{c}</div>
+              ))}
+            </div>
+            {/* Rows */}
+            {rows.map((row, i) => {
+              const t = useSpringEntry(8 + i * 6)
+              return (
+                <div
+                  key={i}
+                  style={{
+                    ...entryStyle(t, 8),
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${columns.length}, 1fr)`,
+                    padding: '14px 0',
+                    borderBottom: i < rows.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none',
+                    fontSize: 16,
+                    color: branding.textColor,
+                  }}
+                >
+                  {row.map((cell, j) => (
+                    <div key={j} style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: j === 0 ? 0 : 0 }}>
+                      {j === 0 && (
+                        <div style={{
+                          width: 6, height: 6, borderRadius: '50%',
+                          background: branding.accentColor,
+                          flexShrink: 0,
+                        }} />
+                      )}
+                      <span style={{ fontWeight: j === 0 ? 600 : 400 }}>{cell}</span>
+                    </div>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
         </MockFrame>
       </div>
     </AbsoluteFill>
