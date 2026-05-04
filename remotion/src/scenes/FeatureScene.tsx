@@ -2,8 +2,6 @@ import React from 'react'
 import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
 import type { Branding, Scene, Screenshot } from '../manifest.js'
 import { BrandWatermark } from './BrandWatermark.js'
-import { DynamicMock } from '../mocks/DynamicMock.js'
-import { DynamicScene } from './DynamicScene.js'
 import { TemplateScene } from './templates/TemplateScene.js'
 
 interface FeatureSceneProps {
@@ -73,19 +71,12 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   // Visual priority for the scene:
   //   1. template → structured JSON, fixed React component (preferred).
   //      Zero compile/runtime risk; the LLM only fills slots.
-  //   2. mockCompiledCode → free TSX written by the LLM (escape hatch
-  //      for scenes templates can't express; runs in a sandboxed Function).
-  //   3. mock (legacy DSL) → static-ish primitive composition.
-  //   4. screenshot → real product UI with Ken Burns.
-  // The visual fills the visual half of whatever layout the scene uses
-  // (split-left / split-right / fullscreen / stacked). It does NOT
-  // consume the whole canvas — text panel always coexists.
+  //   2. screenshot → real product UI with Ken Burns.
+  // (legacy DSL `mock` and free TSX `mockCompiledCode` paths were
+  // removed when templates landed — their recovery surface area was
+  // 10× the value they delivered.)
   const visualElement = scene.template ? (
     <TemplateScene template={scene.template} branding={branding} />
-  ) : scene.mockCompiledCode ? (
-    <DynamicScene mockCompiledCode={scene.mockCompiledCode} branding={branding} />
-  ) : scene.mock ? (
-    <DynamicMock mock={scene.mock} branding={branding} width={920} height={580} />
   ) : (
     <ScreenshotFrame
       screenshot={screenshot}
@@ -112,7 +103,10 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   // rectangle on one half ("le carré"), breaking the clean white look.
   // Screenshots still get the gradient (it adds nice ambient where the
   // raw screenshot has none).
-  const usingMock = !!(scene.template || scene.mockCompiledCode || scene.mock)
+  // Skip the FeatureScene's ambient radial-gradient when a template is
+  // in play — templates produce their own visual surface and a second
+  // gradient on the canvas just dirties the white space around them.
+  const usingMock = !!scene.template
 
   // Expose the project's font as a CSS custom property so Twind's
   // font-sans utility (used by every Tailwind text-* className inside

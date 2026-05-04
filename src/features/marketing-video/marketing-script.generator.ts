@@ -1,7 +1,8 @@
 import { SchemaType, type ResponseSchema } from '@google/generative-ai'
-import { generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
+import { generateText } from '../../shared/ai/gemini.client.js'
 import { MarketingScriptSchema } from './marketing-video.schema.js'
 import type { MarketingScript } from './marketing-video.types.js'
+import { normalizeTemplateSlots } from './marketing-script.recovery.js'
 
 /**
  * Native Gemini schema mirroring MarketingScriptSchema. Passed as
@@ -10,7 +11,7 @@ import type { MarketingScript } from './marketing-video.types.js'
  * Zod-validate after parsing as defence in depth (string min-length, etc.,
  * which Gemini's schema can't express).
  */
-const RESPONSE_SCHEMA: ResponseSchema = {
+export const RESPONSE_SCHEMA: ResponseSchema = {
   type: SchemaType.OBJECT,
   properties: {
     hook: {
@@ -424,187 +425,6 @@ function pickStyleSeed(): typeof STYLE_SEEDS[number] {
   return STYLE_SEEDS[Math.floor(Math.random() * STYLE_SEEDS.length)]!
 }
 
-/**
- * Cheap pre-Zod fixup for the slot-name drift the model produces between
- * similar templates. The discriminated union has 14 kinds and overlapping
- * vocabulary (multiple templates have a "title", "text" appears in both
- * quote and chat contexts, etc.) — when the model picks the wrong field
- * name, Zod fails the whole script. Map the obvious typos here so a
- * single drift doesn't kill the generation.
- *
- * Mutates the input. Anything we don't recognize is left alone so Zod
- * can still flag it clearly.
- */
-function normalizeTemplateSlots(parsed: unknown): void {
-  if (!parsed || typeof parsed !== 'object') return
-  const root = parsed as Record<string, unknown>
-  const scenes = root.scenes
-  if (!Array.isArray(scenes)) return
-
-  const renameIfMissing = (obj: Record<string, unknown>, target: string, candidates: string[]): void => {
-    if (typeof obj[target] === 'string' && obj[target]) return
-    for (const c of candidates) {
-      if (typeof obj[c] === 'string' && obj[c]) {
-        obj[target] = obj[c]
-        delete obj[c]
-        return
-      }
-    }
-  }
-
-  for (const scene of scenes) {
-    if (!scene || typeof scene !== 'object') continue
-    const t = (scene as Record<string, unknown>).template
-    if (!t || typeof t !== 'object') continue
-    const template = t as Record<string, unknown>
-    const kind = template.kind
-    switch (kind) {
-      case 'chat-bubble':
-        // Model bleeds in `text` from quote's vocabulary, or invents
-        // `content` / `message` / `body`. Map them onto `answer`.
-        renameIfMissing(template, 'answer', ['text', 'content', 'message', 'body', 'response'])
-        // `prompt` / `query` / `userMessage` → question
-        renameIfMissing(template, 'question', ['prompt', 'query', 'userMessage', 'ask'])
-        break
-      case 'quote':
-        renameIfMissing(template, 'text', ['quote', 'body', 'content', 'message'])
-        renameIfMissing(template, 'author', ['name', 'by'])
-        break
-      case 'hero-text':
-        renameIfMissing(template, 'headline', ['title', 'heading', 'text'])
-        break
-      case 'big-stat':
-        renameIfMissing(template, 'value', ['number', 'stat', 'metric'])
-        break
-      case 'kpi-reveal':
-        // metric ↔ label confusion: keep `metric` if both exist; promote
-        // `label` to `metric` if metric is missing.
-        renameIfMissing(template, 'metric', ['label', 'name'])
-        break
-      case 'live-typing':
-        // Some models emit a single `code` string instead of a `lines` array.
-        if (!Array.isArray(template.lines) && typeof template.code === 'string') {
-          template.lines = (template.code as string).split('\n').slice(0, 8)
-          delete template.code
-        }
-        break
-    }
-  }
-}
-
-/**
- * Single-scene rescue path. Two modes:
- *  - REPAIR: existing mockCode failed to compile/lint — feed the error
- *    + the broken code and ask Gemini to fix it.
- *  - GENERATE: mockCode is missing entirely (token budget exhausted in
- *    the main script generation) — pass an empty string and a generate-
- *    from-scratch directive in compileError. The prompt branches on
- *    whether mockCode is non-empty.
- *  One shot only — if it fails again, the renderer falls back to the
- *  gradient placeholder.
- */
-export async function repairMockCode(args: {
-  scene: { headline: string; voiceover: string; mockCode: string }
-  compileError: string
-}): Promise<string> {
-  const isFromScratch = args.scene.mockCode.trim().length === 0
-  const promptHeader = isFromScratch
-    ? `Generate the mockCode for one scene of a marketing video. The main script generator skipped this scene — context: ${args.compileError}
-
-The scene:
-- Headline: "${args.scene.headline}"
-- Voice-over: "${args.scene.voiceover}"
-
-Write a fresh MockScene component that visually illustrates the headline + voice-over.`
-    : `You wrote invalid TSX for one scene of a marketing video. The compiler rejected it with this error:
-
-${args.compileError}
-
-The scene:
-- Headline: "${args.scene.headline}"
-- Voice-over: "${args.scene.voiceover}"
-
-Your previous (broken) code:
-\`\`\`tsx
-${args.scene.mockCode}
-\`\`\`
-
-Rewrite this scene's mockCode.`
-
-  const userPrompt = `${promptHeader}
-
-Hard rules (the same rules the original prompt enforced):
-- Define a function exactly named \`MockScene\` taking \`{ branding }\` as its only prop.
-- DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters.
-- DO NOT call \`fetch\`, \`new XMLHttpRequest\`, \`eval\`, \`new Function\`, \`document.write\`, \`window.open\`.
-- DO NOT use \`<Remotion.AccentGlow>\` (deprecated).
-- Only access these branding fields: productName, accentColor, bgColor, textColor, fontFamily.
-- Only invoke these Remotion symbols: interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio, MockFrame, Pill, AnimatedCursor, Icons, Charts.
-- Icons: \`Remotion.Icons[NAME]\` accepts ANY lucide-react icon name (e.g. Cpu, BookOpen, Sparkles, Workflow, Rocket, TrendingUp, Database, Video, Camera, Inbox — pick what fits the scene). The full lucide catalog is exposed; if the icon exists in lucide-react, you can use it. Aliases also work: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2, Trash → Trash2, Share → Share2.
-- Outer element: \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` — no background, no overflow-hidden.
-- Use \`<Remotion.MockFrame tone='light'>\` for UI mocks.
-- Static styling via Tailwind \`className\`; inline \`style={{}}\` only for animated values.
-- Stay under 2500 characters.
-
-Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding prose). It will be passed straight to esbuild.`
-
-  // Try Pro first; fall back to Flash if Pro returns empty (503 silently
-  // swallowed) or throws on overload. Flash is faster and almost always
-  // good enough for a single-scene mock. Cheaper too.
-  // maxTokens is REQUIRED by Gemini, but you only pay for actually-
-  // generated tokens — set it high so we never get a truncated mid-TSX
-  // response ("Unexpected end of file"). The compiler caps the SOURCE
-  // at 6000 chars (~1500 tokens), so even if the model goes long, the
-  // input rejection bounds it. Gemini 2.5 Pro / Flash both support up
-  // to 65536 output tokens.
-  const MAX_OUT = 32_000
-  let code: string
-  try {
-    const result = await generateText({
-      userPrompt,
-      model: GEMINI_PRO_MODEL,
-      maxTokens: MAX_OUT,
-      temperature: 0.4,
-      json: false,
-    })
-    code = result.text.trim()
-    if (code.length === 0) {
-      console.warn('[repairMockCode] Pro returned empty — falling back to Flash')
-      const flashResult = await generateText({
-        userPrompt,
-        // No model override = Flash (default).
-        maxTokens: MAX_OUT,
-        temperature: 0.4,
-        json: false,
-      })
-      code = flashResult.text.trim()
-    }
-  } catch (err) {
-    const message = (err as Error).message
-    // 503 / overload / 429 → retry on Flash.
-    if (/503|429|overload/i.test(message)) {
-      console.warn(`[repairMockCode] Pro errored (${message.slice(0, 80)}) — falling back to Flash`)
-      const flashResult = await generateText({
-        userPrompt,
-        maxTokens: MAX_OUT,
-        temperature: 0.4,
-        json: false,
-      })
-      code = flashResult.text.trim()
-    } else {
-      throw err
-    }
-  }
-
-  // Strip markdown fences if the model added them anyway.
-  if (code.startsWith('```')) {
-    code = code.replace(/^```(?:tsx|jsx|ts|js)?\s*\n/, '').replace(/\n```\s*$/, '').trim()
-  }
-  if (code.length === 0) {
-    throw new Error('repairMockCode: both Pro and Flash returned empty text')
-  }
-  return code
-}
 
 export async function generateMarketingScript(
   input: GenerateMarketingScriptInput,

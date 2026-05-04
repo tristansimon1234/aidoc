@@ -4,7 +4,8 @@ import { findPageById } from '../page/page.repository.js'
 import { getPublicUrl, uploadToStorage } from '../../shared/db/storage.repository.js'
 import { synthesizeSpeech, generateMusic, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 import { NotFoundError } from '../../shared/middleware/error.middleware.js'
-import { generateMarketingScript } from './marketing-script.generator.js'
+import { generateMarketingScript, RESPONSE_SCHEMA as SCRIPT_RESPONSE_SCHEMA } from './marketing-script.generator.js'
+import { SchemaType, type ResponseSchema } from '@google/generative-ai'
 import { saveMarketingVideo } from './marketing-video.repository.js'
 import type {
   GenerateMarketingVideoOptions,
@@ -34,6 +35,38 @@ export const MUSIC_PRESETS: Array<{ id: string; name: string; url: string; mood?
 ]
 
 const DEFAULT_MUSIC_VOLUME = 0.15
+
+/**
+ * Server-constrained response schema for the AI edit endpoint. Wraps
+ * the existing `SCRIPT_RESPONSE_SCHEMA` (full hook + scenes + cta shape
+ * with all 14 templates) inside an envelope with a `message` field for
+ * the user-facing summary and an optional `branding` patch.
+ *
+ * Keeping this here (vs. inlined in the prompt) is the whole point of
+ * the consolidation: with a constrained schema, the prompt no longer
+ * needs to document each template's slot shape — Gemini's constrained
+ * generation enforces it server-side. The slot list went from ~25
+ * lines of prose to a single line "see response schema".
+ */
+const EDIT_RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  properties: {
+    message: { type: SchemaType.STRING },
+    script: SCRIPT_RESPONSE_SCHEMA,
+    branding: {
+      type: SchemaType.OBJECT,
+      properties: {
+        productName: { type: SchemaType.STRING },
+        accentColor: { type: SchemaType.STRING },
+        bgColor: { type: SchemaType.STRING },
+        textColor: { type: SchemaType.STRING },
+        fontFamily: { type: SchemaType.STRING },
+        logoUrl: { type: SchemaType.STRING },
+      },
+    },
+  },
+  required: ['message', 'script'],
+}
 
 /** Music style brief per voice tone. Used as the base prompt for ElevenLabs
  *  Music generation, optionally extended with the user's own steering text.
@@ -281,78 +314,6 @@ function flattenScriptToNarration(script: import('./marketing-video.types.js').M
     .join(' ')
 }
 
-/**
- * Deterministic, hand-written fallback mock used when every Gemini path
- * (initial generate, rescue retry, Pro→Flash fallback) fails to produce
- * compilable TSX for a scene. It just reveals the headline word-by-word
- * against the canvas bgColor — no model, no surprises, no failure mode.
- *
- * Better to ship a clean typographic scene than a blank panel. The
- * voice-over still plays over it; the video doesn't break.
- */
-async function applyDeterministicFallback(
-  scene: { headline: string; mockCode?: string; mockCompiledCode?: string },
-  compile: (src: string) => Promise<{ compiled: string }>,
-): Promise<void> {
-  try {
-    const tsx = buildFallbackMockTsx(scene.headline)
-    const { compiled } = await compile(tsx)
-    scene.mockCode = tsx
-    scene.mockCompiledCode = compiled
-  } catch (err) {
-    // Should never happen — the fallback is hand-written and tested.
-    // If it ever does, log loudly and leave the scene empty (worst-case
-    // matches the old behaviour, with a clear signal in the logs).
-    console.error(`[marketing-video] Deterministic fallback compile failed for "${scene.headline}": ${(err as Error).message}`)
-    scene.mockCode = undefined
-    scene.mockCompiledCode = undefined
-  }
-}
-
-function buildFallbackMockTsx(headline: string): string {
-  // Escape backticks/backslashes/${} so the headline doesn't break the
-  // template literal in the generated source. The headline is user-
-  // facing copy that's already passed through Gemini, but a stray
-  // backtick from a quoted name (`Stripe`) would be enough to break
-  // the TSX.
-  const safe = headline
-    .replace(/\\/g, '\\\\')
-    .replace(/`/g, '\\`')
-    .replace(/\$\{/g, '\\${')
-  return `function MockScene({ branding }) {
-  const f = Remotion.useCurrentFrame()
-  const { fps } = Remotion.useVideoConfig()
-  const words = ${JSON.stringify(safe)}.split(/\\s+/).filter(Boolean)
-  return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-12' style={{ background: branding.bgColor }}>
-      <div className='flex flex-wrap items-center justify-center gap-x-4 gap-y-2 max-w-[80%]'>
-        {words.map((w, i) => {
-          const t = Remotion.spring({ frame: f - i * 6, fps, config: { damping: 18, stiffness: 110 } })
-          const op = Remotion.interpolate(t, [0, 1], [0, 1])
-          const y = Remotion.interpolate(t, [0, 1], [18, 0])
-          return (
-            <span
-              key={i}
-              style={{
-                opacity: op,
-                transform: \`translateY(\${y}px)\`,
-                color: i % 3 === 1 ? branding.accentColor : branding.textColor,
-                fontFamily: branding.fontFamily,
-                fontSize: 84,
-                fontWeight: 700,
-                letterSpacing: '-0.02em',
-                lineHeight: 1.1,
-              }}
-            >
-              {w}
-            </span>
-          )
-        })}
-      </div>
-    </Remotion.AbsoluteFill>
-  )
-}`
-}
 
 /**
  * Full marketing-video pipeline: pulls the doc + branding + screenshots,
@@ -422,63 +383,15 @@ export async function generateMarketingVideoForRun(
 
   console.log(`[marketing-video] Script: ${script.scenes.length} scenes, ${script.totalDurationSeconds}s total`)
 
-  // Compile any TSX mockCode the LLM emitted. Two failure modes are
-  // both routed through the same rescue path:
-  //   1. mockCode is missing entirely — the model exhausted its token
-  //      budget before reaching this scene, or skipped it. With ~2KB of
-  //      mockCode per scene + 4 scenes + the rest of the script, 16k
-  //      maxTokens is tight and this happens.
-  //   2. mockCode is present but won't compile / lints invalid.
-  // Both cases: send the scene to repairMockCode (which is now overloaded
-  // to either FIX broken code or GENERATE from scratch when no source is
-  // provided). Without this, scenes 2/3 in a 4-scene script silently
-  // render as a blank panel since mocks mode has no screenshot fallback.
-  if (effectiveVisualMode === 'mocks') {
-    const { compileMockCode } = await import('./mock-code.compiler.js')
-    const { repairMockCode } = await import('./marketing-script.generator.js')
-
-    for (const scene of script.scenes) {
-      const missingMock = !scene.mockCode || scene.mockCode.trim().length === 0
-      if (missingMock) {
-        console.warn(`[marketing-video] mockCode missing for scene "${scene.headline}" — generating one`)
-        try {
-          const generated = await repairMockCode({
-            scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: '' },
-            compileError: 'mockCode was missing — the script generator skipped this scene (likely token budget exhaustion). Generate a NEW MockScene from scratch that illustrates the headline + voice-over.',
-          })
-          const { compiled } = await compileMockCode(generated)
-          scene.mockCode = generated
-          scene.mockCompiledCode = compiled
-          console.log(`[marketing-video] Backfilled mockCode for scene "${scene.headline}"`)
-        } catch (err) {
-          console.warn(`[marketing-video] Backfill failed for scene "${scene.headline}": ${(err as Error).message} — using deterministic fallback`)
-          await applyDeterministicFallback(scene, compileMockCode)
-        }
-        continue
-      }
-      try {
-        const { compiled } = await compileMockCode(scene.mockCode!)
-        scene.mockCompiledCode = compiled
-      } catch (err) {
-        const firstErr = (err as Error).message
-        console.warn(`[marketing-video] mockCode compile failed for scene "${scene.headline}": ${firstErr} — attempting one rescue`)
-        try {
-          const rescued = await repairMockCode({
-            scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode! },
-            compileError: firstErr,
-          })
-          const { compiled } = await compileMockCode(rescued)
-          scene.mockCode = rescued
-          scene.mockCompiledCode = compiled
-          console.log(`[marketing-video] Rescued mockCode for scene "${scene.headline}"`)
-        } catch (rescueErr) {
-          console.warn(`[marketing-video] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message} — using deterministic fallback`)
-          await applyDeterministicFallback(scene, compileMockCode)
-        }
-      }
-    }
-    const compiled = script.scenes.filter((s) => s.mockCompiledCode).length
-    console.log(`[marketing-video] Compiled ${compiled}/${script.scenes.length} scene mocks`)
+  // Single shared post-validation: every scene that came back from
+  // Gemini without a usable visual gets a deterministic hero-text
+  // template auto-filled from its headline. Slot-name normalization
+  // ran inside generateMarketingScript before Zod; this is the typed
+  // pass that runs after.
+  const { ensureSceneVisuals } = await import('./marketing-script.recovery.js')
+  const patchedVisuals = ensureSceneVisuals(script.scenes)
+  if (patchedVisuals > 0) {
+    console.log(`[marketing-video] Auto-filled hero-text fallback on ${patchedVisuals} scene(s)`)
   }
 
   // Voice-over (optional). Default true — we want the BIM. Skipping is for
@@ -822,7 +735,7 @@ export async function editMarketingManifestWithAi(
   const existing = await findMarketingVideoByRunId(runId)
   if (!existing) throw new Error('No marketing-video manifest for this run yet — generate one first.')
 
-  const { generateText, GEMINI_PRO_MODEL } = await import('../../shared/ai/gemini.client.js')
+  const { generateText } = await import('../../shared/ai/gemini.client.js')
 
   // Trim mockCompiledCode out of the snapshot we feed Gemini — it's
   // esbuild output, not human-edited, and inflates the prompt by ~2-3×
@@ -865,10 +778,8 @@ RULES:
 - Preserve the overall structure: hook → scenes → cta. Don't add or remove scenes unless the user explicitly asks.
 - Keep totalDurationSeconds === hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds.
 - Keep word counts realistic at ~2.3 words/sec for voice-over text.
-- **Every scene MUST have either a populated \`template\` field OR a non-null \`screenshotIndex\`.** If you find a scene without either (left over from an older generation), ADD an appropriate template with slots that match the headline + voice-over. A scene without a template renders as a blank panel — never ship that.
-- Available template kinds (use only these, exact spelling): hero-text, kpi-reveal, list-reveal, mock-frame, chat-bubble, flow-diagram, chart, before-after, comparison-bars, quote, step-progression, big-stat, live-typing, dual-screen. See the response schema for the slot shape per kind.
-- Icons in templates: any lucide-react icon name (Cpu, BookOpen, Workflow, Video, Sparkles, etc.).
-- Only change what the instruction asks for. Leave the rest verbatim — except the missing-template rule above, which is a hard requirement on every scene.
+- Every scene MUST have either a populated \`template\` field OR a non-null \`screenshotIndex\`. If a scene has neither (legacy manifest), ADD an appropriate template — pick the kind that matches the headline + voice-over. The response schema lists the available kinds and their slot shapes.
+- Only change what the instruction asks for. Leave the rest verbatim — except the missing-template rule above, which is a hard requirement.
 - If the instruction is unclear or impossible, return the manifest unchanged and explain in the message.
 - Voice-over audio + music URLs are NOT yours to change — those are regenerated separately.
 
@@ -880,25 +791,19 @@ Return ONLY valid JSON matching the response schema.`
   // most edits acceptably and is the right pressure-relief when Google
   // returns "model currently experiencing high demand". Without this,
   // a busy Pro cluster blocks every iteration on the editor.
+  // Edit uses Flash by default — same reasoning as script gen: the LLM
+  // is filling structured slots, not doing creative reasoning. Pro's
+  // thinking budget burns invisibly. responseSchema enforces shape
+  // server-side so the prompt stays short.
   let result: { text: string }
   try {
     result = await generateText({
       userPrompt: prompt,
-      model: GEMINI_PRO_MODEL,
-      // Edit returns the full edited script (hook + N scenes with
-      // templates + cta) in JSON. With the inline template documentation
-      // the prompt is heavy and the response body needs room. 32k
-      // matches the script-gen budget and stays well under Pro's 65k
-      // ceiling.
       maxTokens: 32_000,
-      // Disable thinking — structured edit output, reasoning burns budget
-      // for no signal (same logic as script gen + converse). Without
-      // this Pro spent its output budget on internal CoT and emitted a
-      // truncated `script` missing hook / scenes / cta fields →
-      // "expected array, received undefined" Zod failure.
       thinkingBudget: 0,
       temperature: 0.4,
       json: true,
+      responseSchema: EDIT_RESPONSE_SCHEMA,
     })
   } catch (err) {
     const message = (err as Error).message ?? ''
@@ -906,14 +811,14 @@ Return ONLY valid JSON matching the response schema.`
     const isOverload = status === 503 || status === 429
       || /high demand|overload|temporarily unavailable|rate.?limit/i.test(message)
     if (!isOverload) throw err
-    console.warn(`[marketing-edit] Pro overloaded (${status ?? 'no-status'}), falling back to Flash`)
+    console.warn(`[marketing-edit] Flash errored (${status ?? 'no-status'}), retrying`)
     result = await generateText({
       userPrompt: prompt,
-      // No model override → uses default Flash from gemini.client.
       maxTokens: 32_000,
       thinkingBudget: 0,
       temperature: 0.4,
       json: true,
+      responseSchema: EDIT_RESPONSE_SCHEMA,
     })
   }
 
@@ -949,143 +854,20 @@ Return ONLY valid JSON matching the response schema.`
     throw new Error(`AI produced an invalid manifest: ${JSON.stringify(validated.error.flatten().fieldErrors).slice(0, 300)}`)
   }
 
-  // Recompile any mockCode the AI rewrote — Remotion runs the compiled
-  // output, not the TSX source. Three failure modes routed through the
-  // same rescue path (mirrors the initial generate flow):
-  //   1. mockCode missing entirely (the edit didn't touch this scene
-  //      and the previous manifest already had no mock — would render
-  //      as a blank canvas otherwise).
-  //   2. mockCode present but compile/lint fails.
-  // Mocks-mode-only: in screenshots-mode the missing mockCode is fine
-  // because the scene falls back to its real screenshot.
-  const { compileMockCode } = await import('./mock-code.compiler.js')
-  const { repairMockCode } = await import('./marketing-script.generator.js')
-  // Mocks mode = ANY scene has a visual that isn't a real screenshot.
-  // Templates are the new path; mockCode is the legacy escape hatch;
-  // both count. Without this, scenes that come back from Gemini with
-  // only a `template` get treated as "screenshots mode" and the
-  // missing-visual backfill below skips them.
-  const isMocksMode = validated.data.script.scenes.some(
-    (s) => s.template || s.mockCode || s.mockCompiledCode,
+  // Single shared post-validation: any scene without a usable visual
+  // gets a deterministic hero-text template auto-filled. Same code path
+  // as the generate flow — the recovery rules live in marketing-script.
+  // recovery.ts so a fix in one place flows everywhere.
+  const { ensureSceneVisuals } = await import('./marketing-script.recovery.js')
+  // Cast — the Zod-inferred scene type uses a permissive `mock` shape
+  // (legacy DSL with type: string) while MarketingScene declares a
+  // discriminated union for `type`. Structurally compatible at runtime
+  // post-validation; the cast bridges the type-system gap.
+  const patched = ensureSceneVisuals(
+    validated.data.script.scenes as unknown as Parameters<typeof ensureSceneVisuals>[0],
   )
-
-  // Last-resort deterministic visual: if even the rescue + previous-version
-  // fallback can't fill a scene, add a hero-text template so the scene
-  // still renders something readable instead of a blank panel.
-  const fillWithHeroFallback = (scene: typeof validated.data.script.scenes[number]): void => {
-    scene.template = {
-      kind: 'hero-text',
-      headline: scene.headline,
-      ...(scene.subhead ? { subhead: scene.subhead } : {}),
-      layout: 'burst',
-    } as typeof scene.template
-  }
-  // Index the PREVIOUS manifest's scenes for fallback when an edit
-  // breaks a scene. We try TWO lookups:
-  //   1. By headline — the AI usually keeps headlines stable across
-  //      refines.
-  //   2. By index — if the AI rewrote the headline ("From Screen…" →
-  //      "Instant Docs…"), headline lookup misses and we'd lose the
-  //      working pre-edit code. Index match catches that since the
-  //      AI rarely reorders scenes.
-  // Better to render the "before" of one scene than ship an empty panel.
-  const previousByHeadline = new Map<string, { mockCode?: string; mockCompiledCode?: string }>()
-  const previousByIndex: Array<{ mockCode?: string; mockCompiledCode?: string }> = []
-  for (const s of existing.manifest.script.scenes) {
-    const entry = { mockCode: s.mockCode, mockCompiledCode: s.mockCompiledCode }
-    if (s.mockCode || s.mockCompiledCode) {
-      previousByHeadline.set(s.headline, entry)
-    }
-    previousByIndex.push(entry)
-  }
-  function findPreviousScene(headline: string, index: number): { mockCode?: string; mockCompiledCode?: string } | undefined {
-    const byHeadline = previousByHeadline.get(headline)
-    if (byHeadline?.mockCode && byHeadline?.mockCompiledCode) return byHeadline
-    const byIndex = previousByIndex[index]
-    if (byIndex?.mockCode && byIndex?.mockCompiledCode) return byIndex
-    return undefined
-  }
-  for (const [index, scene] of validated.data.script.scenes.entries()) {
-    const missingMock = !scene.mockCode || scene.mockCode.length === 0
-    if (missingMock) {
-      // Only backfill in mocks mode AND when there's no screenshot to
-      // fall back on (so we don't generate mocks for a screenshot scene).
-      if (!isMocksMode || scene.screenshotIndex !== null) continue
-      // First: try to inherit from the previous manifest. If the AI just
-      // didn't touch this scene, its mockCode lives unchanged in the
-      // previous manifest under the same headline (or same index if
-      // headline was rewritten).
-      const prev = findPreviousScene(scene.headline, index)
-      if (prev?.mockCode && prev?.mockCompiledCode) {
-        scene.mockCode = prev.mockCode
-        scene.mockCompiledCode = prev.mockCompiledCode
-        continue
-      }
-      console.warn(`[marketing-edit] mockCode missing for scene "${scene.headline}" — generating one`)
-      try {
-        const generated = await repairMockCode({
-          scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: '' },
-          compileError: 'mockCode was missing for this scene during AI edit. Generate a NEW MockScene from scratch that illustrates the headline + voice-over.',
-        })
-        const c = await compileMockCode(generated)
-        scene.mockCode = generated
-        scene.mockCompiledCode = c.compiled
-        console.log(`[marketing-edit] Backfilled mockCode for scene "${scene.headline}"`)
-      } catch (err) {
-        console.warn(`[marketing-edit] Backfill failed for scene "${scene.headline}": ${(err as Error).message} — using deterministic fallback`)
-        await applyDeterministicFallback(scene, compileMockCode)
-      }
-      continue
-    }
-    try {
-      const c = await compileMockCode(scene.mockCode!)
-      scene.mockCompiledCode = c.compiled
-    } catch (err) {
-      const firstErr = (err as Error).message
-      console.warn(`[marketing-edit] mockCode compile failed for scene "${scene.headline}": ${firstErr} — attempting one rescue`)
-      try {
-        const rescued = await repairMockCode({
-          scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode! },
-          compileError: firstErr,
-        })
-        const c = await compileMockCode(rescued)
-        scene.mockCode = rescued
-        scene.mockCompiledCode = c.compiled
-        console.log(`[marketing-edit] Rescued mockCode for scene "${scene.headline}"`)
-      } catch (rescueErr) {
-        console.warn(`[marketing-edit] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message}`)
-        // Fall back to the PREVIOUS working version of this scene
-        // (matched by headline or, if the AI rewrote the headline, by
-        // index). Better to ship the before-state than an empty panel.
-        const prev = findPreviousScene(scene.headline, index)
-        if (prev?.mockCode && prev?.mockCompiledCode) {
-          scene.mockCode = prev.mockCode
-          scene.mockCompiledCode = prev.mockCompiledCode
-          console.log(`[marketing-edit] Reverted scene "${scene.headline}" to its pre-edit version`)
-        } else {
-          // No pre-edit version either — last resort, ship the
-          // deterministic headline-burst mock so the scene isn't blank.
-          await applyDeterministicFallback(scene, compileMockCode)
-        }
-      }
-    }
-  }
-
-  // Final guardrail — after every recovery path, every scene MUST have
-  // SOMETHING to render: a template OR mockCompiledCode OR a real
-  // screenshotIndex. Otherwise we ship a blank panel. This catches the
-  // "edit didn't add templates to a screenshots-mode-but-empty manifest"
-  // case the user hit: existing scenes had no template + no screenshot
-  // + no mockCode → all blank. Promote the headline into a hero-text
-  // template so the scene still reads.
-  for (const scene of validated.data.script.scenes) {
-    const hasVisual = scene.template
-      || scene.mockCompiledCode
-      || (typeof scene.screenshotIndex === 'number' && scene.screenshotIndex !== null)
-    if (!hasVisual) {
-      console.warn(`[marketing-edit] Scene "${scene.headline}" had no visual after edit — adding hero-text fallback`)
-      fillWithHeroFallback(scene)
-    }
+  if (patched > 0) {
+    console.warn(`[marketing-edit] Auto-filled hero-text fallback on ${patched} scene(s)`)
   }
 
   const summary = await updateMarketingManifestForRun(runId, validated.data)
