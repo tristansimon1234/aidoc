@@ -38,10 +38,73 @@ const DEFAULT_MUSIC_VOLUME = 0.15
  *  Music generation, optionally extended with the user's own steering text.
  *  Kept short and concrete — long prompts produce muddier output. */
 const TONE_TO_MUSIC_PROMPT: Record<import('./marketing-video.types.js').VoiceTone, string> = {
-  punchy:  'Energetic upbeat marketing music, electronic, driving rhythm, modern, confident',
-  calm:    'Calm ambient background music, minimal piano, professional, soft pads',
-  playful: 'Fun upbeat marketing music, playful melodies, light percussion, optimistic',
-  serious: 'Subtle cinematic background music, building tension, professional, restrained',
+  punchy:         'Energetic upbeat marketing music, electronic, driving rhythm, modern, confident',
+  calm:           'Calm ambient background music, minimal piano, professional, soft pads',
+  playful:        'Fun upbeat marketing music, playful melodies, light percussion, optimistic',
+  serious:        'Subtle cinematic background music, building tension, professional, restrained',
+  confident:      'Warm modern marketing music, mid-tempo electronic with acoustic elements, hopeful, founder-pitch energy',
+  inspirational:  'Uplifting orchestral marketing music, building strings, swelling crescendo, motivational, anthemic',
+  conversational: 'Mellow lo-fi marketing music, soft beats, jazzy keys, relaxed podcast vibe, warm and approachable',
+}
+
+/** Curated AI music styles surfaced as their own dropdown options. Each
+ *  one routes through the same ElevenLabs Music endpoint but with a
+ *  distinct prompt so the user can pick a vibe directly without writing
+ *  a brief. The keys here are the dropdown ids (prefixed `ai-` to
+ *  distinguish from hosted presets if we ever add them); the values are
+ *  the prompts. The default `'ai'` choice still works and uses the
+ *  tone-mapped prompt above. */
+export const AI_MUSIC_STYLES: Record<string, { name: string; prompt: string; mood?: string }> = {
+  'ai-cinematic': {
+    name: 'Cinematic',
+    mood: 'Dramatic, building',
+    prompt: 'Cinematic marketing music, layered orchestral strings, building tension, deep bass swells, modern epic, instrumental',
+  },
+  'ai-upbeat': {
+    name: 'Upbeat',
+    mood: 'Energetic, modern',
+    prompt: 'Upbeat marketing music, driving electronic beat, bright synths, modern pop production, confident and energetic, instrumental',
+  },
+  'ai-lofi': {
+    name: 'Lo-fi',
+    mood: 'Relaxed, study-vibe',
+    prompt: 'Lo-fi hip hop marketing music, mellow beats, jazzy keys, vinyl crackle, warm and approachable, instrumental',
+  },
+  'ai-ambient': {
+    name: 'Ambient',
+    mood: 'Minimal, professional',
+    prompt: 'Ambient marketing music, sparse piano notes, soft pads, gentle atmosphere, professional and minimal, instrumental',
+  },
+  'ai-synthwave': {
+    name: 'Synthwave',
+    mood: 'Retro, neon',
+    prompt: 'Synthwave marketing music, retro 80s synths, driving arpeggios, neon energy, modern nostalgic, instrumental',
+  },
+  'ai-acoustic': {
+    name: 'Acoustic',
+    mood: 'Warm, organic',
+    prompt: 'Acoustic marketing music, fingerpicked guitar, soft percussion, warm and human, approachable indie vibe, instrumental',
+  },
+  'ai-tech': {
+    name: 'Tech',
+    mood: 'Pulsing, modern',
+    prompt: 'Tech marketing music, pulsing electronic rhythm, glassy synths, futuristic, clean and modern, instrumental',
+  },
+  'ai-inspirational': {
+    name: 'Inspirational',
+    mood: 'Uplifting, anthemic',
+    prompt: 'Inspirational marketing music, swelling strings, building crescendo, uplifting piano, motivational anthemic, instrumental',
+  },
+  'ai-playful': {
+    name: 'Playful',
+    mood: 'Cheeky, light',
+    prompt: 'Playful marketing music, bouncy melodies, light percussion, ukulele or marimba, cheeky and optimistic, instrumental',
+  },
+  'ai-dark': {
+    name: 'Dark',
+    mood: 'Brooding, intense',
+    prompt: 'Dark marketing music, brooding bass, haunting pads, tense atmosphere, modern thriller score, instrumental',
+  },
 }
 
 function buildMusicPrompt(
@@ -68,10 +131,19 @@ function buildMusicPrompt(
  *  presets — the user heard a monotone read regardless of tone choice.
  *  The current values pull each preset to a recognisable extreme. */
 const TONE_PRESETS = {
-  punchy:  { stability: 0.20, style: 0.90, similarityBoost: 0.75 },
-  calm:    { stability: 0.55, style: 0.35, similarityBoost: 0.80 },
-  playful: { stability: 0.15, style: 0.90, similarityBoost: 0.70 },
-  serious: { stability: 0.55, style: 0.25, similarityBoost: 0.85 },
+  punchy:         { stability: 0.20, style: 0.90, similarityBoost: 0.75 },
+  calm:           { stability: 0.55, style: 0.35, similarityBoost: 0.80 },
+  playful:        { stability: 0.15, style: 0.90, similarityBoost: 0.70 },
+  serious:        { stability: 0.55, style: 0.25, similarityBoost: 0.85 },
+  // Confident: warm authority — moderate stability + medium style for
+  //   variation without bouncing too much. Founder-pitch energy.
+  confident:      { stability: 0.40, style: 0.55, similarityBoost: 0.80 },
+  // Inspirational: builds — needs dynamic range. Low stability + high
+  //   style for swelling delivery on the climax phrases.
+  inspirational:  { stability: 0.25, style: 0.80, similarityBoost: 0.78 },
+  // Conversational: natural delivery — high similarity to the base
+  //   voice, low style so it doesn't perform. Reads like a podcast host.
+  conversational: { stability: 0.45, style: 0.30, similarityBoost: 0.85 },
 } as const
 
 /** Default branding when the project has no custom design saved. Picked to
@@ -425,14 +497,28 @@ export async function generateMarketingVideoForRun(
       musicPath = options.musicUploadPath
       musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
       console.log(`[marketing-video] Music: uploaded path=${musicPath}`)
-    } else if (options.musicTrackId === 'ai') {
+    } else if (options.musicTrackId === 'ai' || (options.musicTrackId && options.musicTrackId.startsWith('ai-'))) {
+      // Two AI paths converge on the same ElevenLabs Music call:
+      //   - 'ai' → tone-mapped prompt + optional user brief (legacy default)
+      //   - 'ai-<style>' → style-specific prompt from AI_MUSIC_STYLES,
+      //     still extendable with the user's brief.
       if (!isElevenLabsConfigured()) {
         throw new Error('ELEVENLABS_API_KEY is required for AI music generation.')
       }
       const tone = options.tone ?? 'punchy'
-      const musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
+      const styleId = options.musicTrackId
+      let musicPrompt: string
+      if (styleId !== 'ai' && AI_MUSIC_STYLES[styleId]) {
+        const style = AI_MUSIC_STYLES[styleId]!
+        const userBrief = options.aiMusicPrompt?.trim()
+        musicPrompt = userBrief
+          ? `${style.prompt}, ${userBrief}. Background music for a ${branding.productName} marketing video.`
+          : `${style.prompt}. Background music for a ${branding.productName} marketing video.`
+      } else {
+        musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
+      }
       const durationMs = Math.round(script.totalDurationSeconds * 1000)
-      console.log(`[marketing-video] Music: AI-generating, durationMs=${durationMs}`)
+      console.log(`[marketing-video] Music: AI-generating (${styleId}), durationMs=${durationMs}`)
       const buffer = await generateMusic(musicPrompt, { durationMs })
       musicPath = `runs/${runId}/marketing-music-ai.mp3`
       await uploadToStorage('artifacts', musicPath, buffer, 'audio/mpeg')

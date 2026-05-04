@@ -242,7 +242,10 @@ export const MarketingScriptSchema = z.object({
 /** Voice-over tone presets. Each maps to a tuned (stability, style,
  *  similarityBoost) triplet on the ElevenLabs side — surface them as
  *  named choices to the user instead of three opaque sliders. */
-export const VoiceTonePresetSchema = z.enum(['punchy', 'calm', 'playful', 'serious'])
+export const VoiceTonePresetSchema = z.enum([
+  'punchy', 'calm', 'playful', 'serious',
+  'confident', 'inspirational', 'conversational',
+])
 export type VoiceTonePreset = z.infer<typeof VoiceTonePresetSchema>
 
 /** Visual style for the whole video. 'screenshots' uses real doc

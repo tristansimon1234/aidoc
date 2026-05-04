@@ -649,7 +649,7 @@ export const api = {
           userPrompt?: string
           withVoiceover?: boolean
           voiceId?: string
-          tone?: 'punchy' | 'calm' | 'playful' | 'serious'
+          tone?: 'punchy' | 'calm' | 'playful' | 'serious' | 'confident' | 'inspirational' | 'conversational'
           visualMode?: 'screenshots' | 'mocks'
           musicTrackId?: string
           musicUploadPath?: string
@@ -677,7 +677,7 @@ export const api = {
         }),
       updateVoice: (
         id: string,
-        opts: { voiceId?: string; tone?: 'punchy' | 'calm' | 'playful' | 'serious' },
+        opts: { voiceId?: string; tone?: 'punchy' | 'calm' | 'playful' | 'serious' | 'confident' | 'inspirational' | 'conversational' },
       ): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video/voiceover`, {
           method: 'POST',

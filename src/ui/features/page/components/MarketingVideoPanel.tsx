@@ -23,14 +23,19 @@ interface MarketingVideoPanelProps {
   fallbackStartUrl: string
 }
 
-type VoiceTone = 'punchy' | 'calm' | 'playful' | 'serious'
+type VoiceTone =
+  | 'punchy' | 'calm' | 'playful' | 'serious'
+  | 'confident' | 'inspirational' | 'conversational'
 type VisualMode = 'screenshots' | 'mocks'
 
 const TONE_LABELS: Record<VoiceTone, string> = {
-  punchy: 'Punchy — energetic, marketing default',
-  calm: 'Calm — measured, professional',
-  playful: 'Playful — expressive, casual',
-  serious: 'Serious — authoritative, monotone',
+  punchy:         'Punchy — energetic, marketing default',
+  calm:           'Calm — measured, professional',
+  playful:        'Playful — expressive, casual',
+  serious:        'Serious — authoritative, monotone',
+  confident:      'Confident — warm authority, founder pitch',
+  inspirational: 'Inspirational — uplifting, building energy',
+  conversational:'Conversational — natural, podcast-style',
 }
 
 
@@ -222,8 +227,11 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       if (musicChoice === 'upload' && musicUploadPath) {
         musicOpts.musicUploadPath = musicUploadPath
         musicOpts.musicVolume = musicVolume
-      } else if (musicChoice === 'ai') {
-        musicOpts.musicTrackId = 'ai'
+      } else if (musicChoice === 'ai' || musicChoice.startsWith('ai-')) {
+        // AI music — either tone-derived ('ai') or a named style ('ai-xxx').
+        // The brief field works on top of either: extends the prompt with
+        // user-specified steering ("more drums", "softer outro", ...).
+        musicOpts.musicTrackId = musicChoice
         musicOpts.musicVolume = musicVolume
         if (aiMusicPrompt.trim()) musicOpts.aiMusicPrompt = aiMusicPrompt.trim()
       } else if (musicChoice !== 'none' && musicChoice !== 'upload') {
@@ -601,7 +609,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           )}
         </div>
 
-        {musicChoice === 'ai' && (
+        {(musicChoice === 'ai' || musicChoice.startsWith('ai-')) && (
           <div className={styles.field}>
             <span className={styles.fieldLabel}>
               Music style <span className={styles.fieldHint}>optional · fine-tunes the AI prompt</span>
@@ -679,7 +687,7 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           steps={[
             { label: 'Writing the script', estimatedSeconds: 30 },
             { label: 'Synthesizing voice-over', estimatedSeconds: withVoiceover ? 25 : 1 },
-            { label: 'Composing music', estimatedSeconds: musicChoice === 'ai' ? 45 : 1 },
+            { label: 'Composing music', estimatedSeconds: (musicChoice === 'ai' || musicChoice.startsWith('ai-')) ? 45 : 1 },
             { label: 'Rendering the video', estimatedSeconds: 80 },
           ]}
           activeStep={0}

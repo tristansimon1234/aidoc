@@ -17,6 +17,7 @@ import {
   editMarketingManifestWithAi,
   setMarketingThumbnailForRun,
   MUSIC_PRESETS,
+  AI_MUSIC_STYLES,
 } from './marketing-video.service.js'
 
 const EditManifestBodySchema = z.object({
@@ -54,7 +55,18 @@ marketingVideoRouter.get('/marketing-video/music-presets', (_req: Request, res: 
   // Edge cache 1h — the preset list is a code-level constant; refreshing
   // it more often than that just adds latency for no signal.
   res.set('Cache-Control', 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400')
-  res.status(200).json({ presets: MUSIC_PRESETS })
+  // Surface the 10 AI music styles alongside any hosted presets. The id
+  // prefix `ai-` lets the service route them through ElevenLabs Music
+  // generation with a style-specific prompt, vs hosted presets which
+  // ship with a static URL.
+  const aiStyles = Object.entries(AI_MUSIC_STYLES).map(([id, s]) => ({
+    id,
+    name: `AI: ${s.name}`,
+    mood: s.mood,
+    url: '', // generated on-demand via ElevenLabs Music
+    aiGenerated: true,
+  }))
+  res.status(200).json({ presets: [...MUSIC_PRESETS, ...aiStyles] })
 })
 
 marketingVideoRouter.get('/marketing-video/voices', (_req: Request, res: Response, next: NextFunction) => {

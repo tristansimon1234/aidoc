@@ -204,7 +204,14 @@ export interface MarketingVideoSummary {
 
 /** Tone preset name. Maps to a tuned (stability, style, similarityBoost)
  *  triplet — see TONE_PRESETS in marketing-video.service.ts for the values. */
-export type VoiceTone = 'punchy' | 'calm' | 'playful' | 'serious'
+export type VoiceTone =
+  | 'punchy'         // energetic, marketing-default
+  | 'calm'           // measured, soft
+  | 'playful'        // expressive, casual
+  | 'serious'        // authoritative, monotone
+  | 'confident'      // warm + authoritative — founder pitch
+  | 'inspirational'  // uplifting, building energy
+  | 'conversational' // natural, podcast-style
 
 export interface GenerateMarketingVideoOptions {
   /** When false, skip ElevenLabs synthesis. The manifest still includes the

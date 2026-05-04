@@ -233,7 +233,7 @@ interface GenerateMarketingScriptInput {
    *  audio tags Gemini should embed in the voice-over lines (punchy →
    *  [excited], calm → [short pause], etc.). Without this the script
    *  comes out flat and the voice reads it flat. */
-  tone?: 'punchy' | 'calm' | 'playful' | 'serious'
+  tone?: import('./marketing-video.types.js').VoiceTone
   /** Visual style — drives whether Gemini fills every scene with a real
    *  screenshot (screenshotIndex set, no mock) or with a designed mock
    *  (screenshotIndex=null, mock set). NOT mixed within a video. */
@@ -270,6 +270,18 @@ cta.voiceover: "Your future self thanks you. [laughs] Try it free today."`,
 scenes[0].voiceover: "One screen recording produces a structured guide — screenshots, narration, exact step order. Built from what you actually do."
 scenes[1].voiceover: "An embedded AI chat widget answers user questions from your CANONICAL documentation. No hallucination, no drift."
 cta.voiceover: "Stop losing users to bad docs. [short pause] Start today."`,
+  confident: `hook.voiceover:  "Here's what we built. [short pause] Documentation that maintains itself, sourced from how your product ACTUALLY works."
+scenes[0].voiceover: "You record one walkthrough — the AI does the rest. Structure, screenshots, narration. The doc your team should have written months ago."
+scenes[1].voiceover: "Then it gets smarter. [short pause] An embedded chat widget answers your users in your voice, grounded in your real documentation."
+cta.voiceover: "Documentation isn't a chore anymore. Start free — your users will thank you."`,
+  inspirational: `hook.voiceover:  "[building] What if your documentation could keep pace with your product? [short pause] What if it could grow WITH you?"
+scenes[0].voiceover: "One recording becomes a living guide — structured, narrated, screenshot-ready. The kind of doc that makes new users feel SEEN."
+scenes[1].voiceover: "An AI assistant answers them instantly. No more lost users. No more silent frustration. [short pause] Just clarity."
+cta.voiceover: "Build the docs your product DESERVES. [short pause] Start free today."`,
+  conversational: `hook.voiceover:  "Okay so — writing docs is brutal. Let me show you what we did about it."
+scenes[0].voiceover: "You hit record, walk through the feature like a user would, and the AI just... handles it. Steps, screenshots, voice-over — all there."
+scenes[1].voiceover: "And then there's a chat widget you can drop on your app. Your users ask stuff, it answers from YOUR docs. No more support tickets at 2am."
+cta.voiceover: "Honestly, you should just try it. [short pause] Free, takes two minutes."`,
 }
 
 /**
