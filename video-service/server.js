@@ -546,6 +546,13 @@ app.post('/render-marketing-video', async (req, res) => {
       // for the magazine look) comfortable headroom — and we'd rather wait
       // than drop the 3D transforms that make the mocks feel designed.
       timeoutInMilliseconds: 120_000,
+      // CRF 18 = visually lossless x264 encoding. Default is ~23 (Remotion
+      // tunes for size); on text-heavy mocks with thin 1-2px lines and
+      // small typography that defaults reads as "slightly blurry". 18
+      // restores screenshot-grade sharpness. Trade: MP4 file ~1.5-2×
+      // larger (acceptable for a 45s marketing asset that the user
+      // downloads / shares).
+      crf: 18,
     })
 
     console.log('[render-marketing] Render done, uploading…')
