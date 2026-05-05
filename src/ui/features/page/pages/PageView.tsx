@@ -58,6 +58,11 @@ function PageViewInner(): React.ReactElement {
   const hasRunningTest = initialTestJob?.status === 'running' && !!initialTestJob.liveUrl
 
   const [page, setPage] = useState<DocPageDTO | null>(cachedPage)
+  // Bumped only when the page content changes from an OUTSIDE source
+  // (AI regeneration, restore-previous, auto-copy of generated_docs).
+  // Composed into the BlockEditor `key` so external updates remount
+  // the editor cleanly while user-driven saves leave it untouched.
+  const [externalRev, setExternalRev] = useState(0)
   const [loading, setLoading] = useState(!cachedPage)
   const abortRef = useRef<AbortController | null>(null)
   const [liveUrl, setLiveUrl] = useState<string | null>(hasRunningTest ? (initialTestJob.liveUrl ?? null) : null)
@@ -157,6 +162,7 @@ function PageViewInner(): React.ReactElement {
       if (docData?.markdownContent && !pageData.content) {
         void api.pages.update(projectId, pageId, { content: docData.markdownContent })
         setPage({ ...pageData, content: docData.markdownContent })
+        setExternalRev((n) => n + 1)
       }
     } catch (err) {
       setError((err as Error).message)
@@ -186,6 +192,7 @@ function PageViewInner(): React.ReactElement {
       void fetchData()
       void context.refetchPages()
       setActiveTab('doc')
+      setExternalRev((n) => n + 1)
     }
     prevDocGenStatus.current = activeDocGenJob?.status
   }, [activeDocGenJob?.status, fetchData, context])
@@ -467,6 +474,7 @@ function PageViewInner(): React.ReactElement {
                     try {
                       const restored = await api.pages.restorePrevious(projectId!, pageId!)
                       setPage(restored)
+                      setExternalRev((n) => n + 1)
                     } catch (err) {
                       console.error('[restore] Failed:', (err as Error).message)
                     }
@@ -499,7 +507,7 @@ function PageViewInner(): React.ReactElement {
           )}
           <Suspense fallback={<div style={{ padding: '2rem' }}><Spinner size="md" /></div>}>
             <BlockEditor
-              key={pageId}
+              key={`${pageId}-${externalRev}`}
               content={page.content ?? ''}
               contentBlocks={page.contentBlocks}
               onSave={handleSaveContent}

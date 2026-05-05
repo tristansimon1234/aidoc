@@ -1,53 +1,21 @@
-import { z } from 'zod'
 import { generateText, type GeminiUsage } from '../../shared/ai/gemini.client.js'
-import { buildDocumentationPrompt, getDocSystemPrompt, VIDEO_DOC_SYSTEM_PROMPT, buildScreenshotMap, replaceScreenshotPlaceholders } from '../../shared/ai/prompt.builder.js'
+import {
+  buildDocumentationPrompt,
+  getDocSystemPrompt,
+  VIDEO_DOC_SYSTEM_PROMPT,
+  buildScreenshotMap,
+  replaceScreenshotPlaceholders,
+} from '../../shared/ai/prompt.builder.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
-
-const StepAssessmentSchema = z.object({
-  stepIndex: z.number(),
-  confidence: z.enum(['high', 'medium', 'low']),
-  note: z.string().nullable(),
-})
-
-const GapSchema = z.object({
-  area: z.string(),
-  reason: z.string(),
-  severity: z.enum(['major', 'minor']),
-})
-
-const NextStepSchema = z.object({
-  suggestion: z.string(),
-  reason: z.string(),
-  priority: z.enum(['high', 'medium', 'low']),
-})
-
-const StructuralSuggestionSchema = z.object({
-  type: z.enum(['move', 'merge', 'split', 'rename', 'new']),
-  targetSlug: z.string().optional(),
-  details: z.string(),
-  suggestedTitle: z.string().optional(),
-  suggestedParentSlug: z.string().optional(),
-})
-
-const SelfAssessmentSchema = z.object({
-  overallCompleteness: z.number().min(0).max(100),
-  stepAssessments: z.array(StepAssessmentSchema),
-  gaps: z.array(GapSchema),
-  nextSteps: z.array(NextStepSchema),
-  structuralSuggestions: z.array(StructuralSuggestionSchema).optional(),
-})
-
-const DocJsonSchema = z.object({
-  featureName: z.string(),
-  totalSteps: z.number(),
-  keyPages: z.array(z.string()),
-  userActions: z.array(z.string()),
-  screenshots: z.number().optional(),
-  selfAssessment: SelfAssessmentSchema,
-})
 
 export interface GenerationResult {
   markdown: string
+  /** Metadata blob persisted on `generated_docs.json_content`. We used
+   *  to ship Gemini's self-assessment here (confidence %, gaps,
+   *  nextSteps) but the signal added more noise than value: the AI
+   *  rated itself, the user already knew the recording's gaps, and
+   *  Try Doc gives a real validation pass. Now empty — kept as a slot
+   *  in case we want to store something deterministic later. */
   json: Record<string, unknown>
   usage: GeminiUsage
 }
@@ -65,6 +33,16 @@ function rewriteInternalLinks(markdown: string, projectId?: string, knownSlugs?:
       return `[${label}](/docs/${projectId}/${slug}${hash ?? ''})`
     },
   )
+}
+
+/** Strip a stray `---JSON---{...}` tail if Gemini emitted one despite
+ *  the prompt telling it not to. The legacy single-pass design used
+ *  this separator; we kill any residue so it doesn't survive into the
+ *  published markdown. */
+function stripTrailingJsonTail(markdown: string): string {
+  const idx = markdown.lastIndexOf('---JSON---')
+  if (idx === -1) return markdown
+  return markdown.slice(0, idx).trimEnd()
 }
 
 export async function generateDocumentation(context: {
@@ -87,41 +65,15 @@ export async function generateDocumentation(context: {
   const response = await generateText({
     systemPrompt,
     userPrompt,
-    maxTokens: 16384,
+    maxTokens: 24576,
   })
 
-  const parts = response.text.split('---JSON---')
-  // Replace screenshot placeholders with actual URLs (Gemini can't reproduce UUIDs reliably)
-  const screenshotMap = buildScreenshotMap(context.steps)
-  let markdown = replaceScreenshotPlaceholders(parts[0]?.trim() ?? '', screenshotMap)
-  // Rewrite Gemini-generated `/slug` links to absolute public-doc URLs so they
-  // resolve consistently in both the editor and the public docs SPA.
+  let markdown = replaceScreenshotPlaceholders(stripTrailingJsonTail(response.text.trim()), buildScreenshotMap(context.steps))
   markdown = rewriteInternalLinks(markdown, context.projectId, context.knownSlugs)
-  const jsonStr = parts[1]?.trim() ?? '{}'
-
-  let json: Record<string, unknown>
-  try {
-    const parsed = JSON.parse(jsonStr) as unknown
-    json = DocJsonSchema.parse(parsed) as unknown as Record<string, unknown>
-  } catch {
-    json = {
-      featureName: context.featureName,
-      totalSteps: context.steps.length,
-      keyPages: [],
-      userActions: [],
-      screenshots: 0,
-      selfAssessment: {
-        overallCompleteness: 0,
-        stepAssessments: [],
-        gaps: [{ area: 'Entire documentation', reason: 'Self-assessment could not be parsed', severity: 'major' }],
-        nextSteps: [],
-      },
-    }
-  }
 
   return {
     markdown,
-    json,
+    json: {},
     usage: response.usage,
   }
 }

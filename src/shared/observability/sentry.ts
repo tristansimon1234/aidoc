@@ -39,8 +39,13 @@ export function initSentry(): void {
       // rest (see mcp.repository.hashMcpToken) but they transit in query /
       // path segments on /api/mcp-user/:token — we don't want them in
       // breadcrumbs.
+      // Also strip ?email= so invite-page errors don't leak the invitee
+      // address (we put it in the accept URL for prefill — see
+      // team.service.ts).
       if (event.request?.url) {
-        event.request.url = event.request.url.replace(/\/mcp-user\/[^/?#]+/, '/mcp-user/[Redacted]')
+        event.request.url = event.request.url
+          .replace(/\/mcp-user\/[^/?#]+/, '/mcp-user/[Redacted]')
+          .replace(/([?&])email=[^&#]*/gi, '$1email=[Redacted]')
       }
       return event
     },

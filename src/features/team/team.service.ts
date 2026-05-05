@@ -147,7 +147,12 @@ export async function inviteMember(teamId: string, callerId: string, email: stri
   })
 
   const baseUrl = env.PUBLIC_APP_URL ?? ''
-  const acceptUrl = `${baseUrl}/invite/${token}`
+  // Embed the invitee's email in the URL so the accept page can prefill
+  // the sign-in / sign-up form. Safe to expose here: the URL only exists
+  // in the recipient's mailbox (we sent it to that address), and the
+  // public peek endpoint deliberately doesn't return the email — so an
+  // attacker with just the token still can't enumerate it.
+  const acceptUrl = `${baseUrl}/invite/${token}?email=${encodeURIComponent(email)}`
 
   // Send the invite email (best-effort: don't fail the invite creation)
   const inviterProfile = await findProfileById(callerId)

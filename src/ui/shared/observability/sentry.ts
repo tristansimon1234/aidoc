@@ -25,9 +25,19 @@ export function initBrowserSentry(): void {
         if (h.authorization) h.authorization = '[Redacted]'
         if (h.cookie) h.cookie = '[Redacted]'
       }
+      // Strip ?email= from URLs so invite-page errors don't ship the
+      // invitee's address to Sentry. Same vector for any other PII we
+      // ever pass via query string — kill the param at the boundary.
+      if (event.request?.url) {
+        event.request.url = redactEmailParam(event.request.url)
+      }
       return event
     },
   })
+}
+
+function redactEmailParam(url: string): string {
+  return url.replace(/([?&])email=[^&#]*/gi, '$1email=[Redacted]')
 }
 
 export { Sentry }

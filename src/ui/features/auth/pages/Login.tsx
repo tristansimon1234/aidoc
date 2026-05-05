@@ -19,13 +19,22 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const returnTo = sanitizeReturnTo(searchParams.get('returnTo'))
+  // Honor `?mode=signup` / `?mode=signin` so callers (notably the invite
+  // accept page) can deep-link straight to the right pane instead of
+  // dumping every visitor on Sign In and asking them to toggle.
+  const initialMode = searchParams.get('mode') === 'signup'
+  // When the user lands here from an invite link, the email is in the
+  // URL — prefill so they don't have to retype the address the invite
+  // was sent to (which is the only one that will be accepted).
+  const initialEmail = (searchParams.get('email') ?? '').trim()
 
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [isSignUp, setIsSignUp] = useState(initialMode)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [signUpSuccess, setSignUpSuccess] = useState(false)
+  const [signedUpEmail, setSignedUpEmail] = useState<string | null>(null)
 
   const handleSubmit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
@@ -42,7 +51,7 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
 
     setLoading(false)
     if (result) { setError(result); return }
-    if (isSignUp) { setSignUpSuccess(true); return }
+    if (isSignUp) { setSignedUpEmail(email); setSignUpSuccess(true); return }
     // Sign-in succeeded — jump back to where the user was going. React Router
     // picks up the navigate() once the auth state flips in App.tsx and the
     // authenticated route tree mounts.
@@ -60,12 +69,13 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
               className={styles.logoImg}
             />
           </h1>
-          <p className={styles.subtitle}>
-            Check your email to confirm your account, then sign in.
+          <p className={styles.subtitle} style={{ fontWeight: 600, fontSize: 'var(--text-md)' }}>
+            Verify your email
           </p>
-          <Button onClick={() => { setSignUpSuccess(false); setIsSignUp(false) }}>
-            Back to Sign In
-          </Button>
+          <p className={styles.subtitle}>
+            We sent a confirmation link to {signedUpEmail ? <strong>{signedUpEmail}</strong> : 'your inbox'}.
+            Click it to activate your account, then come back here to continue.
+          </p>
         </div>
       </div>
     )

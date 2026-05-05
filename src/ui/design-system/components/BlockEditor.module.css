@@ -72,14 +72,36 @@
   justify-content: center !important;
 }
 
-.saving {
+.saveIndicator {
   position: absolute;
   top: var(--space-sm);
   right: var(--space-md);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-xs);
   font-family: var(--font-mono);
   color: var(--color-muted-fg);
   z-index: 10;
+}
+
+.saveIndicatorFailed {
+  color: var(--color-danger, #d4373c);
+}
+
+.saveRetryBtn {
+  appearance: none;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 1px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.saveRetryBtn:hover {
+  background: rgba(212, 55, 60, 0.08);
 }
 
 /* Inline code */

@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Don't leak the full URL (which on /invite/:token carries the
+         invitee's email as a query param) to third-party hosts via the
+         Referer header. Same-origin requests still get the full URL. -->
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <link rel="icon" type="image/png" href="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-appicon-purple.png" />
     <link rel="apple-touch-icon" href="https://xpcacqvwnfdkvmqbeeqp.supabase.co/storage/v1/object/public/website/playd-appicon-purple.png" />
     <title>doclee</title>
