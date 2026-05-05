@@ -1,5 +1,5 @@
 import { SchemaType, type ResponseSchema } from '@google/generative-ai'
-import { generateText, GEMINI_PRO_MODEL } from '../../shared/ai/gemini.client.js'
+import { generateSonnetText } from '../../shared/ai/anthropic.client.js'
 import { MarketingScriptSchema } from './marketing-video.schema.js'
 import type { MarketingScript } from './marketing-video.types.js'
 
@@ -352,56 +352,26 @@ Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding pros
   // swallowed) or throws on overload. Flash is faster and almost always
   // good enough for a single-scene mock. Cheaper too.
   // maxTokens is REQUIRED by Gemini, but you only pay for actually-
-  // generated tokens — set it high so we never get a truncated mid-TSX
-  // response ("Unexpected end of file"). The compiler caps the SOURCE
-  // at 6000 chars (~1500 tokens), so even if the model goes long, the
-  // input rejection bounds it. Gemini 2.5 Pro / Flash both support up
-  // to 65536 output tokens.
-  const MAX_OUT = 32_000
-  let code: string
-  try {
-    const result = await generateText({
-      userPrompt,
-      model: GEMINI_PRO_MODEL,
-      maxTokens: MAX_OUT,
-      temperature: 0.4,
-      json: false,
-    })
-    code = result.text.trim()
-    if (code.length === 0) {
-      console.warn('[repairMockCode] Pro returned empty — falling back to Flash')
-      const flashResult = await generateText({
-        userPrompt,
-        // No model override = Flash (default).
-        maxTokens: MAX_OUT,
-        temperature: 0.4,
-        json: false,
-      })
-      code = flashResult.text.trim()
-    }
-  } catch (err) {
-    const message = (err as Error).message
-    // 503 / overload / 429 → retry on Flash.
-    if (/503|429|overload/i.test(message)) {
-      console.warn(`[repairMockCode] Pro errored (${message.slice(0, 80)}) — falling back to Flash`)
-      const flashResult = await generateText({
-        userPrompt,
-        maxTokens: MAX_OUT,
-        temperature: 0.4,
-        json: false,
-      })
-      code = flashResult.text.trim()
-    } else {
-      throw err
-    }
-  }
+  // Sonnet 4.6 handles single-scene TSX rescue cleanly. maxTokens at
+  // 16k gives comfortable margin over the 9000-char compile cap; the
+  // input rejection in mock-code.compiler.ts bounds the source size
+  // even if the model goes long. No fallback model — if Sonnet errors
+  // (rate-limit / overload), we let it bubble up and the calling
+  // pipeline routes through `applyDeterministicFallback`.
+  const MAX_OUT = 16_000
+  const result = await generateSonnetText({
+    userPrompt,
+    maxTokens: MAX_OUT,
+    temperature: 0.5,
+  })
+  let code = result.text.trim()
 
   // Strip markdown fences if the model added them anyway.
   if (code.startsWith('```')) {
     code = code.replace(/^```(?:tsx|jsx|ts|js)?\s*\n/, '').replace(/\n```\s*$/, '').trim()
   }
   if (code.length === 0) {
-    throw new Error('repairMockCode: both Pro and Flash returned empty text')
+    throw new Error('repairMockCode: Sonnet returned empty text')
   }
   return code
 }
@@ -1152,6 +1122,13 @@ Available Remotion namespace (use as \`Remotion.foo\`):
 
 **Pre-built helpers (USE THESE):**
 - \`<Remotion.MockFrame url='app.example.com/path' tone='light'>{children}</Remotion.MockFrame>\` — designed browser-window chrome (macOS traffic lights + URL bar). Use ONLY \`tone='light'\`. NEVER nest two MockFrames; max ONE per scene.
+
+  ⚠ **MockFrame collapses without an explicit-size parent.** Wrap it in a \`<div className='w-[840px]'>\` (or \`w-[800px]\` / \`w-[860px]\`) so the chrome + content fill the canvas instead of shrinking to intrinsic content size. For chart scenes specifically, ALSO set a height on the parent (\`h-[480px]\`) so the chart's \`<ResponsiveContainer>\` gets pixels to draw into. Past renders had chart scenes render at ~200px wide because the wrapper had no width constraint. Pattern:
+  \`\`\`tsx
+  <div className='w-[840px]' style={{ transform: 'perspective(1400px) rotateY(-3deg)' }}>
+    <Remotion.MockFrame url='...' tone='light'>...</Remotion.MockFrame>
+  </div>
+  \`\`\`
 - \`<Remotion.Pill tone='success' | 'warning' | 'danger' | 'accent' | 'muted' dot accentColor={branding.accentColor}>connected</Remotion.Pill>\`
 - \`<Remotion.AnimatedCursor leftPct={50} topPct={55} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
 - \`<Remotion.Icons.Cpu size={14} color='currentColor' />\` — accepts ANY lucide-react icon name, pre-wrapped at strokeWidth=1.5 (Linear/Vercel weight). Don't override stroke. Aliases: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2.
@@ -1331,53 +1308,25 @@ Return ONLY the raw TSX — no markdown fences, no explanation, no surrounding p
 
 async function generateSceneMockCode(args: BuildSceneMockPromptArgs): Promise<string> {
   const userPrompt = buildSceneMockPrompt(args)
-  // Pro is meaningfully better at TSX composition than Flash — bento
-  // layouts, perspective tilts, type hierarchy. Per-scene calls run
-  // in parallel so the latency penalty caps at max(scenes), not sum.
-  // Cost trade is ~4× per video vs the monolithic call; visual
-  // quality is the headline reason marketing video exists.
+  // Sonnet 4.6 has visibly stronger TSX + React composition than
+  // Gemini Pro — bento layouts, perspective tilts, type hierarchy land
+  // closer to the references. Per-scene calls run in parallel so the
+  // wall-clock penalty caps at max(scenes), not sum. No model fallback:
+  // on Sonnet error the calling pipeline routes through repairMockCode
+  // (also Sonnet) and then `applyDeterministicFallback` if that fails.
   const MAX_OUT = 16_000
-  let code: string
-  try {
-    const result = await generateText({
-      userPrompt,
-      model: GEMINI_PRO_MODEL,
-      maxTokens: MAX_OUT,
-      temperature: 0.7,
-      json: false,
-    })
-    code = result.text.trim()
-    if (code.length === 0) {
-      console.warn(`[generateSceneMockCode/${args.mode.id}] Pro returned empty — falling back to Flash`)
-      const flashResult = await generateText({
-        userPrompt,
-        maxTokens: MAX_OUT,
-        temperature: 0.7,
-        json: false,
-      })
-      code = flashResult.text.trim()
-    }
-  } catch (err) {
-    const message = (err as Error).message
-    if (/503|429|overload/i.test(message)) {
-      console.warn(`[generateSceneMockCode/${args.mode.id}] Pro errored (${message.slice(0, 80)}) — falling back to Flash`)
-      const flashResult = await generateText({
-        userPrompt,
-        maxTokens: MAX_OUT,
-        temperature: 0.7,
-        json: false,
-      })
-      code = flashResult.text.trim()
-    } else {
-      throw err
-    }
-  }
+  const result = await generateSonnetText({
+    userPrompt,
+    maxTokens: MAX_OUT,
+    temperature: 0.7,
+  })
+  let code = result.text.trim()
 
   if (code.startsWith('```')) {
     code = code.replace(/^```(?:tsx|jsx|ts|js)?\s*\n/, '').replace(/\n```\s*$/, '').trim()
   }
   if (code.length === 0) {
-    throw new Error(`generateSceneMockCode/${args.mode.id}: both Pro and Flash returned empty text`)
+    throw new Error(`generateSceneMockCode/${args.mode.id}: Sonnet returned empty text`)
   }
   return code
 }
@@ -1596,15 +1545,18 @@ async function generateScriptSkeleton(
 ): Promise<MarketingScript> {
   const userPrompt = buildSkeletonPrompt(input)
 
-  const result = await generateText({
+  // Sonnet 4.6 via tool-use for structured JSON output. The Gemini
+  // ResponseSchema is structurally a JSON Schema (SchemaType.OBJECT
+  // === "object" etc. at runtime), so it drops straight into Anthropic's
+  // input_schema field. The helper forces the model to invoke a single
+  // `submit_response` tool whose input matches the schema, then returns
+  // JSON.stringify(input) — the rest of the parsing path (JSON.parse +
+  // Zod validation below) is unchanged.
+  const result = await generateSonnetText({
     userPrompt,
-    // Skeleton is structure + voice-over only — Flash is plenty here.
-    // Pro's quality lift shows on TSX composition, which is now in
-    // stage 2 (per-scene mockCode).
     maxTokens: 16_384,
     temperature: 0.6,
-    json: true,
-    responseSchema: SKELETON_RESPONSE_SCHEMA,
+    jsonSchema: SKELETON_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
   })
 
   let jsonStr = result.text.trim()

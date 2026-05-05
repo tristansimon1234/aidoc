@@ -20,6 +20,11 @@ export interface CompiledMock {
 // retry path can ask Gemini to fix them.
 const BRANDING_FIELDS = new Set([
   'productName', 'accentColor', 'bgColor', 'textColor', 'fontFamily',
+  // logoUrl is the project's brand mark — exposed at runtime via the
+  // DynamicScene branding prop. Was missing from the whitelist; rejected
+  // legitimate logo-hero scenes that read branding.logoUrl into a
+  // <Remotion.Img>. Adding it so the lint stops blocking valid usage.
+  'logoUrl',
 ])
 
 const REMOTION_NAMESPACE = new Set([
