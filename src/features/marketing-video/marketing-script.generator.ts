@@ -1097,7 +1097,11 @@ const MOCK_CODE_HARD_RULES = `🚨 CRITICAL — these have FAILED in past render
 
 3. **NO imports, NO require, NO fetch, NO XMLHttpRequest, NO eval, NO new Function.** \`React\`, \`Remotion\`, and \`branding\` are passed as parameters; everything you need lives on those.
 
-4. **NEVER write inline \`<svg>\` tags.** Use \`Remotion.Icons.X\` (any lucide-react name — Cpu, Workflow, Database, BookOpen, Rocket, Zap, TrendingUp, etc; \`Sparkles\` is BANNED). The full ~1500-icon lucide catalog is exposed via a Proxy. Inline SVG is forbidden full stop.
+4. **NEVER write inline \`<svg>\` tags.** Two alternatives, depending on what you need:
+   - **Icons** → \`Remotion.Icons.X\` (any lucide-react name — Cpu, Workflow, Database, BookOpen, Rocket, Zap, TrendingUp, etc; \`Sparkles\` is BANNED). The full ~1500-icon lucide catalog is exposed via a Proxy.
+   - **Connecting lines, arrows, branches between nodes (flow-diagram, etc.)** → absolute-positioned \`<div>\` elements with explicit \`width\` + \`height\` (1-3px on the short axis) + \`background\` + \`transform: rotate(<angle>deg)\` for diagonal lines. Compose multiple lines to build branches or curves. Example: a line from node A to node B at 45° is a \`<div className='absolute' style={{ width: 120, height: 2, background: branding.accentColor, transform: 'rotate(45deg)', top: ..., left: ... }} />\`.
+
+   Inline SVG breaks frequently (off-size, wrong stroke, no animation hooks) and is banned full stop.
 
 5. **NEVER use \`<Remotion.AccentGlow>\`.** Deprecated — the halo bleeds onto the canvas and reads as a render glitch.
 

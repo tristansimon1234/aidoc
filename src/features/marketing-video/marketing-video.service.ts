@@ -316,7 +316,7 @@ function buildFallbackMockTsx(headline: string): string {
   const { fps } = Remotion.useVideoConfig()
   const words = ${JSON.stringify(safe)}.split(/\\s+/).filter(Boolean)
   return (
-    <Remotion.AbsoluteFill className='flex items-center justify-center p-12' style={{ background: branding.bgColor }}>
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
       <div className='flex flex-wrap items-center justify-center gap-x-4 gap-y-2 max-w-[80%]'>
         {words.map((w, i) => {
           const t = Remotion.spring({ frame: f - i * 6, fps, config: { damping: 18, stiffness: 110 } })

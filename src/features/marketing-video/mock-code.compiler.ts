@@ -82,8 +82,20 @@ function lintRuntimeReferences(source: string): string | null {
   // Inline <svg> is forbidden — every icon must come from Remotion.Icons.
   // Ad-hoc inline SVGs end up rendering as visual junk (off-size, wrong
   // stroke, no animation hooks). This catches the LLM smuggling them in.
+  // Message names BOTH alternatives so the rescue prompt knows what to
+  // replace inline <svg> with: icons → Remotion.Icons; lines / arrows /
+  // branches between nodes → absolute-positioned <div>s with width +
+  // height + transform: rotate(). Without the second alternative the
+  // model has no way to draw connectors and re-emits <svg> on rescue.
   if (/<svg\b/i.test(source)) {
-    errors.push('Inline <svg> tag is forbidden — use Remotion.Icons.X (any lucide icon name) instead')
+    errors.push(
+      'Inline <svg> tag is forbidden. Replacements: for ICONS use Remotion.Icons.X ' +
+        '(any lucide name). For LINES / ARROWS / BRANCHING CONNECTORS between nodes ' +
+        'use absolute-positioned <div>s — set width + height (1-3px on the short axis), ' +
+        'background, and transform: rotate(<angle>deg) to draw any straight line; ' +
+        'compose multiple lines for branches. Inline SVG breaks frequently and is ' +
+        'banned full stop.',
+    )
   }
 
   // AnimatedCursor uses leftPct/topPct numeric props — the LLM keeps
