@@ -1192,7 +1192,44 @@ Animation idioms (steal these — all SMOOTH by construction):
 
 **Typography: Geist by default — NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\`. Use \`font-mono\` className ONLY for actual code, URLs, or terminal lines. Never for prose, chat bubbles, or headings.
 
-**Icons: never \`Sparkles\`** (banned cliché). Use \`Cpu\` / \`Workflow\` / \`Atom\` / \`CircuitBoard\` / \`Layers\` / \`Boxes\` for AI moments. \`BarChart3\` / \`TrendingUp\` / \`LineChart\` for analytics.`
+**Icons: never \`Sparkles\`** (banned cliché). Use \`Cpu\` / \`Workflow\` / \`Atom\` / \`CircuitBoard\` / \`Layers\` / \`Boxes\` for AI moments. \`BarChart3\` / \`TrendingUp\` / \`LineChart\` for analytics.
+
+# 2026 modern aesthetic — restraint + texture
+
+This is the section that separates "branded SaaS template" from "modern marketing video". The references above show ONE acceptable shape per mode; the visual TREATMENT below is what makes them feel current. Apply it on top of the assigned mode.
+
+## RESTRAINT — accent is a punch, not a wash
+
+Past renders had \`accentColor\` on the bg gradient + the border + the number + the dot + the button + the icon — every element competing for attention, the result reads "branded" not "designed". Modern marketing video aesthetics (Linear 2026, Vercel, Stripe, Arc, Cursor, Raycast) use accent SPARINGLY: **1, maximum 2 elements per scene get full accent saturation; everything else is neutral**.
+
+Concrete rules:
+- **Maximum 2 accent-colored elements per scene.** Pick the focal element (the hero number, the CTA button, the middle node of a flow, the user chat bubble) — that gets full \`branding.accentColor\`. One small supporting hint (a tiny dot indicator, a thin accent line under a number, an icon) can also use accent. Everything else: zinc / white / black.
+- **Outer cards / containers: NEUTRAL.** Use \`bg-white\` or \`bg-zinc-50\`, \`border border-zinc-200/80\`. NOT accent-tinted backgrounds (\`linear-gradient(..., \${accent}15, ...)\` is banned on container cards — only the SINGLE focal card may have an accent tint, and even then prefer \`\${accent}08\` not \`\${accent}15\`).
+- **Borders: zinc, not accent.** \`border-zinc-200/70\` or \`border-zinc-100\`. Reserve accent borders for the ONE focal card.
+- **Glows: subtle.** \`boxShadow: 0 8px 32px \${accent}22\` is the upper bound. NOT \`\${accent}55\` / \`\${accent}77\`. Past renders had glows so heavy they bled into adjacent cards.
+- **Secondary text: zinc-600/500 not accent.** Eyebrow labels \`text-zinc-500\`, body \`text-zinc-700\`, supporting captions \`text-zinc-500\`. Only headline-level focal text gets accent (and only if it's the ONE focal element).
+- **Pills / status badges:** prefer \`Remotion.Pill tone='success'\` / \`'muted'\` (zinc-toned). Reserve \`tone='accent'\` for ONE pill per scene.
+
+Mental check before shipping: count the accent-colored elements in your scene. If it's > 2, strip the supporting ones to zinc.
+
+## TEXTURE + DEPTH — what makes 2026 feel modern
+
+Modern compositions feel layered without being noisy. Specific moves to lean on:
+
+- **Subtle dot grid backdrop** on cards (or behind hero stats): a low-opacity radial dot pattern via \`background: radial-gradient(circle, #18181b08 1px, transparent 1px); backgroundSize: 24px 24px\`. Almost invisible but adds dimension. Use on the inside of large cards.
+- **Glass / frosted highlights:** floating element on top of layered cards with \`backdrop-filter: blur(12px); background: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.7)\`. ONE per scene max. Reads premium.
+- **Conic / multi-stop gradients on the focal element only:** \`background: conic-gradient(from 220deg at 50% 50%, \${accent}, #18181b 60%, \${accent})\` — used as a 1px gradient border on a single hero card via the \`padding: 1px; border-radius: 16px\` trick (place a white card inside).
+- **Inner shadow on big numbers:** \`textShadow: 0 1px 0 rgba(0,0,0,0.06)\` (not accent glow). Feels carved-in, premium.
+- **Layered translucent surfaces:** card on top of card with \`bg-white/70 backdrop-blur-sm\`. The lower layer shows through subtly.
+- **Asymmetric balance:** off-center hero (focal element at 35-45% rather than dead center). One side denser, other side breathes.
+- **Mixed type weights with extreme contrast:** tiny eyebrow \`text-[10px] font-bold tracking-[0.2em] uppercase text-zinc-500\` paired with massive hero \`text-[120px] font-black tracking-tighter\`. The size jump is what reads as "magazine cover".
+- **Lower contrast palette:** zinc-700 for body (not zinc-900). zinc-100 for secondary surfaces (not pure white). zinc-200 for borders. Only the focal element pops in zinc-900 / accent.
+- **Generous whitespace:** \`p-8\` to \`p-12\` on outer cards, \`gap-5\` to \`gap-8\` between elements. Space says "designed", crammed says "form".
+- **Soft thin shadows, NOT layered drops:** \`shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px -4px rgba(0,0,0,0.06)\`. Not the 2010-era \`shadow-2xl\` triple-stack with accent halos.
+- **Number / unit hierarchy:** \`92\` huge in zinc-900, \`%\` smaller in zinc-400. Or \`240\` huge with \`ms\` tiny in zinc-500 next to it. Makes data feel typeset.
+- **Single bright moment:** ONE element does something striking (a counter ticking + glow, a chart line drawing in, a pill flashing) — and the rest of the scene is calm support. Don't make 4 elements all "do something".
+
+Anti-pattern reference: 2018 SaaS dashboard mockup energy = pastel gradients on every card, accent borders on every card, drop shadows everywhere, "vibrant" everywhere, equal visual weight on every element. **You're not making a 2018 dashboard.** You're making a 2026 marketing video. Restraint > maximalism.`
 
 interface BuildSceneMockPromptArgs {
   scene: { headline: string; voiceover: string; subhead?: string; durationSeconds: number }
@@ -1450,109 +1487,28 @@ Set \`screenshotIndex: null\` for every scene (mocks mode never references doc s
 ${modeCatalog}
 - **custom** (escape hatch): pick this when none of the 8 modes structurally fits the scene's idea — e.g. split-screen before/after, isometric stack, kanban-style motion, thread-of-tweets, an ASCII art reveal. The designer drops the structural template and composes from the brief alone, so your visualBrief MUST be especially concrete (every element + motion spelled out). Use sparingly: prefer a real catalog mode when one fits. The 'never repeat' rule still applies — only ONE custom scene per video.
 
-Heuristic: a "look at this number" beat → hero-stat. A "the product does X" beat → bento / cursor-click / chart / chat. A "here's how it works" beat → flow-diagram. A brand / opener beat → logo-hero. A "no template fits this idea" beat → custom. The right mode depends on what the headline is actually saying, not on a fixed quota.
+### Mode dispatch — fight the default-trio bias
+
+Past videos converged on the SAME trio across totally different products: \`flow-diagram + chat + bento\`. That's the model's lazy default. RESIST IT — the catalog has 9 modes for a reason. The dispatcher below maps beat types to modes; favor the LESS-USED ones unless the beat genuinely demands the default:
+
+- **A specific number / metric / claim** ("X% improvement", "10× faster", "save 4 hours") → **hero-stat**. THE most under-used mode. Default to this whenever the headline names a number.
+- **A click / action / UX moment** ("one click to invite", "tap to publish", "no setup") → **cursor-click**. Use whenever the value is an in-product action.
+- **Live data / growth / comparison** ("see usage rise", "spot trends", "metrics dashboard") → **chart**. Use whenever the headline is about charts, growth, or trends.
+- **A brand opener / closer** (hook scene, CTA scene with a "we are X" beat) → **logo-hero**. Always a strong candidate for the HOOK or one bookend.
+- **A 3-step process / pipeline / "how it works"** → **flow-diagram**. ONE per video max — don't open and close with flows.
+- **AI chat / Q&A as the actual product** → **chat**. ONLY when the product is fundamentally chat-based AND the scene is showing the chat UI specifically. Don't pick chat for "answers questions" on a non-chat product.
+- **A multi-card dashboard surface that genuinely shows ≥3 distinct metrics** → **bento**. Use SPARINGLY. The model defaults to bento for everything that isn't obviously another mode — fight that. If the scene is "look at the product", a single hero-stat or chart often beats a generic bento.
+- **A literal split / before-after / isometric / kanban / unique idea** → **custom**. Use whenever the standard modes feel forced.
+
+**Anti-default rule:** across your scenes, the trio \`flow-diagram + chat + bento\` is BANNED unless the product is literally a chat-based dashboard with a 3-step pipeline. For a typical product feature page, your scene mix should include AT LEAST 2 of: hero-stat, cursor-click, logo-hero, chart, custom. If you find yourself reaching for bento twice or chat for a non-chat product, stop — pick a different mode.
 
 **IMPORTANT — never duplicate the headline.** The composition layer ALWAYS draws the scene's \`headline\` field in a separate panel beside the mock visual. So the mock visual itself MUST NOT render the headline text again — that would look like two titles glued together. The mock illustrates the IDEA of the headline (a counter for a metric headline, a flow for a process headline, a chat UI for a Q&A headline) — not a giant copy of the same words.
 
-### Per-scene examples — pick fresh, don't clone
+**Reminder on richness:** every brief — even on abstract modes — names AT LEAST ONE supporting visual element beyond the text (motif, gradient, sparkline, parallax, geometric shape, animated indicator). A brief that says only "headline X with subhead Y" is incomplete; add the motif. The designer can't add visual richness if the brief doesn't request it.
 
-These are 6 examples drawn from DIFFERENT modes and DIFFERENT product shapes (analytics, devtool, support, video, design tool, brand opener). They show what concrete looks like — exact text, focal element, motion idea. Your scenes' briefs should be at this level of specificity but the SHAPES should be your own choices for THIS product, not copies of these.
+**Reminder on restraint (2026 aesthetic):** each scene gets ONE focal element with the brand accent — the hero number, the CTA button, the user chat bubble, the middle node of a flow. Every other element stays neutral (zinc / white / black). Briefs that ask for "accent gradient bg + accent border + accent number + accent button" produce 2018-era branded mockups, not 2026 marketing video. When you write the brief, name the single focal element AND explicitly call out that supporting elements are zinc/neutral. Modern marketing video is restrained; let the eye land on ONE point of color per scene.
 
-⚠ **Anti-pattern: a mock that just renders the same headline text again.** The composition draws the scene's headline in a separate panel automatically — the mock must illustrate the IDEA, not duplicate the words. A scene where the mock is "RECORD. PUBLISH." in giant text while the composition also renders "Record once, publish instantly" produces two titles glued together. The mock instead shows a record button + a transformation animation + a published doc.
-
-⚠ **Anti-pattern #2: an abstract scene with only text floating on a blank canvas.** Even text-only modes need a supporting visual element — a parallax motif, a gradient block that animates, an accent geometric shape, a sparkline, an icon cluster, a backdrop sweep, a counter ticking, anything. The brief MUST name this supporting element. "Big stat that says 92%" alone is incomplete — pair the number with a progress bar drawing in, an eyebrow label, a contextual subhead, or a sparkline below.
-
-**1. hero-stat — metric reveal (analytics product):**
-\`\`\`json
-{
-  "headline": "10× faster docs",
-  "voiceover": "Stop writing docs nobody reads — record once, ship in MINUTES.",
-  "subhead": "From 4 hours to 4 minutes.",
-  "screenshotIndex": null,
-  "durationSeconds": 8,
-  "visualMode": "hero-stat",
-  "visualBrief": "Eyebrow 'AVG TIME TO PUBLISH' in tracking-widest uppercase zinc-500. Giant accent-colored number ticks DOWN from 240 to 4 across 1.6s, then settles with a tiny ±1 jitter. Suffix 'minutes' inline at half size. Subhead 'and dropping' fades in last. A subtle horizontal sparkline below the number shows the descent curve as a thin accent stroke. Focal: the number; eye lands on the dramatic descent."
-}
-\`\`\`
-
-**2. bento — analytics dashboard (data product):**
-\`\`\`json
-{
-  "headline": "See every question users ask",
-  "voiceover": "Spot the gaps. Fix them in minutes — your docs get smarter every week.",
-  "subhead": "Live insights, your team's edge.",
-  "screenshotIndex": null,
-  "durationSeconds": 9,
-  "visualMode": "bento",
-  "visualBrief": "Browser frame at perspective(2000px) rotateY(-3deg). Big tinted card upper-left with '4,820 queries this week' counter ticking up live + a small sparkline below. Top-right small card: list of top 3 user questions with hover-style accent on top one. Bottom-right small card: sentiment pie chart at 78% positive, with the dot pulsing to feel real-time. Focal: the counter."
-}
-\`\`\`
-
-**3. chat — support / RAG product:**
-\`\`\`json
-{
-  "headline": "Answers in your voice",
-  "voiceover": "Your widget answers like your team would. [calm] Grounded in YOUR docs, no hallucination.",
-  "subhead": "24/7 support that scales with you.",
-  "screenshotIndex": null,
-  "durationSeconds": 10,
-  "visualMode": "chat",
-  "visualBrief": "Browser frame, chat UI top-aligned. User bubble (top-right, accent bg): 'How do I revoke an API key?'. Three pulsing typing dots cross-fade into AI reply: 'Settings → API Keys → click the trash icon next to the key. Revocation is instant.' Cursor blink at end of user text. Avatar dot stays subtly pulsing for live feel."
-}
-\`\`\`
-
-**4. flow-diagram — devtool / pipeline:**
-\`\`\`json
-{
-  "headline": "From CLI to live preview",
-  "voiceover": "One command. — Three steps. Your branch deploys before your coffee's done.",
-  "screenshotIndex": null,
-  "durationSeconds": 8,
-  "visualMode": "flow-diagram",
-  "visualBrief": "Three horizontal nodes: 'git push' (Code icon) → 'CI builds' (Cpu icon, accent hero with gradient + glow) → 'Live preview' (Globe icon). Animated arrows connect them; a small accent dot travels along each arrow on a 1.6s loop so the pipeline feels alive. Hero pulses gently."
-}
-\`\`\`
-
-**5. cursor-click — onboarding moment:**
-\`\`\`json
-{
-  "headline": "One click to invite your team",
-  "voiceover": "Click ONCE. — Your whole team's in. [excited] No emails to copy, no IT tickets.",
-  "screenshotIndex": null,
-  "durationSeconds": 7,
-  "visualMode": "cursor-click",
-  "visualBrief": "Browser frame on a 'Team Members' page. Header bar with 'Members · 1' pill. Empty-state illustration with 'No teammates yet' line + accent-colored 'Invite via SSO' CTA button. Cursor flies in from top-right and clicks the button at frame 70 with a ripple. Header pill flashes to 'Members · 12' just as the click lands."
-}
-\`\`\`
-
-**6. chart — growth proof (analytics / metrics product):**
-\`\`\`json
-{
-  "headline": "Resolution rate keeps climbing",
-  "voiceover": "Every week your docs get smarter. — From 64% to 92% in a single quarter.",
-  "subhead": "Live, week-over-week.",
-  "screenshotIndex": null,
-  "durationSeconds": 9,
-  "visualMode": "chart",
-  "visualBrief": "Browser frame, single chart card. Eyebrow 'RESOLUTION RATE · LAST 12 WEEKS'. An area chart draws in left-to-right, data sliced by frame so the curve appears point by point. Y-axis hidden, X-axis with subtle week labels. Curve is accent-colored with a soft fill gradient underneath. A pulsing accent dot sits at the latest point with a small '92%' label fading in last. Sustained motion: dot pulses (opacity 0.6 → 1 → 0.6 / 14-frame cycle), latest curve point jitters ±0.5% to feel real-time."
-}
-\`\`\`
-
-**7. custom (escape hatch) — split-screen before/after:**
-\`\`\`json
-{
-  "headline": "Before vs after",
-  "voiceover": "Old way: weeks. — New way: minutes. The same guide, written ten times faster.",
-  "screenshotIndex": null,
-  "durationSeconds": 8,
-  "visualMode": "custom",
-  "visualBrief": "Vertical split 50/50 at center. LEFT half (zinc-100 bg, slightly desaturated): a shaky stick-figure timeline labelled 'Week 1 / Week 2 / Week 3 / Week 4', dim red CROSS over it. RIGHT half (accent bg gradient): a clean horizontal stat 'DAY 1 — Published' with the accent number large, plus a green check pulsing. Center divider is a thin accent line that fades in. Both halves enter simultaneously from opposite sides."
-}
-\`\`\`
-
-**Note on variety:** these examples span 7 modes and 7 different product types intentionally. Across YOUR 3-4 scenes, vary the modes (the 'never repeat' rule), and let the content of each brief be specific to the doc — not a copy of these. A brief that names actual numbers / actual UI labels / actual user actions from the source doc is always better than a generic one.
-
-**Reminder on richness:** every brief — even on abstract modes — names AT LEAST ONE supporting visual element beyond the text (motif, gradient, sparkline, parallax, geometric shape, animated indicator). A brief that says only "headline X with subhead Y" is incomplete; add the motif. The designer can't add visual richness if the brief doesn't request it.`
+**Texture cues (steal these in briefs when they fit):** subtle dot-grid backdrop on a card · frosted/glass element layered on top · low-contrast palette (zinc-700 body, zinc-900 only for the focal title) · asymmetric balance (focal at 35-45% not dead-center) · mixed type weights (tiny eyebrow + huge hero number) · soft thin shadows (not heavy multi-layer drops) · generous whitespace.`
     : `**Visuals = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}). If a scene has no relevant screenshot, set \`screenshotIndex: null\` and the renderer shows an accent gradient placeholder. Do NOT output \`visualMode\` or \`visualBrief\` in screenshots mode.`
 
   return `You are writing the SKELETON of a 45-second marketing video script for a SaaS product feature.
