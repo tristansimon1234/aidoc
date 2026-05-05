@@ -94,9 +94,24 @@ export function DocReviewBanner({ selfAssessment, runId, markdown }: DocReviewBa
   }, [candidateLabels, stepBlob])
 
   const completeness = selfAssessment?.overallCompleteness
-  const gaps = selfAssessment?.gaps ?? []
+  const rawGaps = selfAssessment?.gaps ?? []
   const nextSteps = selfAssessment?.nextSteps ?? []
-  const parseFailed = selfAssessment?.parseFailed === true
+
+  // Legacy fingerprint — pre-fix doc generations stored a sentinel gap
+  // and 0 % completeness whenever Gemini's tail JSON failed to parse.
+  // Detect that exact shape and treat it as a parse failure so the
+  // banner doesn't lie about confidence on docs generated before the
+  // parser was hardened. New runs set `parseFailed` directly.
+  const isLegacyParseFallback =
+    completeness === 0 &&
+    rawGaps.length === 1 &&
+    rawGaps[0]?.reason === 'Self-assessment could not be parsed'
+
+  const parseFailed = selfAssessment?.parseFailed === true || isLegacyParseFallback
+  // When we know the assessment is bogus, hide its gap so we don't
+  // surface "Entire documentation — Self-assessment could not be parsed"
+  // as if it were a real AI-flagged issue.
+  const gaps = parseFailed ? [] : rawGaps
   const hasAssessment = typeof completeness === 'number' || gaps.length > 0 || parseFailed
 
   // Don't render at all when there's neither an AI signal nor anything
