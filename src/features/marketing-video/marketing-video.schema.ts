@@ -110,11 +110,14 @@ export const MarketingSceneSchema = z.object({
    *  the right reference template. Kept loose (z.string) so a future
    *  mode addition doesn't break existing manifests. */
   visualMode: z.string().max(40).optional(),
-  /** Concrete visual brief written by the architect — 2-3 sentences
-   *  describing the exact elements / numbers / motion the designer
-   *  should put on screen. Forwarded into the per-scene mockCode
-   *  prompt. */
-  visualBrief: z.string().max(800).optional(),
+  /** Concrete visual brief written by the architect — names the exact
+   *  elements / numbers / motion the designer should put on screen.
+   *  Forwarded into the per-scene mockCode prompt. The 800-char cap
+   *  was too tight after the Sonnet switch — Sonnet writes longer,
+   *  more specific briefs (color hexes, exact ticker values, layout
+   *  notes) and 800 chars rejected legitimate output. 3000 covers the
+   *  rich-brief case while still bounding the prompt size downstream. */
+  visualBrief: z.string().max(3000).optional(),
 })
 
 export const MarketingScriptSchema = z.object({
