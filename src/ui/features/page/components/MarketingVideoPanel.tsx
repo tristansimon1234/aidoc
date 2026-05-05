@@ -738,21 +738,6 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             />
           )}
 
-          {/* Voice-over standalone player — kept as a fallback so the user
-            *  can verify the synth output independently from the rendered
-            *  video. Useful when the video is still rendering, when the
-            *  caller wants to spot-check the voice/tone before iterating,
-            *  or when the MP4 mux has any issue and the voice-over MP3
-            *  itself is the source of truth for "is the audio right". */}
-          {summary.manifest.voiceoverUrl && (
-            <audio
-              className={styles.audioPlayer}
-              controls
-              src={summary.manifest.voiceoverUrl}
-              preload="metadata"
-            />
-          )}
-
           {/* Stale banner only shows when no auto-render is running — the
             *  ProgressLoader above already conveys the in-flight state
             *  for refines and full pipelines. The manual retry button
