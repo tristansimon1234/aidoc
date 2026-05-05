@@ -442,13 +442,11 @@ For each step:
    - 45 seconds → 45
    - 1 minute 27 seconds → 87 (= 1×60 + 27), NOT 127
    - 2 minutes 8 seconds → 128 (= 2×60 + 8), NOT 208
-   Pick the SINGLE FRAME a doc author would screenshot to illustrate this step — the frame that BEST shows what the step is about. The right moment depends on the action:
-   - Click that triggers a result (Submit, Save, navigate, open page) → moment AFTER the result is fully loaded and visible
-   - Form fill / typing → moment when the field is filled, BEFORE the next action starts
-   - Open menu / dropdown / modal → while it's fully open
-   - Hover / tooltip → while the tooltip is visible
-   - Selection from a list → while the selected state is visible
-   Do NOT systematically pick "1 second after the action" — pick the frame that's most informative for this specific step. If unsure, prefer slightly later over slightly earlier, but never so late that the next step has already begun.
+   Pick the SINGLE FRAME a doc author would screenshot to illustrate this step — the frame that shows the user WHAT TO DO, not the consequence (the consequence belongs to the NEXT step's screenshot). Three concrete patterns:
+   - **CTA / button click** (Submit, Save, "Continue", a navigation link) → frame AT the click — the button is still visible on the current page, the cursor / pointer is on or near it, the surrounding context is intact. NOT after the result loads — the result is the next step's frame, capturing it here would just duplicate it.
+   - **Form fill / input** (typing in a field, picking a date, choosing from a select) → frame where the field is fully filled with the new value, captured BEFORE the user moves to the next field or clicks anything else. The reader needs to see what value goes in.
+   - **Presentation of an element** (opening a menu, modal, tooltip, panel; revealing a section; showing a feature) → frame where ALL of the element's contents are fully visible — animations done, dropdown fully expanded, modal centred and stable.
+   Do NOT systematically pick "1 second after the action" — pick the frame that's most informative for this specific step's intent. Never so late that the next step has already begun.
 2. Describe what's visible on screen at that frame (UI elements, page layout, text)
 3. Describe what the user accomplished (not each individual click — the outcome)
 4. If there's narration/voiceover, transcribe what's being said at that moment
