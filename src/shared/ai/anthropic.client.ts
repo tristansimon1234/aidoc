@@ -11,6 +11,14 @@ export const STAGEHAND_MODEL = 'anthropic/claude-sonnet-4-20250514'
  *  doesn't change. */
 export const SONNET_MODEL = 'claude-sonnet-4-6'
 
+/** Cheap model for structured-output / scripted tasks where the LLM is
+ *  filling slots, not composing TSX. ~3× cheaper than Sonnet on input
+ *  (1 vs 3 $/M) and on output (5 vs 15 $/M). Used for the marketing
+ *  architect (skeleton + refine edit) where the job is short prose +
+ *  structured JSON; the designer stays on Sonnet because TSX
+ *  composition is where Sonnet's edge actually shows. */
+export const HAIKU_MODEL = 'claude-haiku-4-5'
+
 // Anthropic — optional fallback
 export const anthropic = env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: env.ANTHROPIC_API_KEY })

@@ -1104,9 +1104,14 @@ Return ONLY valid JSON: { "message": string, "script": <full edited script>, "br
   // is tightly constrained by the prompt + downstream Zod validation,
   // and a tool-use input_schema would have to mirror MarketingScript
   // verbatim (large + drift risk on schema updates).
-  const { generateSonnetText } = await import('../../shared/ai/anthropic.client.js')
+  const { generateSonnetText, HAIKU_MODEL } = await import('../../shared/ai/anthropic.client.js')
   const result = await generateSonnetText({
     userPrompt: prompt,
+    // Refine architect on Haiku 4.5 — structured JSON output + short
+    // text edits, not TSX composition. ~3× cheaper than Sonnet for the
+    // same shape of work. The per-scene mockCode regen still calls
+    // generateSceneMockCode / repairMockCode which stay on Sonnet.
+    model: HAIKU_MODEL,
     maxTokens: 16_000,
     temperature: 0.4,
   })

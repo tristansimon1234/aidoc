@@ -1,5 +1,5 @@
 import { SchemaType, type ResponseSchema } from '@google/generative-ai'
-import { generateSonnetText } from '../../shared/ai/anthropic.client.js'
+import { generateSonnetText, HAIKU_MODEL } from '../../shared/ai/anthropic.client.js'
 import { MarketingScriptSchema } from './marketing-video.schema.js'
 import type { MarketingScript } from './marketing-video.types.js'
 
@@ -1559,6 +1559,12 @@ async function generateScriptSkeleton(
   // Zod validation below) is unchanged.
   const result = await generateSonnetText({
     userPrompt,
+    // Architect on Haiku 4.5 — the job is structured JSON output +
+    // short prose voiceovers, not TSX composition. ~3× cheaper than
+    // Sonnet for the same shape of work. Designer + repair stay on
+    // Sonnet (the default) because TSX composition is where Sonnet's
+    // edge actually shows.
+    model: HAIKU_MODEL,
     maxTokens: 16_384,
     temperature: 0.6,
     jsonSchema: SKELETON_RESPONSE_SCHEMA as unknown as Record<string, unknown>,

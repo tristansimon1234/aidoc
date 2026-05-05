@@ -12,7 +12,6 @@ import {
   UpdatePageToolArgsSchema,
   DeletePageToolArgsSchema,
   ReorderPagesToolArgsSchema,
-  GenerateDocToolArgsSchema,
   GenerateVoiceoverToolArgsSchema,
   GenerateMarketingVideoToolArgsSchema,
 } from './mcp.schema.js'
@@ -457,38 +456,6 @@ Companion tools: \`list_pages\`, \`create_page\`, \`update_page\`.`,
     },
   },
   {
-    name: 'generate_doc',
-    description:
-      `Generate the markdown documentation for a page from a screen-recording video using Gemini 2.5 Flash.
-
-Two modes:
-- **With \`videoUrl\`**: tool fetches the video from the URL (any public HTTP MP4 / WebM / MOV), uploads it to the artifacts bucket, creates a run if needed, then runs the analysis. Lets you drive the full flow from MCP — pair with \`create_page\` first to spin up a brand-new doc.
-- **Without \`videoUrl\`**: assumes the page already has a run with a video attached (uploaded via the UI or the Try Doc / Record flow).
-
-Long-running — Gemini analyzes every frame, extracts step-level screenshots, and produces a structured doc. Typical duration: 30–120 seconds depending on video length. The agent calling this should be patient and not retry early.
-
-Side effects:
-- (When \`videoUrl\` provided) downloads up to 200 MB and uploads to \`runs/<id>/video.<ext>\` in the artifacts bucket.
-- Writes the markdown to \`doc_pages.content\` (overwrites any existing content after snapshotting the previous version for undo).
-- Stores the immutable AI output under \`generated_docs.markdown_content\` against the run.
-- Sets \`doc_pages.status = 'published'\`.
-- Re-indexes the page embeddings for chat / search.
-- Counts one \`doc_run\` against the monthly token quota — fails with \`QUOTA_EXCEEDED\` on hard-cap plans.
-
-Source URL constraints (when \`videoUrl\` provided): public HTTP/HTTPS, direct video file (not a viewer page — Loom embed pages won't work, the raw .mp4 will), Content-Type starts with \`video/\`, ≤ 200 MB. Private / loopback / link-local hosts are blocked (SSRF guard).
-
-Companion tools: \`create_page\` (build the destination first), \`get_page\` (read the result), \`update_page\` (manual tweaks), \`generate_voiceover\` (next step).`,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        projectId: { type: 'string', description: 'Project UUID.' },
-        slug: { type: 'string', description: 'Page slug. With videoUrl, can be a fresh page; without, must already have a run + video.' },
-        videoUrl: { type: 'string', description: 'Optional public URL to a video file. When provided, the video is fetched, uploaded, attached, and analyzed in one call.' },
-      },
-      required: ['projectId', 'slug'],
-    },
-  },
-  {
     name: 'generate_voiceover',
     description:
       `Produce a voice-over narration (ElevenLabs multilingual TTS) synchronized to the video timestamps of the page's latest run. Uses the page's current \`content\` as the source script — call \`generate_doc\` first if the page has no doc yet.
@@ -726,8 +693,6 @@ async function dispatchTool(
       return handleDeletePage(rawArgs, ctx)
     case 'reorder_pages':
       return handleReorderPages(rawArgs, ctx)
-    case 'generate_doc':
-      return handleGenerateDoc(rawArgs, ctx)
     case 'generate_voiceover':
       return handleGenerateVoiceover(rawArgs, ctx)
     case 'generate_marketing_video':
@@ -1240,176 +1205,6 @@ async function resolvePageBySlug(
   const page = pages.find((p) => p.slug === slug)
   if (!page) throw new AppError(`No page with slug "${slug}". Call list_pages to see available slugs.`, 'PAGE_NOT_FOUND', 404)
   return { id: page.id, title: page.title, content: page.content, projectId: page.projectId }
-}
-
-async function handleGenerateDoc(
-  raw: Record<string, unknown>,
-  ctx: McpAuthContext,
-): Promise<ReturnType<typeof toolText>> {
-  const parsed = GenerateDocToolArgsSchema.safeParse(raw)
-  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
-
-  let page
-  try {
-    page = await resolvePageBySlug(parsed.data.projectId, parsed.data.slug, ctx)
-  } catch (err) {
-    if (err instanceof AppError) return toolText(err.message)
-    throw err
-  }
-
-  const runRepo = await import('../run/run.repository.js')
-  const runService = await import('../run/run.service.js')
-  let run = await runRepo.findLatestRunByPageId(page.id)
-
-  // When videoUrl is provided we fetch + upload + (re)create the run + attach
-  // the video so the agent flow doesn't require the UI at all. When it isn't,
-  // we fall back to the legacy "doc gen on existing video" behaviour.
-  let videoPath: string | null = null
-  if (parsed.data.videoUrl) {
-    try {
-      // Create a run upfront so we have a stable runId for the storage path.
-      // Reuse the existing latest run when there is one — avoids piling up
-      // "ghost" runs each time an agent re-runs generate_doc with a new URL.
-      if (!run) {
-        run = await runService.createRun({
-          featureName: page.title,
-          startUrl: 'about:blank',
-          goal: page.title,
-          docPageId: page.id,
-        })
-      }
-      const fetched = await fetchVideoForUpload(parsed.data.videoUrl)
-      const ext = extensionForMimeType(fetched.contentType, parsed.data.videoUrl)
-      const storagePath = `runs/${run.id}/video${ext}`
-      const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
-      await uploadToStorage('artifacts', storagePath, fetched.buffer, fetched.contentType)
-      const existingSummary = (run.summaryJson ?? {}) as Record<string, unknown>
-      // Drop any cached muxed path — the underlying video just changed.
-      await runRepo.updateRunSummary(run.id, {
-        ...existingSummary,
-        videoPath: storagePath,
-        muxedVideoPath: null,
-      })
-      videoPath = storagePath
-    } catch (err) {
-      return toolText(`Failed to fetch / attach the video: ${(err as Error).message}`)
-    }
-  } else {
-    if (!run) return toolText(`No run attached to "${parsed.data.slug}". Provide \`videoUrl\` or upload a video via the UI first.`)
-    const summary = (run.summaryJson ?? {}) as Record<string, unknown>
-    videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
-    if (!videoPath) return toolText(`Latest run for "${parsed.data.slug}" has no video attached. Provide \`videoUrl\` or upload a video via the UI first.`)
-  }
-
-  // Quota: doc-gen is metered (doc_run). Fails with 402 on hard-cap plans.
-  await enforceQuotaOrThrow(ctx.teamId)
-
-  try {
-    await runService.analyzeVideo(run.id, videoPath)
-    await runService.generateDoc(run.id, null)
-    const { updatePage } = await import('../page/page.repository.js')
-    await updatePage(page.id, { status: 'published' })
-  } catch (err) {
-    return toolText(`Doc generation failed: ${(err as Error).message}`)
-  }
-
-  return toolText(
-    `Documentation generated for "${page.title}" (/${parsed.data.slug}).\n\n` +
-    `The markdown is now on the page and has been indexed for chat / search. ` +
-    `Call \`get_page\` with slug "${parsed.data.slug}" to read the result, ` +
-    `or \`generate_voiceover\` to produce the narration next.`,
-  )
-}
-
-/** Hard cap on remote videos pulled into the artifacts bucket via MCP.
- *  Matches the UI's signed-upload limit so behaviour stays consistent and
- *  one tool call can't fill a project's quota. */
-const MCP_MAX_VIDEO_BYTES = 200 * 1024 * 1024
-
-/** Reject hostnames that would let an attacker pivot to internal services
- *  (SSRF). Cheap regex-only check — no DNS resolution because the URL is
- *  fetched server-side and the resolver could still race. We refuse anything
- *  that looks like a private / loopback / link-local target by literal name. */
-function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase()
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
-  if (host === '0.0.0.0' || host === '::' || host === '::1') return true
-  if (/^127\./.test(host)) return true
-  if (/^10\./.test(host)) return true
-  if (/^192\.168\./.test(host)) return true
-  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)) return true
-  if (/^169\.254\./.test(host)) return true            // link-local
-  if (/^(fc|fd)[0-9a-f]{2}:/i.test(host)) return true  // IPv6 ULA
-  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true    // IPv6 link-local
-  return false
-}
-
-/** Pull a remote video into memory ready for upload. Streaming would be
- *  nicer for huge files but Supabase's JS client wants a Buffer anyway, so
- *  we just enforce the size cap mid-stream and abort if exceeded. */
-async function fetchVideoForUpload(rawUrl: string): Promise<{ buffer: Buffer; contentType: string }> {
-  const url = new URL(rawUrl)
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`Only http(s) URLs are accepted, got ${url.protocol}`)
-  }
-  if (isPrivateHost(url.hostname)) {
-    throw new Error(`Refusing to fetch from private / loopback host: ${url.hostname}`)
-  }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 60_000) // 60 s wall clock for the download
-  // `Response` is shadowed by Express's import at the top of this file —
-  // call through a local alias so we get the global fetch Response shape.
-  let res: Awaited<ReturnType<typeof fetch>>
-  try {
-    res = await fetch(url.toString(), { signal: controller.signal, redirect: 'follow' })
-  } finally {
-    clearTimeout(timeout)
-  }
-  if (!res.ok) throw new Error(`Source URL returned ${res.status} ${res.statusText}`)
-
-  const contentType = (res.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
-  if (!contentType.startsWith('video/')) {
-    throw new Error(`Source URL is not a video (Content-Type: ${contentType || 'unknown'}). If this is a viewer page, use the direct file URL.`)
-  }
-  const declaredLength = Number(res.headers.get('content-length') ?? 0)
-  if (declaredLength > MCP_MAX_VIDEO_BYTES) {
-    throw new Error(`Video too large (${(declaredLength / 1024 / 1024).toFixed(1)} MB > 200 MB cap)`)
-  }
-
-  if (!res.body) throw new Error('Source URL returned an empty body')
-  const reader = res.body.getReader()
-  const chunks: Uint8Array[] = []
-  let received = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (value) {
-      received += value.byteLength
-      if (received > MCP_MAX_VIDEO_BYTES) {
-        try { await reader.cancel() } catch { /* ignore */ }
-        throw new Error(`Video exceeded 200 MB cap mid-download`)
-      }
-      chunks.push(value)
-    }
-  }
-  return { buffer: Buffer.concat(chunks), contentType }
-}
-
-/** Pick a sensible filename extension for the upload. Prefer the MIME type
- *  Supabase / the player will use on read; fall back to the URL's extension
- *  when the server forgot to advertise one. */
-function extensionForMimeType(contentType: string, urlString: string): string {
-  if (contentType === 'video/mp4') return '.mp4'
-  if (contentType === 'video/webm') return '.webm'
-  if (contentType === 'video/quicktime') return '.mov'
-  // URL fallback
-  const path = (() => {
-    try { return new URL(urlString).pathname } catch { return '' }
-  })()
-  const m = path.match(/\.(mp4|webm|mov|m4v)(?:$|\?)/i)
-  if (m) return `.${m[1]!.toLowerCase()}`
-  return '.mp4'
 }
 
 async function handleGenerateVoiceover(
