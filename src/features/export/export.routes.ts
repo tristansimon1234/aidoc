@@ -18,7 +18,7 @@ export const exportRouter = Router({ mergeParams: true })
 
 const PageIdParam = z.object({ pageId: z.string().uuid() })
 
-async function verifyProjectOwnership(req: Request, _res: Response, next: NextFunction): Promise<void> {
+async function verifyProjectAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = (req as Request & { userId: string }).userId
     const projectId = req.params.projectId as string | undefined
@@ -26,9 +26,13 @@ async function verifyProjectOwnership(req: Request, _res: Response, next: NextFu
       next(new AppError('Unauthorized', 'UNAUTHORIZED', 401))
       return
     }
-    const { findProjectById } = await import('../project/project.repository.js')
-    const project = await findProjectById(projectId)
-    if (!project || project.userId !== userId) {
+    // Team-scoped access check. Throws 403/404; collapse both to 404 so
+    // non-members can't enumerate project ids across teams. Matches the
+    // pattern in page.routes and analytics.service.
+    const { assertProjectAccess } = await import('../project/project.service.js')
+    try {
+      await assertProjectAccess(projectId, userId)
+    } catch {
       next(new AppError('Project not found', 'PROJECT_NOT_FOUND', 404))
       return
     }
@@ -38,7 +42,7 @@ async function verifyProjectOwnership(req: Request, _res: Response, next: NextFu
   }
 }
 
-exportRouter.use(verifyProjectOwnership)
+exportRouter.use(verifyProjectAccess)
 
 // --- Export ---
 

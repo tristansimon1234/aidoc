@@ -289,7 +289,19 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 33 | `20260418000002_add_analytics_tables.sql` | `chat_messages` + `doc_page_views` — powers the per-project Analytics tab with AI sentiment insights |
 | 34 | `20260418000003_add_chat_messages_classification.sql` | Add `sentiment` / `frustration_flag` / `language` to `chat_messages` — write-time classification enables filters + trend signals |
 | 35 | `20260418000004_add_chat_messages_category.sql` | Add `category` to `chat_messages` — enables SQL-only pain-point aggregation on the Analytics tab |
-| 36 | `20260421000000_add_mcp_user_tokens.sql` | `mcp_user_tokens` table — per-user personal access tokens scoped to a single workspace; powers the user MCP server (`/api/mcp-user/:token`) |
+| 36 | `20260418000005_add_teams.sql` | `teams` + `team_members` + `team_invites` tables. Projects become team-scoped; personal workspaces auto-created on signup. |
+| 37 | `20260418000006_flip_rls_to_team.sql` | RLS policies now gate via `team_members` membership instead of a single `user_id`. |
+| 38 | `20260418000008_add_doc_pages_content_blocks.sql` | Add `content_blocks` JSONB to `doc_pages` — lossless BlockNote document JSON alongside the markdown projection. |
+| 39 | `20260419000000_drop_legacy_subscription_user_idx.sql` | Drop legacy unique index that blocked per-team subscriptions. |
+| 40 | `20260419000001_add_doc_pages_last_edited_by.sql` | Track `last_edited_by` / `last_edited_at` on `doc_pages` for the activity feed. |
+| 41 | `20260419000002_add_doc_pages_created_by.sql` | Track `created_by` on `doc_pages`. |
+| 42 | `20260420000000_rebrand_plans_pricing.sql` | Rename plans → Free / Founder / Team / Agency with matching copy. |
+| 43 | `20260420000001_tune_plan_token_budgets.sql` | Tune monthly_tokens values on each plan. |
+| 44 | `20260421000000_add_mcp_user_tokens.sql` | `mcp_user_tokens` table — per-user personal access tokens scoped to a single workspace; powers the user MCP server (`/api/mcp-user/:token`) |
+| 45 | `20260421000001_add_page_content_backup.sql` | `previous_content` / `previous_content_blocks` / `previous_content_saved_at` on `doc_pages` for the Restore previous version action. |
+| 46 | `20260422000000_mcp_token_scope_and_observability.sql` | Add `scope` / `expires_at` / `last_used_ip` to `mcp_user_tokens` for scoped tokens + observability. |
+| 47 | `20260422000001_hash_mcp_tokens_at_rest.sql` | Hash MCP tokens at rest — add `token_hash` + `preview` columns; app-layer SHA-256. Legacy `token` column kept NOT NULL for transition. |
+| 48 | `20260422000002_extend_jobs_for_exclusive_locks.sql` | Add `triggered_by_user_id` to `jobs`, make `page_id` nullable for project-scoped locks, add UNIQUE `(project_id, type) WHERE status='running' AND page_id IS NULL` for project-scoped exclusivity (indexing). |
 
 ## `mcp_user_tokens` — user MCP personal access tokens
 
@@ -300,13 +312,19 @@ id              uuid PK DEFAULT gen_random_uuid()
 user_id         uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE
 team_id         uuid NOT NULL REFERENCES teams(id) ON DELETE CASCADE
 name            text NOT NULL                  -- user-supplied label
-token           text NOT NULL UNIQUE           -- aidoc_usr_<64-hex>
+token           text NOT NULL UNIQUE           -- DEPRECATED — stores the hash for transition; new rows write hash here too
+token_hash      text UNIQUE                    -- SHA-256 hex of the raw token. Primary lookup column.
+preview         text                           -- last 4 chars of the raw token — UI display only
+scope           text NOT NULL DEFAULT 'admin'  -- future-proofing for scoped tokens
+expires_at      timestamptz                    -- NULL = never expires
 last_used_at    timestamptz                    -- fire-and-forget touch on each request
+last_used_ip    text                           -- best-effort, for audit
 revoked_at      timestamptz                    -- soft delete; active lookups filter on NULL
 created_at      timestamptz NOT NULL DEFAULT now()
 ```
-**Indexes**: `idx_mcp_user_tokens_user_id`, `idx_mcp_user_tokens_token_active` (partial on `revoked_at IS NULL`).
+**Indexes**: `idx_mcp_user_tokens_user_id`, `idx_mcp_user_tokens_token_active` (partial on `revoked_at IS NULL`), `idx_mcp_user_tokens_hash` (UNIQUE), `idx_mcp_user_tokens_hash_active` (partial).
 **RLS**: owner-only read/insert/update/delete (`auth.uid() = user_id`).
+**At-rest security**: raw tokens are never stored. `createToken` hashes (SHA-256) before insert and returns the raw once to the caller. Lookups hash the incoming value and compare against `token_hash`.
 
 ## Relationships
 
@@ -321,7 +339,7 @@ projects 1:N doc_embeddings (CASCADE)
 projects 1:N chat_sessions (CASCADE)
 projects 1:N chat_messages (CASCADE)
 projects 1:N doc_page_views (CASCADE)
-projects 1:N jobs (CASCADE)
+projects 1:N jobs (CASCADE) — page_id is nullable so project-scoped jobs (index) can exist without a page
 doc_pages 1:N doc_pages (self-ref via parent_id, SET NULL)
 doc_pages 1:N doc_embeddings (CASCADE)
 doc_pages 1:N runs (via doc_page_id, SET NULL)
@@ -353,7 +371,7 @@ All tables have RLS enabled. Policies chain through project ownership or direct 
 | `jobs` | Users see own jobs | `project_id IN (SELECT id FROM projects WHERE user_id = auth.uid())` |
 | `doc_embeddings` | Via `project_id → projects.user_id` | |
 
-**Note**: The backend uses the Supabase **service key** which bypasses RLS. RLS protects direct client access. Page routes also verify ownership via `verifyProjectOwnership` middleware.
+**Note**: The backend uses the Supabase **service key** which bypasses RLS — RLS only protects direct client access. Backend routes therefore enforce membership explicitly: `project.service.assertProjectAccess(projectId, userId)` and `run.service.assertRunAccess(runId, userId)` check `team_members` membership before any read or mutation. Both return 404 on missing resource OR missing access so callers can't enumerate ids across teams.
 
 ## Content Storage Strategy
 

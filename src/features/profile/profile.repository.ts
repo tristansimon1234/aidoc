@@ -13,6 +13,28 @@ export async function findAuthUserEmail(userId: string): Promise<string | null> 
   return data.user.email ?? null
 }
 
+/**
+ * Resolve display names (full_name, falling back to email) for a set of
+ * user ids in one batch. Used by activity feeds / audit trails to avoid
+ * N+1 profile lookups. Returns an empty map on error — the caller should
+ * render "anonymous" gracefully rather than fail the whole feed.
+ */
+export async function findProfileNamesByIds(userIds: string[]): Promise<Map<string, string>> {
+  if (userIds.length === 0) return new Map()
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, email, full_name')
+    .in('id', userIds)
+  if (error) return new Map()
+  const map = new Map<string, string>()
+  for (const row of data ?? []) {
+    const r = row as { id: string; email: string | null; full_name: string | null }
+    const name = r.full_name ?? r.email ?? null
+    if (name) map.set(r.id, name)
+  }
+  return map
+}
+
 interface ProfileRow {
   id: string
   email: string | null

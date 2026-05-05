@@ -1,6 +1,7 @@
 import express from 'express'
 import ffmpeg from 'fluent-ffmpeg'
 import { createClient } from '@supabase/supabase-js'
+import ws from 'ws'
 import { writeFileSync, readFileSync, unlinkSync, mkdirSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -15,10 +16,20 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok', service: 'aidoc-video' })
 })
 
-// Helper: create supabase client from request
+// Helper: create supabase client from request.
+//
+// `realtime: { transport: ws }` is required because supabase-js >= 2.100
+// initializes a RealtimeClient on createClient() even when we don't
+// subscribe to realtime channels — and on Node < 22 (this service runs
+// on Node 20 in the Railway image) the SDK throws on boot if no
+// WebSocket transport is provided. Service only uses storage upload /
+// download; the transport is wired so the SDK's init-time check
+// passes, not because realtime is actually used.
 function getSupabase(body) {
   if (!body.supabaseUrl || !body.serviceKey) throw new Error('supabaseUrl and serviceKey required')
-  return createClient(body.supabaseUrl, body.serviceKey)
+  return createClient(body.supabaseUrl, body.serviceKey, {
+    realtime: { transport: ws },
+  })
 }
 
 // Helper: download from supabase storage
@@ -528,6 +539,29 @@ app.post('/render-marketing-video', async (req, res) => {
       // Concurrency null = let Remotion pick (cores - 1). On a 2-vCPU box
       // a 60s 1080p render lands in ~2-5 min; on 4-vCPU it's closer to 90s.
       concurrency: null,
+      // Bump the per-frame render timeout. Default is 30s, which busts on
+      // single frames that have heavy 3D transforms (perspective + rotateY
+      // + multi-card composition stacks Chromium's software rasterizer).
+      // 120s gives the bento + chat scenes (which use perspective tilts
+      // for the magazine look) comfortable headroom — and we'd rather wait
+      // than drop the 3D transforms that make the mocks feel designed.
+      timeoutInMilliseconds: 120_000,
+      // CRF 20 — visually near-lossless x264 encoding. Default is ~23
+      // (Remotion tunes for size); on text-heavy mocks with thin 1-2px
+      // lines and small typography that default reads as "slightly
+      // blurry". 20 restores most of the sharpness without paying the
+      // 18 file-size premium (~30% smaller MP4 than crf:18, only a
+      // hair softer on a side-by-side). Trade vs default: file ~1.3-
+      // 1.5× larger, acceptable for a 45s marketing asset.
+      crf: 20,
+      // x264Preset 'slower' = better compression efficiency at the cost
+      // of encoding time. Default is 'medium'. At the same CRF, 'slower'
+      // produces a ~10-15% smaller file AND visibly cleaner output on
+      // text + thin lines (the encoder spends more time finding optimal
+      // motion vectors / DCT decisions per frame). Trade: render time
+      // ~2× — for marketing video (generated once, shared many times)
+      // the asymmetry is worth it.
+      x264Preset: 'slower',
     })
 
     console.log('[render-marketing] Render done, uploading…')

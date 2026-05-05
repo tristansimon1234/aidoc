@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import { RunIdParamSchema } from '../run/run.schema.js'
 import { z } from 'zod'
-import { GenerateMarketingVideoOptionsSchema, VoiceTonePresetSchema } from './marketing-video.schema.js'
+import { GenerateMarketingVideoOptionsSchema, UpdateMarketingManifestSchema, VoiceTonePresetSchema } from './marketing-video.schema.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { incrementUsage, findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
 import {
@@ -13,8 +13,20 @@ import {
   generateMarketingVideoForRun,
   renderMarketingVideoForRun,
   updateMarketingVoiceoverForRun,
+  updateMarketingManifestForRun,
+  editMarketingManifestWithAi,
+  setMarketingThumbnailForRun,
   MUSIC_PRESETS,
+  AI_MUSIC_STYLES,
 } from './marketing-video.service.js'
+
+const EditManifestBodySchema = z.object({
+  instruction: z.string().min(1).max(2000),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().max(4000),
+  })).max(20).optional(),
+})
 
 const UpdateVoiceoverBodySchema = z.object({
   voiceId: z.string().optional(),
@@ -40,7 +52,21 @@ marketingVideoRouter.get('/marketing-video/music-presets', (_req: Request, res: 
   // Strip nothing — these are public CDN URLs by design (Remotion fetches
   // them from the video-service). Adding tracks doesn't require a
   // migration; the constant is the schema.
-  res.status(200).json({ presets: MUSIC_PRESETS })
+  // Edge cache 1h — the preset list is a code-level constant; refreshing
+  // it more often than that just adds latency for no signal.
+  res.set('Cache-Control', 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400')
+  // Surface the 10 AI music styles alongside any hosted presets. The id
+  // prefix `ai-` lets the service route them through ElevenLabs Music
+  // generation with a style-specific prompt, vs hosted presets which
+  // ship with a static URL.
+  const aiStyles = Object.entries(AI_MUSIC_STYLES).map(([id, s]) => ({
+    id,
+    name: `AI: ${s.name}`,
+    mood: s.mood,
+    url: '', // generated on-demand via ElevenLabs Music
+    aiGenerated: true,
+  }))
+  res.status(200).json({ presets: [...MUSIC_PRESETS, ...aiStyles] })
 })
 
 marketingVideoRouter.get('/marketing-video/voices', (_req: Request, res: Response, next: NextFunction) => {
@@ -51,6 +77,11 @@ marketingVideoRouter.get('/marketing-video/voices', (_req: Request, res: Respons
         return
       }
       const voices = await getAvailableVoices()
+      // Edge cache 5 min on Vercel + 1h SWR — the voices list rarely
+      // changes and is identical for every authed user (same backend
+      // API key). Eliminates the ElevenLabs round-trip on every
+      // Marketing panel mount after the first one.
+      res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=3600')
       res.status(200).json({ voices })
     } catch (err) {
       next(err)
@@ -112,7 +143,8 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
       // result to the frontend even if the user closes the tab.
       const { findRunById } = await import('../run/run.repository.js')
       const { findPageById } = await import('../page/page.repository.js')
-      const { createJob, updateJobStatus } = await import('../run/job.repository.js')
+      const { updateJobStatus } = await import('../run/job.repository.js')
+      const { ensureExclusiveJob, AlreadyRunningError } = await import('../run/job.service.js')
 
       const run = await findRunById(params.data.id)
       if (!run) {
@@ -131,20 +163,31 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
 
       let jobId: string | null = null
       try {
-        const job = await createJob({
+        // ensureExclusiveJob auto-reclaims jobs older than 10min (Vercel
+        // timeout / crashed-mid-flight) so a stale "running" row doesn't
+        // permanently lock the page. createJob alone left users stuck on
+        // JOB_ALREADY_RUNNING for jobs that died ages ago.
+        const job = await ensureExclusiveJob({
           runId: params.data.id,
           pageId: run.docPageId,
           projectId: page.projectId,
           type: 'marketing-video',
+          triggeredByUserId: (req as Request & { userId?: string }).userId ?? null,
         })
         jobId = job.id
       } catch (err) {
-        // Most common cause: a marketing-video job is already running for
-        // this page (unique index on page_id+type WHERE status='running').
-        res.status(409).json({
-          error: 'A marketing-video generation is already running for this page.',
-          code: 'JOB_ALREADY_RUNNING',
-          details: (err as Error).message,
+        if (err instanceof AlreadyRunningError) {
+          res.status(409).json({
+            error: 'A marketing-video generation is already running for this page.',
+            code: 'JOB_ALREADY_RUNNING',
+            details: err.running,
+          })
+          return
+        }
+        res.status(500).json({
+          error: 'Failed to start marketing-video job',
+          code: 'JOB_CREATE_FAILED',
+          details: (err as Error).message ?? '',
         })
         return
       }
@@ -212,6 +255,131 @@ marketingVideoRouter.post('/:id/marketing-video/voiceover', (req: Request, res: 
   })()
 })
 
+/**
+ * PUT /runs/:id/marketing-video/manifest
+ * Persist a user-edited manifest. Lets the operator iterate on the
+ * rendering (tweak headlines, scene durations, mockCode, branding,
+ * music volume) without re-running Gemini + ElevenLabs. Voice-over /
+ * music URLs stay frozen — re-synthesize voice via the dedicated
+ * /voiceover endpoint, change music via a fresh /marketing-video call.
+ *
+ * Resets renderStatus to 'idle' on success so the UI prompts a
+ * re-render with the new manifest.
+ */
+marketingVideoRouter.put('/:id/marketing-video/manifest', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const body = UpdateMarketingManifestSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const summary = await updateMarketingManifestForRun(params.data.id, body.data)
+      res.status(200).json(summary)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+/**
+ * POST /runs/:id/marketing-video/edit
+ * Chat-style manifest edits: user describes a change in plain language
+ * ("shorten scene 2 by 2s", "switch accent to blue") and the AI returns
+ * the updated manifest + a one-line summary of what it changed. Quota
+ * gated up-front because the underlying Gemini Pro call is metered.
+ */
+marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+
+      const body = EditManifestBodySchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const teamId = await findTeamIdByRunId(params.data.id)
+      if (teamId) await enforceQuotaOrThrow(teamId)
+
+      // Background job — same pattern as /generate-marketing. The combined
+      // edit (Gemini Pro) + per-scene rescue (1 Pro call per failure) +
+      // render (Remotion) can exceed 300s on slow days; we don't want the
+      // refine to die mid-flight and we don't want the user blocked on
+      // the request. The frontend listens via useJobs realtime + flips
+      // the loader off when the job completes.
+      const { findRunById } = await import('../run/run.repository.js')
+      const { findPageById } = await import('../page/page.repository.js')
+      const { updateJobStatus } = await import('../run/job.repository.js')
+      const { ensureExclusiveJob, AlreadyRunningError } = await import('../run/job.service.js')
+
+      const run = await findRunById(params.data.id)
+      if (!run) {
+        res.status(404).json({ error: 'Run not found', code: 'RUN_NOT_FOUND' })
+        return
+      }
+      if (!run.docPageId) {
+        res.status(400).json({ error: 'Run has no doc page — cannot track marketing video edit job', code: 'NO_DOC_PAGE' })
+        return
+      }
+      const page = await findPageById(run.docPageId)
+      if (!page) {
+        res.status(404).json({ error: 'Doc page not found', code: 'PAGE_NOT_FOUND' })
+        return
+      }
+
+      let jobId: string | null = null
+      try {
+        // ensureExclusiveJob auto-reclaims stale jobs >10min old, so a
+        // dead refine doesn't permanently lock the page.
+        const job = await ensureExclusiveJob({
+          runId: params.data.id,
+          pageId: run.docPageId,
+          projectId: page.projectId,
+          // Reuse 'marketing-video' so the per-page UNIQUE WHERE running
+          // index blocks concurrent generates AND refines on the same
+          // page — we never want both racing for the manifest.
+          type: 'marketing-video',
+          triggeredByUserId: (req as Request & { userId?: string }).userId ?? null,
+        })
+        jobId = job.id
+      } catch (err) {
+        if (err instanceof AlreadyRunningError) {
+          res.status(409).json({
+            error: 'A marketing-video operation is already running for this page.',
+            code: 'JOB_ALREADY_RUNNING',
+            details: err.running,
+          })
+          return
+        }
+        res.status(500).json({
+          error: 'Failed to start marketing-video edit job',
+          code: 'JOB_CREATE_FAILED',
+          details: (err as Error).message ?? '',
+        })
+        return
+      }
+
+      res.status(202).json({ runId: params.data.id, jobId, status: 'running' })
+
+      const { waitUntil } = await import('@vercel/functions')
+      waitUntil((async () => {
+        try {
+          await editMarketingManifestWithAi(params.data.id, body.data)
+          await renderMarketingVideoForRun(params.data.id)
+          if (jobId) await updateJobStatus(jobId, 'completed').catch(() => {})
+        } catch (err) {
+          const message = (err as Error).message
+          console.error(`[marketing-edit] Background pipeline failed for ${params.data.id}: ${message}`)
+          if (jobId) await updateJobStatus(jobId, 'failed', message).catch(() => {})
+        }
+      })())
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
 marketingVideoRouter.post('/:id/marketing-video/render', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
@@ -220,6 +388,32 @@ marketingVideoRouter.post('/:id/marketing-video/render', (req: Request, res: Res
 
       const summary = await renderMarketingVideoForRun(params.data.id)
       res.status(200).json(summary)
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+/**
+ * POST /runs/:id/marketing-video/thumbnail
+ * Persist a JPEG thumbnail (captured client-side from the rendered video
+ * at ~4s into the hook). Stored as a side artifact; the manifest's
+ * thumbnailUrl is updated. Used as the player's poster, og:image, and
+ * social card. Body: { jpegBase64: string } (data URL or raw base64).
+ */
+const ThumbnailBodySchema = z.object({
+  jpegBase64: z.string().min(100).max(4_000_000),
+})
+marketingVideoRouter.post('/:id/marketing-video/thumbnail', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const params = RunIdParamSchema.safeParse(req.params)
+      if (!params.success) throw new ValidationError(params.error.flatten())
+      const body = ThumbnailBodySchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const result = await setMarketingThumbnailForRun(params.data.id, body.data.jpegBase64)
+      res.status(200).json(result)
     } catch (err) {
       next(err)
     }

@@ -49,11 +49,33 @@ const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, bran
   // Build the component once per (compiledCode) — instantiating Function
   // is the expensive bit. React.useMemo keeps it stable across frames.
   const MockScene = React.useMemo<React.FC<{ branding: Branding }>>(() => {
+    // Wrap Icons in a Proxy so unknown lookups (Icons[someVarName] where
+    // the LLM picked an icon name not in our whitelist) return a default
+    // square placeholder instead of undefined. Rendering <undefined> in
+    // JSX position throws and trips the error boundary; rendering a
+    // generic icon keeps the scene alive and visible.
+    const FallbackIcon: React.FC<{ size?: number; color?: string }> = ({ size = 24, color = 'currentColor' }) =>
+      React.createElement(
+        'svg',
+        { width: size, height: size, viewBox: '0 0 24 24', fill: 'none' },
+        React.createElement('rect', {
+          x: 4, y: 4, width: 16, height: 16, rx: 3,
+          stroke: color, strokeWidth: 1.5,
+        }),
+      )
+    const safeIcons = new Proxy(Icons as unknown as Record<string, React.FC<{ size?: number; color?: string }>>, {
+      get(target, prop) {
+        if (typeof prop !== 'string') return undefined
+        return target[prop] ?? FallbackIcon
+      },
+    })
+
     const Remotion = {
       interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio,
       // Designed helpers — let the LLM stop rewriting the same browser
       // chrome / pill / glow / cursor every scene.
-      MockFrame, Pill, AccentGlow, AnimatedCursor, Icons,
+      MockFrame, Pill, AccentGlow, AnimatedCursor,
+      Icons: safeIcons,
       // Recharts components for data scenes — line / area / bar / pie.
       Charts,
     }
@@ -102,11 +124,9 @@ class SafeMockBoundary extends React.Component<
 }
 
 const SceneFallback: React.FC<{ branding: Branding }> = ({ branding }) => {
-  return (
-    <AbsoluteFill
-      style={{
-        background: `linear-gradient(135deg, ${branding.accentColor}55, #0B0B0F)`,
-      }}
-    />
-  )
+  // Used when the LLM mock throws at render time (uncaught exception
+  // inside the new Function() factory or its return value). We match
+  // the canvas bgColor so the failure is invisible — the headline +
+  // brand mark from the surrounding FeatureScene still carry the scene.
+  return <AbsoluteFill style={{ background: branding.bgColor }} />
 }

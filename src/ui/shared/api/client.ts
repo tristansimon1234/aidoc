@@ -4,20 +4,42 @@ const API_BASE = '/api'
 
 /** Error thrown by `request()` that preserves the backend's machine-readable
  *  `code` (e.g. "QUOTA_EXCEEDED") and the HTTP `status`, so UI code can
- *  branch on them without fragile string matching. */
+ *  branch on them without fragile string matching. `details` carries the
+ *  structured payload for codes that ship one (e.g. RUN_ALREADY_RUNNING
+ *  with the triggering user's name + when). */
 export class ApiError extends Error {
   readonly code: string | null
   readonly status: number
-  constructor(message: string, code: string | null, status: number) {
+  readonly details: unknown
+  constructor(message: string, code: string | null, status: number, details?: unknown) {
     super(message)
     this.name = 'ApiError'
     this.code = code
     this.status = status
+    this.details = details
   }
 }
 
 export function isQuotaError(err: unknown): err is ApiError {
   return err instanceof ApiError && err.code === 'QUOTA_EXCEEDED'
+}
+
+/** Metadata shipped with a RUN_ALREADY_RUNNING 409. Mirrors
+ *  src/features/run/job.service.ts → AlreadyRunningDetails. */
+export interface AlreadyRunningDetails {
+  jobId: string
+  jobType: 'exploration' | 'doc-gen' | 'voiceover' | 'try-doc-analysis' | 'index'
+  triggeredByUserId: string | null
+  triggeredByName: string | null
+  runningSince: string
+  pageId: string | null
+  projectId: string
+}
+
+export function isAlreadyRunningError(err: unknown): err is ApiError & { details: AlreadyRunningDetails } {
+  if (!(err instanceof ApiError) || err.code !== 'RUN_ALREADY_RUNNING') return false
+  const d = err.details as { jobType?: unknown } | null | undefined
+  return typeof d === 'object' && d !== null && typeof d.jobType === 'string'
 }
 
 /** Active team id, persisted in localStorage. Set by AcceptInvite when the
@@ -68,11 +90,12 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null
+    const body = (await res.json().catch(() => null)) as { error?: string; code?: string; details?: unknown } | null
     throw new ApiError(
       body?.error ?? `Request failed: ${res.status}`,
       body?.code ?? null,
       res.status,
+      body?.details,
     )
   }
 
@@ -142,6 +165,11 @@ export interface MarketingManifestDTO {
    *  is still valid — a warning is shown but the video still renders
    *  (silent music track). */
   musicError?: string | null
+  /** Public URL to the video thumbnail (JPEG, frame at ~4s). Captured
+   *  client-side after the first render and uploaded server-side. Used
+   *  as the player's poster + og:image / social card preview. */
+  thumbnailUrl?: string | null
+  thumbnailPath?: string | null
 }
 
 export interface MarketingVideoSummaryDTO {
@@ -621,7 +649,7 @@ export const api = {
           userPrompt?: string
           withVoiceover?: boolean
           voiceId?: string
-          tone?: 'punchy' | 'calm' | 'playful' | 'serious'
+          tone?: 'punchy' | 'calm' | 'playful' | 'serious' | 'confident' | 'inspirational' | 'conversational'
           visualMode?: 'screenshots' | 'mocks'
           musicTrackId?: string
           musicUploadPath?: string
@@ -640,13 +668,50 @@ export const api = {
         }),
       render: (id: string): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video/render`, { method: 'POST' }),
+      /** Persist a thumbnail (captured client-side at ~4s into the video).
+       *  Server uploads to Storage and updates manifest.thumbnailUrl. */
+      uploadThumbnail: (id: string, jpegBase64: string): Promise<{ thumbnailUrl: string; thumbnailPath: string }> =>
+        request(`/runs/${id}/marketing-video/thumbnail`, {
+          method: 'POST',
+          body: JSON.stringify({ jpegBase64 }),
+        }),
       updateVoice: (
         id: string,
-        opts: { voiceId?: string; tone?: 'punchy' | 'calm' | 'playful' | 'serious' },
+        opts: { voiceId?: string; tone?: 'punchy' | 'calm' | 'playful' | 'serious' | 'confident' | 'inspirational' | 'conversational' },
       ): Promise<MarketingVideoSummaryDTO> =>
         request(`/runs/${id}/marketing-video/voiceover`, {
           method: 'POST',
           body: JSON.stringify(opts),
+        }),
+      /** Persist a user-edited manifest. Server validates with Zod and
+       *  resets renderStatus to 'idle' so the UI prompts a fresh render.
+       *  Voice-over / music URLs are NOT accepted — use updateVoice for
+       *  voice changes, regenerate for music changes. */
+      updateManifest: (
+        id: string,
+        manifest: { script: MarketingScriptDTO; screenshots?: { url: string; caption: string }[]; branding?: MarketingManifestDTO['branding']; musicVolume?: number },
+      ): Promise<MarketingVideoSummaryDTO> =>
+        request(`/runs/${id}/marketing-video/manifest`, {
+          method: 'PUT',
+          body: JSON.stringify(manifest),
+        }),
+      /** Chat-style AI edit: user types an instruction, Gemini returns
+       *  the updated manifest + a one-line summary of changes. The
+       *  manifest is persisted server-side (same path as updateManifest)
+       *  and renderStatus resets to 'idle'. */
+      /** Background job — returns 202 + jobId, the actual edit + render
+       *  runs in waitUntil. Frontend listens via useJobs realtime to flip
+       *  the loader off and re-fetch the summary on completion. */
+      editWithAi: (
+        id: string,
+        input: {
+          instruction: string
+          history?: { role: 'user' | 'assistant'; content: string }[]
+        },
+      ): Promise<{ runId: string; jobId: string; status: 'running' }> =>
+        request(`/runs/${id}/marketing-video/edit`, {
+          method: 'POST',
+          body: JSON.stringify(input),
         }),
       voices: (): Promise<{ voices: Array<{ voiceId: string; name: string; category: string; labels: Record<string, string> }> }> =>
         request(`/runs/marketing-video/voices`),
@@ -664,6 +729,50 @@ export const api = {
   chat: {
     send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string): Promise<ChatResponseDTO> =>
       request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history, sessionToken }) }),
+    /** Streaming variant — yields ChatStreamEvent objects parsed from SSE
+     *  frames as the backend emits them. Caller consumes via for-await-of. */
+    sendStream: async function* (
+      projectId: string,
+      message: string,
+      history: { role: 'user' | 'assistant'; content: string }[],
+      sessionToken?: string,
+      signal?: AbortSignal,
+    ): AsyncGenerator<ChatStreamEventDTO> {
+      const headers = await getAuthHeaders()
+      const res = await fetch(`${API_BASE}/projects/${projectId}/chat/stream`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message, history, sessionToken }),
+        signal,
+      })
+      if (!res.ok || !res.body) {
+        const body = (await res.json().catch(() => null)) as { error?: string; code?: string; details?: unknown } | null
+        throw new ApiError(body?.error ?? `Chat stream failed: ${res.status}`, body?.code ?? null, res.status, body?.details)
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // SSE frames are separated by a blank line. Each frame may have
+        // multiple `data:` lines but our backend emits one per frame.
+        let sep: number
+        while ((sep = buffer.indexOf('\n\n')) >= 0) {
+          const frame = buffer.slice(0, sep)
+          buffer = buffer.slice(sep + 2)
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            const payload = line.slice(6).trim()
+            if (payload === '[DONE]') return
+            try {
+              yield JSON.parse(payload) as ChatStreamEventDTO
+            } catch { /* skip malformed frame, keep streaming */ }
+          }
+        }
+      }
+    },
     index: (projectId: string, force?: boolean): Promise<{ indexed: number }> =>
       request(`/projects/${projectId}/chat/index`, { method: 'POST', body: JSON.stringify({ force }) }),
     suggestions: (projectId: string): Promise<{ suggestions: string[] }> =>
@@ -697,7 +806,7 @@ export const api = {
       request(`/teams/invites/${token}/accept`, { method: 'POST' }),
   },
   invites: {
-    peek: (token: string): Promise<{ teamName: string; email: string; inviterName: string | null; expiresAt: string; accepted: boolean }> =>
+    peek: (token: string): Promise<{ teamName: string; inviterName: string | null; expiresAt: string; accepted: boolean }> =>
       request(`/invites/${token}`),
   },
   mcpTokens: {
@@ -854,6 +963,18 @@ export interface ChatResponseDTO {
    *  matching video clip. */
   walkthroughAvailable?: boolean
 }
+
+/** SSE event shape emitted by the streaming chat endpoints. Mirrors the
+ *  backend's ChatStreamEvent in chat.service.ts; the discriminated `type`
+ *  field lets consumers narrow without runtime checks. */
+export type ChatStreamEventDTO =
+  | { type: 'start' }
+  | { type: 'delta'; text: string }
+  | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
+  | { type: 'followups'; items: string[] }
+  | { type: 'walkthrough'; available: boolean }
+  | { type: 'done'; fullText: string }
+  | { type: 'error'; message: string }
 
 export interface PreflightCheckDTO {
   category: 'url' | 'credentials' | 'file' | 'navigation' | 'prerequisite'

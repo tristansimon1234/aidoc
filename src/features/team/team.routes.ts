@@ -173,9 +173,12 @@ invitePublicRouter.get('/:token', (req: Request, res: Response, next: NextFuncti
       const params = InviteTokenParamSchema.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
       const invite = await teamService.peekInvite(params.data.token)
+      // Intentionally omit the invited email — the recipient already
+      // knows it (they received the link at that address), and exposing
+      // it on an unauthenticated endpoint would let anyone with the
+      // token enumerate who was invited.
       res.status(200).json({
         teamName: invite.teamName,
-        email: invite.email,
         inviterName: invite.inviterName,
         expiresAt: invite.expiresAt,
         accepted: invite.acceptedAt !== null,

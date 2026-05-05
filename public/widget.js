@@ -1,6 +1,12 @@
 (function () {
   'use strict';
 
+  // Build stamp — bump on every meaningful widget change so we can verify
+  // in DevTools console which version a customer's browser actually loaded.
+  // If you see an old build here, the CDN cache hasn't expired yet.
+  var WIDGET_BUILD = '2026-04-30-streaming-v2';
+  console.log('[Doclee Widget] build', WIDGET_BUILD);
+
   var script = document.currentScript;
   if (!script) return;
 
@@ -97,28 +103,51 @@
       '#aidoc-widget-header span{font-size:14px;font-weight:600;color:' + C.text + '}',
       '#aidoc-widget-close{background:none;border:none;color:' + mutedText + ';cursor:pointer;font-size:18px;padding:4px;line-height:1;border-radius:6px;transition:color .15s,background .15s}',
       '#aidoc-widget-close:hover{color:' + C.text + ';background:' + (isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)') + '}',
-      '#aidoc-widget-messages{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}',
-      '.aidoc-msg{max-width:88%;font-size:13px;line-height:1.6;padding:10px 14px;border-radius:14px;word-wrap:break-word}',
-      '.aidoc-msg img{max-width:100%;border-radius:8px;margin:8px 0}',
-      '.aidoc-msg a{color:' + C.accent + '}',
-      '.aidoc-msg-user{align-self:flex-end;background:' + C.accent + ';color:white;border-radius:14px 14px 4px 14px}',
-      '.aidoc-msg-bot{align-self:flex-start;background:' + subtle + ';color:' + C.text + ';border:1px solid ' + border + ';border-radius:14px 14px 14px 4px}',
-      '.aidoc-sources{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid ' + border + '}',
-      '.aidoc-source{font-size:10px;color:' + C.accent + ';background:' + tint + ';padding:2px 8px;border-radius:4px}',
+      '#aidoc-widget-messages{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}',
+      // User: tight pill, subtle bg tint, NO border, NO accent fill — same lean style as the admin chat.
+      '.aidoc-msg-user{align-self:flex-end;max-width:80%;padding:7px 14px;background:' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.05)') + ';color:' + C.text + ';border-radius:16px;font-size:13.5px;line-height:1.5;word-wrap:break-word;animation:aidoc-msg-in 200ms cubic-bezier(.16,1,.3,1)}',
+      // Bot: full-width inline text (no bubble), like Claude.ai. Compact line-height for the smaller widget viewport.
+      '.aidoc-msg-bot{align-self:stretch;font-size:14px;line-height:1.6;color:' + C.text + ';animation:aidoc-msg-in 200ms cubic-bezier(.16,1,.3,1)}',
+      '.aidoc-msg-bot p{margin:0 0 10px 0}',
+      '.aidoc-msg-bot p:last-child{margin-bottom:0}',
+      '.aidoc-msg-bot ul,.aidoc-msg-bot ol{margin:0 0 10px 0;padding-left:20px}',
+      '.aidoc-msg-bot li{margin:3px 0}',
+      '.aidoc-msg-bot a{color:' + C.text + ';text-decoration:underline;text-underline-offset:3px;text-decoration-color:' + (isDark ? 'rgba(255,255,255,.4)' : 'rgba(0,0,0,.4)') + '}',
+      '.aidoc-msg-bot a:hover{text-decoration-color:' + C.text + '}',
+      '.aidoc-msg-bot code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:.92em;padding:2px 6px;background:' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)') + ';border-radius:4px}',
+      '.aidoc-msg-bot img{max-width:100%;border-radius:8px;margin:8px 0}',
+      // Streaming caret — thin blinking bar at end of in-progress text
+      '.aidoc-msg-bot.streaming::after{content:"";display:inline-block;width:2px;height:1.05em;background:' + C.text + ';vertical-align:text-bottom;margin-left:2px;animation:aidoc-caret 1s step-end infinite;border-radius:1px}',
+      '@keyframes aidoc-caret{0%,50%{opacity:1}50.01%,100%{opacity:0}}',
+      '@keyframes aidoc-msg-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}',
+      // Thinking shimmer — Vercel/Claude pattern: brain icon + gradient that sweeps the text
+      '.aidoc-thinking{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;line-height:1.5;height:1.5em;align-self:flex-start;animation:aidoc-msg-in 200ms cubic-bezier(.16,1,.3,1)}',
+      '.aidoc-thinking svg{width:16px;height:16px;color:' + mutedText + ';flex-shrink:0;opacity:.85}',
+      '.aidoc-thinking-text{background:linear-gradient(90deg,' + (isDark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)') + ' 0%,' + (isDark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)') + ' 40%,' + C.text + ' 50%,' + (isDark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)') + ' 60%,' + (isDark ? 'rgba(255,255,255,.35)' : 'rgba(0,0,0,.35)') + ' 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent;animation:aidoc-shimmer 1.6s linear infinite;font-weight:500}',
+      '@keyframes aidoc-shimmer{from{background-position:200% 0}to{background-position:-200% 0}}',
+      '.aidoc-sources{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}',
+      '.aidoc-source{font-size:11px;color:' + C.text + ';background:' + (isDark ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.04)') + ';border:1px solid ' + border + ';padding:3px 9px;border-radius:999px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}',
+      '.aidoc-source:hover{border-color:' + (isDark ? 'rgba(255,255,255,.3)' : 'rgba(0,0,0,.25)') + '}',
       '.aidoc-welcome{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:24px}',
-      '.aidoc-welcome h3{font-size:16px;font-weight:600;color:' + C.text + ';margin:0}',
-      '.aidoc-welcome p{font-size:12px;color:' + mutedText + ';margin:0;max-width:280px;line-height:1.5}',
-      '.aidoc-suggestions{display:flex;flex-direction:column;gap:8px;width:100%;max-width:300px}',
-      '.aidoc-suggestion{text-align:left;background:' + subtle + ';border:1px solid ' + border + ';border-radius:10px;padding:10px 14px;color:' + mutedText + ';font-size:12px;cursor:pointer;font-family:inherit;transition:border-color .15s,color .15s}',
-      '.aidoc-suggestion:hover{border-color:' + C.accent + ';color:' + C.text + '}',
-      '#aidoc-widget-input{display:flex;gap:8px;padding:12px 16px;border-top:1px solid ' + border + ';background:' + headerBg + '}',
-      '#aidoc-widget-input input{flex:1;background:' + inputBg + ';border:1px solid ' + border + ';border-radius:10px;padding:10px 14px;color:' + C.text + ';font-size:13px;font-family:inherit;outline:none;transition:border-color .15s}',
+      '.aidoc-welcome h3{font-size:18px;font-weight:500;color:' + C.text + ';margin:0;letter-spacing:-.01em}',
+      '.aidoc-welcome p{font-size:13px;color:' + mutedText + ';margin:0;max-width:300px;line-height:1.5}',
+      '.aidoc-suggestions{display:flex;flex-direction:column;gap:8px;width:100%;max-width:320px}',
+      '.aidoc-suggestion{display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;background:' + C.bg + ';border:1px solid ' + border + ';border-radius:10px;padding:11px 14px;color:' + C.text + ';font-size:13px;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}',
+      '.aidoc-suggestion:hover{border-color:' + (isDark ? 'rgba(255,255,255,.3)' : 'rgba(0,0,0,.25)') + ';background:' + (isDark ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.02)') + '}',
+      '.aidoc-suggestion-arrow{color:' + mutedText + ';flex-shrink:0;transition:transform .15s,color .15s}',
+      '.aidoc-suggestion:hover .aidoc-suggestion-arrow{color:' + C.text + ';transform:translate(2px,-2px)}',
+      // Input bar — single rounded wrapper with focus ring + dark circular send button.
+      // Matches the admin chat surface (Vercel/Claude pattern).
+      '#aidoc-widget-input{padding:10px 16px 14px;background:linear-gradient(to bottom,transparent,' + C.bg + ' 30%)}',
+      '#aidoc-widget-input-wrap{display:flex;align-items:flex-end;gap:8px;padding:6px 6px 6px 14px;background:' + C.bg + ';border:1px solid ' + border + ';border-radius:16px;transition:border-color .15s,box-shadow .15s}',
+      '#aidoc-widget-input-wrap:focus-within{border-color:' + (isDark ? 'rgba(255,255,255,.4)' : 'rgba(0,0,0,.4)') + ';box-shadow:0 0 0 3px ' + (isDark ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.08)') + '}',
+      '#aidoc-widget-input input{flex:1;background:transparent;border:none;outline:none;color:' + C.text + ';font-size:14px;line-height:1.5;font-family:inherit;padding:7px 0;min-height:24px}',
       '#aidoc-widget-input input::placeholder{color:' + mutedText + '}',
-      '#aidoc-widget-input input:focus{border-color:' + C.accent + '}',
-      '#aidoc-widget-input button{background:' + C.accent + ';border:none;color:white;border-radius:10px;padding:10px 16px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:opacity .15s}',
-      '#aidoc-widget-input button:hover{opacity:.85}',
-      '#aidoc-widget-input button:disabled{opacity:.4;cursor:not-allowed}',
-      '.aidoc-typing{font-size:12px;color:' + mutedText + ';padding:4px 0;align-self:flex-start}',
+      '#aidoc-widget-input button{flex-shrink:0;width:30px;height:30px;border-radius:50%;border:none;background:' + C.text + ';color:' + C.bg + ';cursor:pointer;display:flex;align-items:center;justify-content:center;transition:opacity .15s,transform .1s}',
+      '#aidoc-widget-input button:hover:not(:disabled){opacity:.9}',
+      '#aidoc-widget-input button:active:not(:disabled){transform:scale(.95)}',
+      '#aidoc-widget-input button:disabled{opacity:.25;cursor:not-allowed}',
+      '#aidoc-widget-input button svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}',
       '#aidoc-widget-powered{text-align:center;padding:6px;font-size:10px;color:' + mutedText + ';border-top:1px solid ' + (isDark ? '#1a1a1e' : '#eee') + '}',
       '#aidoc-widget-powered a{color:' + mutedText + ';text-decoration:none}',
       '#aidoc-widget-powered a:hover{color:' + C.accent + '}',
@@ -218,13 +247,18 @@
   panel.innerHTML = [
     '<div id="aidoc-widget-header"><span>Ask about the docs</span><button id="aidoc-widget-close">&times;</button></div>',
     '<div id="aidoc-widget-messages"></div>',
-    '<div id="aidoc-widget-input"><input placeholder="Ask a question..." /><button>Send</button></div>',
+    '<div id="aidoc-widget-input">'
+      + '<div id="aidoc-widget-input-wrap">'
+      + '<input placeholder="Ask anything…" />'
+      + '<button aria-label="Send"><svg viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></button>'
+      + '</div>'
+    + '</div>',
     '<div id="aidoc-widget-powered">Powered by <a href="https://doclee.tech" target="_blank">doclee</a></div>',
   ].join('');
   document.body.appendChild(panel);
 
   var msgContainer = panel.querySelector('#aidoc-widget-messages');
-  var inputEl = panel.querySelector('#aidoc-widget-input input');
+  var inputEl = panel.querySelector('#aidoc-widget-input-wrap input');
   var sendBtn = panel.querySelector('#aidoc-widget-input button');
 
   panel.querySelector('#aidoc-widget-close').onclick = function () { togglePanel(); };
@@ -240,6 +274,7 @@
   function renderMessages() {
     if (messages.length === 0) {
       var greetingText = C.greeting || (USER_NAME ? 'Hi ' + USER_NAME + '!' : 'Hi! Ask me anything.');
+      var arrowSvg = '<svg class="aidoc-suggestion-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>';
       msgContainer.innerHTML = [
         '<div class="aidoc-welcome">',
         '<div><h3>' + greetingText + '</h3>',
@@ -248,22 +283,51 @@
         (dynamicSuggestions.length > 0
           ? dynamicSuggestions
           : ['How does ' + projectName + ' work?', 'What are the main features?']
-        ).map(function (s) { return '<button class="aidoc-suggestion">' + s + '</button>'; }).join(''),
+        ).map(function (s) {
+          return '<button class="aidoc-suggestion"><span>' + s + '</span>' + arrowSvg + '</button>';
+        }).join(''),
         '</div></div>',
       ].join('');
       msgContainer.querySelectorAll('.aidoc-suggestion').forEach(function (el) {
-        el.onclick = function () { sendMessage(el.textContent); };
+        el.onclick = function () {
+          // Prefer the textual span — querying textContent picks up the
+          // arrow's hidden text on some browsers.
+          var span = el.querySelector('span');
+          sendMessage(span ? span.textContent : el.textContent);
+        };
       });
       return;
     }
 
     msgContainer.innerHTML = '';
     messages.forEach(function (m) {
+      // Streaming assistant message with no content yet → shimmer Thinking
+      if (m.role === 'assistant' && m.streaming && !m.content) {
+        var thinking = document.createElement('div');
+        thinking.className = 'aidoc-thinking';
+        // Lucide brain — anatomical two-hemisphere outline. Replaces the
+        // home-rolled head icon that read more like a person than a brain.
+        thinking.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+            '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />' +
+            '<path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />' +
+            '<path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />' +
+            '<path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />' +
+            '<path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />' +
+            '<path d="M3.477 10.896a4 4 0 0 1 .585-.396" />' +
+            '<path d="M19.938 10.5a4 4 0 0 1 .585.396" />' +
+            '<path d="M6 18a4 4 0 0 1-1.967-.516" />' +
+            '<path d="M19.967 17.484A4 4 0 0 1 18 18" />' +
+          '</svg>' +
+          '<span class="aidoc-thinking-text">Thinking…</span>';
+        msgContainer.appendChild(thinking);
+        return;
+      }
       var div = document.createElement('div');
-      div.className = 'aidoc-msg ' + (m.role === 'user' ? 'aidoc-msg-user' : 'aidoc-msg-bot');
+      div.className = (m.role === 'user' ? 'aidoc-msg-user' : 'aidoc-msg-bot' + (m.streaming ? ' streaming' : ''));
       if (m.role === 'assistant') {
         div.innerHTML = simpleMarkdown(m.content);
-        if (m.sources && m.sources.length > 0) {
+        if (!m.streaming && m.sources && m.sources.length > 0) {
           var srcDiv = document.createElement('div');
           srcDiv.className = 'aidoc-sources';
           m.sources.forEach(function (s) {
@@ -274,7 +338,7 @@
           });
           div.appendChild(srcDiv);
         }
-        if (m.walkthroughAvailable) {
+        if (!m.streaming && m.walkthroughAvailable) {
           var guideBtn = document.createElement('button');
           guideBtn.className = 'aidoc-guide-btn';
           guideBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/></svg> Guide me';
@@ -288,7 +352,7 @@
     });
 
     var lastMsg = messages[messages.length - 1];
-    if (!isSending && lastMsg && lastMsg.role === 'assistant' && lastMsg.followUps && lastMsg.followUps.length > 0) {
+    if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.streaming && lastMsg.followUps && lastMsg.followUps.length > 0) {
       var fuDiv = document.createElement('div');
       fuDiv.className = 'aidoc-suggestions';
       fuDiv.style.alignSelf = 'flex-start';
@@ -302,34 +366,135 @@
       msgContainer.appendChild(fuDiv);
     }
 
-    if (isSending) {
-      var typing = document.createElement('div');
-      typing.className = 'aidoc-typing';
-      typing.textContent = 'Searching docs...';
-      msgContainer.appendChild(typing);
-    }
-
     msgContainer.scrollTop = msgContainer.scrollHeight;
   }
 
+  // Streaming send — uses SSE so the widget renders shimmer Thinking…
+  // → token-by-token text. Falls back to JSON POST on browsers that
+  // don't support ReadableStream in fetch responses (very old Safari).
   function sendMessage(text) {
     text = (text || '').trim();
     if (!text || isSending) return;
     inputEl.value = '';
     messages.push({ role: 'user', content: text });
+    // Pre-create the assistant message in `streaming` state so the
+    // shimmer Thinking… is visible immediately. Tracks the array index
+    // so subsequent deltas patch the right message.
+    var assistantIdx = messages.length;
+    messages.push({ role: 'assistant', content: '', streaming: true, _originalQuestion: text });
     isSending = true;
     sendBtn.disabled = true;
     renderMessages();
-    var history = messages.map(function (m) { return { role: m.role, content: m.content }; });
-    fetch(API_BASE + '/' + API_KEY + '/chat', {
+    var history = messages.slice(0, -2).map(function (m) { return { role: m.role, content: m.content }; });
+    var body = JSON.stringify({
+      message: text,
+      history: history,
+      sessionToken: SESSION_TOKEN,
+      userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() },
+    });
+
+    function finish() {
+      messages[assistantIdx].streaming = false;
+      isSending = false;
+      sendBtn.disabled = false;
+      renderMessages();
+      inputEl.focus();
+    }
+
+    function onError() {
+      messages[assistantIdx].content = 'Sorry, something went wrong. Please try again.';
+      finish();
+    }
+
+    // ReadableStream support detection (covers all modern browsers; older
+    // Safari pre-2020 falls back to JSON below).
+    var supportsStream = typeof TextDecoder !== 'undefined' && typeof Response !== 'undefined';
+
+    if (!supportsStream) {
+      // Legacy non-streaming fallback
+      fetch(API_BASE + '/' + API_KEY + '/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          messages[assistantIdx].content = data.answer;
+          messages[assistantIdx].sources = data.sources;
+          messages[assistantIdx].followUps = data.followUps || [];
+          messages[assistantIdx].walkthroughAvailable = data.walkthroughAvailable || false;
+          finish();
+        })
+        .catch(onError);
+      return;
+    }
+
+    fetch(API_BASE + '/' + API_KEY + '/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, history: history.slice(0, -1), sessionToken: SESSION_TOKEN, userContext: { name: USER_NAME, email: USER_EMAIL, plan: USER_PLAN, extra: USER_CONTEXT, currentUrl: getCurrentPage() } }),
+      body: body,
     })
-      .then(function (r) { return r.json(); })
-      .then(function (data) { messages.push({ role: 'assistant', content: data.answer, sources: data.sources, followUps: data.followUps || [], walkthroughAvailable: data.walkthroughAvailable || false, _originalQuestion: text }); })
-      .catch(function () { messages.push({ role: 'assistant', content: 'Sorry, something went wrong. Please try again.' }); })
-      .finally(function () { isSending = false; sendBtn.disabled = false; renderMessages(); inputEl.focus(); });
+      .then(function (res) {
+        if (!res.ok || !res.body) throw new Error('Stream failed: ' + res.status);
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        var fullText = '';
+        // Cache the streaming bot DOM node so each delta updates its
+        // innerHTML in place — full renderMessages() rebuilds were
+        // wiping the caret animation on every chunk and visually
+        // flattened the streaming effect to a single jump.
+        var botEl = null;
+        function ensureBotEl() {
+          if (botEl && botEl.isConnected) return botEl;
+          // First delta — replace the shimmer with a fresh bot div
+          // and remember the reference. We don't touch any other
+          // message in the list, so user pills + earlier bot answers
+          // stay still.
+          var thinking = msgContainer.querySelector('.aidoc-thinking');
+          if (thinking) thinking.remove();
+          botEl = document.createElement('div');
+          botEl.className = 'aidoc-msg-bot streaming';
+          msgContainer.appendChild(botEl);
+          return botEl;
+        }
+        function pump() {
+          return reader.read().then(function (chunk) {
+            if (chunk.done) { finish(); return; }
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var sep;
+            while ((sep = buffer.indexOf('\n\n')) >= 0) {
+              var frame = buffer.slice(0, sep);
+              buffer = buffer.slice(sep + 2);
+              var lines = frame.split('\n');
+              for (var i = 0; i < lines.length; i++) {
+                if (lines[i].indexOf('data: ') !== 0) continue;
+                var payload = lines[i].slice(6).trim();
+                if (payload === '[DONE]') { finish(); return; }
+                try {
+                  var ev = JSON.parse(payload);
+                  if (ev.type === 'delta' && ev.text) {
+                    fullText += ev.text;
+                    messages[assistantIdx].content = fullText;
+                    var el = ensureBotEl();
+                    el.innerHTML = simpleMarkdown(fullText);
+                    msgContainer.scrollTop = msgContainer.scrollHeight;
+                  } else if (ev.type === 'sources') {
+                    messages[assistantIdx].sources = ev.items;
+                  } else if (ev.type === 'followups') {
+                    messages[assistantIdx].followUps = ev.items;
+                  } else if (ev.type === 'walkthrough') {
+                    messages[assistantIdx].walkthroughAvailable = ev.available;
+                  } else if (ev.type === 'done') {
+                    messages[assistantIdx].content = ev.fullText || fullText;
+                  } else if (ev.type === 'error') {
+                    messages[assistantIdx].content = 'Sorry, something went wrong. Please try again.';
+                  }
+                } catch (e) { /* skip malformed frame */ }
+              }
+            }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(onError);
   }
 
   // --- DOM Snapshot Capture ---

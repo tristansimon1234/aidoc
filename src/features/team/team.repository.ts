@@ -69,11 +69,13 @@ export async function findMember(teamId: string, userId: string): Promise<{ role
 export async function listMembers(teamId: string): Promise<TeamMember[]> {
   // team_members.user_id references auth.users, not profiles, so PostgREST
   // can't resolve a direct join. Do two queries and stitch in JS.
+  // Hard-capped to keep the response bounded until we add pagination.
   const { data: memberRows, error } = await supabase
     .from('team_members')
     .select('team_id, user_id, role, joined_at')
     .eq('team_id', teamId)
     .order('joined_at', { ascending: true })
+    .limit(200)
   if (error) throw new DatabaseError(error.message)
   const rows = (memberRows ?? []) as { team_id: string; user_id: string; role: TeamRole; joined_at: string }[]
   if (rows.length === 0) return []

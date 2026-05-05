@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
-import type { ProjectDesignDTO, ChatResponseDTO } from '../../../shared/api/client.js'
+import type { ProjectDesignDTO, ChatResponseDTO, ChatStreamEventDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
 import { ChatSurface, type ChatSurfaceApi } from '../../chat/components/ChatSurface.js'
 import styles from './PublicDocs.module.css'
@@ -125,6 +125,42 @@ function buildPublicChatApi(): ChatSurfaceApi {
         throw new Error(err?.error ?? `Chat failed: ${res.status}`)
       }
       return res.json() as Promise<ChatResponseDTO>
+    },
+    // Streaming SSE for the public docs chat surface. Same
+    // implementation as api.chat.sendStream but unauthenticated and
+    // pointed at the public-docs endpoint.
+    sendStream: async function* (projectId, message, history, sessionToken, signal) {
+      const res = await fetch(`/api/docs/${projectId}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history, sessionToken }),
+        signal,
+      })
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => null) as { error?: string } | null
+        throw new Error(err?.error ?? `Chat stream failed: ${res.status}`)
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let sep: number
+        while ((sep = buffer.indexOf('\n\n')) >= 0) {
+          const frame = buffer.slice(0, sep)
+          buffer = buffer.slice(sep + 2)
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            const payload = line.slice(6).trim()
+            if (payload === '[DONE]') return
+            try {
+              yield JSON.parse(payload) as ChatStreamEventDTO
+            } catch { /* skip malformed frame */ }
+          }
+        }
+      }
     },
   }
 }

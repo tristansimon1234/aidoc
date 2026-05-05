@@ -1,10 +1,27 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { ValidationError, AppError } from '../../shared/middleware/error.middleware.js'
+import { ValidationError, AppError, NotFoundError } from '../../shared/middleware/error.middleware.js'
 import { CreateRunSchema, RunIdParamSchema } from './run.schema.js'
 import * as runService from './run.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
+
+/** Pull the userId the auth middleware attached, or throw 401. */
+function getUserId(req: Request): string {
+  const uid = (req as Request & { userId?: string }).userId
+  if (!uid) throw new AppError('Unauthorized', 'UNAUTHORIZED', 401)
+  return uid
+}
+
+/** Assert the caller is a member of the team that owns the run before
+ *  every run-scoped op. Returns the resolved runId. */
+async function assertRunAccessFromReq(req: Request): Promise<string> {
+  const parsed = RunIdParamSchema.safeParse(req.params)
+  if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+  const id = parsed.data.id
+  await runService.assertRunAccess(id, getUserId(req))
+  return id
+}
 
 export const runRouter = Router()
 
@@ -17,15 +34,11 @@ async function teamForRun(runId: string): Promise<string> {
   return teamId
 }
 
-runRouter.get('/', (_req: Request, res: Response, next: NextFunction) => {
-  void (async () => {
-    try {
-      const runs = await runService.listRuns()
-      res.status(200).json(runs)
-    } catch (err) {
-      next(err)
-    }
-  })()
+// Legacy: used to list every run in the system. We no longer expose it —
+// a new caller would need a team-scoped version (GET /api/teams/:id/runs
+// or similar). Returning 404 preserves the mount without leaking runs.
+runRouter.get('/', (_req: Request, _res: Response, next: NextFunction) => {
+  next(new NotFoundError('Endpoint'))
 })
 
 runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
@@ -43,14 +56,34 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
 
 // SSE stream — live exploration events
 runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction) => {
+  let jobId: string | null = null
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
       // Exploration is the single most expensive op we run (Claude + Browserbase
       // + Gemini). Refuse hard-cap plans at 100% before spinning up a browser.
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
+
+      // Acquire the per-page exploration lock before we spawn anything.
+      // If another teammate is already running an exploration on this page,
+      // ensureExclusiveJob throws AlreadyRunningError → 409 with who / when.
+      const run = await runService.getRun(runId)
+      if (run.docPageId) {
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (page) {
+          const { ensureExclusiveJob } = await import('./job.service.js')
+          const job = await ensureExclusiveJob({
+            runId,
+            pageId: run.docPageId,
+            projectId: page.projectId,
+            type: 'exploration',
+            triggeredByUserId: getUserId(req),
+          })
+          jobId = job.id
+        }
+      }
 
       const body = req.body as { context?: string }
       const context = typeof body.context === 'string' ? body.context : undefined
@@ -63,17 +96,26 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
       res.flushHeaders()
 
       await runService.exploreWithEvents(
-        params.data.id,
+        runId,
         (event) => {
           res.write(`data: ${JSON.stringify(event)}\n\n`)
         },
         context,
       )
 
+      if (jobId) {
+        const { completeJob } = await import('./job.service.js')
+        await completeJob(jobId)
+      }
+
       // Final event
       res.write(`data: ${JSON.stringify({ type: 'close' })}\n\n`)
       res.end()
     } catch (err) {
+      if (jobId) {
+        const { failJob } = await import('./job.service.js')
+        await failJob(jobId, (err as Error).message)
+      }
       // If headers already sent, write error as SSE
       if (res.headersSent) {
         res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
@@ -89,9 +131,8 @@ runRouter.post('/:id/explore', (req: Request, res: Response, next: NextFunction)
 runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      await runService.cancelExploration(params.data.id)
+      const runId = await assertRunAccessFromReq(req)
+      await runService.cancelExploration(runId)
       res.status(200).json({ cancelled: true })
     } catch (err) {
       next(err)
@@ -103,11 +144,15 @@ runRouter.post('/:id/cancel', (req: Request, res: Response, next: NextFunction) 
 runRouter.post('/:id/signed-upload-url', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = req.body as { path?: string }
       if (!body.path || typeof body.path !== 'string') {
         throw new ValidationError('path is required')
+      }
+      // Lock the upload path under the run's prefix so a caller can't write
+      // over another run's artifacts through this signed URL.
+      if (!body.path.startsWith(`runs/${runId}/`)) {
+        throw new AppError('path must start with runs/:id/', 'INVALID_PATH', 400)
       }
       const { createSignedUploadUrl } = await import('../../shared/db/storage.repository.js')
       const signedUrl = await createSignedUploadUrl('artifacts', body.path)
@@ -122,8 +167,7 @@ runRouter.post('/:id/signed-upload-url', (req: Request, res: Response, next: Nex
 runRouter.post('/:id/steps/:stepIndex/screenshot', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const stepIndex = Number(req.params.stepIndex)
       if (isNaN(stepIndex)) throw new ValidationError('stepIndex must be a number')
       const body = req.body as { screenshotPath?: string }
@@ -131,7 +175,7 @@ runRouter.post('/:id/steps/:stepIndex/screenshot', (req: Request, res: Response,
         throw new ValidationError('screenshotPath is required')
       }
       const { updateStepScreenshot } = await import('./run.repository.js')
-      await updateStepScreenshot(params.data.id, stepIndex, body.screenshotPath)
+      await updateStepScreenshot(runId, stepIndex, body.screenshotPath)
       res.status(200).json({ ok: true })
     } catch (err) {
       next(err)
@@ -143,10 +187,9 @@ runRouter.post('/:id/steps/:stepIndex/screenshot', (req: Request, res: Response,
 runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { videoPath?: string; generateDoc?: boolean }
       if (!body.videoPath || typeof body.videoPath !== 'string') {
@@ -155,48 +198,41 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
 
       // If generateDoc flag is set, create a DB job and run the full pipeline.
       // The HTTP connection stays open — fetch survives client-side navigation.
-      // The job row in DB survives browser refresh.
+      // The job row in DB survives browser refresh. ensureExclusiveJob handles
+      // the per-page lock and translates a DB unique violation into a 409
+      // AlreadyRunningError with the triggering user's display name.
       if (body.generateDoc) {
-        const run = await runService.getRun(params.data.id)
+        const run = await runService.getRun(runId)
         if (!run.docPageId) throw new AppError('Run has no linked page', 'NO_PAGE', 400)
         const { findPageById } = await import('../page/page.repository.js')
         const page = await findPageById(run.docPageId)
         if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
-        const { createJob, updateJobStatus } = await import('./job.repository.js')
-
-        let job: { id: string }
-        try {
-          job = await createJob({
-            runId: params.data.id,
-            pageId: run.docPageId,
-            projectId: page.projectId,
-            type: 'doc-gen',
-          })
-        } catch (dupErr) {
-          // Unique constraint violation = job already running for this page
-          if ((dupErr as Error).message?.includes('duplicate') || (dupErr as Error).message?.includes('unique')) {
-            throw new AppError('A doc generation is already running for this page', 'JOB_ALREADY_RUNNING', 409)
-          }
-          throw dupErr
-        }
+        const { ensureExclusiveJob, completeJob, failJob } = await import('./job.service.js')
+        const job = await ensureExclusiveJob({
+          runId,
+          pageId: run.docPageId,
+          projectId: page.projectId,
+          type: 'doc-gen',
+          triggeredByUserId: getUserId(req),
+        })
 
         try {
-          await runService.analyzeVideo(params.data.id, body.videoPath)
-          await runService.generateDoc(params.data.id, (req as Request & { userId?: string }).userId ?? null)
+          await runService.analyzeVideo(runId, body.videoPath)
+          await runService.generateDoc(runId, getUserId(req))
           if (run.docPageId) {
             const { updatePage } = await import('../page/page.repository.js')
             await updatePage(run.docPageId, { status: 'published' })
           }
-          await updateJobStatus(job.id, 'completed')
+          await completeJob(job.id)
         } catch (pipelineErr) {
-          await updateJobStatus(job.id, 'failed', (pipelineErr as Error).message).catch(() => {})
+          await failJob(job.id, (pipelineErr as Error).message)
           throw pipelineErr
         }
         res.status(200).json({ jobId: job.id })
         return
       }
 
-      const result = await runService.analyzeVideo(params.data.id, body.videoPath)
+      const result = await runService.analyzeVideo(runId, body.videoPath)
       res.status(200).json(result)
     } catch (err) {
       next(err)
@@ -212,16 +248,15 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
 runRouter.post('/:id/attach-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = req.body as { videoPath?: string }
       if (!body.videoPath || typeof body.videoPath !== 'string') {
         throw new ValidationError('videoPath is required')
       }
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       const existingSummary = (run.summaryJson ?? {}) as Record<string, unknown>
       const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(params.data.id, {
+      await updateRunSummary(runId, {
         ...existingSummary,
         videoPath: body.videoPath,
         attachedOnly: true,
@@ -238,31 +273,56 @@ runRouter.post('/:id/attach-video', (req: Request, res: Response, next: NextFunc
 runRouter.post('/:id/generate-doc', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
       // Refuse hard-cap plans (Free / Startup) at 100% budget — doc gen is the
       // most expensive op we run.
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       // Verify run has steps before generating
-      const steps = await runService.getRunSteps(params.data.id)
+      const steps = await runService.getRunSteps(runId)
       if (steps.length === 0) {
         throw new AppError('No steps found — the video analysis didn\'t detect any actions. Try re-uploading.', 'NO_STEPS', 400)
       }
 
-      const triggeredBy = (req as Request & { userId?: string }).userId ?? null
+      // Resolve page + team to acquire the per-page doc-gen lock. If a
+      // teammate is already generating for this page, ensureExclusiveJob
+      // throws AlreadyRunningError → 409 with their name + when they started.
+      const run = await runService.getRun(runId)
+      if (!run.docPageId) throw new AppError('Run has no linked page', 'NO_PAGE', 400)
+      const { findPageById } = await import('../page/page.repository.js')
+      const page = await findPageById(run.docPageId)
+      if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
+      const { ensureExclusiveJob, completeJob, failJob } = await import('./job.service.js')
+      const job = await ensureExclusiveJob({
+        runId,
+        pageId: run.docPageId,
+        projectId: page.projectId,
+        type: 'doc-gen',
+        triggeredByUserId: getUserId(req),
+      })
+
+      const triggeredBy = getUserId(req)
       const async = req.query.async === '1'
       if (async) {
-        // Non-blocking: respond immediately, generate in background
-        res.status(202).json({ runId: params.data.id, status: 'running' })
-        void runService.generateDoc(params.data.id, triggeredBy).catch((err) =>
-          console.error(`[generate-doc] Background generation failed for ${params.data.id}:`, err),
-        )
+        // Non-blocking: respond immediately, finish the job + generate in background.
+        res.status(202).json({ runId, jobId: job.id, status: 'running' })
+        void runService.generateDoc(runId, triggeredBy)
+          .then(() => completeJob(job.id))
+          .catch((err) => {
+            console.error(`[generate-doc] Background generation failed for ${runId}:`, err)
+            return failJob(job.id, (err as Error).message)
+          })
       } else {
         // Legacy blocking mode (for backwards compat)
-        const doc = await runService.generateDoc(params.data.id, triggeredBy)
-        res.status(200).json(doc)
+        try {
+          const doc = await runService.generateDoc(runId, triggeredBy)
+          await completeJob(job.id)
+          res.status(200).json(doc)
+        } catch (err) {
+          await failJob(job.id, (err as Error).message)
+          throw err
+        }
       }
     } catch (err) {
       next(err)
@@ -289,15 +349,20 @@ runRouter.get('/voices', (_req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
-// Generate voice-over narration from documentation
+// Generate voice-over narration from documentation. The heavy pipeline
+// (timestamp merging, Gemini narration, ElevenLabs TTS, mux, usage counter,
+// run summary write) lives in voiceover.service → generateVoiceoverForRun
+// so this route and the MCP tool share one implementation. The route layer
+// only owns two things the MCP tool doesn't need: the per-page exclusive
+// lock (so two teammates can't burn duplicate ElevenLabs credits) and the
+// DB-backed `job` row that the frontend JobTracker subscribes to.
 runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: NextFunction) => {
   let voiceoverJobId: string | null = null
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { voiceId?: string; language?: string; tone?: string; videoDuration?: number }
 
@@ -306,26 +371,29 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
         throw new AppError('Voice-over requires ELEVENLABS_API_KEY to be configured', 'ELEVENLABS_NOT_CONFIGURED', 400)
       }
 
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
 
-      // Create a DB job so the frontend tracker survives navigation + refresh.
-      // MCP callers don't want jobs — they block on the JSON-RPC response —
-      // so the job creation stays in the route, not the service.
+      // Per-page exclusive lock. If another teammate is already generating
+      // voice-over for the same page, ensureExclusiveJob throws
+      // AlreadyRunningError → 409 with who + when.
       if (run.docPageId) {
-        try {
-          const { findPageById } = await import('../page/page.repository.js')
-          const page = await findPageById(run.docPageId)
-          if (page) {
-            const { createJob } = await import('./job.repository.js')
-            const job = await createJob({ runId: params.data.id, pageId: run.docPageId, projectId: page.projectId, type: 'voiceover' })
-            voiceoverJobId = job.id
-          }
-        } catch { /* duplicate job or missing page — continue without tracking */ }
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (!page) throw new AppError('Linked page not found', 'PAGE_NOT_FOUND', 404)
+        const { ensureExclusiveJob } = await import('./job.service.js')
+        const job = await ensureExclusiveJob({
+          runId,
+          pageId: run.docPageId,
+          projectId: page.projectId,
+          type: 'voiceover',
+          triggeredByUserId: getUserId(req),
+        })
+        voiceoverJobId = job.id
       }
 
       const { generateVoiceoverForRun } = await import('../documentation/voiceover.service.js')
-      const result = await generateVoiceoverForRun(params.data.id, {
+      const result = await generateVoiceoverForRun(runId, {
         voiceId: body.voiceId,
         language: body.language,
         tone: body.tone,
@@ -354,10 +422,9 @@ runRouter.post('/:id/generate-voiceover', (req: Request, res: Response, next: Ne
 runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { stepIndex: number; text?: string; voiceId?: string }
       if (body.stepIndex == null) throw new ValidationError('stepIndex is required')
@@ -371,7 +438,7 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
       const { uploadToStorage, getPublicUrl } = await import('../../shared/db/storage.repository.js')
 
       // Get existing voiceover data
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
       const summary = run.summaryJson as Record<string, unknown> | null
       const voiceover = summary?.voiceover as { segments?: Array<Record<string, unknown>> } | undefined
@@ -383,7 +450,7 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
 
       // Synthesize new segment audio — use same naming as generateVoiceover
       const buffer = await synthesizeSpeech(text, { voiceId: body.voiceId })
-      const segPath = `runs/${params.data.id}/voiceover-seg-${body.stepIndex}.mp3`
+      const segPath = `runs/${runId}/voiceover-seg-${body.stepIndex}.mp3`
       await uploadToStorage('artifacts', segPath, buffer, 'audio/mpeg')
 
       // Update the segment in the summary
@@ -402,15 +469,15 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
         const concatSegments = updatedSegments
           .sort((a, b) => (a.stepIndex as number) - (b.stepIndex as number))
           .map((s) => ({
-            audioPath: (s.audioPath as string) ?? `runs/${params.data.id}/voiceover-seg-${s.stepIndex as number}.mp3`,
+            audioPath: (s.audioPath as string) ?? `runs/${runId}/voiceover-seg-${s.stepIndex as number}.mp3`,
             targetStartTime: Math.max(0, (s.startTime as number) - 1.5),
           }))
-        mainAudioPath = await concatAudio(params.data.id, concatSegments)
+        mainAudioPath = await concatAudio(runId, concatSegments)
         mainAudioUrl = `${getPublicUrl('artifacts', mainAudioPath) ?? ''}?v=${Date.now()}`
       }
 
       const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(params.data.id, {
+      await updateRunSummary(runId, {
         ...summary,
         voiceover: {
           ...voiceover,
@@ -430,12 +497,11 @@ runRouter.post('/:id/regenerate-segment', (req: Request, res: Response, next: Ne
 runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = req.body as { segments: Array<{ stepIndex: number; startTime: number; endTime: number }> }
       if (!Array.isArray(body.segments)) throw new ValidationError('segments array required')
 
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
       const summary = run.summaryJson as Record<string, unknown> | null
       const voiceover = summary?.voiceover as { segments?: Array<Record<string, unknown>> } | undefined
@@ -448,7 +514,7 @@ runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: Nex
       })
 
       const { updateRunSummary } = await import('./run.repository.js')
-      await updateRunSummary(params.data.id, {
+      await updateRunSummary(runId, {
         ...summary,
         voiceover: { ...voiceover, segments: updatedSegments },
       })
@@ -464,13 +530,12 @@ runRouter.put('/:id/voiceover-segments', (req: Request, res: Response, next: Nex
 runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = req.body as { startTime: number; endTime: number }
       if (body.startTime == null || body.endTime == null) throw new ValidationError('startTime and endTime required')
       if (body.startTime >= body.endTime) throw new ValidationError('startTime must be before endTime')
 
-      const run = await runService.getRun(params.data.id)
+      const run = await runService.getRun(runId)
       if (!run) throw new AppError('Run not found', 'RUN_NOT_FOUND', 404)
 
       const summary = run.summaryJson as Record<string, unknown> | null
@@ -483,7 +548,7 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
         throw new AppError('Video service not configured — set VIDEO_SERVICE_URL', 'VIDEO_SERVICE_NOT_CONFIGURED', 400)
       }
 
-      const trimmedPath = await trimVideo(videoPath, params.data.id, body.startTime, body.endTime)
+      const trimmedPath = await trimVideo(videoPath, runId, body.startTime, body.endTime)
 
       // Update summary with new video path + adjust timestamps for trimmed range
       const { updateRunSummary } = await import('./run.repository.js')
@@ -493,7 +558,7 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
         .map((t) => t - body.startTime)
         .filter((t) => t >= 0 && t <= trimmedDuration)
 
-      await updateRunSummary(params.data.id, {
+      await updateRunSummary(runId, {
         ...summary,
         videoPath: trimmedPath,
         stepTimestamps: adjustedTimestamps,
@@ -514,17 +579,49 @@ runRouter.post('/:id/trim-video', (req: Request, res: Response, next: NextFuncti
 
 // Analyze Try Doc — compare exploration results against documentation
 runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunction) => {
+  let tryDocJobId: string | null = null
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      await enforceQuotaOrThrow(await teamForRun(params.data.id))
+      await enforceQuotaOrThrow(await teamForRun(runId))
 
       const body = req.body as { pageContent: string; pageTitle: string; pageId: string }
       if (!body.pageContent) throw new ValidationError('pageContent is required')
-      const report = await runService.analyzeTryDoc(params.data.id, body.pageContent, body.pageTitle, body.pageId)
-      res.status(200).json(report)
+
+      // Per-page lock for Try Doc analysis. If Alice already kicked one off on
+      // this page, Bob gets a 409 instead of a duplicate Gemini call.
+      const run = await runService.getRun(runId)
+      if (run.docPageId) {
+        const { findPageById } = await import('../page/page.repository.js')
+        const page = await findPageById(run.docPageId)
+        if (page) {
+          const { ensureExclusiveJob } = await import('./job.service.js')
+          const job = await ensureExclusiveJob({
+            runId,
+            pageId: run.docPageId,
+            projectId: page.projectId,
+            type: 'try-doc-analysis',
+            triggeredByUserId: getUserId(req),
+          })
+          tryDocJobId = job.id
+        }
+      }
+
+      try {
+        const report = await runService.analyzeTryDoc(runId, body.pageContent, body.pageTitle, body.pageId)
+        if (tryDocJobId) {
+          const { completeJob } = await import('./job.service.js')
+          await completeJob(tryDocJobId)
+        }
+        res.status(200).json(report)
+      } catch (err) {
+        if (tryDocJobId) {
+          const { failJob } = await import('./job.service.js')
+          await failJob(tryDocJobId, (err as Error).message)
+        }
+        throw err
+      }
     } catch (err) {
       next(err)
     }
@@ -534,9 +631,8 @@ runRouter.post('/:id/analyze-try', (req: Request, res: Response, next: NextFunct
 runRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      const run = await runService.getRun(params.data.id)
+      const runId = await assertRunAccessFromReq(req)
+      const run = await runService.getRun(runId)
       res.status(200).json(run)
     } catch (err) {
       next(err)
@@ -547,9 +643,8 @@ runRouter.get('/:id', (req: Request, res: Response, next: NextFunction) => {
 runRouter.get('/:id/steps', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      const steps = await runService.getRunSteps(params.data.id)
+      const runId = await assertRunAccessFromReq(req)
+      const steps = await runService.getRunSteps(runId)
       res.status(200).json(steps)
     } catch (err) {
       next(err)
@@ -560,9 +655,8 @@ runRouter.get('/:id/steps', (req: Request, res: Response, next: NextFunction) =>
 runRouter.get('/:id/questions', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
-      const questions = await runService.getQuestions(params.data.id)
+      const runId = await assertRunAccessFromReq(req)
+      const questions = await runService.getQuestions(runId)
       res.status(200).json(questions)
     } catch (err) {
       next(err)

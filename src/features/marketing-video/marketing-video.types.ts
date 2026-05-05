@@ -53,13 +53,12 @@ export type MarketingScene = {
   subhead?: string
   /** Index into manifest.screenshots — which doc screenshot to feature in
    *  this scene. Null = no screenshot, headline-only scene. Ignored when
-   *  `mockCode` (or the legacy `mock` DSL) is set. */
+   *  `mockCode` is set. */
   screenshotIndex: number | null
   /** Duration of this scene in seconds. The Remotion composition uses these
    *  to compute frame ranges so scene timings line up with the voice-over. */
   durationSeconds: number
-  /** Legacy DSL mock (header / card / terminalLine / etc.) — kept for
-   *  backwards-compat with persisted manifests. New flow uses mockCode. */
+  /** Legacy DSL mock — backwards-compat with persisted manifests. */
   mock?: MarketingMock
   /** Raw TSX the LLM wrote for this scene's animation. Diagnostics
    *  only — Remotion runs `mockCompiledCode`. */
@@ -68,6 +67,19 @@ export type MarketingScene = {
    *  in a `new Function(...)` with React + Remotion + branding bound,
    *  evaluates, and renders the resulting component. */
   mockCompiledCode?: string
+  /** Architect-picked visual mode for this scene — one of
+   *  hero-stat / bento / chat / chart / cursor-click / flow-diagram /
+   *  headline-burst / logo-hero. Set by the skeleton stage so the
+   *  per-scene designer call knows which template to follow. Optional
+   *  for backwards-compat with manifests generated before the
+   *  architect/designer split. */
+  visualMode?: string
+  /** Concrete visual brief written by the architect (skeleton stage)
+   *  for this scene — 2-3 sentences naming the specific elements,
+   *  numbers, words, and motion the designer should put on screen.
+   *  The designer call turns this into TSX. Optional for the same
+   *  backwards-compat reason. */
+  visualBrief?: string
 }
 
 export interface MarketingScript {
@@ -91,6 +103,12 @@ export interface MarketingScript {
    *  Used to pick the matching ElevenLabs voice and to keep the script in
    *  the doc's language rather than the UI language. */
   language: string
+  /** Architect-picked aesthetic for the whole video — one of the
+   *  STYLE_SEEDS labels (editorial, brutalist, data-density, etc.).
+   *  Drives the visual vocabulary the designer agents lean on, on top
+   *  of each scene's per-scene visualBrief. Optional for backwards-
+   *  compat with manifests generated before the architect-picked seed. */
+  styleSeed?: string
 }
 
 export interface MarketingScreenshot {
@@ -147,6 +165,14 @@ export interface MarketingManifest {
    *  of losing everything to a music-only failure. UI surfaces this as
    *  a non-blocking warning. */
   musicError?: string | null
+  /** Public URL to the JPEG thumbnail of a punchy frame (default: 4s into
+   *  the video, end of the hook with the headline in place). Used as the
+   *  video player's `poster`, the public-docs og:image, and the social
+   *  card preview. Captured client-side after the first render and
+   *  uploaded via POST /api/runs/:id/marketing-video/thumbnail. */
+  thumbnailUrl?: string | null
+  /** Storage path of the thumbnail (relative to artifacts bucket). */
+  thumbnailPath?: string | null
 }
 
 /** Render lifecycle of the MP4. The manifest can exist without a render
@@ -175,7 +201,14 @@ export interface MarketingVideoSummary {
 
 /** Tone preset name. Maps to a tuned (stability, style, similarityBoost)
  *  triplet — see TONE_PRESETS in marketing-video.service.ts for the values. */
-export type VoiceTone = 'punchy' | 'calm' | 'playful' | 'serious'
+export type VoiceTone =
+  | 'punchy'         // energetic, marketing-default
+  | 'calm'           // measured, soft
+  | 'playful'        // expressive, casual
+  | 'serious'        // authoritative, monotone
+  | 'confident'      // warm + authoritative — founder pitch
+  | 'inspirational'  // uplifting, building energy
+  | 'conversational' // natural, podcast-style
 
 export interface GenerateMarketingVideoOptions {
   /** When false, skip ElevenLabs synthesis. The manifest still includes the

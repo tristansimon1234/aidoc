@@ -1,15 +1,37 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { ValidationError } from '../../shared/middleware/error.middleware.js'
+import { AppError, ValidationError } from '../../shared/middleware/error.middleware.js'
 import { ChatRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { UuidParamSchema } from '../../shared/validation/schemas.js'
-import { registerChatSession, incrementUsage, findTeamIdByProjectId, findOwnerUserIdByTeamId } from '../../shared/usage/usage.repository.js'
+import { registerChatSession, incrementUsage, findOwnerUserIdByTeamId } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
-import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
+import { assertProjectAccess } from '../project/project.service.js'
 
 export const chatRouter = Router({ mergeParams: true })
+
+function getUserId(req: Request): string {
+  const uid = (req as Request & { userId?: string }).userId
+  if (!uid) throw new AppError('Unauthorized', 'UNAUTHORIZED', 401)
+  return uid
+}
+
+/** Parse + assert team membership on the :projectId path param before any
+ *  authed chat operation. Returns BOTH projectId and teamId so callers
+ *  don't have to re-fetch the project to learn which team owns it (saves
+ *  one round-trip on every chat turn — main hot path). 404 on "not a
+ *  member" to match the rest of the app. */
+async function assertChatAccess(req: Request): Promise<{ projectId: string; teamId: string }> {
+  const params = UuidParamSchema.safeParse({ id: req.params.projectId })
+  if (!params.success) throw new ValidationError(params.error.flatten())
+  try {
+    const project = await assertProjectAccess(params.data.id, getUserId(req))
+    return { projectId: project.id, teamId: project.teamId }
+  } catch {
+    throw new AppError('Project not found', 'PROJECT_NOT_FOUND', 404)
+  }
+}
 
 async function trackAppChatSession(projectId: string, teamId: string, sessionToken: string | undefined): Promise<void> {
   if (!sessionToken || sessionToken.length < 8 || sessionToken.length > 128) return
@@ -25,26 +47,26 @@ async function trackAppChatSession(projectId: string, teamId: string, sessionTok
 chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = UuidParamSchema.safeParse({ id: req.params.projectId })
-      if (!params.success) throw new ValidationError(params.error.flatten())
-
+      // Parse the request body upfront — independent of the auth check, so
+      // we can race them. Body parse is sync but tiny.
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      const teamId = await findTeamIdByProjectId(params.data.id)
-      if (!teamId) throw new ValidationError('Project not found')
+      // assertChatAccess already loads the project (auth + team check) and
+      // returns the teamId, so we no longer need a second findTeamIdByProjectId.
+      // Quota check needs teamId, so it has to come after — but the project
+      // load is the only blocker on the read path.
+      const { projectId, teamId } = await assertChatAccess(req)
 
       // Block hard-cap plans before spending on Gemini.
       await enforceQuotaOrThrow(teamId)
 
+      // Classification is deferred to the hourly cron — see analytics.service.
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
-      const sessionTrackPromise = trackAppChatSession(params.data.id, teamId, sessionToken)
-      const classifyPromise = sessionToken
-        ? classifyMessageContent(body.data.message)
-        : Promise.resolve(null)
+      const sessionTrackPromise = trackAppChatSession(projectId, teamId, sessionToken)
 
       const result = await chatService.chat(
-        params.data.id,
+        projectId,
         body.data.message,
         body.data.history,
         body.data.userContext,
@@ -55,18 +77,14 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
           // chat_messages keeps user_id as audit — pick the team's primary owner.
           const ownerId = await findOwnerUserIdByTeamId(teamId)
           if (ownerId) {
-            const { userMessageId } = await logChatMessages({
-              projectId: params.data.id,
+            await logChatMessages({
+              projectId,
               userId: ownerId,
               sessionToken,
               source: 'app',
               userMessage: body.data.message,
               assistantMessage: result.answer,
             })
-            const classified = await classifyPromise
-            if (userMessageId && classified) {
-              await applyClassificationToMessage(userMessageId, classified)
-            }
           }
         } catch (err) {
           console.warn('[analytics] app chat log failed:', (err as Error).message)
@@ -82,16 +100,88 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
   })()
 })
 
+// Streaming variant of POST / — same business logic + same auth + same
+// quota gate, but the response is SSE so the client renders token-by-token
+// as Gemini emits text. The legacy POST / stays for MCP / widget / any
+// caller that wants a single JSON response.
+chatRouter.post('/stream', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const body = ChatRequestSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const { projectId, teamId } = await assertChatAccess(req)
+      await enforceQuotaOrThrow(teamId)
+
+      const sessionToken = (req.body as { sessionToken?: string }).sessionToken
+      const sessionTrackPromise = trackAppChatSession(projectId, teamId, sessionToken)
+
+      // SSE headers
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.setHeader('X-Accel-Buffering', 'no')
+      res.flushHeaders()
+
+      const stream = chatService.chatStream(
+        projectId,
+        body.data.message,
+        body.data.history,
+        body.data.userContext,
+      )
+      let assistantText = ''
+      try {
+        for await (const event of stream) {
+          if (event.type === 'done') assistantText = event.fullText
+          res.write(`data: ${JSON.stringify(event)}\n\n`)
+        }
+      } catch (err) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+      }
+
+      res.write('data: [DONE]\n\n')
+      res.end()
+
+      // Post-stream side effects: log + session tracker. Best-effort, never
+      // fails the response (the response has already been written).
+      if (sessionToken && assistantText) {
+        try {
+          const ownerId = await findOwnerUserIdByTeamId(teamId)
+          if (ownerId) {
+            await logChatMessages({
+              projectId,
+              userId: ownerId,
+              sessionToken,
+              source: 'app',
+              userMessage: body.data.message,
+              assistantMessage: assistantText,
+            })
+          }
+        } catch (err) {
+          console.warn('[analytics] app chat stream log failed:', (err as Error).message)
+        }
+      }
+      await sessionTrackPromise
+    } catch (err) {
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+        res.end()
+      } else {
+        next(err)
+      }
+    }
+  })()
+})
+
 // Check if indexed, optionally force re-index
 chatRouter.post('/index', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = UuidParamSchema.safeParse({ id: req.params.projectId })
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const { projectId } = await assertChatAccess(req)
 
       const body = req.body as { force?: boolean }
       const { hasEmbeddings } = await import('./chat.repository.js')
-      const exists = await hasEmbeddings(params.data.id)
+      const exists = await hasEmbeddings(projectId)
 
       // Skip re-indexing if embeddings exist and not forced
       if (exists && !body.force) {
@@ -99,8 +189,25 @@ chatRouter.post('/index', (req: Request, res: Response, next: NextFunction) => {
         return
       }
 
-      const count = await chatService.indexProject(params.data.id)
-      res.status(200).json({ indexed: count, cached: false })
+      // Project-level lock so two teammates clicking Re-index simultaneously
+      // don't both burn embedding tokens for the same data.
+      const { ensureExclusiveJob, completeJob, failJob } = await import('../run/job.service.js')
+      const job = await ensureExclusiveJob({
+        runId: null,
+        pageId: null,
+        projectId,
+        type: 'index',
+        triggeredByUserId: getUserId(req),
+      })
+
+      try {
+        const count = await chatService.indexProject(projectId)
+        await completeJob(job.id)
+        res.status(200).json({ indexed: count, cached: false })
+      } catch (err) {
+        await failJob(job.id, (err as Error).message)
+        throw err
+      }
     } catch (err) {
       next(err)
     }
@@ -114,10 +221,7 @@ const SUGGESTIONS_TTL_MS = 3600_000 // 1 hour
 chatRouter.get('/suggestions', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = UuidParamSchema.safeParse({ id: req.params.projectId })
-      if (!params.success) throw new ValidationError(params.error.flatten())
-
-      const projectId = params.data.id
+      const { projectId } = await assertChatAccess(req)
       const cached = suggestionsCache.get(projectId)
 
       if (cached && Date.now() - cached.generatedAt < SUGGESTIONS_TTL_MS) {

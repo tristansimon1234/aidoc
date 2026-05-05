@@ -2,7 +2,6 @@ import React from 'react'
 import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion'
 import type { Branding, Scene, Screenshot } from '../manifest.js'
 import { BrandWatermark } from './BrandWatermark.js'
-import { DynamicMock } from '../mocks/DynamicMock.js'
 import { DynamicScene } from './DynamicScene.js'
 
 interface FeatureSceneProps {
@@ -70,17 +69,19 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   const layout: LayoutVariant = LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
 
   // Visual priority for the scene:
-  //   1. mockCompiledCode → run the LLM-generated TSX inside the
-  //      visual panel, side-by-side with the text block.
-  //   2. mock (legacy DSL) → static-ish primitive composition.
-  //   3. screenshot → real product UI with Ken Burns.
-  // The mock IS the visual element of whatever layout the scene uses
-  // (split-left / split-right / fullscreen / stacked). It does NOT
-  // consume the whole canvas — text panel always coexists.
+  //   1. template → structured JSON, fixed React component (preferred).
+  // Visual routing:
+  //   1. mockCompiledCode → DynamicScene runs the LLM-written TSX in
+  //      a sandboxed Function with React + Remotion + branding bound.
+  //      ALL the protective infra (lint, Proxy Icons, runtime fallback,
+  //      per-scene rescue) lives upstream so we trust the compiled code
+  //      reaching here is either valid or the SafeMockBoundary will
+  //      catch a runtime throw and show a clean canvas.
+  //   2. screenshot → real product UI with Ken Burns.
+  //   3. nothing → ScreenshotFrame with screenshot=null falls back to
+  //      a flat bgColor canvas (handled in ScreenshotFrame itself).
   const visualElement = scene.mockCompiledCode ? (
     <DynamicScene mockCompiledCode={scene.mockCompiledCode} branding={branding} />
-  ) : scene.mock ? (
-    <DynamicMock mock={scene.mock} branding={branding} width={920} height={580} />
   ) : (
     <ScreenshotFrame
       screenshot={screenshot}
@@ -107,7 +108,10 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   // rectangle on one half ("le carré"), breaking the clean white look.
   // Screenshots still get the gradient (it adds nice ambient where the
   // raw screenshot has none).
-  const usingMock = !!(scene.mockCompiledCode || scene.mock)
+  // Skip the FeatureScene's ambient radial-gradient when a mock is in
+  // play — the LLM-written TSX produces its own visual surface and a
+  // second gradient on the canvas just dirties the white space.
+  const usingMock = !!scene.mockCompiledCode
 
   // Expose the project's font as a CSS custom property so Twind's
   // font-sans utility (used by every Tailwind text-* className inside
@@ -291,9 +295,12 @@ const ScreenshotFrame: React.FC<ScreenshotFrameProps> = ({ screenshot, branding,
             }}
           />
         ) : (
-          <AbsoluteFill
-            style={{ background: `linear-gradient(135deg, ${branding.accentColor}55, ${branding.bgColor})` }}
-          />
+          // No screenshot AND no mock — this is the silent-failure state
+          // (mocks-mode scene whose mockCode was missing or both rescue
+          // attempts failed). Render just the canvas bgColor so the
+          // empty visual slot blends with the rest of the video instead
+          // of flashing a colored gradient that looks like a glitch.
+          <AbsoluteFill style={{ background: branding.bgColor }} />
         )}
       </div>
     </>

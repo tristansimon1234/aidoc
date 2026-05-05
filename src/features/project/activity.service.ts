@@ -1,6 +1,7 @@
 import { findProjectById } from './project.repository.js'
 import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import { findMember } from '../team/team.repository.js'
+import { findProfileNamesByIds } from '../profile/profile.repository.js'
 import * as activityRepo from './activity.repository.js'
 import type { ActivityItem } from './activity.types.js'
 
@@ -35,7 +36,7 @@ export async function getProjectActivity(projectId: string, callerUserId: string
   edits.forEach((e) => { if (e.lastEditedBy) userIds.add(e.lastEditedBy) })
   gens.forEach((g) => { if (g.triggeredByUserId) userIds.add(g.triggeredByUserId) })
   joins.forEach((j) => userIds.add(j.userId))
-  const names = await batchResolveUserNames(Array.from(userIds))
+  const names = await findProfileNamesByIds(Array.from(userIds))
 
   const items: ActivityItem[] = []
   for (const e of edits) {
@@ -70,19 +71,3 @@ export async function getProjectActivity(projectId: string, callerUserId: string
     .slice(0, MAX_ITEMS)
 }
 
-async function batchResolveUserNames(userIds: string[]): Promise<Map<string, string>> {
-  if (userIds.length === 0) return new Map()
-  const { supabase } = await import('../../shared/db/supabase.client.js')
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, email, full_name')
-    .in('id', userIds)
-  if (error) return new Map()
-  const map = new Map<string, string>()
-  for (const row of data ?? []) {
-    const r = row as { id: string; email: string | null; full_name: string | null }
-    const name = r.full_name ?? r.email ?? null
-    if (name) map.set(r.id, name)
-  }
-  return map
-}

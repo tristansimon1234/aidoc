@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
+import { Sentry } from '../observability/sentry.js'
 
 export interface ApiError {
   error: string
@@ -38,7 +39,7 @@ export class DatabaseError extends AppError {
 
 export function errorHandler(
   err: Error,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction,
 ): void {
@@ -47,6 +48,14 @@ export function errorHandler(
     // diagnose them after the fact — AppError used to swallow those silently.
     if (err.statusCode >= 500) {
       console.error(`[${err.code}] ${err.message}\n${err.stack ?? ''}`)
+      // Surface server-side AppErrors to Sentry too — the `code` field goes
+      // in as a tag so we can filter in the dashboard. 4xx errors are expected
+      // and excluded on purpose; they aren't bugs.
+      Sentry.withScope((scope) => {
+        scope.setTag('error_code', err.code)
+        scope.setTag('path', req.path)
+        Sentry.captureException(err)
+      })
     }
     const body: ApiError = {
       error: err.message,
@@ -58,6 +67,10 @@ export function errorHandler(
   }
 
   console.error('Unhandled error:', err)
+  Sentry.withScope((scope) => {
+    scope.setTag('path', req.path)
+    Sentry.captureException(err)
+  })
   const body: ApiError = { error: 'Internal server error', code: 'INTERNAL_ERROR' }
   res.status(500).json(body)
 }

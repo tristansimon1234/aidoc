@@ -10,7 +10,6 @@ import { ChatRequestSchema } from '../chat/chat.schema.js'
 import { hasEmbeddings } from '../chat/chat.repository.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
 import { logChatMessages, logPageView } from '../analytics/analytics.repository.js'
-import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { PageViewPingSchema } from '../analytics/analytics.schema.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { createLimiter } from '../../shared/rate-limit/rate-limit.js'
@@ -153,11 +152,10 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       if (!body.success) throw new ValidationError(body.error.flatten())
 
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
-      // Run session counter + classifier in parallel with the chat Gemini call.
+      // Run session counter in parallel with the chat Gemini call. Sentiment
+      // / frustration classification is deferred to the hourly cron —
+      // see analytics.service.classifyPendingMessages.
       const sessionTrackPromise = trackPublicSession(project, sessionToken)
-      const classifyPromise = sessionToken
-        ? classifyMessageContent(body.data.message)
-        : Promise.resolve(null)
 
       const result = await chatService.chat(
         project.id,
@@ -171,7 +169,7 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
 
       if (sessionToken) {
         try {
-          const { userMessageId } = await logChatMessages({
+          await logChatMessages({
             projectId: project.id,
             userId: project.userId,
             sessionToken,
@@ -179,10 +177,6 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
             userMessage: body.data.message,
             assistantMessage: result.answer,
           })
-          const classified = await classifyPromise
-          if (userMessageId && classified) {
-            await applyClassificationToMessage(userMessageId, classified)
-          }
         } catch (err) {
           console.warn('[analytics] public chat log failed:', (err as Error).message)
         }
@@ -193,6 +187,78 @@ publicDocsRouter.post('/:projectId/chat', (req: Request, res: Response, next: Ne
       res.status(200).json(result)
     } catch (err) {
       next(err)
+    }
+  })()
+})
+
+// SSE streaming variant — same auth + quota + rate limit as POST /chat,
+// just emits Gemini deltas as they arrive so the public docs surface can
+// render token-by-token. The legacy POST stays for callers that want a
+// single JSON response (search bots, future integrations).
+publicDocsRouter.post('/:projectId/chat/stream', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const projectId = req.params.projectId as string
+      await publicChatLimiter.checkOrThrow(`${projectId}:${clientIp(req)}`)
+
+      const project = await loadChatEnabledProject(projectId)
+      await enforceQuotaOrThrow(project.teamId)
+
+      const body = ChatRequestSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const sessionToken = (req.body as { sessionToken?: string }).sessionToken
+      const sessionTrackPromise = trackPublicSession(project, sessionToken)
+
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.setHeader('X-Accel-Buffering', 'no')
+      res.flushHeaders()
+
+      const stream = chatService.chatStream(
+        project.id,
+        body.data.message,
+        body.data.history,
+        body.data.userContext,
+      )
+      let assistantText = ''
+      try {
+        for await (const event of stream) {
+          // Anonymous visitors don't get walkthrough hints (no DOM context)
+          if (event.type === 'walkthrough') continue
+          if (event.type === 'done') assistantText = event.fullText
+          res.write(`data: ${JSON.stringify(event)}\n\n`)
+        }
+      } catch (err) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+      }
+
+      res.write('data: [DONE]\n\n')
+      res.end()
+
+      if (sessionToken && assistantText) {
+        try {
+          await logChatMessages({
+            projectId: project.id,
+            userId: project.userId,
+            sessionToken,
+            source: 'public',
+            userMessage: body.data.message,
+            assistantMessage: assistantText,
+          })
+        } catch (err) {
+          console.warn('[analytics] public chat stream log failed:', (err as Error).message)
+        }
+      }
+      await sessionTrackPromise
+    } catch (err) {
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+        res.end()
+      } else {
+        next(err)
+      }
     }
   })()
 })

@@ -16,14 +16,18 @@ function getGenAI(): GoogleGenerativeAI {
   return new GoogleGenerativeAI(env.GEMINI_API_KEY)
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn()
     } catch (err: unknown) {
       const status = (err as { status?: number }).status
       if (status === 429 && attempt < maxRetries) {
-        const waitSec = Math.min(30 * (attempt + 1), 90)
+        // Short first-attempt backoff so a long-running SSE exploration
+        // has a shot at two retries within the 300s Vercel fn timeout.
+        // Previous values (30/60/90s) burned the whole window and left
+        // runs stuck in `running` when the function timed out.
+        const waitSec = Math.min(10 * (attempt + 1), 30)
         console.log(`[gemini] Rate limited, retrying in ${waitSec}s (attempt ${attempt + 1}/${maxRetries})`)
         await new Promise((r) => setTimeout(r, waitSec * 1000))
         continue
@@ -56,6 +60,12 @@ export async function generateText(opts: {
    *  fields, no wrong types, no extra envelope keys. Use for any JSON we
    *  Zod-validate downstream so the model can't drift the shape. */
   responseSchema?: ResponseSchema
+  /** Thinking budget cap. Gemini 2.5 Flash + Pro both have "thinking"
+   *  on by default, which silently consumes maxOutputTokens. For
+   *  structured-JSON tasks (template fills, schema-constrained extracts)
+   *  thinking adds nothing and just eats budget — pass `0` to disable.
+   *  For open-ended reasoning (chat, code-rewrites) leave undefined. */
+  thinkingBudget?: number
 }): Promise<{ text: string; usage: GeminiUsage }> {
   const genAI = getGenAI()
   const model = genAI.getGenerativeModel({
@@ -71,13 +81,63 @@ export async function generateText(opts: {
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(opts.json ? { responseMimeType: 'application/json' } : {}),
         ...(opts.responseSchema ? { responseSchema: opts.responseSchema } : {}),
-      },
+        // thinkingConfig is a Gemini 2.5 feature — set thinkingBudget=0
+        // to disable internal reasoning tokens for structured tasks.
+        ...(opts.thinkingBudget !== undefined
+          ? { thinkingConfig: { thinkingBudget: opts.thinkingBudget } }
+          : {}),
+      } as Record<string, unknown>,
     }),
   )
 
   const usage = result.response.usageMetadata
+  let text = ''
+  try {
+    text = result.response.text()
+  } catch (textErr) {
+    // SDK throws when the response has no text-bearing candidate (e.g.
+    // safety block). We log + return empty rather than propagate, so
+    // upstream rescue paths can fall back gracefully.
+    console.warn(`[gemini] response.text() threw: ${(textErr as Error).message}`)
+  }
+  // When Gemini returns no text, surface WHY upstream — the SDK's text()
+  // returns '' for several distinct reasons and "Pro returned empty"
+  // is too vague to debug:
+  //   - finishReason: 'SAFETY' → safety filter blocked the output
+  //   - finishReason: 'RECITATION' → matched copyrighted training data
+  //   - finishReason: 'MAX_TOKENS' → hit the cap before producing any
+  //     content (very long input vs very small maxTokens)
+  //   - finishReason: 'OTHER' → model error, often a 503 retry path
+  //   - no candidates → the request itself was rejected (prompt block)
+  // Surface anomalous finishReasons EVEN when text is non-empty.
+  // MAX_TOKENS with non-empty text means the response was TRUNCATED —
+  // callers compiling TSX would get "Unexpected end of file" without
+  // knowing why. SAFETY/RECITATION mid-response is rarer but still
+  // worth logging.
+  const candidates = result.response.candidates ?? []
+  const finishReason = candidates[0]?.finishReason ?? 'NO_CANDIDATES'
+  if (text && text.trim().length > 0 && finishReason && finishReason !== 'STOP') {
+    console.warn(
+      `[gemini] Truncated response from ${opts.model ?? GEMINI_MODEL}: finishReason=${finishReason} ` +
+      `inputTokens=${usage?.promptTokenCount ?? '?'} outputTokens=${usage?.candidatesTokenCount ?? '?'} ` +
+      `(consider raising maxTokens above ${opts.maxTokens ?? '?'})`,
+    )
+  }
+  if (!text || text.trim().length === 0) {
+    const safetyRatings = candidates[0]?.safetyRatings ?? []
+    const blockedRatings = safetyRatings.filter((r) =>
+      r.probability && r.probability !== 'NEGLIGIBLE' && r.probability !== 'LOW',
+    )
+    const promptFeedback = result.response.promptFeedback
+    console.warn(
+      `[gemini] Empty response from ${opts.model ?? GEMINI_MODEL}: finishReason=${finishReason}` +
+      (blockedRatings.length ? ` blocked=${blockedRatings.map((r) => `${r.category}:${r.probability}`).join(',')}` : '') +
+      (promptFeedback?.blockReason ? ` promptBlock=${promptFeedback.blockReason}` : '') +
+      ` inputTokens=${usage?.promptTokenCount ?? '?'} outputTokens=${usage?.candidatesTokenCount ?? '?'}`,
+    )
+  }
   return {
-    text: result.response.text(),
+    text,
     usage: {
       inputTokens: usage?.promptTokenCount ?? 0,
       outputTokens: usage?.candidatesTokenCount ?? 0,
@@ -85,15 +145,110 @@ export async function generateText(opts: {
   }
 }
 
+/**
+ * Streamed text generation. Yields the same response as `generateText` but
+ * exposes incremental chunks as Gemini emits them, so SSE callers can flush
+ * tokens to the client as they arrive instead of buffering the whole answer.
+ *
+ * Same retry behaviour as generateText for the initial connection (handles
+ * the 429 backoff). Once the stream is open we don't retry — partial
+ * deltas have already been sent and the caller's protocol handles
+ * mid-stream errors.
+ *
+ * Usage:
+ *   const stream = await generateTextStream(opts)
+ *   for await (const delta of stream.deltas) { res.write(delta) }
+ *   const { fullText, usage } = await stream.result
+ */
+export async function generateTextStream(opts: {
+  systemPrompt?: string
+  userPrompt: string
+  maxTokens?: number
+  temperature?: number
+  model?: string
+}): Promise<{
+  deltas: AsyncIterable<string>
+  result: Promise<{ fullText: string; usage: GeminiUsage }>
+}> {
+  const genAI = getGenAI()
+  const model = genAI.getGenerativeModel({
+    model: opts.model ?? GEMINI_MODEL,
+    ...(opts.systemPrompt ? { systemInstruction: opts.systemPrompt } : {}),
+  })
+
+  const streamResult = await withRetry(() =>
+    model.generateContentStream({
+      contents: [{ role: 'user', parts: [{ text: opts.userPrompt }] }],
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+      },
+    }),
+  )
+
+  // Capture the full text + usage as the stream drains. Caller awaits
+  // `result` after consuming `deltas` to get the final state.
+  let fullText = ''
+  let resolveResult: (v: { fullText: string; usage: GeminiUsage }) => void
+  let rejectResult: (e: unknown) => void
+  const result = new Promise<{ fullText: string; usage: GeminiUsage }>((resolve, reject) => {
+    resolveResult = resolve
+    rejectResult = reject
+  })
+
+  async function* deltaIterator(): AsyncIterable<string> {
+    try {
+      for await (const chunk of streamResult.stream) {
+        const text = chunk.text()
+        if (text) {
+          fullText += text
+          yield text
+        }
+      }
+      const final = await streamResult.response
+      const usage = final.usageMetadata
+      resolveResult({
+        fullText,
+        usage: {
+          inputTokens: usage?.promptTokenCount ?? 0,
+          outputTokens: usage?.candidatesTokenCount ?? 0,
+        },
+      })
+    } catch (err) {
+      rejectResult(err)
+      throw err
+    }
+  }
+
+  return { deltas: deltaIterator(), result }
+}
+
 // --- Embeddings ---
 
 const EMBEDDING_DIMENSIONS = 768
 
-// Auto-discover the first available embedding model
+// Default embedding model — pinned to avoid a ListModels round-trip on
+// Embedding model selection. We try the env override first (so an
+// operator can pin a specific model without a deploy), then fall back
+// to ListModels discovery — that lets us survive Google's periodic
+// model deprecations / regional rollouts without code changes. The
+// ListModels round-trip costs ~200-400ms but only fires once per
+// Vercel cold start; subsequent calls hit the in-process cache.
+//
+// Earlier versions of this code hard-coded `text-embedding-004`, which
+// turned out NOT to be visible to every API key (it's gated by region
+// + project enablement) and caused a 404 on first chat. Discovery is
+// the safer default.
 let _cachedEmbeddingModel: string | null = null
 
 async function getEmbeddingModel(): Promise<string> {
   if (_cachedEmbeddingModel) return _cachedEmbeddingModel
+
+  const override = process.env.GEMINI_EMBEDDING_MODEL?.replace(/^models\//, '')
+  if (override) {
+    _cachedEmbeddingModel = override
+    return _cachedEmbeddingModel
+  }
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models?key=${env.GEMINI_API_KEY}`,
@@ -104,10 +259,9 @@ async function getEmbeddingModel(): Promise<string> {
   const embeddingModel = data.models.find((m) =>
     m.supportedGenerationMethods.includes('embedContent'),
   )
-
   if (!embeddingModel) throw new Error('No embedding model available for this API key')
 
-  _cachedEmbeddingModel = embeddingModel.name.replace('models/', '')
+  _cachedEmbeddingModel = embeddingModel.name.replace(/^models\//, '')
   console.log(`[gemini] Using embedding model: ${_cachedEmbeddingModel}`)
   return _cachedEmbeddingModel
 }

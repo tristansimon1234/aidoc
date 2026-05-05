@@ -12,8 +12,8 @@ import {
   UpdatePageToolArgsSchema,
   DeletePageToolArgsSchema,
   ReorderPagesToolArgsSchema,
-  GenerateDocToolArgsSchema,
   GenerateVoiceoverToolArgsSchema,
+  GenerateMarketingVideoToolArgsSchema,
 } from './mcp.schema.js'
 import {
   findActiveTokenByValue,
@@ -456,38 +456,6 @@ Companion tools: \`list_pages\`, \`create_page\`, \`update_page\`.`,
     },
   },
   {
-    name: 'generate_doc',
-    description:
-      `Generate the markdown documentation for a page from a screen-recording video using Gemini 2.5 Flash.
-
-Two modes:
-- **With \`videoUrl\`**: tool fetches the video from the URL (any public HTTP MP4 / WebM / MOV), uploads it to the artifacts bucket, creates a run if needed, then runs the analysis. Lets you drive the full flow from MCP — pair with \`create_page\` first to spin up a brand-new doc.
-- **Without \`videoUrl\`**: assumes the page already has a run with a video attached (uploaded via the UI or the Try Doc / Record flow).
-
-Long-running — Gemini analyzes every frame, extracts step-level screenshots, and produces a structured doc. Typical duration: 30–120 seconds depending on video length. The agent calling this should be patient and not retry early.
-
-Side effects:
-- (When \`videoUrl\` provided) downloads up to 200 MB and uploads to \`runs/<id>/video.<ext>\` in the artifacts bucket.
-- Writes the markdown to \`doc_pages.content\` (overwrites any existing content after snapshotting the previous version for undo).
-- Stores the immutable AI output under \`generated_docs.markdown_content\` against the run.
-- Sets \`doc_pages.status = 'published'\`.
-- Re-indexes the page embeddings for chat / search.
-- Counts one \`doc_run\` against the monthly token quota — fails with \`QUOTA_EXCEEDED\` on hard-cap plans.
-
-Source URL constraints (when \`videoUrl\` provided): public HTTP/HTTPS, direct video file (not a viewer page — Loom embed pages won't work, the raw .mp4 will), Content-Type starts with \`video/\`, ≤ 200 MB. Private / loopback / link-local hosts are blocked (SSRF guard).
-
-Companion tools: \`create_page\` (build the destination first), \`get_page\` (read the result), \`update_page\` (manual tweaks), \`generate_voiceover\` (next step).`,
-    inputSchema: {
-      type: 'object',
-      properties: {
-        projectId: { type: 'string', description: 'Project UUID.' },
-        slug: { type: 'string', description: 'Page slug. With videoUrl, can be a fresh page; without, must already have a run + video.' },
-        videoUrl: { type: 'string', description: 'Optional public URL to a video file. When provided, the video is fetched, uploaded, attached, and analyzed in one call.' },
-      },
-      required: ['projectId', 'slug'],
-    },
-  },
-  {
     name: 'generate_voiceover',
     description:
       `Produce a voice-over narration (ElevenLabs multilingual TTS) synchronized to the video timestamps of the page's latest run. Uses the page's current \`content\` as the source script — call \`generate_doc\` first if the page has no doc yet.
@@ -514,6 +482,180 @@ Companion tools: \`generate_doc\` (prerequisite when no content exists), \`get_p
         language: { type: 'string', description: 'Optional BCP-47 language tag (e.g. "en", "fr"). Defaults to the project-level language.' },
       },
       required: ['projectId', 'slug'],
+    },
+  },
+  {
+    name: 'generate_marketing_video',
+    description:
+      `Submit a fully-authored 45-second marketing video for the page and have Doclee compile, narrate, score, and render it. **You author the script AND the per-scene TSX animations** — Doclee runs the build pipeline (esbuild → ElevenLabs voice + music → Remotion render) but does NO LLM call of its own on this path. The video URL comes back when render finishes (~2-3 min total).
+
+Long-running. Counts one \`marketing_video\` against the monthly token quota. Requires \`ELEVENLABS_API_KEY\` for voice-over and (when \`musicTrackId\` is 'ai*') AI music generation.
+
+## How to author a great script
+
+The video is **45 seconds**, three acts:
+- **HOOK** (4-6s): one strong opening line that makes the viewer pause.
+- **SCENES** (3-4 scenes, 7-12s each): each scene shows ONE benefit. Headline reinforces what the narrator says.
+- **CTA** (4-6s): clear call-to-action with a short button label.
+
+**\`hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds === totalDurationSeconds === 45\`** (±0.5).
+
+Voice-over budget: **~85 words total** across all parts. Audio tags + em-dashes + ellipses each add real silence. ElevenLabs v3 reads the concatenated voiceover — embed delivery cues:
+- \`[excited]\`, \`[calm]\`, \`[short pause]\`, \`[laughs]\`, \`[whispers]\`, \`[building]\`, \`[happy gasp]\`
+- Em dash (—) = punchy pause. Ellipsis (...) = trailing silence (use SPARINGLY, max once).
+- CAPS for one or two key words = vocal stress. NOT whole sentences.
+
+## Required output shape
+
+\`\`\`ts
+{
+  hook: { voiceover: string; headline: string; durationSeconds: number },
+  scenes: Array<{
+    voiceover: string;
+    headline: string;          // big on-screen text; the composition layer draws this in a panel beside the mock
+    subhead?: string;          // optional supporting line under headline
+    screenshotIndex: number | null;  // null when you write a mock
+    durationSeconds: number;
+    visualMode?: string;       // 'hero-stat' | 'bento' | 'chat' | 'chart' | 'cursor-click' | 'flow-diagram' | 'logo-hero' | 'custom'
+    visualBrief?: string;      // your own design brief (optional, persisted for diagnostics)
+    mockCode?: string;         // TSX — see rules below
+  }>,
+  cta: { voiceover: string; headline: string; buttonLabel: string; durationSeconds: number },
+  totalDurationSeconds: number,
+  language: string,            // 'en' | 'fr' | …
+  styleSeed?: string           // optional aesthetic tag
+}
+\`\`\`
+
+## Critical: the headline panel + the mock are TWO things
+
+The composition layer ALWAYS draws the scene's \`headline\` in a separate panel beside your mock visual. So the mock MUST NOT render the headline text again — that produces two titles glued together. The mock illustrates the IDEA of the headline (a counter for a metric headline, a flow for a process headline, a chat UI for a Q&A headline), NOT a giant copy of the same words.
+
+Canvas the mock renders in: **920 × 580** (the visual half of the scene; the headline sits in the OTHER half). Position relative to that, not 1920×1080.
+
+## mockCode TSX — sandbox rules
+
+The TSX runs inside \`new Function(...)\` with React + Remotion + branding bound. **Get these exact:**
+
+1. **Function name MUST be \`MockScene\`.** Signature: \`function MockScene({ branding }) { ... return <Remotion.AbsoluteFill ...>...</Remotion.AbsoluteFill> }\`. Wrong name = scene doesn't render.
+2. **Outer \`<Remotion.AbsoluteFill>\` MUST be transparent.** Use ONLY \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\`. NO \`style={{ background: ... }}\`, NO \`bg-*\` Tailwind utility, NO \`overflow-hidden\` on the outer. Backdrops go INSIDE a card / MockFrame.
+3. **No imports, no require, no fetch, no XMLHttpRequest, no eval, no new Function, no document.write, no window.open.** \`React\`, \`Remotion\`, and \`branding\` are passed as parameters; everything you need lives on those.
+4. **No inline \`<svg>\` tags.** Two alternatives depending on the need: (a) **Icons** → \`Remotion.Icons.X\` (any lucide-react name — see safe list below); (b) **Connecting lines / arrows / branches between nodes (flow-diagram, etc.)** → absolute-positioned \`<div>\` elements with explicit \`width\` + \`height\` (1-3px on the short axis) + \`background\` + \`transform: rotate(<angle>deg)\` for diagonal lines. Compose multiple lines for branches. Inline SVG breaks frequently and is banned full stop.
+5. **Never use \`<Remotion.AccentGlow>\`** — deprecated, the halo bleeds onto the canvas.
+6. **\`<Remotion.AnimatedCursor>\` takes \`leftPct\` + \`topPct\` numbers (0-100), NOT a path array.** Maximum ONE per scene.
+7. **Branding fields available:** \`productName\`, \`accentColor\`, \`bgColor\`, \`textColor\`, \`fontFamily\`, \`logoUrl\`. Nothing else.
+8. **Layout stability — entries NEVER displace siblings.** Reserve the full layout from frame 0; animate ONLY \`opacity\` and \`transform\`. Never animate \`width\`/\`height\`/\`padding\`/\`margin\`. Never use conditional \`{cond && <div>}\` for elements that mount mid-scene. Pre-allocate slots; cross-fade content within them.
+9. **Tailwind className for static styling**, inline \`style={{}}\` only for animated values. Twind is installed; every Tailwind utility works at runtime.
+10. **Code length cap: 9000 chars per scene.** The compiler rejects anything longer.
+11. **Mock interiors match the canvas \`branding.bgColor\`.** When the canvas is white (the default), the inside of MockFrame and visible card surfaces should be white / zinc-50. A dark panel (\`#18181b\`, \`bg-zinc-900\`) on a white canvas reads as a render glitch — a black box glued onto the design. Dark interiors are reserved ONLY for code editors / terminals (where the dark theme IS the product UI being demoed) or an explicit dark style-seed.
+12. **Restraint on accent color — max 2 elements per scene.** Pick ONE focal element (the hero number, the CTA button, the user chat bubble, the middle flow node) — that gets full \`branding.accentColor\`. One small supporting hint (a tiny dot indicator, a thin accent line, an icon) can also use accent. Everything else: zinc / white / black. Outer cards stay neutral (\`bg-white\` / \`bg-zinc-50\`, \`border-zinc-200/80\`). Glows subtle (\`boxShadow: 0 8px 32px \${accent}22\` is the cap, not \`\${accent}55\` / \`\${accent}77\`). 2026 marketing video aesthetic is restrained — accent is a punch, not a wash.
+13. **Smooth motion (avoid choppy / saccadée).** Floor of 12 frames for any opacity / position change (\`interpolate(f, [0, 4], ...)\` snaps; \`[55, 70], ...\` is smooth). Spring damping 14-18 (oscillates visibly below 12). Sin frequency \`f / 14-22\` for ambient pulses (~3-5s cycles); \`f / 6\` reads nervous. Stagger entries 6-12 frames apart, not all at frame 0. Never use \`f > N ? 1 : 0\` opacity flips on big elements — use interpolate.
+14. **Safe lucide icon names (the bundled lucide catalog is the limit — unknown names render as a generic empty square via the Proxy fallback, which the user sees as "an icon didn't appear").** Guaranteed-safe core list: Cpu, Workflow, Database, BookOpen, Rocket, Zap, TrendingUp, Activity, Layers, Boxes, Code, Globe, Lock, MessageSquare (NOT Message), Volume2 (NOT Volume), BarChart2 (NOT BarChart), Bot, FileText, Image, Camera, Video, Settings, Search, Plus, Check, ArrowRight, ArrowUp, ArrowLeft, ArrowDown. \`Sparkles\` is BANNED. Version-sensitive names like \`BarChart3\`, \`ChartColumn\`, \`FileQuestion\`, \`AlertCircle\` may or may not be in the bundled lucide version — pick a guaranteed alternative.
+11. **Typography: Geist by default — NEVER set \`fontFamily\` inline.** Use \`font-mono\` className ONLY for actual code, URLs, or terminal lines.
+
+## Remotion API surface
+
+\`\`\`ts
+Remotion.useCurrentFrame()  // current frame in THIS scene's local timeline (0 = scene start)
+Remotion.useVideoConfig()   // { fps, durationInFrames, width, height }
+Remotion.interpolate(input, [in1, in2, ...], [out1, out2, ...], { extrapolateLeft?: 'clamp', extrapolateRight?: 'clamp' })
+Remotion.spring({ frame, fps, config: { damping, stiffness, mass } })
+Remotion.AbsoluteFill   // component, fills parent
+Remotion.Img            // for remote images (use sparingly)
+\`\`\`
+
+Pre-built helpers:
+- \`<Remotion.MockFrame url='app.example.com/path' tone='light'>{children}</Remotion.MockFrame>\` — designed browser-window chrome (macOS traffic lights + URL bar). Use ONLY \`tone='light'\`. Max ONE per scene; never nest. **MockFrame inherits its size from its parent — never let it collapse to intrinsic content size.** Always wrap it in a parent div with an EXPLICIT width, and add an explicit height when the children need pixel-area to render into. Pick the dimensions based on the scene: the visual canvas is 920×580, so leave ~20-100px of breathing room. Width: matched to scene content density (a dense bento needs more than a single chat bubble). Height: usually content-driven; set explicit pixel height ONLY when children include \`flex-1\`, \`<Remotion.Charts.ResponsiveContainer>\`, or any element that itself needs fixed pixel area (those collapse to 0px without a sized ancestor — a common cause of "chart renders as a tiny strip"). Perspective tilts (\`transform: perspective(...) rotateY(...)\`) do NOT constrain layout size; you still need width / height on the wrapper.
+- \`<Remotion.Pill tone='success' | 'warning' | 'danger' | 'accent' | 'muted' dot accentColor={branding.accentColor}>connected</Remotion.Pill>\`
+- \`<Remotion.AnimatedCursor leftPct={50} topPct={55} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
+- \`<Remotion.Icons.Cpu size={14} color='currentColor' />\` — any lucide name, pre-wrapped at strokeWidth=1.5. Aliases: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2.
+- \`Remotion.Charts\` — recharts subset: ResponsiveContainer, LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip. Wrap in \`<Remotion.Charts.ResponsiveContainer width='100%' height='100%'>\` inside a fixed-size parent. Set \`isAnimationActive={false}\` and drive data via Remotion.interpolate.
+
+## Visual mode dispatch (assign one per scene; NEVER repeat within a video)
+
+- **hero-stat** (abstract, no frame): tiny eyebrow label + giant accent number/metric (text-[100px]+ font-black) + one-line subhead. Counter ticks live then keeps drifting. Use for any "look at this number" / metric beat. UNDER-USED — favor it.
+- **bento** (UI, browser frame WITH perspective tilt rotateY -3deg + rotateX 2deg): mixed-size grid, ONE accent-tinted hero card, supporting cards stay neutral. Counter ticks live, latency jitters, dot pulses. Use SPARINGLY — model defaults to bento for everything, fight that.
+- **chat** (UI, browser frame): user bubble (top, right, accentColor bg) + AI typing dots → AI reply, all in PRE-ALLOCATED slots so nothing reflows. Pick ONLY when product is fundamentally chat-based.
+- **chart** (UI, browser frame): Recharts area/line/bar chart that draws in left-to-right via frame-driven data. \`isAnimationActive={false}\`. Use for "growth / metrics / trends".
+- **cursor-click** (UI, browser frame): populated product surface (header + empty-state + CTA button), cursor flies in from top-right and clicks at ~frame 70 with ripple. NEVER an isolated button on an empty page.
+- **flow-diagram** (abstract, no frame): 3 connected nodes (e.g. "Your docs" → "AI reads" → "Better answers") with animated arrows + traveling dots on each connector (fps*1.6 cycle). Middle node = accent hero with gradient + glow.
+- **logo-hero** (abstract, no frame): \`branding.logoUrl\` via \`<Remotion.Img>\` at 140-180px + small uppercase product name + tagline below. NEVER fabricate a fake brand icon. If logoUrl null, fall back to clean overlapping geometric shapes.
+- **custom**: when none of the above structurally fits — split-screen before/after, isometric stack, kanban, etc. Use sparingly.
+
+**Anti-default rule:** the trio \`flow-diagram + chat + bento\` is BANNED unless the product is literally a chat-based dashboard with a 3-step pipeline. Across your scenes, AT LEAST 2 should be from: hero-stat, cursor-click, logo-hero, chart, custom.
+
+## Sustained motion (non-negotiable)
+
+Each scene runs 5-12 seconds — entry animations alone leave the canvas dead-static. Layer in CONTINUOUS motion that runs the WHOLE scene. Pick at LEAST one per scene:
+- Counter ticks up live (hero-stat / bento)
+- Traveling dot along a connector (flow-diagram): \`const t = (f % (fps * 1.6)) / (fps * 1.6)\` then \`left: \\\`\${t * 100}%\\\`\`
+- AI typing dots (chat): three pulsing dots before the reply, opacity cycles 0.3 → 1 → 0.3 with 6-frame stagger
+- Cursor blink (input/text): \`opacity: (f % 30) < 15 ? 1 : 0\`
+- Subtle accent pulse: \`scale: 1 + 0.02 * Math.sin(f / 18)\`
+- Live-indicator dot: \`opacity: 0.6 + 0.4 * Math.sin(f / 12)\`
+
+## Smooth motion (avoid choppy / saccadée)
+
+- **Floor of 12 frames** for any opacity/position change. \`interpolate(f, [0, 4], [0, 1])\` snaps; \`[55, 70], [0, 1]\` is smooth.
+- **Spring damping 14-18** (oscillates visibly below 12).
+- **Sin frequency f/14-22** for ambient pulses (~3-5s cycles); f/6 reads nervous.
+- **No binary opacity flips on big elements.** \`f > 60 ? 1 : 0\` is a hard cut. Use interpolate. Hard \`(f%30)<15\` blink is OK on tiny carets / dots only.
+- **Stagger entries 6-12 frames apart**, not all at frame 0.
+
+## 2026 restraint (the difference between "designed" and "branded SaaS")
+
+- **MAXIMUM 2 accent-colored elements per scene.** ONE focal element gets full \`branding.accentColor\` (the hero number, the CTA button, the user bubble, the middle flow node). Everything else: zinc / white / black.
+- Outer cards: \`bg-white\` or \`bg-zinc-50\`, \`border-zinc-200/80\`. NOT accent-tinted card bgs.
+- Borders: zinc-200/70 or zinc-100. Reserve accent borders for the ONE focal card.
+- Glows subtle: \`boxShadow: 0 8px 32px \${accent}22\` upper bound (NOT \`\${accent}55\`/\`\${accent}77\`).
+- Body text \`text-zinc-700\`, secondary \`text-zinc-500\`. Only the focal title gets \`text-zinc-900\` or accent.
+- Generous whitespace: \`p-8\`-\`p-12\` on outer cards, \`gap-5\`-\`gap-8\` between elements.
+- Modern texture cues: subtle dot-grid backdrop on a card (\`background: radial-gradient(circle, #18181b08 1px, transparent 1px); backgroundSize: 24px 24px\`), frosted/glass element with backdrop-blur, asymmetric balance (focal at 35-45%, not dead-center), mixed type weights (tiny eyebrow + huge hero number).
+
+## Returning errors
+
+If any scene's mockCode fails to compile, this tool returns a structured error listing each failed scene + the compile error. Fix the TSX and resubmit. Doclee does NOT rewrite your TSX — that's by design; you control the output.
+
+## Companion tools
+
+- \`get_page\` — read the source doc that the video pitches.
+- \`generate_doc\` — create the doc first if the page is empty.
+
+## Inputs
+
+- \`projectId\` (required): UUID of the project.
+- \`slug\` (required): page slug — must already have a doc; the source-of-truth for what the video says.
+- \`script\` (required): the full script object described above.
+- \`tone\` (optional): voice tone — punchy / calm / playful / serious / confident / inspirational / conversational. Defaults to 'punchy'.
+- \`voiceId\` (optional): ElevenLabs voice ID override.
+- \`musicTrackId\` (optional): 'none' | 'ai' | 'ai-cinematic' | 'ai-upbeat' | 'ai-lofi' | 'ai-ambient' | 'ai-synthwave' | 'ai-acoustic' | 'ai-tech' | 'ai-inspirational' | 'ai-playful' | 'ai-dark' | one of the preset IDs. Defaults to 'ai-inspirational'.
+- \`musicVolume\` (optional): 0-1. Defaults to 0.15.
+- \`aiMusicPrompt\` (optional): free-form steering for AI music when \`musicTrackId\` starts with 'ai'.
+- \`withVoiceover\` (optional): defaults to true. Set false to render a silent video.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        slug: { type: 'string', description: 'Page slug — the source doc the video pitches.' },
+        script: {
+          type: 'object',
+          description: 'The full marketing video script — hook + scenes (with mockCode TSX) + cta. See description for the exact shape.',
+        },
+        tone: {
+          type: 'string',
+          enum: ['punchy', 'calm', 'playful', 'serious', 'confident', 'inspirational', 'conversational'],
+          description: 'Voice-over tone preset. Drives ElevenLabs settings + which audio tags fit. Default: punchy.',
+        },
+        voiceId: { type: 'string', description: 'Optional ElevenLabs voice ID override.' },
+        musicTrackId: {
+          type: 'string',
+          description: "Music selection: 'none' | 'ai' | 'ai-<style>' | preset id. Default: 'ai-inspirational'.",
+        },
+        musicVolume: { type: 'number', description: 'Music volume 0-1. Default 0.15.' },
+        aiMusicPrompt: { type: 'string', description: "Free-form steering when musicTrackId starts with 'ai'." },
+        withVoiceover: { type: 'boolean', description: 'Synthesize the voice-over. Default true.' },
+      },
+      required: ['projectId', 'slug', 'script'],
     },
   },
 ]
@@ -555,10 +697,10 @@ async function dispatchTool(
       return handleDeletePage(rawArgs, ctx)
     case 'reorder_pages':
       return handleReorderPages(rawArgs, ctx)
-    case 'generate_doc':
-      return handleGenerateDoc(rawArgs, ctx)
     case 'generate_voiceover':
       return handleGenerateVoiceover(rawArgs, ctx)
+    case 'generate_marketing_video':
+      return handleGenerateMarketingVideo(rawArgs, ctx)
     default:
       return toolText(`Unknown tool: ${name}`)
   }
@@ -1069,176 +1211,6 @@ async function resolvePageBySlug(
   return { id: page.id, title: page.title, content: page.content, projectId: page.projectId }
 }
 
-async function handleGenerateDoc(
-  raw: Record<string, unknown>,
-  ctx: McpAuthContext,
-): Promise<ReturnType<typeof toolText>> {
-  const parsed = GenerateDocToolArgsSchema.safeParse(raw)
-  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
-
-  let page
-  try {
-    page = await resolvePageBySlug(parsed.data.projectId, parsed.data.slug, ctx)
-  } catch (err) {
-    if (err instanceof AppError) return toolText(err.message)
-    throw err
-  }
-
-  const runRepo = await import('../run/run.repository.js')
-  const runService = await import('../run/run.service.js')
-  let run = await runRepo.findLatestRunByPageId(page.id)
-
-  // When videoUrl is provided we fetch + upload + (re)create the run + attach
-  // the video so the agent flow doesn't require the UI at all. When it isn't,
-  // we fall back to the legacy "doc gen on existing video" behaviour.
-  let videoPath: string | null = null
-  if (parsed.data.videoUrl) {
-    try {
-      // Create a run upfront so we have a stable runId for the storage path.
-      // Reuse the existing latest run when there is one — avoids piling up
-      // "ghost" runs each time an agent re-runs generate_doc with a new URL.
-      if (!run) {
-        run = await runService.createRun({
-          featureName: page.title,
-          startUrl: 'about:blank',
-          goal: page.title,
-          docPageId: page.id,
-        })
-      }
-      const fetched = await fetchVideoForUpload(parsed.data.videoUrl)
-      const ext = extensionForMimeType(fetched.contentType, parsed.data.videoUrl)
-      const storagePath = `runs/${run.id}/video${ext}`
-      const { uploadToStorage } = await import('../../shared/db/storage.repository.js')
-      await uploadToStorage('artifacts', storagePath, fetched.buffer, fetched.contentType)
-      const existingSummary = (run.summaryJson ?? {}) as Record<string, unknown>
-      // Drop any cached muxed path — the underlying video just changed.
-      await runRepo.updateRunSummary(run.id, {
-        ...existingSummary,
-        videoPath: storagePath,
-        muxedVideoPath: null,
-      })
-      videoPath = storagePath
-    } catch (err) {
-      return toolText(`Failed to fetch / attach the video: ${(err as Error).message}`)
-    }
-  } else {
-    if (!run) return toolText(`No run attached to "${parsed.data.slug}". Provide \`videoUrl\` or upload a video via the UI first.`)
-    const summary = (run.summaryJson ?? {}) as Record<string, unknown>
-    videoPath = typeof summary.videoPath === 'string' ? summary.videoPath : null
-    if (!videoPath) return toolText(`Latest run for "${parsed.data.slug}" has no video attached. Provide \`videoUrl\` or upload a video via the UI first.`)
-  }
-
-  // Quota: doc-gen is metered (doc_run). Fails with 402 on hard-cap plans.
-  await enforceQuotaOrThrow(ctx.teamId)
-
-  try {
-    await runService.analyzeVideo(run.id, videoPath)
-    await runService.generateDoc(run.id, null)
-    const { updatePage } = await import('../page/page.repository.js')
-    await updatePage(page.id, { status: 'published' })
-  } catch (err) {
-    return toolText(`Doc generation failed: ${(err as Error).message}`)
-  }
-
-  return toolText(
-    `Documentation generated for "${page.title}" (/${parsed.data.slug}).\n\n` +
-    `The markdown is now on the page and has been indexed for chat / search. ` +
-    `Call \`get_page\` with slug "${parsed.data.slug}" to read the result, ` +
-    `or \`generate_voiceover\` to produce the narration next.`,
-  )
-}
-
-/** Hard cap on remote videos pulled into the artifacts bucket via MCP.
- *  Matches the UI's signed-upload limit so behaviour stays consistent and
- *  one tool call can't fill a project's quota. */
-const MCP_MAX_VIDEO_BYTES = 200 * 1024 * 1024
-
-/** Reject hostnames that would let an attacker pivot to internal services
- *  (SSRF). Cheap regex-only check — no DNS resolution because the URL is
- *  fetched server-side and the resolver could still race. We refuse anything
- *  that looks like a private / loopback / link-local target by literal name. */
-function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase()
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
-  if (host === '0.0.0.0' || host === '::' || host === '::1') return true
-  if (/^127\./.test(host)) return true
-  if (/^10\./.test(host)) return true
-  if (/^192\.168\./.test(host)) return true
-  if (/^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)) return true
-  if (/^169\.254\./.test(host)) return true            // link-local
-  if (/^(fc|fd)[0-9a-f]{2}:/i.test(host)) return true  // IPv6 ULA
-  if (/^fe[89ab][0-9a-f]:/i.test(host)) return true    // IPv6 link-local
-  return false
-}
-
-/** Pull a remote video into memory ready for upload. Streaming would be
- *  nicer for huge files but Supabase's JS client wants a Buffer anyway, so
- *  we just enforce the size cap mid-stream and abort if exceeded. */
-async function fetchVideoForUpload(rawUrl: string): Promise<{ buffer: Buffer; contentType: string }> {
-  const url = new URL(rawUrl)
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`Only http(s) URLs are accepted, got ${url.protocol}`)
-  }
-  if (isPrivateHost(url.hostname)) {
-    throw new Error(`Refusing to fetch from private / loopback host: ${url.hostname}`)
-  }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 60_000) // 60 s wall clock for the download
-  // `Response` is shadowed by Express's import at the top of this file —
-  // call through a local alias so we get the global fetch Response shape.
-  let res: Awaited<ReturnType<typeof fetch>>
-  try {
-    res = await fetch(url.toString(), { signal: controller.signal, redirect: 'follow' })
-  } finally {
-    clearTimeout(timeout)
-  }
-  if (!res.ok) throw new Error(`Source URL returned ${res.status} ${res.statusText}`)
-
-  const contentType = (res.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase() ?? ''
-  if (!contentType.startsWith('video/')) {
-    throw new Error(`Source URL is not a video (Content-Type: ${contentType || 'unknown'}). If this is a viewer page, use the direct file URL.`)
-  }
-  const declaredLength = Number(res.headers.get('content-length') ?? 0)
-  if (declaredLength > MCP_MAX_VIDEO_BYTES) {
-    throw new Error(`Video too large (${(declaredLength / 1024 / 1024).toFixed(1)} MB > 200 MB cap)`)
-  }
-
-  if (!res.body) throw new Error('Source URL returned an empty body')
-  const reader = res.body.getReader()
-  const chunks: Uint8Array[] = []
-  let received = 0
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    if (value) {
-      received += value.byteLength
-      if (received > MCP_MAX_VIDEO_BYTES) {
-        try { await reader.cancel() } catch { /* ignore */ }
-        throw new Error(`Video exceeded 200 MB cap mid-download`)
-      }
-      chunks.push(value)
-    }
-  }
-  return { buffer: Buffer.concat(chunks), contentType }
-}
-
-/** Pick a sensible filename extension for the upload. Prefer the MIME type
- *  Supabase / the player will use on read; fall back to the URL's extension
- *  when the server forgot to advertise one. */
-function extensionForMimeType(contentType: string, urlString: string): string {
-  if (contentType === 'video/mp4') return '.mp4'
-  if (contentType === 'video/webm') return '.webm'
-  if (contentType === 'video/quicktime') return '.mov'
-  // URL fallback
-  const path = (() => {
-    try { return new URL(urlString).pathname } catch { return '' }
-  })()
-  const m = path.match(/\.(mp4|webm|mov|m4v)(?:$|\?)/i)
-  if (m) return `.${m[1]!.toLowerCase()}`
-  return '.mp4'
-}
-
 async function handleGenerateVoiceover(
   raw: Record<string, unknown>,
   ctx: McpAuthContext,
@@ -1278,5 +1250,121 @@ async function handleGenerateVoiceover(
     )
   } catch (err) {
     return toolText(`Voice-over generation failed: ${(err as Error).message}`)
+  }
+}
+
+async function handleGenerateMarketingVideo(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = GenerateMarketingVideoToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+
+  // Validate the script with the same Zod the in-app flow uses, so MCP
+  // callers and UI users can never desync on shape. The error path for
+  // a bad script is precise — Zod paths point at the offending field.
+  const { MarketingScriptSchema } = await import('../marketing-video/marketing-video.schema.js')
+  const scriptResult = MarketingScriptSchema.safeParse(parsed.data.script)
+  if (!scriptResult.success) {
+    const issues = scriptResult.error.issues
+      .slice(0, 8)
+      .map((i) => `  ${i.path.join('.') || '(root)'}: ${i.message}`)
+      .join('\n')
+    return toolText(
+      `Invalid script shape — fix and resubmit:\n${issues}${scriptResult.error.issues.length > 8 ? `\n  ... +${scriptResult.error.issues.length - 8} more issue(s)` : ''}`,
+    )
+  }
+  const script = scriptResult.data
+
+  // Sanity check: durations must add up to totalDurationSeconds (±0.5).
+  // The in-app architect enforces this in its prompt; on the MCP path we
+  // catch it explicitly so a bad sum doesn't slip through to render.
+  const partsSum =
+    script.hook.durationSeconds +
+    script.scenes.reduce((acc, s) => acc + s.durationSeconds, 0) +
+    script.cta.durationSeconds
+  if (Math.abs(partsSum - script.totalDurationSeconds) > 0.5) {
+    return toolText(
+      `Duration math is off: hook (${script.hook.durationSeconds}s) + scenes (${script.scenes.map((s) => s.durationSeconds).join('+')}s) + cta (${script.cta.durationSeconds}s) = ${partsSum}s but totalDurationSeconds = ${script.totalDurationSeconds}s. Adjust so they add up to ~45 (±0.5).`,
+    )
+  }
+
+  let page
+  try {
+    page = await resolvePageBySlug(parsed.data.projectId, parsed.data.slug, ctx)
+  } catch (err) {
+    if (err instanceof AppError) return toolText(err.message)
+    throw err
+  }
+
+  await enforceQuotaOrThrow(ctx.teamId)
+
+  // Resolve a run for the page. If the page already has a run (from a
+  // recording or a prior marketing-video session), reuse it. Otherwise
+  // mint a stub — the in-app panel does the same thing on first
+  // generate, so MCP and UI converge on the same shape.
+  const { findLatestRunByPageId, createRun } = await import('../run/run.repository.js')
+  let run = await findLatestRunByPageId(page.id)
+  if (!run) {
+    const projectBaseUrl = (await import('../project/project.repository.js')).findProjectById
+    const project = await projectBaseUrl(parsed.data.projectId)
+    run = await createRun({
+      featureName: `[Marketing] ${page.title}`,
+      startUrl: project?.baseUrl || 'https://example.com',
+      goal: `Marketing video for ${page.title}`,
+      docPageId: page.id,
+    })
+  }
+
+  try {
+    const { submitMarketingVideoFromScript, renderMarketingVideoForRun } = await import(
+      '../marketing-video/marketing-video.service.js'
+    )
+    // Cast: MarketingScriptSchema is permissive on the legacy `mock` DSL
+    // (z.string() on the discriminator), so the Zod-inferred shape widens
+    // beyond the static MarketingScript union. The runtime data conforms;
+    // the cast is just type-system reconciliation.
+    await submitMarketingVideoFromScript({
+      runId: run.id,
+      script: script as unknown as import('../marketing-video/marketing-video.types.js').MarketingScript,
+      options: {
+        withVoiceover: parsed.data.withVoiceover,
+        voiceId: parsed.data.voiceId,
+        tone: parsed.data.tone,
+        musicTrackId: parsed.data.musicTrackId,
+        musicVolume: parsed.data.musicVolume,
+        aiMusicPrompt: parsed.data.aiMusicPrompt,
+        // visualMode is implicit — caller authored mockCode TSX, so we
+        // route through the mocks render path. Screenshots-mode would
+        // ignore the mockCode anyway.
+        visualMode: 'mocks',
+      },
+    })
+    const rendered = await renderMarketingVideoForRun(run.id)
+
+    const videoUrl = rendered.videoUrl
+    const compiledScenes = script.scenes.filter((s) => s.mockCompiledCode).length
+
+    // Bump the marketing_video usage counter — same accounting as the
+    // in-app generate path. Wrap so a billing hiccup never fails an MCP
+    // pipeline that already produced a video.
+    try {
+      const { incrementUsage } = await import('../../shared/usage/usage.repository.js')
+      await incrementUsage(ctx.teamId, 'marketing_video')
+    } catch (err) {
+      console.warn(`[mcp/marketing-video] Usage increment failed: ${(err as Error).message}`)
+    }
+
+    return toolText(
+      `Marketing video rendered for "${page.title}" (/${parsed.data.slug}).\n\n` +
+        `- Run: ${run.id}\n` +
+        `- Compiled scenes: ${compiledScenes}/${script.scenes.length}\n` +
+        `- Video: ${videoUrl ?? '(render still in flight — call get_page or poll the run summary in a few seconds)'}\n` +
+        `- Voice-over: ${parsed.data.withVoiceover === false ? '(skipped)' : 'synthesized'}\n` +
+        `- Music: ${parsed.data.musicTrackId ?? 'ai-inspirational (default)'}\n\n` +
+        `Want to iterate on a single scene? Resubmit the full script with the updated mockCode for that scene — Doclee re-renders the whole 45s video.`,
+    )
+  } catch (err) {
+    return toolText(`Marketing video pipeline failed: ${(err as Error).message}`)
   }
 }

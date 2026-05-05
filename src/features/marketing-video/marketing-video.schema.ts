@@ -91,13 +91,33 @@ export const MarketingSceneSchema = z.object({
   subhead: z.string().optional(),
   screenshotIndex: z.number().int().nullable(),
   durationSeconds: z.number().positive(),
+  /** Legacy DSL mock — backwards-compat for any persisted manifests. */
   mock: MarketingMockSchema.optional(),
-  /** Raw TSX written by Gemini for this scene's animation. Compiled
+  /** Free TSX written by Gemini for this scene's animation. Compiled
    *  server-side; the bundle never sees this directly. */
-  mockCode: z.string().max(6_000).optional(),
-  /** Compiled JS — populated by the service after esbuild runs. Not
-   *  emitted by the LLM; we set it on the manifest before save. */
+  // 10k chars upper bound — when the model rewrites with rich
+  // animations (charts + chat threads + cursors + cards) the TSX
+  // legitimately runs ~5-9k chars. 6k was too tight and rejected
+  // valid creative rewrites. The compile step still rejects > 10k
+  // separately as a safety net.
+  mockCode: z.string().max(10_000).optional(),
+  /** esbuild output of mockCode. Remotion's <DynamicScene> wraps it in
+   *  a `new Function(...)` with React + Remotion + branding bound,
+   *  evaluates, and renders the resulting component. */
   mockCompiledCode: z.string().max(20_000).optional(),
+  /** Architect-picked visual mode for this scene (hero-stat / bento /
+   *  chat / …). Skeleton stage 1 fills it; stage 2 reads it to pick
+   *  the right reference template. Kept loose (z.string) so a future
+   *  mode addition doesn't break existing manifests. */
+  visualMode: z.string().max(40).optional(),
+  /** Concrete visual brief written by the architect — names the exact
+   *  elements / numbers / motion the designer should put on screen.
+   *  Forwarded into the per-scene mockCode prompt. The 800-char cap
+   *  was too tight after the Sonnet switch — Sonnet writes longer,
+   *  more specific briefs (color hexes, exact ticker values, layout
+   *  notes) and 800 chars rejected legitimate output. 3000 covers the
+   *  rich-brief case while still bounding the prompt size downstream. */
+  visualBrief: z.string().max(3000).optional(),
 })
 
 export const MarketingScriptSchema = z.object({
@@ -115,12 +135,19 @@ export const MarketingScriptSchema = z.object({
   }),
   totalDurationSeconds: z.number().positive(),
   language: z.string().default('en'),
+  /** Architect-picked aesthetic for the whole video — one of the
+   *  STYLE_SEEDS labels. Optional for backwards-compat with manifests
+   *  generated before the architect-picked seed. */
+  styleSeed: z.string().max(40).optional(),
 })
 
 /** Voice-over tone presets. Each maps to a tuned (stability, style,
  *  similarityBoost) triplet on the ElevenLabs side — surface them as
  *  named choices to the user instead of three opaque sliders. */
-export const VoiceTonePresetSchema = z.enum(['punchy', 'calm', 'playful', 'serious'])
+export const VoiceTonePresetSchema = z.enum([
+  'punchy', 'calm', 'playful', 'serious',
+  'confident', 'inspirational', 'conversational',
+])
 export type VoiceTonePreset = z.infer<typeof VoiceTonePresetSchema>
 
 /** Visual style for the whole video. 'screenshots' uses real doc
@@ -130,6 +157,44 @@ export type VoiceTonePreset = z.infer<typeof VoiceTonePresetSchema>
  *  mode for the video — no per-scene hybrid. */
 export const VisualModeSchema = z.enum(['screenshots', 'mocks'])
 export type VisualMode = z.infer<typeof VisualModeSchema>
+
+/** Schema for an incoming manifest update via PUT /:id/marketing-video/manifest.
+ *  Same shape as the persisted MarketingManifest but every field beyond the
+ *  script is optional — the user typically edits the script (headlines,
+ *  durations, mockCode) and we keep the rest from the existing manifest.
+ *  The service merges this on top of the persisted version, so a partial
+ *  payload doesn't wipe screenshots / branding / voiceover. */
+const MarketingScreenshotSchema = z.object({
+  url: z.string().url(),
+  caption: z.string(),
+})
+
+const MarketingBrandingSchema = z.object({
+  productName: z.string(),
+  accentColor: z.string(),
+  bgColor: z.string(),
+  textColor: z.string(),
+  fontFamily: z.string(),
+  logoUrl: z.string().nullable(),
+})
+
+/** Partial branding patch — used by the AI edit endpoint where the
+ *  model often returns ONLY the field it changed (e.g. accentColor
+ *  when the user asked for less purple). The full schema fields stay
+ *  required for the source-of-truth manifest persistence. */
+const MarketingBrandingPatchSchema = MarketingBrandingSchema.partial()
+
+export const UpdateMarketingManifestSchema = z.object({
+  script: MarketingScriptSchema,
+  screenshots: z.array(MarketingScreenshotSchema).optional(),
+  branding: MarketingBrandingPatchSchema.optional(),
+  // Voice-over / music URLs are NOT user-editable here — re-synthesize via
+  // POST /:id/marketing-video/voiceover. Accepting the fields would let
+  // the user point Remotion at an arbitrary URL.
+  musicVolume: z.number().min(0).max(1).optional(),
+})
+
+export type UpdateMarketingManifestInput = z.infer<typeof UpdateMarketingManifestSchema>
 
 export const GenerateMarketingVideoOptionsSchema = z.object({
   withVoiceover: z.boolean().optional(),

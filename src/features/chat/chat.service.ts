@@ -1,4 +1,4 @@
-import { embedText, embedTexts, generateText } from '../../shared/ai/gemini.client.js'
+import { embedText, embedTexts, generateText, generateTextStream } from '../../shared/ai/gemini.client.js'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
 import { env } from '../../shared/config/env.js'
 import { WalkthroughResponseSchema } from './chat.schema.js'
@@ -78,23 +78,44 @@ export async function indexPage(page: {
   return chunks.length
 }
 
+/**
+ * Concurrency cap for parallel page indexing. Gemini's embedTexts batch
+ * hits ~60 RPM soft-limit on the free tier; 5 concurrent pages × 1
+ * embedTexts call each ≈ 5 RPM peak, which leaves headroom for chat
+ * traffic to go through at the same time. Previously this loop was
+ * sequential, so a 100-page project serialized into a 60-second wall
+ * clock — now it's under 15s on the same pool.
+ */
+const INDEX_CONCURRENCY = 5
+
 export async function indexProject(projectId: string): Promise<number> {
   const { findPagesByProjectId } = await import('../page/page.repository.js')
   const pages = await findPagesByProjectId(projectId)
 
+  const indexable = pages.filter((p) => p.content?.trim())
+  if (indexable.length === 0) return 0
+
   let total = 0
-  for (const page of pages) {
-    if (page.content?.trim()) {
-      total += await indexPage({
-        id: page.id,
-        projectId: page.projectId,
-        title: page.title,
-        slug: page.slug,
-        content: page.content,
-      })
+  // Process in fixed-size waves so we cap parallelism without pulling in
+  // a queue library. One rejected page doesn't stop the others — we log
+  // and keep the project's other pages indexed.
+  for (let i = 0; i < indexable.length; i += INDEX_CONCURRENCY) {
+    const wave = indexable.slice(i, i + INDEX_CONCURRENCY)
+    const results = await Promise.allSettled(
+      wave.map((p) => indexPage({
+        id: p.id,
+        projectId: p.projectId,
+        title: p.title,
+        slug: p.slug,
+        content: p.content,
+      })),
+    )
+    for (const r of results) {
+      if (r.status === 'fulfilled') total += r.value
+      else console.error('[chat] indexPage failed during indexProject:', r.reason)
     }
   }
-  console.log(`[chat] Indexed ${total} total chunks for project ${projectId}`)
+  console.log(`[chat] Indexed ${total} total chunks for project ${projectId} (${indexable.length} pages)`)
   return total
 }
 
@@ -203,72 +224,9 @@ export async function chat(
     .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
     .join('\n\n')
 
-  // Build user context block
-  const userInfo: string[] = []
-  if (userContext?.name) userInfo.push(`Name: ${userContext.name}`)
-  if (userContext?.email) userInfo.push(`Email: ${userContext.email}`)
-  if (userContext?.plan) userInfo.push(`Plan: ${userContext.plan}`)
-  if (userContext?.currentUrl) userInfo.push(`Currently viewing: ${userContext.currentUrl}`)
-  if (userContext?.extra) userInfo.push(`Additional context: ${userContext.extra}`)
-
-  const userContextBlock = userInfo.length > 0
-    ? `\n\n## About the user you're helping\n${userInfo.join('\n')}\nAddress them by first name if known. If you know which page they're currently viewing, prioritize help related to that page and make your follow-up suggestions relevant to where they are in the app.\n\n### Plan-aware behavior\nThe user's plan is listed above when known (Free / Startup / Growth / Business). If they ask about a capability that requires a higher plan (e.g. more seats, more monthly tokens, widget white-labeling, overage billing on Growth+), don't refuse or hide it. Instead: briefly explain how the feature works, state that it's included on higher plans, and invite them to upgrade from the Plans & usage section. Stay helpful, never pushy.`
-    : ''
-
-  const productBlock = productContext.length > 0
-    ? `\n\n## Product Knowledge\n${productContext.join('\n')}`
-    : ''
-
-  const systemPrompt = `You are a friendly, knowledgeable support assistant for a software product.${productBlock}${userContextBlock}
-
-## Your personality
-- Warm, natural, conversational — like a smart colleague helping out
-- You KNOW this product inside out — be confident, not robotic
-- Proactive — suggest things the user hasn't asked about yet if relevant
-
-## How to answer — THIS IS CRITICAL
-- Be concise. Short sentences. No walls of text.
-- For simple questions: answer in 2-3 sentences max.
-- For short "how do I..." tasks (≤4 steps total): give all steps in one go.
-- For long tutorials (≥5 steps): give the FIRST 2-3 steps only, then offer to continue ("Want me to continue with the rest?"). If the user replies "yes", "continue", "ok", "go on" → give the next 2-3 steps.
-- Use the EXACT labels from the documentation — button names, menu items, field titles — never paraphrase them. If the docs say "Publish toggle", don't write "publish button" or "switch to enable publishing".
-- If a relevant screenshot URL appears in the Documentation Context, embed ONE per message using markdown image syntax: \`![short caption](https://exact-url-from-context)\`. Put the image on its own line. Never paste a raw URL — it must always be wrapped in \`![...](...)\`. Never truncate or abbreviate the URL (no \`...\`).
-- Match the user's language (French → French, English → English).
-- When drawing from a specific page in the Documentation Context, cite it inline using Markdown link syntax where the href is the page's slug (the part after the last \`/\` in its path). Example: "Toggle the Published switch on [Publish your documentation](publish-your-documentation) at the top of the page." One citation per distinct page you reference. Never write raw brackets like \`[Page Title]\` without parentheses — it renders as non-clickable text; use \`[Page Title](slug)\` instead. Don't cite if the answer is general.
-
-## Accuracy over confidence
-- If the Documentation Context doesn't clearly cover what was asked, say so explicitly: "I don't have specific documentation on that yet — here's what I can share based on related pages…" Better to admit a gap than to invent a feature that doesn't exist.
-- Never invent UI elements, menu names, settings, or plan features that aren't in the context. If you're tempted to say "there should be a …" — stop and say "I don't see that documented" instead.
-- When the docs only partially answer, answer the part you're sure about, then flag the unknown: "For the rest of the flow, I'd check …" with a link.
-
-## Ambiguity handling
-- If the user's question could reasonably mean two or more different things AND the correct answer depends on which one, ask a one-line clarifying question instead of guessing. Example: "Do you mean publish a single page, or enable the public docs URL for the whole project?"
-- Don't over-clarify — only when the two interpretations would give materially different answers.
-
-## Follow-up suggestions
-- After your answer, add a line "---FOLLOWUPS---" then a JSON array of 1-2 short follow-up questions
-- These must be specific to what was just discussed — not generic
-- Example format:
-  ---FOLLOWUPS---
-  ["How do I invite team members?", "What are the different plans?"]
-- ALWAYS include the ---FOLLOWUPS--- separator and array, even if it's just one question
-
-## Interactive guide flag
-- If your answer describes steps the user could perform in their app's UI (clicking buttons, filling forms, navigating pages), add "---WALKTHROUGH---" on its own line BEFORE the ---FOLLOWUPS--- line
-- ONLY add this flag when the answer contains concrete UI actions (click, type, select, navigate). Do NOT add it for conceptual explanations, FAQs, or answers that don't involve interacting with the UI
-- This flag enables a "Guide me" button that highlights UI elements on the user's screen
-
-## Boundaries
-- Base your answers on the documentation context — don't invent features
-- Do NOT fabricate screenshot URLs — only use images that appear in the context
-- If the docs don't cover something, say so briefly and suggest what to try
-- For complex issues beyond the docs, suggest contacting support`
-
-  const contextBlock = context ? `## Documentation Context\n\n${context}\n\n` : ''
-
-  const userPrompt = `${contextBlock}${conversationHistory ? `## Conversation History\n\n${conversationHistory}\n\n` : ''}## User's Question
-
-${message}`
+  const { buildChatSystemPrompt, buildChatUserPrompt } = await import('../../shared/ai/prompt.builder.js')
+  const systemPrompt = buildChatSystemPrompt({ productContext, userContext })
+  const userPrompt = buildChatUserPrompt({ context, conversationHistory, message })
 
   // Flash for everything — Pro routing doubled latency on complex
   // queries for a marginal quality lift. Can reintroduce later per-
@@ -331,6 +289,197 @@ ${message}`
     followUps,
     ...(walkthroughAvailable ? { walkthroughAvailable } : {}),
   }
+}
+
+// --- Streaming chat ---
+
+export type ChatStreamEvent =
+  | { type: 'start' }
+  | { type: 'delta'; text: string }
+  | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
+  | { type: 'followups'; items: string[] }
+  | { type: 'walkthrough'; available: boolean }
+  | { type: 'done'; fullText: string }
+  | { type: 'error'; message: string }
+
+/**
+ * Streaming variant of chat() — yields incremental text deltas as Gemini
+ * emits them, so the client can render token-by-token. Same retrieval +
+ * post-processing as the non-streaming path; the only differences are:
+ *
+ *   1. We hold back the trailing 30 chars of the assistant text from each
+ *      delta until we know it's not the start of a `---FOLLOWUPS---` or
+ *      `---WALKTHROUGH---` marker. Those structured trailers must NOT be
+ *      shown to the user. Once a marker is detected, streaming stops and
+ *      we accumulate the rest into a private buffer.
+ *
+ *   2. On stream end we run the same wrapBareImageUrls + resolvePublicDocsLinks
+ *      transforms as the non-streaming path, then emit `sources` /
+ *      `followups` / `walkthrough` / `done` events. The frontend can either
+ *      replace the accumulated assistant text with the post-processed
+ *      version (clean) or rely on the fact that link/image fixes are
+ *      typically a no-op for Gemini's well-formed output.
+ */
+export async function* chatStream(
+  projectId: string,
+  message: string,
+  history: ChatMessage[],
+  userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
+): AsyncGenerator<ChatStreamEvent> {
+  yield { type: 'start' }
+
+  // Same retrieval pipeline as chat()
+  let chunks: DocChunk[] = []
+  const didSearch = needsDocSearch(message, history)
+  if (didSearch) {
+    const needsRewrite = history.length >= 2 || message.trim().length < 20
+    const effectiveQuery = needsRewrite
+      ? await rewriteQuery(message, history).catch(() => message)
+      : message
+    const queryEmbedding = await embedText(effectiveQuery)
+    const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
+    chunks = candidates.length > 0
+      ? (candidates.length >= 10
+          ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
+          : candidates.slice(0, 8))
+      : []
+  }
+
+  const { findProjectById } = await import('../project/project.repository.js')
+  const project = await findProjectById(projectId)
+  const productContext: string[] = []
+  if (project) {
+    productContext.push(`Product: ${project.name}`)
+    if (project.description) productContext.push(`Description: ${project.description}`)
+    if (project.context?.audience) productContext.push(`Target audience: ${project.context.audience}`)
+    if (project.context?.workflow) productContext.push(`Core workflow: ${project.context.workflow}`)
+    if (project.context?.quirks) productContext.push(`Important details: ${project.context.quirks}`)
+    if (project.discoveredContext?.summary) productContext.push(`Product summary: ${project.discoveredContext.summary}`)
+    if (project.discoveredContext?.features?.length) {
+      productContext.push(`Key features: ${project.discoveredContext.features.join(', ')}`)
+    }
+    if (project.discoveredContext?.terminology && Object.keys(project.discoveredContext.terminology).length > 0) {
+      const terms = Object.entries(project.discoveredContext.terminology)
+        .map(([term, def]) => `${term}: ${def}`)
+        .join('; ')
+      productContext.push(`Terminology: ${terms}`)
+    }
+  }
+
+  if (didSearch && chunks.length === 0) {
+    const fallback = productContext.length > 0
+      ? "I don't have a specific article about that, but I'd be happy to help! Could you rephrase your question or ask about a specific feature?"
+      : "I couldn't find relevant information to answer your question. The documentation may not cover this topic yet."
+    yield { type: 'delta', text: fallback }
+    yield { type: 'sources', items: [] }
+    yield { type: 'followups', items: [] }
+    yield { type: 'done', fullText: fallback }
+    return
+  }
+
+  const pageIndex = chunks.length > 0 ? await buildPageIndex(projectId) : new Map()
+  const context = chunks.length > 0 ? buildContextFromChunks(chunks, pageIndex) : ''
+  const conversationHistory = history
+    .slice(-10)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n\n')
+
+  const { buildChatSystemPrompt, buildChatUserPrompt } = await import('../../shared/ai/prompt.builder.js')
+  const systemPrompt = buildChatSystemPrompt({ productContext, userContext })
+  const userPrompt = buildChatUserPrompt({ context, conversationHistory, message })
+
+  const stream = await generateTextStream({
+    systemPrompt,
+    userPrompt,
+    maxTokens: 2048,
+    temperature: 0.3,
+  })
+
+  // Marker detection. Gemini emits `---FOLLOWUPS---` and `---WALKTHROUGH---`
+  // as trailers on its own lines. We hold back a small tail buffer so we
+  // can detect those markers before flushing them to the client.
+  const TAIL_HOLD = 30
+  let visible = ''            // accumulated text we've emitted as deltas
+  let pending = ''            // accumulated text NOT yet emitted (last TAIL_HOLD chars OR everything after a marker hit)
+  let markerHit = false       // true once we've seen a trailer marker; stop streaming further text
+
+  const MARKER_RE = /\n?---\s*(?:FOLLOWUPS|WALKTHROUGH)/i
+
+  try {
+    for await (const delta of stream.deltas) {
+      pending += delta
+      if (markerHit) continue
+      // Check if pending now contains a marker
+      const m = MARKER_RE.exec(pending)
+      if (m && m.index !== undefined) {
+        const safeText = pending.slice(0, m.index)
+        if (safeText) {
+          yield { type: 'delta', text: safeText }
+          visible += safeText
+        }
+        // Keep everything from the marker onwards in `pending` for parsing
+        pending = pending.slice(m.index)
+        markerHit = true
+        continue
+      }
+      // Flush all but the trailing TAIL_HOLD chars (in case marker spans the chunk boundary)
+      if (pending.length > TAIL_HOLD) {
+        const safeEnd = pending.length - TAIL_HOLD
+        const safeText = pending.slice(0, safeEnd)
+        yield { type: 'delta', text: safeText }
+        visible += safeText
+        pending = pending.slice(safeEnd)
+      }
+    }
+    // Stream ended. Flush remaining pending text if no marker was hit.
+    if (!markerHit && pending) {
+      yield { type: 'delta', text: pending }
+      visible += pending
+      pending = ''
+    }
+  } catch (err) {
+    yield { type: 'error', message: (err as Error).message }
+    return
+  }
+
+  // Full text = visible (already streamed) + pending (the trailer block, if any)
+  const fullText = visible + pending
+
+  // Apply the same post-processing as the non-streaming chat() so links
+  // and bare image URLs render correctly. These transforms are mostly
+  // no-ops on well-formed output — the streamed text the user already saw
+  // matches what we send below in 99% of cases.
+  let answer = visible
+  answer = wrapBareImageUrls(answer)
+  answer = resolvePublicDocsLinks(answer, projectId, pageIndex)
+
+  // Walkthrough flag (already filtered out of `visible` thanks to the marker hold)
+  const walkthroughAvailable = /---?\s*WALKTHROUGH\s*---?/i.test(fullText)
+
+  // Follow-ups: parse from the trailer block we held back
+  let followUps: string[] = []
+  const followUpSplit = fullText.split(/---?\s*FOLLOWUPS\s*---?/i)
+  if (followUpSplit.length > 1) {
+    try {
+      let jsonStr = followUpSplit[1]!.trim()
+      if (jsonStr.startsWith('```')) jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+      const parsed = JSON.parse(jsonStr) as string[]
+      if (Array.isArray(parsed)) followUps = parsed.slice(0, 2)
+    } catch { /* keep empty */ }
+  }
+
+  // Sources (deduped by slug)
+  const sourceMap = new Map<string, { pageId: string; pageTitle: string; pageSlug: string }>()
+  for (const chunk of chunks) {
+    if (!sourceMap.has(chunk.pageSlug)) {
+      sourceMap.set(chunk.pageSlug, { pageId: chunk.pageId, pageTitle: chunk.pageTitle, pageSlug: chunk.pageSlug })
+    }
+  }
+
+  yield { type: 'sources', items: Array.from(sourceMap.values()) }
+  yield { type: 'followups', items: followUps }
+  if (walkthroughAvailable) yield { type: 'walkthrough', available: true }
+  yield { type: 'done', fullText: answer }
 }
 
 export async function getSuggestions(projectId: string): Promise<string[]> {

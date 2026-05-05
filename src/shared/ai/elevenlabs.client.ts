@@ -121,9 +121,17 @@ export async function generateMusic(
 }
 
 /**
- * Get available voices from ElevenLabs.
+ * Get available voices from ElevenLabs. Cached in-process for 30min —
+ * the voices catalog only changes when the account adds / removes a voice
+ * (rare), and the ElevenLabs API itself often takes 1-3s to respond. The
+ * cache pays back the cost on every Marketing panel mount that lands on
+ * a warm Vercel function.
  */
+const VOICES_CACHE_TTL_MS = 30 * 60 * 1000
+let _voicesCache: { voices: Voice[]; expiresAt: number } | null = null
+
 export async function getAvailableVoices(): Promise<Voice[]> {
+  if (_voicesCache && _voicesCache.expiresAt > Date.now()) return _voicesCache.voices
   const apiKey = getApiKey()
 
   const response = await fetch(`${BASE_URL}/voices`, {
@@ -135,12 +143,14 @@ export async function getAvailableVoices(): Promise<Voice[]> {
   }
 
   const data = (await response.json()) as { voices: Array<{ voice_id: string; name: string; category: string; labels: Record<string, string> }> }
-  return data.voices.map((v) => ({
+  const voices = data.voices.map((v) => ({
     voiceId: v.voice_id,
     name: v.name,
     category: v.category,
     labels: v.labels,
   }))
+  _voicesCache = { voices, expiresAt: Date.now() + VOICES_CACHE_TTL_MS }
+  return voices
 }
 
 /**

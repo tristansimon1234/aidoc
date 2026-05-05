@@ -160,6 +160,8 @@ export const SceneSchema = z.object({
   mockCompiledCode: z.string().optional(),
 })
 
+// (thumbnail fields are on the manifest, not the scene — see below)
+
 export const ScriptSchema = z.object({
   hook: z.object({
     voiceover: z.string(),

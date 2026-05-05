@@ -34,14 +34,78 @@ export const MUSIC_PRESETS: Array<{ id: string; name: string; url: string; mood?
 
 const DEFAULT_MUSIC_VOLUME = 0.15
 
+
 /** Music style brief per voice tone. Used as the base prompt for ElevenLabs
  *  Music generation, optionally extended with the user's own steering text.
  *  Kept short and concrete — long prompts produce muddier output. */
 const TONE_TO_MUSIC_PROMPT: Record<import('./marketing-video.types.js').VoiceTone, string> = {
-  punchy:  'Energetic upbeat marketing music, electronic, driving rhythm, modern, confident',
-  calm:    'Calm ambient background music, minimal piano, professional, soft pads',
-  playful: 'Fun upbeat marketing music, playful melodies, light percussion, optimistic',
-  serious: 'Subtle cinematic background music, building tension, professional, restrained',
+  punchy:         'Energetic upbeat marketing music, electronic, driving rhythm, modern, confident',
+  calm:           'Calm ambient background music, minimal piano, professional, soft pads',
+  playful:        'Fun upbeat marketing music, playful melodies, light percussion, optimistic',
+  serious:        'Subtle cinematic background music, building tension, professional, restrained',
+  confident:      'Warm modern marketing music, mid-tempo electronic with acoustic elements, hopeful, founder-pitch energy',
+  inspirational:  'Uplifting orchestral marketing music, building strings, swelling crescendo, motivational, anthemic',
+  conversational: 'Mellow lo-fi marketing music, soft beats, jazzy keys, relaxed podcast vibe, warm and approachable',
+}
+
+/** Curated AI music styles surfaced as their own dropdown options. Each
+ *  one routes through the same ElevenLabs Music endpoint but with a
+ *  distinct prompt so the user can pick a vibe directly without writing
+ *  a brief. The keys here are the dropdown ids (prefixed `ai-` to
+ *  distinguish from hosted presets if we ever add them); the values are
+ *  the prompts. The default `'ai'` choice still works and uses the
+ *  tone-mapped prompt above. */
+export const AI_MUSIC_STYLES: Record<string, { name: string; prompt: string; mood?: string }> = {
+  'ai-cinematic': {
+    name: 'Cinematic',
+    mood: 'Dramatic, building',
+    prompt: 'Cinematic marketing music, layered orchestral strings, building tension, deep bass swells, modern epic, instrumental',
+  },
+  'ai-upbeat': {
+    name: 'Upbeat',
+    mood: 'Energetic, modern',
+    prompt: 'Upbeat marketing music, driving electronic beat, bright synths, modern pop production, confident and energetic, instrumental',
+  },
+  'ai-lofi': {
+    name: 'Lo-fi',
+    mood: 'Relaxed, study-vibe',
+    prompt: 'Lo-fi hip hop marketing music, mellow beats, jazzy keys, vinyl crackle, warm and approachable, instrumental',
+  },
+  'ai-ambient': {
+    name: 'Ambient',
+    mood: 'Minimal, professional',
+    prompt: 'Ambient marketing music, sparse piano notes, soft pads, gentle atmosphere, professional and minimal, instrumental',
+  },
+  'ai-synthwave': {
+    name: 'Synthwave',
+    mood: 'Retro, neon',
+    prompt: 'Synthwave marketing music, retro 80s synths, driving arpeggios, neon energy, modern nostalgic, instrumental',
+  },
+  'ai-acoustic': {
+    name: 'Acoustic',
+    mood: 'Warm, organic',
+    prompt: 'Acoustic marketing music, fingerpicked guitar, soft percussion, warm and human, approachable indie vibe, instrumental',
+  },
+  'ai-tech': {
+    name: 'Tech',
+    mood: 'Pulsing, modern',
+    prompt: 'Tech marketing music, pulsing electronic rhythm, glassy synths, futuristic, clean and modern, instrumental',
+  },
+  'ai-inspirational': {
+    name: 'Inspirational',
+    mood: 'Uplifting, anthemic',
+    prompt: 'Inspirational marketing music, swelling strings, building crescendo, uplifting piano, motivational anthemic, instrumental',
+  },
+  'ai-playful': {
+    name: 'Playful',
+    mood: 'Cheeky, light',
+    prompt: 'Playful marketing music, bouncy melodies, light percussion, ukulele or marimba, cheeky and optimistic, instrumental',
+  },
+  'ai-dark': {
+    name: 'Dark',
+    mood: 'Brooding, intense',
+    prompt: 'Dark marketing music, brooding bass, haunting pads, tense atmosphere, modern thriller score, instrumental',
+  },
 }
 
 function buildMusicPrompt(
@@ -68,10 +132,19 @@ function buildMusicPrompt(
  *  presets — the user heard a monotone read regardless of tone choice.
  *  The current values pull each preset to a recognisable extreme. */
 const TONE_PRESETS = {
-  punchy:  { stability: 0.20, style: 0.90, similarityBoost: 0.75 },
-  calm:    { stability: 0.55, style: 0.35, similarityBoost: 0.80 },
-  playful: { stability: 0.15, style: 0.90, similarityBoost: 0.70 },
-  serious: { stability: 0.55, style: 0.25, similarityBoost: 0.85 },
+  punchy:         { stability: 0.20, style: 0.90, similarityBoost: 0.75 },
+  calm:           { stability: 0.55, style: 0.35, similarityBoost: 0.80 },
+  playful:        { stability: 0.15, style: 0.90, similarityBoost: 0.70 },
+  serious:        { stability: 0.55, style: 0.25, similarityBoost: 0.85 },
+  // Confident: warm authority — moderate stability + medium style for
+  //   variation without bouncing too much. Founder-pitch energy.
+  confident:      { stability: 0.40, style: 0.55, similarityBoost: 0.80 },
+  // Inspirational: builds — needs dynamic range. Low stability + high
+  //   style for swelling delivery on the climax phrases.
+  inspirational:  { stability: 0.25, style: 0.80, similarityBoost: 0.78 },
+  // Conversational: natural delivery — high similarity to the base
+  //   voice, low style so it doesn't perform. Reads like a podcast host.
+  conversational: { stability: 0.45, style: 0.30, similarityBoost: 0.85 },
 } as const
 
 /** Default branding when the project has no custom design saved. Picked to
@@ -209,6 +282,72 @@ function flattenScriptToNarration(script: import('./marketing-video.types.js').M
 }
 
 /**
+ * Deterministic, hand-written fallback mock used when every Gemini path
+ * (initial generate, rescue retry, Pro→Flash fallback) fails to produce
+ * compilable TSX for a scene. Reveals the headline word-by-word against
+ * the canvas bgColor — no model, no surprises, no failure mode. Better
+ * to ship a clean typographic scene than a blank panel.
+ */
+async function applyDeterministicFallback(
+  scene: { headline: string; mockCode?: string; mockCompiledCode?: string },
+  compile: (src: string) => Promise<{ compiled: string }>,
+): Promise<void> {
+  try {
+    const tsx = buildFallbackMockTsx(scene.headline)
+    const { compiled } = await compile(tsx)
+    scene.mockCode = tsx
+    scene.mockCompiledCode = compiled
+  } catch (err) {
+    console.error(`[marketing-video] Deterministic fallback compile failed for "${scene.headline}": ${(err as Error).message}`)
+    scene.mockCode = undefined
+    scene.mockCompiledCode = undefined
+  }
+}
+
+function buildFallbackMockTsx(headline: string): string {
+  // Escape backticks/backslashes/${} so a stray quoted name doesn't
+  // break the template literal in the generated source.
+  const safe = headline
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${')
+  return `function MockScene({ branding }) {
+  const f = Remotion.useCurrentFrame()
+  const { fps } = Remotion.useVideoConfig()
+  const words = ${JSON.stringify(safe)}.split(/\\s+/).filter(Boolean)
+  return (
+    <Remotion.AbsoluteFill className='flex items-center justify-center p-12'>
+      <div className='flex flex-wrap items-center justify-center gap-x-4 gap-y-2 max-w-[80%]'>
+        {words.map((w, i) => {
+          const t = Remotion.spring({ frame: f - i * 6, fps, config: { damping: 18, stiffness: 110 } })
+          const op = Remotion.interpolate(t, [0, 1], [0, 1])
+          const y = Remotion.interpolate(t, [0, 1], [18, 0])
+          return (
+            <span
+              key={i}
+              style={{
+                opacity: op,
+                transform: \`translateY(\${y}px)\`,
+                color: i % 3 === 1 ? branding.accentColor : branding.textColor,
+                fontFamily: branding.fontFamily,
+                fontSize: 84,
+                fontWeight: 700,
+                letterSpacing: '-0.02em',
+                lineHeight: 1.1,
+              }}
+            >
+              {w}
+            </span>
+          )
+        })}
+      </div>
+    </Remotion.AbsoluteFill>
+  )
+}`
+}
+
+
+/**
  * Full marketing-video pipeline: pulls the doc + branding + screenshots,
  * asks Gemini for a 60s script, synthesizes the narration via ElevenLabs
  * (optional), uploads the audio, and persists a manifest on the run summary.
@@ -243,6 +382,22 @@ export async function generateMarketingVideoForRun(
 
   console.log(`[marketing-video] Run ${runId}: ${screenshots.length} screenshots, lang=${language}, product="${branding.productName}"`)
 
+  // Server-side guard: visualMode='screenshots' is meaningless when the
+  // run has no screenshots available — every scene would emit
+  // `screenshotIndex: null` and the renderer would fall back to a blank
+  // bgColor canvas. Auto-promote to 'mocks' so we always produce visible
+  // scenes. The conversational pre-flight is supposed to default to
+  // mocks but the AI picks 'screenshots' sometimes; this is the safety
+  // net regardless of where the request came from.
+  const requestedVisualMode = options.visualMode ?? 'screenshots'
+  const effectiveVisualMode: 'mocks' | 'screenshots' =
+    requestedVisualMode === 'screenshots' && screenshots.length === 0
+      ? 'mocks'
+      : requestedVisualMode
+  if (effectiveVisualMode !== requestedVisualMode) {
+    console.warn(`[marketing-video] No screenshots — forcing visualMode=mocks (was ${requestedVisualMode})`)
+  }
+
   const script = await generateMarketingScript({
     productName: branding.productName,
     pageTitle: page.title,
@@ -254,27 +409,64 @@ export async function generateMarketingVideoForRun(
     // the voice (ElevenLabs settings). Without this the script comes out
     // flat and even an expressive voice setting reads it flat.
     tone: options.tone ?? 'punchy',
-    visualMode: options.visualMode ?? 'screenshots',
+    visualMode: effectiveVisualMode,
     userPrompt: options.userPrompt,
   })
 
   console.log(`[marketing-video] Script: ${script.scenes.length} scenes, ${script.totalDurationSeconds}s total`)
 
-  // Compile any TSX mockCode the LLM emitted. Failures are isolated:
-  // a scene that fails to compile drops mockCode silently and falls
-  // through to its screenshot — better than killing the whole run.
-  if (options.visualMode === 'mocks') {
+  // Per-scene TSX compile + rescue loop. Two failure modes routed
+  // through the same path:
+  //   1. mockCode missing entirely (model exhausted token budget,
+  //      skipped the scene). Send to repairMockCode in "from scratch"
+  //      mode → it generates a fresh MockScene from the headline +
+  //      voice-over.
+  //   2. mockCode present but compile/lint fails. Send to
+  //      repairMockCode with the error → it rewrites with the fix.
+  // Both rescues failed → applyDeterministicFallback ships a hand-
+  // written hero-text TSX so the scene still renders something.
+  if (effectiveVisualMode === 'mocks') {
     const { compileMockCode } = await import('./mock-code.compiler.js')
+    const { repairMockCode } = await import('./marketing-script.generator.js')
+
     for (const scene of script.scenes) {
-      if (!scene.mockCode || scene.mockCode.trim().length === 0) continue
+      const missingMock = !scene.mockCode || scene.mockCode.trim().length === 0
+      if (missingMock) {
+        console.warn(`[marketing-video] mockCode missing for scene "${scene.headline}" — generating one`)
+        try {
+          const generated = await repairMockCode({
+            scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: '' },
+            compileError: 'mockCode was missing — the script generator skipped this scene (likely token budget exhaustion). Generate a NEW MockScene from scratch that illustrates the headline + voice-over.',
+          })
+          const { compiled } = await compileMockCode(generated)
+          scene.mockCode = generated
+          scene.mockCompiledCode = compiled
+          console.log(`[marketing-video] Backfilled mockCode for scene "${scene.headline}"`)
+        } catch (err) {
+          console.warn(`[marketing-video] Backfill failed for scene "${scene.headline}": ${(err as Error).message} — using deterministic fallback`)
+          await applyDeterministicFallback(scene, compileMockCode)
+        }
+        continue
+      }
       try {
-        const { compiled } = await compileMockCode(scene.mockCode)
+        const { compiled } = await compileMockCode(scene.mockCode!)
         scene.mockCompiledCode = compiled
       } catch (err) {
-        console.warn(`[marketing-video] mockCode compile failed for scene "${scene.headline}": ${(err as Error).message}`)
-        // Drop the field so the renderer falls back to screenshot /
-        // accent gradient. Keep the raw source for diagnostics.
-        delete scene.mockCompiledCode
+        const firstErr = (err as Error).message
+        console.warn(`[marketing-video] mockCode compile failed for scene "${scene.headline}": ${firstErr} — attempting one rescue`)
+        try {
+          const rescued = await repairMockCode({
+            scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: scene.mockCode! },
+            compileError: firstErr,
+          })
+          const { compiled } = await compileMockCode(rescued)
+          scene.mockCode = rescued
+          scene.mockCompiledCode = compiled
+          console.log(`[marketing-video] Rescued mockCode for scene "${scene.headline}"`)
+        } catch (rescueErr) {
+          console.warn(`[marketing-video] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message} — using deterministic fallback`)
+          await applyDeterministicFallback(scene, compileMockCode)
+        }
       }
     }
     const compiled = script.scenes.filter((s) => s.mockCompiledCode).length
@@ -314,14 +506,28 @@ export async function generateMarketingVideoForRun(
       musicPath = options.musicUploadPath
       musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
       console.log(`[marketing-video] Music: uploaded path=${musicPath}`)
-    } else if (options.musicTrackId === 'ai') {
+    } else if (options.musicTrackId === 'ai' || (options.musicTrackId && options.musicTrackId.startsWith('ai-'))) {
+      // Two AI paths converge on the same ElevenLabs Music call:
+      //   - 'ai' → tone-mapped prompt + optional user brief (legacy default)
+      //   - 'ai-<style>' → style-specific prompt from AI_MUSIC_STYLES,
+      //     still extendable with the user's brief.
       if (!isElevenLabsConfigured()) {
         throw new Error('ELEVENLABS_API_KEY is required for AI music generation.')
       }
       const tone = options.tone ?? 'punchy'
-      const musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
+      const styleId = options.musicTrackId
+      let musicPrompt: string
+      if (styleId !== 'ai' && AI_MUSIC_STYLES[styleId]) {
+        const style = AI_MUSIC_STYLES[styleId]!
+        const userBrief = options.aiMusicPrompt?.trim()
+        musicPrompt = userBrief
+          ? `${style.prompt}, ${userBrief}. Background music for a ${branding.productName} marketing video.`
+          : `${style.prompt}. Background music for a ${branding.productName} marketing video.`
+      } else {
+        musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
+      }
       const durationMs = Math.round(script.totalDurationSeconds * 1000)
-      console.log(`[marketing-video] Music: AI-generating, durationMs=${durationMs}`)
+      console.log(`[marketing-video] Music: AI-generating (${styleId}), durationMs=${durationMs}`)
       const buffer = await generateMusic(musicPrompt, { durationMs })
       musicPath = `runs/${runId}/marketing-music-ai.mp3`
       await uploadToStorage('artifacts', musicPath, buffer, 'audio/mpeg')
@@ -382,6 +588,167 @@ export async function generateMarketingVideoForRun(
     renderError: null,
   }
 
+  await saveMarketingVideo(runId, summary)
+  return summary
+}
+
+/**
+ * MCP path entry: the script (and per-scene mockCode TSX) is authored
+ * by the MCP caller — typically a Claude session (Code, Web, Desktop)
+ * with the Doclee MCP loaded — so the Doclee backend skips the architect
+ * and designer LLM passes entirely. The MCP tool's description teaches
+ * the caller what valid TSX looks like; this function just compiles it
+ * and runs the existing voice-over + music + render pipeline.
+ *
+ * Differences vs `generateMarketingVideoForRun`:
+ *  - No `generateMarketingScript` call (architect + N parallel designer
+ *    Pro calls). Caller provides the full script.
+ *  - No `repairMockCode` rescue on compile failure. We surface the
+ *    compile error to the caller so they can fix the TSX and resubmit
+ *    rather than burning Gemini tokens on a server-side rewrite.
+ *  - Otherwise identical pipeline: validate → compile → voice-over →
+ *    music → manifest → render.
+ *
+ * The in-app flow (`generateMarketingVideoForRun`) is untouched.
+ */
+export async function submitMarketingVideoFromScript(args: {
+  runId: string
+  script: import('./marketing-video.types.js').MarketingScript
+  options?: GenerateMarketingVideoOptions
+}): Promise<MarketingVideoSummary> {
+  const { runId, script } = args
+  const options = args.options ?? {}
+
+  const run = await findRunById(runId)
+  if (!run) throw new Error(`Run not found: ${runId}`)
+  if (!run.docPageId) {
+    throw new Error('This run has no linked page. Marketing video needs a page as input.')
+  }
+  const page = await findPageById(run.docPageId)
+  if (!page) throw new Error('Linked page not found')
+  const branding = await resolveBranding(page.projectId)
+  const screenshots = await collectScreenshots(runId)
+
+  console.log(`[marketing-video/mcp] Run ${runId}: ${script.scenes.length} scenes, product="${branding.productName}", caller-authored TSX`)
+
+  // Per-scene compile. NO LLM rescue — we want zero LLM cost on the
+  // MCP path. Compile errors bubble up as a structured message so the
+  // MCP caller can fix the TSX and retry. Scenes with no mockCode
+  // (legacy / screenshot-only) are skipped — same as the in-app flow.
+  const { compileMockCode } = await import('./mock-code.compiler.js')
+  const compileFailures: { sceneIndex: number; headline: string; error: string }[] = []
+  for (let i = 0; i < script.scenes.length; i++) {
+    const scene = script.scenes[i]!
+    if (!scene.mockCode || scene.mockCode.trim().length === 0) continue
+    try {
+      const { compiled } = await compileMockCode(scene.mockCode)
+      scene.mockCompiledCode = compiled
+    } catch (err) {
+      compileFailures.push({
+        sceneIndex: i,
+        headline: scene.headline,
+        error: (err as Error).message,
+      })
+    }
+  }
+  if (compileFailures.length > 0) {
+    const summary = compileFailures
+      .map((f) => `  scene[${f.sceneIndex}] "${f.headline}": ${f.error}`)
+      .join('\n')
+    throw new Error(
+      `mockCode compile failed for ${compileFailures.length} scene(s). Fix the TSX and resubmit:\n${summary}`,
+    )
+  }
+
+  const compiledCount = script.scenes.filter((s) => s.mockCompiledCode).length
+  console.log(`[marketing-video/mcp] Compiled ${compiledCount}/${script.scenes.length} scene mocks`)
+
+  // Voice-over.
+  const withVoiceover = options.withVoiceover ?? true
+  let voiceoverPath: string | null = null
+  let voiceoverUrl: string | null = null
+  let voiceoverDurationSeconds: number | undefined
+  if (withVoiceover) {
+    const result = await synthesizeMarketingVoiceover(runId, script, options)
+    voiceoverPath = result.voiceoverPath
+    voiceoverUrl = result.voiceoverUrl
+    voiceoverDurationSeconds = result.voiceoverDurationSeconds
+  }
+
+  // Music — same priority ladder as the in-app flow: explicit upload >
+  // AI generation > preset > none. Failures are non-fatal.
+  let musicUrl: string | null = null
+  let musicPath: string | null = null
+  let musicError: string | null = null
+  try {
+    if (options.musicUploadPath) {
+      musicPath = options.musicUploadPath
+      musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
+    } else if (options.musicTrackId === 'ai' || (options.musicTrackId && options.musicTrackId.startsWith('ai-'))) {
+      if (!isElevenLabsConfigured()) {
+        throw new Error('ELEVENLABS_API_KEY is required for AI music generation.')
+      }
+      const tone = options.tone ?? 'punchy'
+      const styleId = options.musicTrackId
+      let musicPrompt: string
+      if (styleId !== 'ai' && AI_MUSIC_STYLES[styleId]) {
+        const style = AI_MUSIC_STYLES[styleId]!
+        const userBrief = options.aiMusicPrompt?.trim()
+        musicPrompt = userBrief
+          ? `${style.prompt}, ${userBrief}. Background music for a ${branding.productName} marketing video.`
+          : `${style.prompt}. Background music for a ${branding.productName} marketing video.`
+      } else {
+        musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
+      }
+      const durationMs = Math.round(script.totalDurationSeconds * 1000)
+      const buffer = await generateMusic(musicPrompt, { durationMs })
+      musicPath = `runs/${runId}/marketing-music-ai.mp3`
+      await uploadToStorage('artifacts', musicPath, buffer, 'audio/mpeg')
+      musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
+    } else if (options.musicTrackId && options.musicTrackId !== 'none') {
+      const preset = MUSIC_PRESETS.find((p) => p.id === options.musicTrackId)
+      if (preset) musicUrl = preset.url
+    }
+  } catch (err) {
+    musicError = (err as Error).message
+    musicUrl = null
+    musicPath = null
+    console.warn(`[marketing-video/mcp] Music generation failed (non-fatal): ${musicError}`)
+  }
+  const musicVolume = options.musicVolume ?? DEFAULT_MUSIC_VOLUME
+
+  const manifest: MarketingManifest = {
+    runId,
+    generatedAt: new Date().toISOString(),
+    script,
+    screenshots,
+    branding,
+    voiceoverUrl,
+    voiceoverPath,
+    voiceoverDurationSeconds,
+    musicUrl,
+    musicPath,
+    musicVolume,
+    musicError,
+  }
+
+  const manifestPath = `runs/${runId}/marketing-manifest.json`
+  await uploadToStorage(
+    'artifacts',
+    manifestPath,
+    Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'),
+    'application/json',
+  )
+  const manifestUrl = `${getPublicUrl('artifacts', manifestPath) ?? ''}?v=${Date.now()}`
+
+  const summary: MarketingVideoSummary = {
+    manifest,
+    manifestUrl,
+    videoUrl: null,
+    videoPath: null,
+    renderStatus: 'idle',
+    renderError: null,
+  }
   await saveMarketingVideo(runId, summary)
   return summary
 }
@@ -522,6 +889,359 @@ export async function updateMarketingVoiceoverForRun(
   return updated
 }
 
+/**
+ * Persist a user-edited manifest. The script + branding + screenshots +
+ * music volume can be tweaked in place; voice-over URLs / paths and
+ * music URLs are intentionally NOT accepted from the client (changing
+ * them would let a caller point Remotion at any URL — re-synthesize via
+ * /:id/marketing-video/voiceover for voice changes).
+ *
+ * Flow:
+ *   1. Read the existing summary (404s when there's no manifest yet).
+ *   2. Merge the patch on top — fields the user didn't include keep
+ *      their persisted value.
+ *   3. Upload the JSON to the same storage path → cache-busts the URL.
+ *   4. Reset renderStatus to 'idle' so the UI prompts a fresh render.
+ */
+export async function updateMarketingManifestForRun(
+  runId: string,
+  patch: import('./marketing-video.schema.js').UpdateMarketingManifestInput,
+): Promise<MarketingVideoSummary> {
+  const { findMarketingVideoByRunId } = await import('./marketing-video.repository.js')
+  const existing = await findMarketingVideoByRunId(runId)
+  if (!existing) throw new Error('No marketing-video manifest for this run yet — generate one first.')
+
+  // Cast through `as` because the schema's inferred type uses a permissive
+  // MockElement shape (`type: z.string()`) — the discriminated-union types
+  // in marketing-video.types.ts are stricter. The Zod validator already
+  // gated the runtime shape; the cast just bridges the structural gap.
+  const updatedManifest: MarketingManifest = {
+    ...existing.manifest,
+    script: patch.script as MarketingManifest['script'],
+    ...(patch.screenshots ? { screenshots: patch.screenshots } : {}),
+    // Merge partial branding patches with the existing branding so the
+    // model can change just one field (e.g. accentColor) without having
+    // to re-emit the whole branding object. The Zod schema accepts a
+    // partial; we layer it on top of `existing.manifest.branding`.
+    ...(patch.branding
+      ? { branding: { ...existing.manifest.branding, ...patch.branding } }
+      : {}),
+    ...(typeof patch.musicVolume === 'number' ? { musicVolume: patch.musicVolume } : {}),
+    generatedAt: new Date().toISOString(),
+  }
+
+  const manifestPath = `runs/${runId}/marketing-manifest.json`
+  await uploadToStorage(
+    'artifacts',
+    manifestPath,
+    Buffer.from(JSON.stringify(updatedManifest, null, 2), 'utf-8'),
+    'application/json',
+  )
+  const manifestUrl = `${getPublicUrl('artifacts', manifestPath) ?? ''}?v=${Date.now()}`
+
+  const updated: MarketingVideoSummary = {
+    ...existing,
+    manifest: updatedManifest,
+    manifestUrl,
+    // Manifest changed → the existing MP4 no longer matches its source.
+    // We deliberately KEEP videoUrl + videoPath so the user doesn't
+    // lose their preview while iterating; only flip renderStatus to
+    // 'idle'. The UI uses that combination (videoUrl present + status
+    // 'idle') to show the old video alongside a "manifest edited,
+    // re-render to apply" banner. The next /render overwrites the path.
+    renderStatus: 'idle',
+    renderError: null,
+  }
+  await saveMarketingVideo(runId, updated)
+  return updated
+}
+
+/**
+ * AI-driven manifest edit. The user types a free-form instruction
+ * ("shorten scene 2 by 2 seconds and make it punchier", "switch the
+ * accent color to blue", "rewrite the CTA in french") and Gemini
+ * returns the updated manifest + a one-line confirmation. Internally
+ * routes the new manifest through updateMarketingManifestForRun, so
+ * the edit goes through the same validation + storage + render-status
+ * reset path as a manual JSON edit.
+ *
+ * Costs: one Gemini Pro call (~€0.04). NOT counted against the
+ * marketing_video quota — that counter tracks full pipelines (script
+ * + voice + music + render). Quota-gated up-front so a hard-cap plan
+ * over budget can't iterate either.
+ */
+export async function editMarketingManifestWithAi(
+  runId: string,
+  input: {
+    instruction: string
+    history?: { role: 'user' | 'assistant'; content: string }[]
+  },
+): Promise<{ summary: MarketingVideoSummary; message: string }> {
+  const { findMarketingVideoByRunId } = await import('./marketing-video.repository.js')
+  const existing = await findMarketingVideoByRunId(runId)
+  if (!existing) throw new Error('No marketing-video manifest for this run yet — generate one first.')
+
+  // The edit follows the same architect / designer split as fresh
+  // generation: the editor LLM works as the ARCHITECT — it edits the
+  // text + per-scene visualBrief / visualMode but NEVER writes
+  // mockCode itself. After the edit returns, scenes whose brief
+  // actually changed get their mockCode regenerated by the designer
+  // (one parallel call per scene). Past monolithic edit prompts
+  // dropped mockCode for 3/4 scenes when asked to regen — token
+  // budget + attention drift in a single 32k call. This split is
+  // strictly more reliable.
+  const editableScript = {
+    ...existing.manifest.script,
+    scenes: existing.manifest.script.scenes.map((s) => ({
+      ...s,
+      // Strip mockCode + mockCompiledCode: the editor never sees them
+      // (anchoring + token bloat), the designer regenerates them
+      // from the brief afterward.
+      mockCode: undefined,
+      mockCompiledCode: undefined,
+    })),
+  }
+
+  const historyBlock = (input.history ?? [])
+    .slice(-6)
+    .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+    .join('\n')
+
+  const prompt = `You are the ARCHITECT editing a marketing video manifest based on a user instruction. A separate DESIGNER agent regenerates the per-scene TSX animation from the visualBrief you write — you DO NOT write mockCode yourself.
+
+## Product
+${existing.manifest.branding.productName}
+
+## Current manifest script (mockCode stripped — designer handles that)
+\`\`\`json
+${JSON.stringify(editableScript, null, 2)}
+\`\`\`
+
+## Current branding
+\`\`\`json
+${JSON.stringify(existing.manifest.branding, null, 2)}
+\`\`\`
+
+${historyBlock ? `## Earlier turns in this edit session\n${historyBlock}\n\n` : ''}## User instruction
+${input.instruction}
+
+## Your job
+Return the updated script (and branding when relevant) along with a one-line summary of what you changed. Per scene, the fields that drive the mockCode regen are \`visualMode\` + \`visualBrief\` — make sure they reflect the user's intent.
+
+## ⚠ NON-NEGOTIABLE OUTPUT CONTRACT — READ THIS FIRST
+
+Your response MUST contain a complete \`script\` object with EVERY field present. The downstream Zod validator throws on a single missing field and aborts the whole edit.
+
+**Required shape (no exceptions):**
+\`\`\`json
+{
+  "message": "<one-line summary>",
+  "script": {
+    "language": "<existing language code>",
+    "totalDurationSeconds": <number>,
+    "styleSeed": "<existing label, or a new STYLE_SEEDS label if the user asked for an aesthetic shift>",
+    "hook": {
+      "voiceover": "<string>",
+      "headline": "<string>",
+      "durationSeconds": <number>
+    },
+    "scenes": [
+      {
+        "voiceover": "<string>",
+        "headline": "<string>",
+        "subhead": "<string or omit if originally absent>",
+        "screenshotIndex": <number or null>,
+        "durationSeconds": <number>,
+        "visualMode": "<one of: hero-stat | bento | chat | chart | cursor-click | flow-diagram | headline-burst | logo-hero | custom>",
+        "visualBrief": "<2-3 sentences naming SPECIFIC elements / numbers / words / motion the designer will put on screen. The designer ONLY sees this brief + the headline/voiceover, so be concrete: exact text, focal element, motion idea.>"
+      }
+      // ... one entry per existing scene, SAME ORDER
+    ],
+    "cta": {
+      "voiceover": "<string>",
+      "headline": "<string>",
+      "buttonLabel": "<string>",
+      "durationSeconds": <number>
+    }
+  },
+  "branding": { /* optional, partial patch with ONLY the fields you actually want to change */ }
+}
+\`\`\`
+
+**Common failures to avoid:**
+
+1. **Writing mockCode.** DO NOT include a \`mockCode\` field on any scene. The designer regenerates from your visualBrief — your mockCode would be ignored AND would bloat the response, dropping fields the validator needs.
+
+2. **Dropping per-scene fields.** When you rewrite \`visualBrief\` for a creative refine, you forget to copy \`durationSeconds\` / \`screenshotIndex\` / \`headline\` from the existing scene → validator sees \`undefined\` → edit aborts. Carry every existing field through, then layer your changes on top.
+
+3. **Total duration math.** \`totalDurationSeconds\` MUST equal \`hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds\`. If you adjust durations, recompute the total.
+
+4. **Null instead of omit on branding.** \`branding\` is a partial patch: include ONLY the fields you want to change. Don't set unchanged fields to \`null\` to "signal no change". \`{ "branding": { "accentColor": "#0070f3" } }\` is correct. \`{ "branding": { "accentColor": "#0070f3", "bgColor": null } }\` is WRONG. If branding is unchanged, omit the whole \`branding\` key.
+
+## Edit philosophy
+The user gives you a **direction**, not a diff. Read it for INTENT.
+- **Surgical instructions** ("change X to Y", "shorten scene 2", "swap the icon") → minimal diff. Touch only the asked-for fields, leave the rest verbatim. The visualBrief stays the same for untouched scenes — that means the designer keeps the existing mockCode (we detect "brief unchanged" and skip regen).
+- **Creative instructions** ("plus d'animations", "plus wahou", "rends plus dynamic", "more punch", "make it pop", "plus moderne") → REWRITE the affected scenes' \`visualBrief\` aggressively with new motion ideas, layout shifts, focal elements. Briefs like "card pulses with a glow + counter ticks live + parallax accent block in the corner" trigger the designer to compose a richer scene. Don't be timid — the user wants visibly different output.
+- **Aesthetic shifts** ("plus editorial", "plus brutalist", "less violet") → update \`styleSeed\` to one of: editorial, product-tour, metric-driven, process-flow, brand-first, conversational, high-contrast, data-density. AND update branding.accentColor if "less violet" / "more orange" etc.
+- **Mode changes** ("make scene 2 a chat instead of bento") → set the new visualMode and rewrite the visualBrief to suit it.
+
+## Rules
+- Preserve scene COUNT and ORDER (don't add/remove scenes unless explicitly asked).
+- Keep \`totalDurationSeconds\` consistent with the parts.
+- Keep word counts realistic at ~2.3 words/sec for voice-over.
+- DO NOT write \`mockCode\`. Only update the fields above.
+- Voice-over audio + music URLs are NOT yours to change — those are regenerated separately.
+- If the instruction is unclear or impossible, return \`{ "message": "<explanation>" }\` WITHOUT a \`script\` field. The manifest stays unchanged.
+
+Return ONLY valid JSON: { "message": string, "script": <full edited script>, "branding"?: <patch> }.`
+
+  // Architect edit on Sonnet 4.6 — same model as the fresh-gen
+  // architect, for consistency. Plain text with defensive JSON parsing
+  // (the prompt asks for JSON-only output; defensive parser below
+  // handles markdown fences / prose drift). No retry — Anthropic SDK
+  // auto-retries 429/5xx; on a hard refusal the catch in the calling
+  // route surfaces the error. No tool-use schema: the response shape
+  // is tightly constrained by the prompt + downstream Zod validation,
+  // and a tool-use input_schema would have to mirror MarketingScript
+  // verbatim (large + drift risk on schema updates).
+  const { generateSonnetText, HAIKU_MODEL } = await import('../../shared/ai/anthropic.client.js')
+  const result = await generateSonnetText({
+    userPrompt: prompt,
+    // Refine architect on Haiku 4.5 — structured JSON output + short
+    // text edits, not TSX composition. ~3× cheaper than Sonnet for the
+    // same shape of work. The per-scene mockCode regen still calls
+    // generateSceneMockCode / repairMockCode which stay on Sonnet.
+    model: HAIKU_MODEL,
+    maxTokens: 16_000,
+    temperature: 0.4,
+  })
+
+  // Parse defensively — even with responseMimeType:application/json the
+  // model occasionally wraps the answer in markdown fences.
+  let parsed: { message?: string; script?: unknown; branding?: unknown }
+  try {
+    let text = result.text.trim()
+    if (text.startsWith('```')) text = text.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '')
+    const start = text.indexOf('{')
+    const end = text.lastIndexOf('}')
+    if (start !== -1 && end > start) text = text.slice(start, end + 1)
+    parsed = JSON.parse(text) as typeof parsed
+  } catch (err) {
+    throw new Error(`AI returned invalid JSON: ${(err as Error).message}`)
+  }
+
+  if (!parsed.script) {
+    // No script field → AI bailed (instruction unclear / impossible).
+    // Surface the message but don't touch the manifest.
+    return {
+      summary: existing,
+      message: parsed.message ?? "I couldn't apply that change. Try rephrasing or be more specific.",
+    }
+  }
+
+  // Diagnostic log: what shape did the AI actually return?
+  const aiScript = parsed.script as Record<string, unknown> | undefined
+  const aiTopKeys = aiScript ? Object.keys(aiScript) : []
+  const aiScenes = (aiScript?.scenes as Array<Record<string, unknown>> | undefined) ?? []
+  const sceneFieldSummary = aiScenes.map((s, i) => {
+    const fields = Object.keys(s)
+    const required = ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds']
+    const missing = required.filter((k) => !(k in s) || s[k] === undefined)
+    return `[${i}] keys=${fields.join(',')}${missing.length ? ` MISSING=${missing.join(',')}` : ''}`
+  })
+  console.log(`[marketing-edit] AI output shape: top=${aiTopKeys.join(',')} scenes=${aiScenes.length}`)
+  console.log(`[marketing-edit] AI scenes:\n  ${sceneFieldSummary.join('\n  ')}`)
+
+  const { UpdateMarketingManifestSchema } = await import('./marketing-video.schema.js')
+  const validated = UpdateMarketingManifestSchema.safeParse({
+    script: parsed.script,
+    ...(parsed.branding ? { branding: parsed.branding } : {}),
+  })
+  if (!validated.success) {
+    console.error('[marketing-edit] Zod issues (full):', JSON.stringify(validated.error.issues, null, 2))
+    console.error('[marketing-edit] AI raw text (first 2000 chars):', result.text.slice(0, 2000))
+    throw new Error(`AI produced an invalid manifest: ${JSON.stringify(validated.error.flatten().fieldErrors).slice(0, 300)}`)
+  }
+
+  // Per-scene mockCode resolution. Three paths per scene:
+  //   1. Brief / mode / headline / voiceover unchanged from existing →
+  //      keep the existing mockCode + mockCompiledCode (no regen).
+  //   2. Anything that drives the visual changed → regenerate via the
+  //      designer call (parallel across scenes).
+  //   3. Compile fails → repairMockCode rescue, else deterministic fallback.
+  //
+  // Comparing visualBrief / visualMode (in addition to headline /
+  // voiceover) means the user's "make scene 2 a chat" instruction
+  // triggers regen even if the headline didn't change.
+  const { compileMockCode } = await import('./mock-code.compiler.js')
+  const { repairMockCode, regenerateSceneMockCode } = await import('./marketing-script.generator.js')
+  const productName = existing.manifest.branding.productName
+  const styleSeedLabel = validated.data.script.styleSeed ?? existing.manifest.script.styleSeed
+  const editedScenes = validated.data.script.scenes
+  const existingScenes = existing.manifest.script.scenes
+
+  const sceneVisualUnchanged = (a: typeof editedScenes[number], b: typeof existingScenes[number]): boolean => {
+    return (
+      a.headline === b.headline &&
+      a.voiceover === b.voiceover &&
+      (a.visualMode ?? '') === (b.visualMode ?? '') &&
+      (a.visualBrief ?? '') === (b.visualBrief ?? '')
+    )
+  }
+
+  const regenTasks = editedScenes.map(async (scene, i) => {
+    const prev = existingScenes[i]
+    if (prev && sceneVisualUnchanged(scene, prev) && prev.mockCode && prev.mockCompiledCode) {
+      // Surgical edit didn't touch this scene's visuals — keep the
+      // existing compiled mockCode verbatim.
+      scene.mockCode = prev.mockCode
+      scene.mockCompiledCode = prev.mockCompiledCode
+      return
+    }
+
+    // Brief / mode / headline / voiceover changed — regenerate.
+    try {
+      const fresh = await regenerateSceneMockCode({
+        scene: {
+          headline: scene.headline,
+          voiceover: scene.voiceover,
+          subhead: scene.subhead,
+          durationSeconds: scene.durationSeconds,
+          visualMode: scene.visualMode,
+          visualBrief: scene.visualBrief,
+        },
+        productName,
+        styleSeedLabel: styleSeedLabel ?? undefined,
+      })
+      const compiled = await compileMockCode(fresh)
+      scene.mockCode = fresh
+      scene.mockCompiledCode = compiled.compiled
+    } catch (firstErr) {
+      const msg = (firstErr as Error).message
+      console.warn(`[marketing-edit] Regen / compile failed for scene "${scene.headline}": ${msg} — attempting one rescue`)
+      try {
+        const rescued = await repairMockCode({
+          scene: { headline: scene.headline, voiceover: scene.voiceover, mockCode: '' },
+          compileError: `Regen failed: ${msg}. Generate a fresh MockScene from the headline + voice-over + brief: ${scene.visualBrief ?? '(no brief)'}.`,
+        })
+        const compiled = await compileMockCode(rescued)
+        scene.mockCode = rescued
+        scene.mockCompiledCode = compiled.compiled
+      } catch (rescueErr) {
+        console.warn(`[marketing-edit] Rescue also failed for scene "${scene.headline}": ${(rescueErr as Error).message} — using deterministic fallback`)
+        await applyDeterministicFallback(scene, compileMockCode)
+      }
+    }
+  })
+  await Promise.all(regenTasks)
+
+  const summary = await updateMarketingManifestForRun(runId, validated.data)
+  return {
+    summary,
+    message: parsed.message ?? 'Manifest updated.',
+  }
+}
+
 /** Where the pre-bundled Remotion site lives. Resolution order:
  *  1. REMOTION_SERVE_URL env — escape hatch when the bundle is hosted
  *     somewhere other than the current deploy (rare).
@@ -558,6 +1278,47 @@ function resolveRemotionServeUrl(): string {
  * blow past that, switch to the existing job pattern in run/job.repository
  * and have the video-service post back.
  */
+/**
+ * Persist a thumbnail JPEG for the rendered video. Captured client-side
+ * by the panel after the first video load (see MarketingVideoPanel) — the
+ * frame at 4s sits at the end of the hook with the headline locked in,
+ * which makes a punchy social card. Server stores it under the run's
+ * artifacts and patches the manifest's thumbnailUrl + thumbnailPath.
+ *
+ * Doesn't reset renderStatus (unlike updateMarketingManifestForRun) —
+ * the thumbnail is a side artifact, not a manifest change.
+ */
+export async function setMarketingThumbnailForRun(
+  runId: string,
+  jpegBase64: string,
+): Promise<{ thumbnailUrl: string; thumbnailPath: string }> {
+  const { findMarketingVideoByRunId, saveMarketingVideo } = await import('./marketing-video.repository.js')
+  const existing = await findMarketingVideoByRunId(runId)
+  if (!existing) {
+    throw new Error('No marketing-video manifest for this run yet.')
+  }
+  // Strip the data: URL prefix if the client included it.
+  const cleanBase64 = jpegBase64.replace(/^data:image\/\w+;base64,/, '')
+  const buffer = Buffer.from(cleanBase64, 'base64')
+  // Sanity check: refuse anything beyond ~2MB so a malicious or buggy
+  // client can't blow up Storage. A 1080p JPEG at quality 0.85 is
+  // ~200-400KB; 2MB is comfortable headroom.
+  if (buffer.byteLength > 2 * 1024 * 1024) {
+    throw new Error(`Thumbnail too large: ${buffer.byteLength} bytes (cap 2MB)`)
+  }
+  const thumbnailPath = `runs/${runId}/marketing-thumbnail.jpg`
+  await uploadToStorage('artifacts', thumbnailPath, buffer, 'image/jpeg')
+  const thumbnailUrl = `${getPublicUrl('artifacts', thumbnailPath) ?? ''}?v=${Date.now()}`
+
+  await saveMarketingVideo(runId, {
+    ...existing,
+    manifest: { ...existing.manifest, thumbnailUrl, thumbnailPath },
+  })
+
+  console.log(`[marketing-video] Thumbnail uploaded: ${thumbnailUrl} (${buffer.byteLength} bytes)`)
+  return { thumbnailUrl, thumbnailPath }
+}
+
 export async function renderMarketingVideoForRun(
   runId: string,
 ): Promise<MarketingVideoSummary> {

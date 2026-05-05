@@ -4,13 +4,20 @@ import type { TryDocReport } from '../documentation/documentation.types.js'
 import * as runRepo from './run.repository.js'
 import { exploreRun, type RunDeps } from '../exploration/exploration.service.js'
 import type { StepEvent } from '../exploration/exploration.types.js'
-import * as questionRepo from '../../features/questions/questions.repository.js'
 import { generateAndSaveDoc } from '../documentation/documentation.service.js'
 import { incrementUsage, findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
+import { findMember } from '../team/team.repository.js'
 import type { DocDeps } from '../documentation/documentation.service.js'
 import type { GeneratedDoc } from '../documentation/documentation.types.js'
 import type { PageBriefingWithContent } from '../page/page.types.js'
 import type { ProjectContext } from '../project/project.types.js'
+
+/** Lazy-load the questions repository. Keeps the cross-feature surface
+ *  behind a single indirection and defers the import until it's needed,
+ *  so run.service doesn't pull the questions module at top level. */
+async function getQuestionRepo(): Promise<typeof import('../questions/questions.repository.js')> {
+  return import('../questions/questions.repository.js')
+}
 
 function buildRunDeps(): RunDeps {
   return {
@@ -28,10 +35,11 @@ function buildDocDeps(): DocDeps {
   return {
     findRunById: runRepo.findRunById,
     findStepsByRunId: runRepo.findStepsByRunId,
-    findQuestionsByRunId: (runId) =>
-      questionRepo.findQuestionsByRunId(runId).then((qs) =>
-        qs.map((q) => ({ question: q.question, answer: q.answer })),
-      ),
+    findQuestionsByRunId: async (runId) => {
+      const repo = await getQuestionRepo()
+      const qs = await repo.findQuestionsByRunId(runId)
+      return qs.map((q) => ({ question: q.question, answer: q.answer }))
+    },
     incrementTokenUsage: runRepo.incrementTokenUsage,
   }
 }
@@ -199,15 +207,39 @@ export async function exploreWithEvents(
   }
 
   // Merge answered questions into the context for resume
-  const answeredQuestions = await questionRepo.findQuestionsByRunId(id)
+  const questionsRepo = await getQuestionRepo()
+  const answeredQuestions = await questionsRepo.findQuestionsByRunId(id)
   const answeredContext = answeredQuestions
     .filter((q) => q.answer)
     .map((q) => `Previously blocked: ${q.question}\nUser's response: ${q.answer}`)
     .join('\n\n')
 
-  const fullContext = [additionalContext, answeredContext].filter(Boolean).join('\n\n') || undefined
-
   const isTryDoc = run.featureName.startsWith('[Test]')
+
+  // For Try Doc runs, override the caller-provided additionalContext with
+  // the canonical STRICT TESTER prompt built from the linked page. Keeps
+  // all prompt text in prompt.builder.ts (Hard Rule #3) and prevents the
+  // frontend from shipping its own prompt string over the wire.
+  let effectiveAdditionalContext = additionalContext
+  if (isTryDoc && run.docPageId) {
+    const { findPageById } = await import('../page/page.repository.js')
+    const page = await findPageById(run.docPageId)
+    if (page?.content) {
+      const { buildTryDocExplorationPrompt } = await import('../../shared/ai/prompt.builder.js')
+      const rawBriefing = page.briefing as Record<string, unknown> | null
+      const testUrl = (rawBriefing?.testUrl as string | undefined)
+        ?? page.startUrl
+        ?? run.startUrl
+      const testNotes = (rawBriefing?.testNotes as string | undefined) ?? null
+      effectiveAdditionalContext = buildTryDocExplorationPrompt({
+        pageContent: page.content,
+        testUrl,
+        testNotes,
+      })
+    }
+  }
+
+  const fullContext = [effectiveAdditionalContext, answeredContext].filter(Boolean).join('\n\n') || undefined
 
   await exploreRun(id, buildRunDeps(), {
     additionalContext: fullContext,
@@ -228,11 +260,9 @@ export async function exploreWithEvents(
 
       // Save blocker as question for the user to answer
       if (event.type === 'blocked' && event.message) {
-        questionRepo.createQuestion({
-          runId: id,
-          stepId: null,
-          question: event.message,
-        }).catch((err) => console.error('Failed to save question:', err))
+        getQuestionRepo()
+          .then((repo) => repo.createQuestion({ runId: id, stepId: null, question: event.message ?? '' }))
+          .catch((err) => console.error('Failed to save question:', err))
       }
     },
   })
@@ -574,6 +604,16 @@ export async function getRun(id: string): Promise<Run> {
   return run
 }
 
+/** Assert the caller is a member of the team that owns the run. Returns
+ *  404 on both "doesn't exist" and "no access" so callers can't enumerate
+ *  run ids across teams. Used by every authed route touching a run. */
+export async function assertRunAccess(runId: string, userId: string): Promise<void> {
+  const teamId = await findTeamIdByRunId(runId)
+  if (!teamId) throw new NotFoundError('Run')
+  const member = await findMember(teamId, userId)
+  if (!member) throw new NotFoundError('Run')
+}
+
 export async function getLatestRunByPageId(pageId: string): Promise<Run | null> {
   return runRepo.findLatestRunByPageId(pageId)
 }
@@ -589,7 +629,8 @@ export async function getRunSteps(runId: string): Promise<RunStep[]> {
 }
 
 export async function getQuestions(runId: string): Promise<{ id: string; question: string; answer: string | null }[]> {
-  const questions = await questionRepo.findQuestionsByRunId(runId)
+  const repo = await getQuestionRepo()
+  const questions = await repo.findQuestionsByRunId(runId)
   return questions.map((q) => ({ id: q.id, question: q.question, answer: q.answer }))
 }
 

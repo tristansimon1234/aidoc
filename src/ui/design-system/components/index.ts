@@ -7,9 +7,13 @@ export { MarkdownRenderer } from './MarkdownRenderer.js'
 export { Field } from './Input.js'
 export { Spinner } from './Spinner.js'
 export { EmptyState } from './EmptyState.js'
-export { BlockEditor } from './BlockEditor.js'
+// BlockEditor is intentionally NOT re-exported here: it pulls BlockNote +
+// Mantine + ProseMirror (~600kb gzipped) and would otherwise leak into
+// every barrel consumer. Import it directly via React.lazy where it's
+// actually used (currently only PageView).
 export { useImageLightbox } from './ImageLightbox.js'
 export { useConfirmDialog } from './ConfirmDialog.js'
+export { AlreadyRunningNotice } from './AlreadyRunningNotice.js'
 export { TableOfContents } from './TableOfContents.js'
 export { ProgressLoader } from './ProgressLoader.js'
 export { ShareMenu } from './ShareMenu.js'

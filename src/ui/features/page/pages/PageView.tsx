@@ -1,16 +1,21 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { useParams, useOutletContext, Link } from 'react-router-dom'
 import { formatRelativeTime } from '../../../shared/util/relativeTime.js'
 import {
   Button,
   Spinner,
-  BlockEditor,
   EmptyState,
   TableOfContents,
   ProgressLoader,
   useConfirmDialog,
+  AlreadyRunningNotice,
 } from '../../../design-system/components/index.js'
-import { api, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
+
+// BlockEditor pulls BlockNote + Mantine + ProseMirror (~600kb gzipped) and
+// is only used in the Documentation tab. Code-split so the project list
+// and the rest of PageView don't pay for it on first paint.
+const BlockEditor = lazy(() => import('../../../design-system/components/BlockEditor.js').then((m) => ({ default: m.BlockEditor })))
+import { api, isAlreadyRunningError, type AlreadyRunningDetails, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { useJobs } from '../../../shared/jobs/JobContext.js'
@@ -79,6 +84,10 @@ function PageViewInner(): React.ReactElement {
   const [generatingVoiceover, setGeneratingVoiceover] = useState(() => getJobForPage(pageId ?? '', 'voiceover')?.status === 'running')
   const [uploadingVideo, setUploadingVideo] = useState(false)
   const activeDocGenJob = getJobForPage(pageId ?? '', 'doc-gen')
+  // When a teammate is already running one of the heavy actions on this
+  // page, the backend returns 409 RUN_ALREADY_RUNNING with details — we
+  // surface them in a shared notice instead of a raw error banner.
+  const [alreadyRunning, setAlreadyRunning] = useState<AlreadyRunningDetails | null>(null)
   const activeVoiceoverJob = getJobForPage(pageId ?? '', 'voiceover')
   const activeTryDocJob = getJobForPage(pageId ?? '', 'try-doc')
 
@@ -212,36 +221,6 @@ function PageViewInner(): React.ReactElement {
     if (!projectId || !pageId || !page?.content) return
     const briefingData = page.briefing as Record<string, unknown> | null
     const testUrl = (briefingData?.testUrl as string) || page.startUrl || context.project.baseUrl
-    const testNotes = (briefingData?.testNotes as string) || ''
-
-    const tryDocPrompt = `You are a STRICT DOCUMENTATION TESTER. You follow the documentation below step-by-step, exactly as written, and report what works and what doesn't.
-
-## Documentation to verify:
-
-${page.content}
-${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
-
-## Your task:
-1. Navigate to: ${testUrl}
-2. Follow EACH step in the documentation IN ORDER, exactly as written
-3. For EVERY step you must:
-   a. DESCRIBE what you see on screen before acting (e.g. "I see a login page with email and password fields")
-   b. DESCRIBE what you are about to do (e.g. "I will type the email and click Login")
-   c. PERFORM the action
-   d. REPORT the result: PASS / FAIL / AMBIGUOUS with a clear explanation
-
-## CRITICAL RULES:
-- Be VERBOSE: explicitly describe what you see, what you do, and what happens. This is essential for the test report.
-- Follow the documentation steps IN STRICT ORDER. Do NOT skip ahead or reorder.
-- If a step FAILS or you cannot proceed: STOP IMMEDIATELY. Report the failure and call done.
-- Do NOT try workarounds, alternative paths, or detours. If it doesn't work as documented, it's a FAIL — stop there.
-- Do NOT explore other parts of the application. Stay on the documented path only.
-- Do NOT fill in gaps in the documentation with your own knowledge.
-- If the doc says "click Settings" and you see "Preferences" — that is a FAIL. Stop.
-- If the doc assumes you know something it never explained — that is a FAIL. Stop.
-- If the product shows an error — note the exact error message and STOP.
-- Do NOT take screenshots — they are handled automatically.
-- Do NOT generate new documentation. Only verify the existing one.`
 
     setTryRunning(true)
     setTryStreamSteps([])
@@ -268,7 +247,9 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         runId = run.id
         addJob({ runId: run.id, pageId: pageId!, pageTitle: page.title, type: 'try-doc', status: 'running' })
 
-        // Phase 1: Explore with naive user prompt
+        // Phase 1: Explore. The server detects the "[Test]" run prefix
+        // and swaps in the canonical STRICT TESTER prompt — no client
+        // prompt string is shipped.
         await api.runs.exploreStream(
           run.id,
           (event: StepEventDTO) => {
@@ -288,7 +269,7 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               case 'error': setStatusMessage(event.message ?? 'Error'); break
             }
           },
-          tryDocPrompt,
+          undefined,
           controller.signal,
         )
 
@@ -307,7 +288,11 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
         if (runId) updateJob(runId, { status: 'completed' })
       } catch (err) {
         const e = err as Error & { code?: string | null }
-        if (e.name !== 'AbortError') {
+        if (isAlreadyRunningError(err)) {
+          // A teammate is already running exploration or Try Doc analysis
+          // on this page — surface the notice instead of a generic error.
+          setAlreadyRunning(err.details)
+        } else if (e.name !== 'AbortError') {
           setError(e.message)
         }
         if (runId) failJob(runId, e.message, e.code ?? null)
@@ -368,6 +353,12 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
   return (
     <div>
       {confirmDialog}
+      {alreadyRunning && (
+        <AlreadyRunningNotice
+          details={alreadyRunning}
+          onClose={() => setAlreadyRunning(null)}
+        />
+      )}
       {/* Header — publish toggle */}
       <div className={styles.pageHeader}>
         <div className={styles.tabBar}>
@@ -506,12 +497,14 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
               )}
             </p>
           )}
-          <BlockEditor
-            key={pageId}
-            content={page.content ?? ''}
-            contentBlocks={page.contentBlocks}
-            onSave={handleSaveContent}
-          />
+          <Suspense fallback={<div style={{ padding: '2rem' }}><Spinner size="md" /></div>}>
+            <BlockEditor
+              key={pageId}
+              content={page.content ?? ''}
+              contentBlocks={page.contentBlocks}
+              onSave={handleSaveContent}
+            />
+          </Suspense>
           {/* Notion-style child page links */}
           {(() => {
             const children = context.pages.filter((p) => p.parentId === pageId)
@@ -703,6 +696,9 @@ ${testNotes ? `\n## Additional test context\n${testNotes}` : ''}
                           await fetchData()
                         } catch (err) {
                           const e = err as Error & { code?: string | null }
+                          if (isAlreadyRunningError(err)) {
+                            setAlreadyRunning(err.details)
+                          }
                           failJob(latestRunId, e.message, e.code ?? null)
                         } finally {
                           setGeneratingVoiceover(false)

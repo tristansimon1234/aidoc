@@ -113,8 +113,9 @@ src/
     mcp/                  # Per-user MCP server (workspace-scoped personal access tokens)
       mcp.types.ts            # McpUserToken, McpUserTokenSummary, McpAuthContext
       mcp.schema.ts           # Zod for token CRUD + every tool's arguments
-      mcp.repository.ts       # createToken, findActiveTokenByValue, listTokensForUser,
-                              # revokeToken (soft delete), touchTokenLastUsed
+      mcp.repository.ts       # createToken (hashes at rest), findActiveTokenByValue,
+                              # listTokensForUser, revokeToken (soft delete),
+                              # touchTokenLastUsed, hashMcpToken
       user-mcp.routes.ts      # Public JSON-RPC 2.0 endpoint — 7 tools (list_projects,
                               # create_project, list_pages, get_page, search_documentation,
                               # create_page, update_page) scoped to (userId, teamId)
@@ -128,31 +129,50 @@ src/
       team.routes.ts         # /api/teams/* (authed) + /api/invites/:token (public peek)
       analytics.types.ts      # AnalyticsReport, ChatStats, ViewStats, AiInsights
       analytics.schema.ts     # AnalyticsQuerySchema (7d|30d|90d), AiInsightsSchema, PageViewPingSchema
-      analytics.repository.ts # logChatMessages, logPageView + aggregations + sampleUserMessages
-      analytics.service.ts    # getReport: SQL stats + 200-msg Gemini pass, 10-min in-memory cache
+      analytics.repository.ts # logChatMessages, logPageView, findUnclassifiedUserMessages,
+                              # aggregations, sampleUserMessages
+      analytics.service.ts    # getReport: SQL stats + 200-msg Gemini pass, 10-min cache;
+                              # classifyPendingMessages: hourly cron batch classifier
       analytics.routes.ts     # GET /api/projects/:pid/analytics?period=...
+      cron.routes.ts          # POST /api/cron/classify-messages — hourly Vercel cron,
+                              # authed via Authorization: Bearer CRON_SECRET
   shared/
     ai/
       gemini.client.ts      # Gemini SDK: generateText(), embedTexts(), analyzeVideoWithGemini()
       anthropic.client.ts   # Anthropic SDK (optional, for Stagehand only)
       anthropic.types.ts
       elevenlabs.client.ts     # ElevenLabs TTS: synthesizeSpeech(), getAvailableVoices()
-      prompt.builder.ts     # buildDocumentationPrompt() — ALL doc gen prompts
+      prompt.builder.ts     # ALL AI prompts: doc gen, voiceover narration + tone presets,
+                            # RAG chat system/user, Try Doc exploration + analysis,
+                            # preflight, walkthrough, analytics, message classifier
+    observability/
+      sentry.ts             # initSentry() — no-op when SENTRY_DSN unset; redacts
+                            # Authorization / cookie / x-api-key headers and
+                            # /mcp-user/:token URLs before send.
     browser/
       playwright.client.ts  # launchBrowser(), closeBrowser(), getSessionId()
       browser.types.ts
     db/
       supabase.client.ts
       storage.repository.ts # uploadToStorage(), downloadFromStorage(), getSignedUrl(), createSignedUploadUrl()
+    http/
+      safe-fetch.ts         # SSRF-safe wrapper — rejects private/link-local IPs,
+                            # non-http(s) schemes, caps body size + timeout. Used by
+                            # /api/projects/analyze-url.
     middleware/
       auth.middleware.ts     # Supabase JWT validation (attaches req.userId)
       admin.middleware.ts    # requireAdmin — checks email against ADMIN_EMAILS
       error.middleware.ts    # AppError, NotFoundError, ValidationError, DatabaseError
+      mount-routers.ts       # Single source of truth for every route mount —
+                             # called from both src/app.ts (dev, no prefix) and
+                             # api/index.ts (prod, /api prefix).
     usage/
-      usage.repository.ts    # incrementUsage RPC + listUsageForCurrentMonth + registerChatSession
-                             # + findOwnerUserIdByRunId / findOwnerUserIdByProjectId
+      usage.repository.ts    # incrementUsage RPC + listUsageForCurrentMonth +
+                             # registerChatSession (atomic upsert on PK),
+                             # findTeamIdByRunId / findTeamIdByProjectId
     config/
-      env.ts                # Zod-validated env vars (crash on startup if missing); isAdminEmail() helper
+      env.ts                # Zod-validated env vars (crash on startup if missing);
+                            # isAdminEmail() helper; prod requires Upstash + CRON_SECRET
     validation/
       schemas.ts            # UuidParamSchema (shared)
   ui/
@@ -166,6 +186,7 @@ src/
                              # CalloutBlock (custom BlockNote block: info/tip/warning/danger),
                              # ImageLightbox (click-to-fullscreen image overlay),
                              # ConfirmDialog (portal-based confirm, useConfirmDialog hook),
+                             # AlreadyRunningNotice (shared 409 dialog for RUN_ALREADY_RUNNING),
                              # TableOfContents (floating TOC with heading tracking),
                              # ProgressLoader (multi-step progress indicator)
                              # Each: Component.tsx + Component.module.css
@@ -212,10 +233,10 @@ src/
         Shell.tsx             # App shell with topbar + main; embeds AppRail
         AppRail.tsx           # Persistent left rail (logo, Home, theme toggle, AvatarMenu)
         AvatarMenu.tsx        # Avatar popup: email, Settings, View all plans, Admin · Usage (if admin), Sign out
-  app.ts                     # Express app (local dev)
+  app.ts                     # Express app (local dev) — calls mountRouters(app, { prefix: '' })
   server.ts                  # Server startup
 api/
-  index.ts                   # Vercel serverless entry point — same router mounts as src/app.ts
+  index.ts                   # Vercel serverless entry point — calls mountRouters(app, { prefix: '/api' })
 docs/
   ARCHITECTURE.md            # Stack, data model, patterns, API routes
   WORKFLOWS.md               # All user flows step-by-step
@@ -311,7 +332,7 @@ Every DB call through `*.repository.ts`. Services NEVER call Supabase directly.
 - After generation → auto-copied to `doc_pages.content`
 
 ### Full schema reference
-See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs; SaaS: profiles, plans, subscriptions, usage_counters, chat_sessions; MCP: mcp_user_tokens), 30 migrations.
+See `docs/DATABASE.md` — 14 tables (core: projects, doc_pages, runs, run_steps, run_questions, generated_docs, artifacts; RAG: doc_embeddings; jobs — `triggered_by_user_id` + nullable `page_id` added 2026-04-22 to support the exclusive-lock pattern, `marketing-video` job type added 2026-04-26; SaaS: profiles, plans, subscriptions, usage_counters with `marketing_video` feature; chat_sessions; MCP: mcp_user_tokens — `token_hash` / `preview` columns added 2026-04-22), 31 migrations.
 
 ---
 
@@ -338,12 +359,12 @@ Tunable in code, no migration needed:
 
 ### Tracking
 - Increments wrap each successful metered op in a `try/catch` (a billing glitch never fails an AI op):
-  - Doc gen → `run.service.generateDoc` → `incrementUsage(ownerId, 'doc_run')`
-  - Voice-over → `run.routes /generate-voiceover` → `incrementUsage(ownerId, 'voiceover')`
-  - Try Doc → `run.service.analyzeTryDoc` → `incrementUsage(ownerId, 'try_doc')`
-  - Chat (widget + in-app) → `widget.routes` and `chat.routes` → `registerChatSession(...) + incrementUsage(ownerId, 'chat_sessions')` only on new session_token per month
+  - Doc gen → `run.service.generateDoc` → `incrementUsage(teamId, 'doc_run')`
+  - Voice-over → `run.routes /generate-voiceover` → `incrementUsage(teamId, 'voiceover')`
+  - Try Doc → `run.service.analyzeTryDoc` → `incrementUsage(teamId, 'try_doc')`
+  - Chat (widget + in-app) → `widget.routes` and `chat.routes` → `registerChatSession(...) + incrementUsage(teamId, 'chat_sessions')` only on new session_token per month
   - Marketing video → `marketing-video.routes /:id/marketing-video` → `incrementUsage(teamId, 'marketing_video')` after the full pipeline succeeds (sync mode = inline, async mode = inside `waitUntil`). Quota-gated: Free / Founder get 402 `QUOTA_EXCEEDED` when over budget.
-- `chat_sessions` table dedupes by `(project_id, session_token, period_month)` with a `source ∈ {widget, app}` column for analytics. Same monthly bucket regardless of source.
+- `chat_sessions` table dedupes by `(project_id, session_token, period_month)` PK with a `source ∈ {widget, app}` column for analytics. Same monthly bucket regardless of source. Inserts use `ignoreDuplicates: true` so two concurrent callers (same session, two tabs) can't double-count.
 
 ### Admin
 - `/admin/usage?month=YYYY-MM` — restricted by `requireAdmin` middleware that checks email against `ADMIN_EMAILS` env var (comma-separated allowlist).
@@ -438,6 +459,9 @@ Tunable in code, no migration needed:
 /api/widget/:key/chat                      # POST: Public chat (rate limited 30/min, bumps chat_sessions)
 /api/widget/:key/config                    # GET: Widget config + suggestions
 /api/widget/:key/walkthrough               # POST: AI-guided walkthrough (rate limited 10/min)
+
+# Cron (authed via Authorization: Bearer CRON_SECRET — called by Vercel on schedule)
+/api/cron/classify-messages                # POST/GET: hourly sentiment/frustration classifier for chat messages
 ```
 
 ### Error format
@@ -501,45 +525,70 @@ EMAIL_FROM           # e.g. "doclee <hello@doclee.tech>" — sender used with Re
 PUBLIC_APP_URL       # e.g. https://app.doclee.tech — used to build invite + doc-ready review links
                      # Auth emails (signup/reset/magic link) go through Supabase SMTP
                      # configured in the Supabase dashboard; see docs/EMAIL_TEMPLATES.md.
-UPSTASH_REDIS_REST_URL     # Optional in dev, required in prod — distributed rate limiting
-UPSTASH_REDIS_REST_TOKEN   # Missing both → in-memory fallback (bypassable on serverless)
+UPSTASH_REDIS_REST_URL     # Required in prod (env.ts throws on boot); in dev,
+UPSTASH_REDIS_REST_TOKEN   # missing both falls back to an in-memory limiter.
+                           # Prod fallback is bypassable across cold starts, so we fail fast.
+CRON_SECRET                # Required in prod — Vercel injects it as
+                           # `Authorization: Bearer ${CRON_SECRET}` on every cron hit,
+                           # and /api/cron/* rejects anything else (timing-safe compare).
+SENTRY_DSN                 # Optional — when set, Sentry captures 5xx AppErrors
+                           # and unhandled errors. VERCEL_GIT_COMMIT_SHA auto-populates release.
+SENTRY_RELEASE             # Optional — override for the release tag.
 ```
 
 **Frontend** (Vite prefix):
 ```
 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY
+VITE_SENTRY_DSN          # Optional — enables browser-side Sentry
+VITE_SENTRY_RELEASE      # Optional — override for the release tag
 ```
 
 ---
 
 ## Deployment
 
-- **Platform**: Vercel
+- **Platform**: Vercel (Pro — required for `maxDuration: 300` and cron jobs)
 - **Backend**: `api/index.ts` serverless function (maxDuration: 300s)
 - **Frontend**: Vite build → `dist/client/`
 - **Rewrites**: `/api/*` → serverless, `/*` → SPA fallback
-- Auth: Supabase JWT with RLS on `projects` table
+- **Cron**: `vercel.json` → `/api/cron/classify-messages` hourly (chat message sentiment/frustration classifier)
+- Auth: Supabase JWT with RLS + team_members membership check on backend routes
 
 ---
 
 ## Known Tech Debt
 
-- [ ] Exploration instruction built inline (should move to prompt.builder.ts)
+- [ ] Exploration instruction built inline (should move to prompt.builder.ts). All other AI prompts now live in `prompt.builder.ts` — voiceover narration, RAG chat, Try Doc exploration + analysis, preflight, walkthrough, analytics, classifier.
 - [x] ~~Stagehand model hardcoded in 2 places~~ — now uses `STAGEHAND_MODEL` constant
-- [x] ~~No rate limiting~~ — `src/shared/rate-limit/rate-limit.ts` wraps `@upstash/ratelimit` sliding-window limiters with an in-memory fallback for local dev. Wired on widget chat (30/min), widget walkthrough (10/min), public-docs chat (30/min), public-docs view (120/min), MCP (30/min). Prod needs `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`.
-- [ ] `run.service.ts` imports `questions.repository` directly (cross-feature)
+- [x] ~~No rate limiting~~ — `src/shared/rate-limit/rate-limit.ts` wraps `@upstash/ratelimit` sliding-window limiters with an in-memory fallback for local dev. Wired on widget chat (30/min), widget walkthrough (10/min), public-docs chat (30/min), public-docs view (120/min), MCP (30/min). `env.ts` **requires** `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` in prod (throws at boot otherwise).
+- [x] ~~`run.service.ts` imports `questions.repository` directly~~ — now loaded lazily via a single indirection (`getQuestionRepo()`).
 - [ ] No tests (Vitest configured but unused)
-- [ ] No pagination on list endpoints
-- [ ] Legacy RunDashboard/NewRun pages still in codebase (auto-explore removed but pages remain)
+- [ ] No cursor-based pagination on list endpoints. Hard caps applied as a safety net: projects 100, team members 200, pages 500 per project, chat rows 5k/analytics query. Above those, callers see truncated data rather than a slow request.
+- [ ] Legacy RunDashboard/NewRun pages still in codebase (auto-explore removed but pages remain). Server-side `GET /api/runs` returns 404 now to stop leaking the full run list.
 - [ ] Widget: no domain restriction (Origin header check) — API key is public
 - [x] ~~Chat suggestions cache is in-memory~~ — widget endpoint has in-memory cache + edge caching
 - [x] ~~No usage analytics/logging for widget chat messages~~ — `chat_sessions` counter tracks widget + in-app sessions per month
 - [ ] Try Doc report could include screenshots from Stagehand steps
 - [x] ~~Widget config slow~~ — edge caching + inline data-cfg attribute
 - [x] ~~Quota enforcement not active~~ — `enforceQuotaOrThrow` + `requireQuota` in `src/shared/middleware/quota.middleware.ts`. Free / Startup return 402 `QUOTA_EXCEEDED` at 100 %; Growth / Business pass through (overage billed). Wired on all 3 chat routes + doc-gen / voiceover / try-doc.
+- [x] ~~Auth bypass / IDOR~~ — page / run / analytics routes now check team membership (previously compared `project.userId` only, broke for team members and let any authed user enumerate runs).
+- [x] ~~SSRF on /api/projects/analyze-url~~ — `src/shared/http/safe-fetch.ts` DNS-resolves the target, rejects private / link-local / loopback / cloud-metadata ranges and non-http(s) schemes.
+- [x] ~~Invited email leaked on public invite peek~~ — `GET /api/invites/:token` returns team + inviter only. Accept flow still validates `auth.email === invite.email` server-side.
+- [x] ~~MCP tokens stored as plaintext~~ — `token_hash` (SHA-256) + `preview` columns; raw token only surfaced once at creation. Migration: `20260422000001_hash_mcp_tokens_at_rest.sql`.
+- [x] ~~`registerChatSession` SELECT-then-INSERT race~~ — now single INSERT with `ignoreDuplicates: true` on the PK.
+- [x] ~~Gemini retry too aggressive for SSE~~ — `10/20s × 2` backoff (was `30/60/90s × 3`) so exploration timeouts don't leave runs stuck `running`.
+- [x] ~~Sequential per-page indexing~~ — `chat.service.indexProject` runs 5 pages in parallel (Promise.allSettled waves). 100-page project ~12× faster.
+- [x] ~~Classifier blocked chat path~~ — now hourly Vercel cron drains unclassified user messages. Chat response latency no longer bounded by a second Gemini call; analytics lags ≤ 1h.
 - [ ] **Stripe wiring missing** — `plans.stripe_price_id`, `subscriptions.stripe_subscription_id`, `profiles.stripe_customer_id` columns are in place but plan switching mutates DB directly. Need Checkout Session + webhook handler.
 - [ ] Code blocks have no syntax highlighting (Shiki = ~2 MB to bundle, deferred). Language picker also not yet exposed.
-- [ ] `src/app.ts` and `api/index.ts` duplicate router mounts — easy to forget one when adding routes (already happened for billing/profile/admin). Should factor into a shared `mountRouters(app)` helper.
+- [x] ~~`src/app.ts` and `api/index.ts` duplicate router mounts~~ — factored into `src/shared/middleware/mount-routers.ts`; both entrypoints call it with the right prefix.
+- [x] ~~No Sentry / error tracking~~ — `src/shared/observability/sentry.ts` + `src/ui/shared/observability/sentry.ts`. 5xx AppErrors + unhandled errors captured with `error_code` and `path` tags. Redacts Authorization / cookie / x-api-key / MCP-token URLs. No-op when DSN unset.
+- [x] ~~No concurrent-run protection~~ — every heavy action (exploration, doc-gen, voiceover, try-doc-analysis, project index) routes through `job.service.ensureExclusiveJob`. Page-scoped UNIQUE `(page_id, type) WHERE status='running'` + project-scoped UNIQUE `(project_id, type) WHERE status='running' AND page_id IS NULL`. Staleness reclaim > 10 min handles Vercel-timeout orphans. Blocked callers get a 409 `RUN_ALREADY_RUNNING` with the triggering user's name + started-at, rendered by the shared `AlreadyRunningNotice` component.
+- [ ] **Scale bottlenecks still on the shelf**:
+  - [ ] Embeddings stored via `JSON.stringify()` cast to `vector(768)` — index works, but a native `pgvector-node` path would drop the parsing overhead on bulk inserts. Defer until latency signals justify it.
+  - [ ] RLS `user_team_ids()` subquery re-executed on every SELECT — at ~100 concurrent chats it adds measurable latency. Fix is either Postgres-side (make the function `STABLE`) or client-side (cache the team ids on the JWT). Needs an architecture call.
+  - [ ] Video is buffered to a `Buffer` in memory for voice-over; a 300 MB recording OOMs Vercel. Needs streaming to Gemini Files API, or a hard client-side cap on upload size.
+  - [ ] `chat_messages` grows unbounded. Need a pruning cron or partition scheme before ~10M rows degrade analytics queries.
 - [ ] **Chat RAG quality — deferred batches** (already landed: top-20 retrieval, conversational query rewriting, temperature 0.3, hierarchy breadcrumbs, Gemini-as-judge reranking, Pro model routing on complex queries). Still on the shelf:
   - [ ] Hybrid BM25 + vector search (pgvector + `tsvector`). Helps on queries with exact terms / proper nouns that embed weakly.
   - [ ] Multi-query retrieval — generate 3 query variants via Gemini, union results, dedup. Lifts recall on vague phrasing.

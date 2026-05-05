@@ -39,9 +39,8 @@ const redis =
     ? new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN })
     : null
 
-if (!redis && env.NODE_ENV === 'production') {
-  console.warn('[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set in production — using in-memory fallback that is bypassable on serverless. Set both env vars to enable distributed rate limiting.')
-}
+// env.ts enforces Upstash in production, so `redis === null` here can only
+// happen in dev / test. No warning needed.
 
 /**
  * In-memory fallback — a fixed-window counter, same semantics as the old

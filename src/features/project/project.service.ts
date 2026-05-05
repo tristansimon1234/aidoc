@@ -1,8 +1,7 @@
 import { NotFoundError, AppError } from '../../shared/middleware/error.middleware.js'
 import type { Project, CreateProjectInput, UpdateProjectInput } from './project.types.js'
 import * as projectRepo from './project.repository.js'
-import { supabase } from '../../shared/db/supabase.client.js'
-import { DatabaseError } from '../../shared/middleware/error.middleware.js'
+import { findMember } from '../team/team.repository.js'
 import { getSignedUrl } from '../../shared/db/storage.repository.js'
 
 // Logo URLs are always re-signed on read. We extract the storage path
@@ -17,11 +16,24 @@ import { getSignedUrl } from '../../shared/db/storage.repository.js'
 // pass through unchanged.
 const ARTIFACTS_PATH_RE = /\/storage\/v1\/object\/(?:public|sign)\/artifacts\/([^?]+)/
 
+// In-process cache for resigned logo URLs. Supabase signed URLs default
+// to 1h validity; we cache for 50min to leave a 10min cushion before
+// they actually expire. Each Vercel cold start gets its own cache —
+// fine, the savings are within a single function invocation's worth of
+// project reads (listProjects + getProject + activity feed all hit the
+// same project rows).
+const SIGNED_URL_TTL_MS = 50 * 60 * 1000
+const logoCache = new Map<string, { url: string; expiresAt: number }>()
+
 async function resignLogoUrl(logoUrl: string | null | undefined): Promise<string | null> {
   if (!logoUrl) return null
   const m = logoUrl.match(ARTIFACTS_PATH_RE)
   if (!m || !m[1]) return logoUrl
-  const fresh = await getSignedUrl('artifacts', decodeURIComponent(m[1]))
+  const path = decodeURIComponent(m[1])
+  const cached = logoCache.get(path)
+  if (cached && cached.expiresAt > Date.now()) return cached.url
+  const fresh = await getSignedUrl('artifacts', path)
+  if (fresh) logoCache.set(path, { url: fresh, expiresAt: Date.now() + SIGNED_URL_TTL_MS })
   return fresh ?? logoUrl
 }
 
@@ -32,19 +44,24 @@ async function hydrateProjectLogo(project: Project): Promise<Project> {
   return { ...project, design: { ...project.design, logoUrl: signed ?? undefined } }
 }
 
-async function assertTeamMembership(teamId: string, userId: string): Promise<void> {
-  const { data, error } = await supabase
-    .from('team_members')
-    .select('team_id')
-    .eq('team_id', teamId)
-    .eq('user_id', userId)
-    .maybeSingle()
-  if (error) throw new DatabaseError(error.message)
-  if (!data) throw new AppError('Forbidden', 'FORBIDDEN', 403)
+export async function assertTeamMembership(teamId: string, userId: string): Promise<void> {
+  const member = await findMember(teamId, userId)
+  if (!member) throw new AppError('Forbidden', 'FORBIDDEN', 403)
 }
 
 async function assertAccess(project: Project, userId: string): Promise<void> {
   await assertTeamMembership(project.teamId, userId)
+}
+
+/** Resolve a project and assert the caller has access to it via team
+ *  membership. Returns the project so callers can use it directly.
+ *  Throws 404 (project) or 403 (forbidden) — callers should not care
+ *  which, treat both as "no access". */
+export async function assertProjectAccess(projectId: string, userId: string): Promise<Project> {
+  const project = await projectRepo.findProjectById(projectId)
+  if (!project) throw new NotFoundError('Project')
+  await assertAccess(project, userId)
+  return project
 }
 
 export async function createProject(userId: string, teamId: string, input: CreateProjectInput): Promise<Project> {
@@ -107,7 +124,6 @@ export async function transferProject(id: string, userId: string, destTeamId: st
     throw new AppError('Project is already in this workspace.', 'ALREADY_IN_TEAM', 400)
   }
 
-  const { findMember } = await import('../team/team.repository.js')
   const [sourceRole, destRole] = await Promise.all([
     findMember(project.teamId, userId),
     findMember(destTeamId, userId),

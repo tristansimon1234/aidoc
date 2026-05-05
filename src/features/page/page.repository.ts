@@ -80,11 +80,15 @@ export async function findPageById(id: string): Promise<DocPage | null> {
 }
 
 export async function findPagesByProjectId(projectId: string): Promise<DocPage[]> {
+  // Hard-capped: projects with >500 pages are past the point where a tree
+  // fetch per view is sensible anyway. If we hit this we need lazy loading
+  // of subtrees, not a bigger payload.
   const { data, error } = await supabase
     .from('doc_pages')
     .select('*')
     .eq('project_id', projectId)
     .order('sort_order', { ascending: true })
+    .limit(500)
   if (error) throw new DatabaseError(error.message)
   return (data as PageRow[]).map(mapToPage)
 }

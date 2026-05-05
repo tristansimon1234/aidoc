@@ -5,7 +5,6 @@ import { ChatRequestSchema, WalkthroughRequestSchema } from './chat.schema.js'
 import * as chatService from './chat.service.js'
 import { registerChatSession, incrementUsage } from '../../shared/usage/usage.repository.js'
 import { logChatMessages } from '../analytics/analytics.repository.js'
-import { classifyMessageContent, applyClassificationToMessage } from '../analytics/analytics.service.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { createLimiter } from '../../shared/rate-limit/rate-limit.js'
 import type { Project } from '../project/project.types.js'
@@ -68,14 +67,13 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       const body = ChatRequestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      // Billing: register the chat session (dedup per cookie+month). Run the
-      // tracker + classifier in parallel with the chat Gemini call so neither
-      // adds user-visible latency.
+      // Billing: register the chat session (dedup per cookie+month) in
+      // parallel with the chat Gemini call so session tracking doesn't
+      // add user-visible latency. Classification is deferred to the
+      // hourly cron at /api/cron/classify-messages (keeps Gemini quota
+      // free for live chat traffic — see analytics.service).
       const sessionToken = (req.body as { sessionToken?: string }).sessionToken
       const sessionTrackPromise = trackWidgetSession(project, sessionToken)
-      const classifyPromise = sessionToken
-        ? classifyMessageContent(body.data.message)
-        : Promise.resolve(null)
 
       const result = await chatService.chat(
         project.id,
@@ -91,7 +89,7 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
 
       if (sessionToken) {
         try {
-          const { userMessageId } = await logChatMessages({
+          await logChatMessages({
             projectId: project.id,
             userId: project.userId,
             sessionToken,
@@ -99,10 +97,6 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
             userMessage: body.data.message,
             assistantMessage: result.answer,
           })
-          const classified = await classifyPromise
-          if (userMessageId && classified) {
-            await applyClassificationToMessage(userMessageId, classified)
-          }
         } catch (err) {
           console.warn('[analytics] widget chat log failed:', (err as Error).message)
         }
@@ -113,6 +107,84 @@ widgetRouter.post('/:widgetKey/chat', (req: Request, res: Response, next: NextFu
       res.status(200).json(result)
     } catch (err) {
       next(err)
+    }
+  })()
+})
+
+// SSE streaming variant — same auth + quota + rate limit as POST /chat,
+// just emits Gemini deltas as they arrive so the embedded widget can
+// render a "Thinking…" shimmer → token-by-token answer instead of a
+// 2-3s wait. Legacy POST /chat stays for any third-party caller still
+// hitting the JSON endpoint.
+widgetRouter.post('/:widgetKey/chat/stream', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const widgetKey = req.params.widgetKey as string
+      if (!widgetKey) throw new ValidationError('Widget key is required')
+
+      await chatLimiter.checkOrThrow(widgetKey)
+
+      const { findProjectByWidgetKey } = await import('../project/project.repository.js')
+      const project = await findProjectByWidgetKey(widgetKey)
+      if (!project) throw new NotFoundError('Widget not found or disabled')
+
+      await enforceQuotaOrThrow(project.teamId)
+
+      const body = ChatRequestSchema.safeParse(req.body)
+      if (!body.success) throw new ValidationError(body.error.flatten())
+
+      const sessionToken = (req.body as { sessionToken?: string }).sessionToken
+      const sessionTrackPromise = trackWidgetSession(project, sessionToken)
+
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('Connection', 'keep-alive')
+      res.setHeader('X-Accel-Buffering', 'no')
+      res.flushHeaders()
+
+      const stream = chatService.chatStream(
+        project.id,
+        body.data.message,
+        body.data.history,
+        body.data.userContext,
+      )
+      let assistantText = ''
+      try {
+        for await (const event of stream) {
+          // Strip walkthrough hint when the project hasn't enabled it
+          if (event.type === 'walkthrough' && !project.walkthroughEnabled) continue
+          if (event.type === 'done') assistantText = event.fullText
+          res.write(`data: ${JSON.stringify(event)}\n\n`)
+        }
+      } catch (err) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+      }
+
+      res.write('data: [DONE]\n\n')
+      res.end()
+
+      if (sessionToken && assistantText) {
+        try {
+          await logChatMessages({
+            projectId: project.id,
+            userId: project.userId,
+            sessionToken,
+            source: 'widget',
+            userMessage: body.data.message,
+            assistantMessage: assistantText,
+          })
+        } catch (err) {
+          console.warn('[analytics] widget chat stream log failed:', (err as Error).message)
+        }
+      }
+      await sessionTrackPromise
+    } catch (err) {
+      if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ type: 'error', message: (err as Error).message })}\n\n`)
+        res.end()
+      } else {
+        next(err)
+      }
     }
   })()
 })

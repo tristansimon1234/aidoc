@@ -76,17 +76,17 @@ export async function findProjectById(id: string): Promise<Project | null> {
 }
 
 /** List projects visible to a user across all their teams — RLS filters down
- *  to just the rows they have access to via team_members. */
+ *  to just the rows they have access to via team_members. Hard-capped to
+ *  keep the response bounded until we add cursor pagination. */
 export async function listProjectsForUser(_userId: string, teamId?: string): Promise<Project[]> {
   let query = supabase
     .from('projects')
     .select('*')
     .order('created_at', { ascending: false })
+    .limit(100)
   if (teamId) query = query.eq('team_id', teamId)
   const { data, error } = await query
   if (error) throw new DatabaseError(error.message)
-  // Fallback filter for dev where RLS might be off: user must be a team member
-  // via team_members — the join is enforced server-side via RLS anyway.
   return (data as ProjectRow[]).map(mapToProject)
 }
 

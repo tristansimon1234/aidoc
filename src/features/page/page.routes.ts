@@ -12,8 +12,10 @@ export const pageRouter = Router({ mergeParams: true })
 const ProjectIdParam = z.object({ projectId: z.string().uuid() })
 const PageParams = z.object({ projectId: z.string().uuid(), pageId: z.string().uuid() })
 
-// Verify project ownership before any page operation
-async function verifyProjectOwnership(req: Request, _res: Response, next: NextFunction): Promise<void> {
+// Verify the caller is a team member of the project before any page op.
+// Returns 404 on both "doesn't exist" and "no access" so callers can't
+// enumerate project ids across teams.
+async function verifyProjectAccess(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = (req as Request & { userId: string }).userId
     const projectId = req.params.projectId as string | undefined
@@ -21,9 +23,10 @@ async function verifyProjectOwnership(req: Request, _res: Response, next: NextFu
       next(new AppError('Unauthorized', 'UNAUTHORIZED', 401))
       return
     }
-    const { findProjectById } = await import('../project/project.repository.js')
-    const project = await findProjectById(projectId)
-    if (!project || project.userId !== userId) {
+    const { assertProjectAccess } = await import('../project/project.service.js')
+    try {
+      await assertProjectAccess(projectId, userId)
+    } catch {
       next(new AppError('Project not found', 'PROJECT_NOT_FOUND', 404))
       return
     }
@@ -33,7 +36,7 @@ async function verifyProjectOwnership(req: Request, _res: Response, next: NextFu
   }
 }
 
-pageRouter.use(verifyProjectOwnership)
+pageRouter.use(verifyProjectAccess)
 
 pageRouter.get('/', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {

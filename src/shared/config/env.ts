@@ -24,11 +24,40 @@ const EnvSchema = z.object({
   // resets the counter), fine for local dev but weak in prod.
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+  // Vercel Cron shared secret. Vercel injects this as `Authorization: Bearer
+  // ${CRON_SECRET}` on every scheduled hit; our /api/cron/* handlers reject
+  // anything that doesn't match, so the endpoint can't be drained publicly.
+  // Required in production; optional in dev (disables the cron endpoint).
+  CRON_SECRET: z.string().optional(),
+  // Sentry DSN — optional. When unset, Sentry is a no-op so local dev and
+  // self-hosted installs work without an external account.
+  SENTRY_DSN: z.string().url().optional(),
+  // Release identifier sent with each error. Vercel injects VERCEL_GIT_COMMIT_SHA
+  // automatically; we fall back to it in the init helper.
+  SENTRY_RELEASE: z.string().optional(),
 })
 
 export type Env = z.infer<typeof EnvSchema>
 
 export const env: Env = EnvSchema.parse(process.env)
+
+// In production, Upstash is required — the in-memory rate-limit fallback is
+// trivially bypassable on Vercel serverless (each cold start starts fresh
+// counters). Fail fast at boot instead of letting the app run with effectively
+// no rate limiting on the public widget / MCP endpoints.
+if (env.NODE_ENV === 'production' && (!env.UPSTASH_REDIS_REST_URL || !env.UPSTASH_REDIS_REST_TOKEN)) {
+  throw new Error(
+    'UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN must both be set in production. ' +
+    'The in-memory rate-limit fallback is bypassable on serverless — configure Upstash before deploying.',
+  )
+}
+
+if (env.NODE_ENV === 'production' && !env.CRON_SECRET) {
+  throw new Error(
+    'CRON_SECRET must be set in production — the /api/cron/* handlers reject ' +
+    'any request whose Authorization header does not match this value.',
+  )
+}
 
 const ADMIN_EMAIL_SET = new Set(
   (env.ADMIN_EMAILS ?? '')

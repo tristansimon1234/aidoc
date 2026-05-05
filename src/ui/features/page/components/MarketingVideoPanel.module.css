@@ -1,218 +1,632 @@
+/* Marketing video panel — Linear / Stripe Checkout / Vercel Deploy
+ * inspired form. Each logical group lives in a subtle card with its
+ * own title + description; the form is centered in the panel; the
+ * primary CTA sits in a footer block at the bottom with a one-line
+ * summary so the user knows what they're about to generate.
+ */
+
 .container {
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
-  padding: var(--space-md);
+  gap: 16px;
+  padding: 28px 0;
+  width: 100%;
 }
 
+@media (max-width: 640px) {
+  .container {
+    padding: 20px 0;
+    gap: 14px;
+  }
+}
+
+/* === Two-column layout ===
+ * Form on the left, video preview on the right when a render exists
+ * (or while a render is in progress). On narrow viewports the columns
+ * stack so the form stays usable. */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+  width: 100%;
+}
+
+.layout.layoutWithPreview {
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+}
+
+@media (max-width: 1100px) {
+  .layout.layoutWithPreview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.formColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.previewColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  position: sticky;
+  top: 16px;
+}
+
+@media (max-width: 1100px) {
+  .previewColumn {
+    position: static;
+  }
+}
+
+/* === Header === */
+
 .header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 4px 8px;
+}
+
+.eyebrow {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted-fg);
+}
+
+.subtitle {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-muted-fg);
+  margin: 0;
+}
+
+/* === Card group ===
+ * Each section of the form lives in a subtle card. The card surface is
+ * a 4% tint on top of the page bg — distinct enough to read as a
+ * separate group, not heavy enough to compete with the inputs inside.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  background: color-mix(in srgb, var(--color-fg) 2%, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+}
+
+.cardHeader {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.title {
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--color-fg);
-  margin: 0;
-}
-
-.subtitle {
-  font-size: var(--text-sm);
-  color: var(--color-muted-fg);
-  margin: 0;
-}
-
-.briefField {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.fieldLabel {
-  font-size: var(--text-xs);
+.cardTitle {
+  font-size: 14px;
   font-weight: 500;
-  color: var(--color-muted-fg);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.fieldHint {
-  font-size: 11px;
-  color: var(--color-muted-fg);
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  margin-left: 8px;
-}
-
-.briefTextarea {
-  width: 100%;
-  min-height: 96px;
-  padding: var(--space-sm);
-  font-family: var(--font-sans);
-  font-size: var(--text-sm);
   color: var(--color-fg);
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  resize: vertical;
+  letter-spacing: -0.005em;
 }
 
-.briefTextarea:focus {
-  outline: none;
-  border-color: var(--color-fg);
+.cardDescription {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-muted-fg);
+  margin: 0;
 }
+
+/* === Field shell === */
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-.select,
-.textInput {
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
+.fieldLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--color-fg);
-  font-size: var(--text-sm);
-  font-family: var(--font-sans);
 }
 
-.select:focus,
-.textInput:focus {
-  outline: none;
-  border-color: var(--color-fg);
+.fieldHint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-muted-fg);
 }
 
 .fieldGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: var(--space-md);
+  gap: 14px;
 }
 
-@media (max-width: 640px) {
+@media (max-width: 540px) {
   .fieldGrid {
     grid-template-columns: 1fr;
   }
 }
 
-.optionsRow {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  flex-wrap: wrap;
+/* === Inputs === */
+
+.briefTextarea,
+.textInput,
+.select {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
+
+.briefTextarea {
+  min-height: 88px;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.textInput,
+.select {
+  height: 38px;
+  padding: 0 12px;
+}
+
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 32px;
+}
+
+.briefTextarea:focus,
+.textInput:focus,
+.select:focus {
+  outline: none;
+  border-color: var(--color-fg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-fg) 10%, transparent);
+}
+
+.briefTextarea:disabled,
+.textInput:disabled,
+.select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* === Toggle === */
 
 .toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--text-sm);
+  gap: 10px;
+  font-size: 14px;
   color: var(--color-fg);
   cursor: pointer;
+  user-select: none;
 }
 
-.radioRow {
-  display: flex;
-  gap: 8px;
-}
-
-.radioCard {
-  flex: 1;
-  padding: 12px 14px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  background: transparent;
-  color: var(--color-fg);
-  text-align: left;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: var(--text-sm);
-  font-family: var(--font-sans);
+.toggle input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+  accent-color: var(--color-fg);
 }
 
-.radioCard:hover:not(:disabled) {
-  border-color: var(--color-fg);
-}
-
-.radioCardSelected {
-  border-color: var(--color-fg);
-  background: var(--color-fg);
-  color: var(--color-bg);
-}
-
-.radioCard:disabled {
+.toggle:has(input:disabled) {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
+/* === Radio cards === */
+
+.radioRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+@media (max-width: 480px) {
+  .radioRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.radioCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  text-align: left;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.radioCard:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--color-fg) 30%, var(--color-border));
+}
+
+.radioCardSelected {
+  border-color: var(--color-fg);
+  background: color-mix(in srgb, var(--color-fg) 4%, var(--color-bg));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-fg) 8%, transparent);
+}
+
+.radioCard:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .radioCardTitle {
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-fg);
 }
 
 .radioCardSubtitle {
-  font-size: var(--text-xs);
-  opacity: 0.7;
+  font-size: 12px;
+  color: var(--color-muted-fg);
+  line-height: 1.4;
+}
+
+/* === Volume slider === */
+
+.volumeSlider {
+  width: 100%;
+  height: 6px;
+  background: var(--color-border);
+  border-radius: 3px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.volumeSlider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-fg);
+  cursor: pointer;
+  border: 2px solid var(--color-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.volumeSlider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--color-fg);
+  cursor: pointer;
+  border: 2px solid var(--color-bg);
+}
+
+/* === Upload === */
+
+.uploadRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--color-muted-fg);
+}
+
+.uploadRow input[type='file'] {
+  font-size: 13px;
+  color: var(--color-fg);
+  cursor: pointer;
+}
+
+.uploadOk {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--color-success, #16a34a);
+}
+
+/* === Footer / actions ===
+ * Sticky in spirit: lives at the bottom of the form, visually distinct
+ * from the cards above. Summary line above the CTA so the user knows
+ * what they're about to spend before clicking. */
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  margin-top: 4px;
+}
+
+.footerSummary {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-muted-fg);
+  margin: 0;
+}
+
+.footerSummary strong {
+  font-weight: 500;
+  color: var(--color-fg);
 }
 
 .actions {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
+  gap: 12px;
   flex-wrap: wrap;
 }
 
-.audioPlayer {
-  width: 100%;
+.actions :global(.button) {
+  min-height: 40px;
+}
+
+/* === Result block (after generation) === */
+
+.resultBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
 }
 
 .videoPlayer {
   width: 100%;
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   border: 1px solid var(--color-border);
+  background: #000;
 }
 
 .downloadLink {
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
+  padding: 0 14px;
+  height: 36px;
+  border-radius: 8px;
   border: 1px solid var(--color-border);
   color: var(--color-fg);
   text-decoration: none;
-  font-size: var(--text-sm);
+  font-size: 13px;
   font-weight: 500;
   display: inline-flex;
   align-items: center;
-  transition: border-color 0.15s;
+  gap: 6px;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
 .downloadLink:hover {
   border-color: var(--color-fg);
+  background: color-mix(in srgb, var(--color-fg) 4%, transparent);
 }
 
-.statusBanner {
-  padding: var(--space-sm) var(--space-md);
-  border-radius: var(--radius-md);
-  font-size: var(--text-sm);
+/* === Stale banner === */
+
+.staleBanner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--color-fg) 4%, transparent);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.staleBannerText {
+  flex: 1;
+  min-width: 200px;
+  color: var(--color-fg);
+}
+
+/* === Refine with AI === */
+
+.refine {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  margin-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.refineHint {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-muted-fg);
+  margin: -4px 0 0;
+}
+
+.refineHistory {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 4px;
+  padding: 12px;
+  background: color-mix(in srgb, var(--color-fg) 3%, var(--color-bg));
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.refineMsgUser {
+  align-self: flex-end;
+  max-width: 82%;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--color-fg) 8%, var(--color-bg));
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-fg);
+  white-space: pre-wrap;
+}
+
+.refineMsgAssistant {
+  align-self: flex-start;
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-fg);
+}
+
+.refineThinking {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--color-muted-fg) 0%,
+    var(--color-muted-fg) 46%,
+    var(--color-fg) 50%,
+    var(--color-muted-fg) 54%,
+    var(--color-muted-fg) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: refineShimmer 2.4s ease-in-out infinite;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+}
+
+@keyframes refineShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -150% 0; }
+}
+
+.refineInputWrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 14px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.refineInputWrap:focus-within {
+  border-color: color-mix(in srgb, var(--color-fg) 40%, var(--color-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-fg) 8%, transparent);
+}
+
+.refineInput {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-fg);
+  padding: 6px 0;
+  min-height: 22px;
+  max-height: 140px;
+}
+
+.refineInput::placeholder {
+  color: var(--color-muted-fg);
+}
+
+.refineInput:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refineSend {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-fg);
+  color: var(--color-bg);
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.refineSend:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
+.refineSend:not(:disabled):hover {
+  opacity: 0.9;
+}
+
+.refineSend:not(:disabled):active {
+  transform: scale(0.95);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refineThinking {
+    animation: none;
+    background: var(--color-muted-fg);
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+
+/* === Status banners === */
+
+.statusBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .statusInfo {
-  background: rgba(91, 91, 214, 0.08);
+  background: color-mix(in srgb, var(--color-fg) 4%, transparent);
   color: var(--color-fg);
-  border: 1px solid rgba(91, 91, 214, 0.25);
+  border: 1px solid var(--color-border);
 }
 
 .statusError {
-  background: rgba(239, 68, 68, 0.08);
-  color: var(--color-destructive);
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: color-mix(in srgb, var(--color-destructive, #ef4444) 8%, transparent);
+  color: var(--color-destructive, #ef4444);
+  border: 1px solid color-mix(in srgb, var(--color-destructive, #ef4444) 25%, transparent);
 }

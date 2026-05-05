@@ -79,17 +79,17 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
         return
       }
 
-      console.log(`[analyze-url] ${url}`)
+      console.log(`[analyze-url] request received`)
 
-      // Fetch HTML
+      // Fetch HTML via SSRF-safe wrapper: rejects non-http(s) schemes
+      // and private / link-local hosts (AWS metadata, localhost, RFC1918),
+      // caps body size and applies a hard timeout. The URL is validated
+      // upstream by AnalyzeUrlSchema; safeFetch is defence-in-depth.
       let html = ''
       try {
-        const resp = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; Doclee/1.0)', Accept: 'text/html' },
-          signal: AbortSignal.timeout(10000),
-          redirect: 'follow',
-        })
-        html = await resp.text()
+        const { safeFetch } = await import('../../shared/http/safe-fetch.js')
+        const resp = await safeFetch(url, { timeoutMs: 10_000, maxBytes: 2_000_000 })
+        html = resp.text
       } catch (err) {
         console.warn(`[analyze-url] Fetch failed: ${(err as Error).message}`)
       }
