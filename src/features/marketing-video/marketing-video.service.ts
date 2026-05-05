@@ -981,8 +981,6 @@ export async function editMarketingManifestWithAi(
   const existing = await findMarketingVideoByRunId(runId)
   if (!existing) throw new Error('No marketing-video manifest for this run yet — generate one first.')
 
-  const { generateText } = await import('../../shared/ai/gemini.client.js')
-
   // The edit follows the same architect / designer split as fresh
   // generation: the editor LLM works as the ARCHITECT — it edits the
   // text + per-scene visualBrief / visualMode but NEVER writes
@@ -1097,34 +1095,21 @@ The user gives you a **direction**, not a diff. Read it for INTENT.
 
 Return ONLY valid JSON: { "message": string, "script": <full edited script>, "branding"?: <patch> }.`
 
-  // Edit uses Flash by default — same reasoning as script gen: the LLM
-  // is filling structured slots, not doing creative reasoning. Pro's
-  // thinking budget burns invisibly. responseSchema enforces shape
-  // server-side so the prompt stays short.
-  let result: { text: string }
-  try {
-    result = await generateText({
-      userPrompt: prompt,
-      maxTokens: 16_000,
-      thinkingBudget: 0,
-      temperature: 0.4,
-      json: true,
-    })
-  } catch (err) {
-    const message = (err as Error).message ?? ''
-    const status = (err as { status?: number }).status
-    const isOverload = status === 503 || status === 429
-      || /high demand|overload|temporarily unavailable|rate.?limit/i.test(message)
-    if (!isOverload) throw err
-    console.warn(`[marketing-edit] Flash errored (${status ?? 'no-status'}), retrying`)
-    result = await generateText({
-      userPrompt: prompt,
-      maxTokens: 16_000,
-      thinkingBudget: 0,
-      temperature: 0.4,
-      json: true,
-    })
-  }
+  // Architect edit on Sonnet 4.6 — same model as the fresh-gen
+  // architect, for consistency. Plain text with defensive JSON parsing
+  // (the prompt asks for JSON-only output; defensive parser below
+  // handles markdown fences / prose drift). No retry — Anthropic SDK
+  // auto-retries 429/5xx; on a hard refusal the catch in the calling
+  // route surfaces the error. No tool-use schema: the response shape
+  // is tightly constrained by the prompt + downstream Zod validation,
+  // and a tool-use input_schema would have to mirror MarketingScript
+  // verbatim (large + drift risk on schema updates).
+  const { generateSonnetText } = await import('../../shared/ai/anthropic.client.js')
+  const result = await generateSonnetText({
+    userPrompt: prompt,
+    maxTokens: 16_000,
+    temperature: 0.4,
+  })
 
   // Parse defensively — even with responseMimeType:application/json the
   // model occasionally wraps the answer in markdown fences.
