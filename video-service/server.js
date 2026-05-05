@@ -554,6 +554,14 @@ app.post('/render-marketing-video', async (req, res) => {
       // hair softer on a side-by-side). Trade vs default: file ~1.3-
       // 1.5× larger, acceptable for a 45s marketing asset.
       crf: 20,
+      // x264Preset 'slower' = better compression efficiency at the cost
+      // of encoding time. Default is 'medium'. At the same CRF, 'slower'
+      // produces a ~10-15% smaller file AND visibly cleaner output on
+      // text + thin lines (the encoder spends more time finding optimal
+      // motion vectors / DCT decisions per frame). Trade: render time
+      // ~2× — for marketing video (generated once, shared many times)
+      // the asymmetry is worth it.
+      x264Preset: 'slower',
     })
 
     console.log('[render-marketing] Render done, uploading…')
