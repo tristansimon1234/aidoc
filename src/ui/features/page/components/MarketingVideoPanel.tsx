@@ -81,7 +81,13 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
   const [visualMode, setVisualMode] = useState<VisualMode>(initialRunId ? 'screenshots' : 'mocks')
   const [voices, setVoices] = useState<Array<{ voiceId: string; name: string; category: string }>>([])
   const [musicPresets, setMusicPresets] = useState<Array<{ id: string; name: string; mood?: string }>>([])
-  const [musicChoice, setMusicChoice] = useState<string>('none')
+  // Default to AI-generated cinematic music — most marketing videos
+  // benefit from a backing track, and 'none' was a footgun: the user
+  // hits Generate without touching the dropdown and gets a silent video,
+  // then every subsequent refine preserves musicUrl: null via the
+  // updateMarketingManifestForRun spread. Users who explicitly want
+  // silence can still pick 'none' from the dropdown.
+  const [musicChoice, setMusicChoice] = useState<string>('ai-cinematic')
   const [musicUploadPath, setMusicUploadPath] = useState<string | null>(null)
   const [musicUploadName, setMusicUploadName] = useState<string | null>(null)
   const [musicUploading, setMusicUploading] = useState(false)
