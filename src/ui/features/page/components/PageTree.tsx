@@ -78,6 +78,13 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
   const [dragId, setDragId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
   const [optimisticPages, setOptimisticPages] = useState<DocPageDTO[] | null>(null)
+  // Reorder writes are fire-and-forget but a fast user can drop two pages
+  // before the first PUT round-trips. We must keep the optimistic view
+  // alive until ALL pending writes settle — otherwise the first response
+  // clears it and the props (which still reflect pre-drag-2 state on the
+  // server) flash through before drag #2 lands. Track in-flight writes
+  // and only release optimistic when the last one completes.
+  const pendingReordersRef = useRef(0)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const sensors = useSensors(
@@ -164,13 +171,24 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     })
     setOptimisticPages(updatedPages)
 
-    // Save in background, then silently refresh parent data
+    // Save in background. Only release optimistic state once the LAST
+    // in-flight reorder settles, so a fast double-drag never flashes the
+    // pre-drag-2 server view.
+    pendingReordersRef.current++
     void reorderPages(projectId, updates)
-      .then(() => onRefresh())
-      .then(() => setOptimisticPages(null))
+      .then(async () => {
+        pendingReordersRef.current--
+        if (pendingReordersRef.current === 0) {
+          await onRefresh()
+          setOptimisticPages(null)
+        }
+      })
       .catch(() => {
-        setOptimisticPages(null)
-        void onRefresh()
+        pendingReordersRef.current--
+        if (pendingReordersRef.current === 0) {
+          setOptimisticPages(null)
+          void onRefresh()
+        }
       })
   }
 
@@ -194,16 +212,25 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     const siblings = effectivePages.filter((p) => p.parentId === newParentId)
     const maxSort = siblings.reduce((max, p) => Math.max(max, p.sortOrder), -1)
 
+    pendingReordersRef.current++
     void reorderPages(projectId, [{
       id: pageId,
       parentId: newParentId,
       sortOrder: maxSort + 1,
     }])
-      .then(() => onRefresh())
-      .then(() => setOptimisticPages(null))
+      .then(async () => {
+        pendingReordersRef.current--
+        if (pendingReordersRef.current === 0) {
+          await onRefresh()
+          setOptimisticPages(null)
+        }
+      })
       .catch(() => {
-        setOptimisticPages(null)
-        void onRefresh()
+        pendingReordersRef.current--
+        if (pendingReordersRef.current === 0) {
+          setOptimisticPages(null)
+          void onRefresh()
+        }
       })
   }
 
