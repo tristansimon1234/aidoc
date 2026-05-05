@@ -751,15 +751,6 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             </div>
           )}
 
-          {summary.manifest.voiceoverUrl && (
-            <audio
-              className={styles.audioPlayer}
-              controls
-              src={summary.manifest.voiceoverUrl}
-              preload="metadata"
-            />
-          )}
-
           {summary.videoUrl && renderStatus === 'ready' && (
             <div className={styles.actions}>
               <a href={summary.videoUrl} download="marketing.mp4" className={styles.downloadLink}>
