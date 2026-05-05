@@ -28,7 +28,7 @@ interface PageTreeProps {
 
 function buildTree(pages: DocPageDTO[]): DocPageDTO[] {
   const map = new Map<string, DocPageDTO & { children: DocPageDTO[] }>()
-  const roots: DocPageDTO[] = []
+  const roots: (DocPageDTO & { children: DocPageDTO[] })[] = []
   for (const p of pages) map.set(p.id, { ...p, children: [] })
   for (const p of pages) {
     const node = map.get(p.id)!
@@ -38,6 +38,19 @@ function buildTree(pages: DocPageDTO[]): DocPageDTO[] {
       roots.push(node)
     }
   }
+  // Sort by sortOrder at every level. The previous implementation relied
+  // on the input array already being ordered (from `fetchPageTree`'s SQL
+  // ORDER BY) — but local reorders patch sortOrder on each page in place
+  // without touching array position, so the visible tree wouldn't update
+  // until the next refetch. Sorting here makes the render reflect the
+  // current sortOrder regardless of how the array was assembled.
+  const sortRecursive = (nodes: (DocPageDTO & { children: DocPageDTO[] })[]): void => {
+    nodes.sort((a, b) => a.sortOrder - b.sortOrder)
+    for (const n of nodes) {
+      sortRecursive(n.children as (DocPageDTO & { children: DocPageDTO[] })[])
+    }
+  }
+  sortRecursive(roots)
   return roots
 }
 
