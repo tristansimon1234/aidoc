@@ -146,11 +146,21 @@ export async function generateVoiceover(
     const nextStart = timestamps[i + 1]
     const slotDuration = (nextStart ?? (startTime + 15)) - startTime
 
-    // Synthesize — retry with shorter text if audio overflows the slot
+    // Synthesize — retry with shorter text if audio overflows the slot.
+    // The first segment (intro / greeting) and the last (farewell) are
+    // exempt from truncation: cutting them mid-sentence chops the
+    // welcome line or the goodbye, which sounds broken to listeners.
+    // The video-service `/concat-audio` already absorbs overflow by
+    // shrinking inter-segment silence (see server.js:316), so letting
+    // these segments run a bit long just delays segment 2 / pushes
+    // the farewell slightly past the video end — far less jarring
+    // than a truncated greeting.
+    const isIntro = i === 0
+    const isOutro = i === steps.length - 1
     let buffer = await synthesizeSpeech(text, { voiceId: options?.voiceId })
     let estimatedDuration = Math.max(1, buffer.length / 16000)
 
-    if (estimatedDuration > slotDuration * 1.1 && text.split(/\s+/).length > 6) {
+    if (!isIntro && !isOutro && estimatedDuration > slotDuration * 1.1 && text.split(/\s+/).length > 6) {
       const words = text.split(/\s+/)
       const targetWords = Math.floor(words.length * (slotDuration / estimatedDuration))
       const shortened = words.slice(0, Math.max(4, targetWords)).join(' ')
