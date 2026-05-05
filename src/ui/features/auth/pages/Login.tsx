@@ -23,8 +23,12 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
   // accept page) can deep-link straight to the right pane instead of
   // dumping every visitor on Sign In and asking them to toggle.
   const initialMode = searchParams.get('mode') === 'signup'
+  // When the user lands here from an invite link, the email is in the
+  // URL — prefill so they don't have to retype the address the invite
+  // was sent to (which is the only one that will be accepted).
+  const initialEmail = (searchParams.get('email') ?? '').trim()
 
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(initialMode)
   const [error, setError] = useState<string | null>(null)

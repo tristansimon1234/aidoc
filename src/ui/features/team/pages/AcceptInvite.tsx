@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Button, Spinner, EmptyState } from '../../../design-system/components/index.js'
 import { api, setActiveTeamId, ApiError } from '../../../shared/api/client.js'
 import { useAuth } from '../../../shared/hooks/useAuth.js'
@@ -21,6 +21,11 @@ interface InvitePeek {
 export function AcceptInvite(): React.ReactElement {
   const { token } = useParams<{ token: string }>()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  // The backend embeds the invitee's email in the accept URL so we can
+  // prefill the sign-in / sign-up form. Strip whitespace defensively;
+  // the field will accept anything else as a starting value.
+  const invitedEmail = (searchParams.get('email') ?? '').trim()
   const { user, loading: authLoading } = useAuth()
   const [invite, setInvite] = useState<InvitePeek | null>(null)
   const [peekError, setPeekError] = useState<string | null>(null)
@@ -90,7 +95,13 @@ export function AcceptInvite(): React.ReactElement {
   // single "Continue" left invitees unsure which flow they were
   // about to land on.
   if (!user) {
-    const returnToParam = encodeURIComponent(`/invite/${token}`)
+    // Preserve the invite URL with the email param so a sign-up
+    // verification round-trip lands the user back here ready to accept.
+    const inviteReturn = invitedEmail
+      ? `/invite/${token}?email=${encodeURIComponent(invitedEmail)}`
+      : `/invite/${token}`
+    const returnToParam = encodeURIComponent(inviteReturn)
+    const emailParam = invitedEmail ? `&email=${encodeURIComponent(invitedEmail)}` : ''
     return (
       <div className={styles.page}>
         <div className={styles.card}>
@@ -99,15 +110,17 @@ export function AcceptInvite(): React.ReactElement {
             {invite.inviterName ?? 'Someone'} invited you to <strong>{invite.teamName}</strong>.
           </p>
           <p className={styles.subtitle} style={{ fontSize: 'var(--text-xs)' }}>
-            Use the email the invitation was sent to.
+            {invitedEmail
+              ? <>Use <strong>{invitedEmail}</strong> — the address the invite was sent to.</>
+              : <>Use the email the invitation was sent to.</>}
           </p>
           <div className={styles.actions}>
-            <Button onClick={() => navigate(`/login?mode=signup&returnTo=${returnToParam}`)}>
+            <Button onClick={() => navigate(`/login?mode=signup&returnTo=${returnToParam}${emailParam}`)}>
               Create an account
             </Button>
             <Button
               variant="ghost"
-              onClick={() => navigate(`/login?mode=signin&returnTo=${returnToParam}`)}
+              onClick={() => navigate(`/login?mode=signin&returnTo=${returnToParam}${emailParam}`)}
             >
               I already have an account
             </Button>
