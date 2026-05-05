@@ -144,8 +144,24 @@ interface BlockEditorProps {
 }
 
 export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }: BlockEditorProps): React.ReactElement {
-  const [saving, setSaving] = useState(false)
+  type SaveStatus = 'idle' | 'saving' | 'saved' | 'failed'
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null)
+  // Tick to refresh the "Saved Xs ago" relative timestamp.
+  const [, setNowTick] = useState(0)
+
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Has the editor's content changed since the last successful save?
+  // Set to true on every real onChange; cleared at the start of each save
+  // attempt so that edits arriving DURING the save flip it back to true and
+  // trigger a re-flush. This is the "dirty bit" that drives the unload guard
+  // and the queued-save logic.
+  const dirtyRef = useRef(false)
+  // True while a save call is awaiting the server. Used to serialise saves
+  // so two onSave promises never race — the second one waits via the
+  // pending-flush flag below.
+  const inFlightRef = useRef(false)
   const initializedRef = useRef(false)
   // True while the editor is being hydrated from props. handleChange ignores
   // onChange events fired during this window — replaceBlocks + BlockNote's
@@ -251,35 +267,9 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
     return () => el.removeEventListener('click', handler, true)
   }, [openLightbox])
 
-  const handleChange = useCallback(() => {
-    if (readOnly) return
-    // While props-driven load is happening, swallow the noisy normalization
-    // events that BlockNote fires after replaceBlocks. After this window,
-    // trust every onChange — it's a real document mutation.
-    if (loadingRef.current) return
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current)
-    }
-
-    saveTimeoutRef.current = setTimeout(() => {
-      void (async () => {
-        try {
-          setSaving(true)
-          const blocks = editor.document
-          const markdown = await editor.blocksToMarkdownLossy(blocks)
-          await onSave(markdown, blocks)
-        } catch {
-          // save failed
-        } finally {
-          setSaving(false)
-        }
-      })()
-    }, 600)
-  }, [editor, onSave, readOnly])
-
-  // Keep refs pointing at the latest editor / onSave so the unmount
-  // flush below can reach them without stale-closure bugs.
+  // Keep refs pointing at the latest editor / onSave so async callbacks
+  // (debounce timer, retry timer, unmount flush) can reach them without
+  // stale-closure bugs.
   const editorRef = useRef(editor)
   const onSaveRef = useRef(onSave)
   useEffect(() => {
@@ -287,15 +277,121 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
     onSaveRef.current = onSave
   })
 
+  // Single save engine. Serialises against itself via inFlightRef and
+  // retries transient failures with exponential backoff. dirtyRef is
+  // cleared optimistically at the start so any edits arriving during the
+  // network round-trip flip it back to true and queue a re-flush.
+  const performSave = useCallback(async (attempt = 0): Promise<void> => {
+    const ed = editorRef.current
+    const save = onSaveRef.current
+    if (!ed || !save) return
+
+    if (inFlightRef.current) {
+      // A save is already running — when it returns it'll re-check
+      // dirtyRef and re-flush. Nothing to do here.
+      return
+    }
+    if (!dirtyRef.current) return
+
+    inFlightRef.current = true
+    dirtyRef.current = false
+    setSaveStatus('saving')
+
+    try {
+      const blocks = ed.document
+      const markdown = await ed.blocksToMarkdownLossy(blocks)
+      await save(markdown, blocks)
+      inFlightRef.current = false
+      setLastSavedAt(Date.now())
+      // If the user kept typing during the save, dirtyRef was flipped back
+      // on by handleChange — flush again immediately.
+      if (dirtyRef.current) {
+        setSaveStatus('saving')
+        void performSave(0)
+      } else {
+        setSaveStatus('saved')
+      }
+    } catch {
+      inFlightRef.current = false
+      // Edits that triggered this save are still unsaved — restore the
+      // dirty flag so the unload guard fires and the next user keystroke
+      // triggers a fresh debounce.
+      dirtyRef.current = true
+      const backoffMs = [1000, 3000, 6000]
+      const wait = backoffMs[attempt]
+      if (wait !== undefined) {
+        setSaveStatus('saving')
+        retryTimeoutRef.current = setTimeout(() => {
+          retryTimeoutRef.current = null
+          void performSave(attempt + 1)
+        }, wait)
+      } else {
+        setSaveStatus('failed')
+      }
+    }
+  }, [])
+
+  const handleChange = useCallback(() => {
+    if (readOnly) return
+    // While props-driven load is happening, swallow the noisy normalization
+    // events that BlockNote fires after replaceBlocks. After this window,
+    // trust every onChange — it's a real document mutation.
+    if (loadingRef.current) return
+
+    dirtyRef.current = true
+    // Fresh edit supersedes any pending retry — drop the wait, debounce
+    // anew, the user's latest content will be the one saved.
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current)
+      retryTimeoutRef.current = null
+    }
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => {
+      saveTimeoutRef.current = null
+      void performSave()
+    }, 600)
+  }, [readOnly, performSave])
+
+  // beforeunload guard — block tab close / refresh while there are
+  // unsaved edits or an in-flight save (network might be killed).
+  // Modern browsers ignore the message string and show their own
+  // localized prompt; what matters is that preventDefault fires.
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent): void => {
+      if (dirtyRef.current || inFlightRef.current) {
+        e.preventDefault()
+        // Legacy browsers — required for the prompt to show in some.
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [])
+
+  // Tick the relative-time display every 5s while we're showing
+  // "Saved Xs ago" — cheap, only runs in the saved state.
+  useEffect(() => {
+    if (saveStatus !== 'saved') return
+    const id = setInterval(() => setNowTick((n) => n + 1), 5000)
+    return () => clearInterval(id)
+  }, [saveStatus])
+
   useEffect(() => {
     return () => {
-      // On unmount (incl. navigation between pages), if a save is still
-      // debouncing, flush it fire-and-forget instead of dropping the
-      // user's edits. Cleanup is sync so we can't await — but the save
-      // itself can finish in the background.
+      // On unmount (incl. navigation between pages), if there are unsaved
+      // edits OR a pending debounce, flush fire-and-forget instead of
+      // dropping the user's edits. Cleanup is sync so we can't await —
+      // but the request itself can complete in the background while the
+      // new page mounts.
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current)
         saveTimeoutRef.current = null
+      }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+        retryTimeoutRef.current = null
+      }
+      if (dirtyRef.current && !inFlightRef.current) {
         const ed = editorRef.current
         const save = onSaveRef.current
         if (ed && save) {
@@ -311,9 +407,17 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
     }
   }, [])
 
+  const handleManualRetry = useCallback(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current)
+      retryTimeoutRef.current = null
+    }
+    void performSave(0)
+  }, [performSave])
+
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>
-      {saving && <span className={styles.saving}>Saving...</span>}
+      <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} onRetry={handleManualRetry} />
       <BlockNoteView
         editor={editor}
         editable={!readOnly}
@@ -326,4 +430,40 @@ export function BlockEditor({ content, contentBlocks, onSave, readOnly = false }
       {lightbox}
     </div>
   )
+}
+
+function formatSavedAgo(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 5) return 'just now'
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  return `${h}h ago`
+}
+
+function SaveIndicator({
+  status,
+  lastSavedAt,
+  onRetry,
+}: {
+  status: 'idle' | 'saving' | 'saved' | 'failed'
+  lastSavedAt: number | null
+  onRetry: () => void
+}): React.ReactElement | null {
+  if (status === 'idle') return null
+  if (status === 'saving') {
+    return <span className={styles.saveIndicator}>Saving…</span>
+  }
+  if (status === 'failed') {
+    return (
+      <span className={`${styles.saveIndicator} ${styles.saveIndicatorFailed}`}>
+        Save failed
+        <button type="button" className={styles.saveRetryBtn} onClick={onRetry}>Retry</button>
+      </span>
+    )
+  }
+  // saved
+  const rel = lastSavedAt ? formatSavedAgo(Date.now() - lastSavedAt) : ''
+  return <span className={styles.saveIndicator}>Saved {rel}</span>
 }
