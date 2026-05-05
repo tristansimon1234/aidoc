@@ -8,6 +8,11 @@ interface DocReviewBannerProps {
     overallCompleteness?: number
     gaps?: DocGap[]
     nextSteps?: DocNextStep[]
+    /** Set by the backend when Gemini's tail JSON couldn't be parsed
+     *  (truncation, fence wrap, missing separator). Distinct from a
+     *  legitimate 0 % completeness — we render an explicit "unavailable"
+     *  state rather than misleading the user. */
+    parseFailed?: boolean
   } | null
   /** Latest run id — used to fetch step observations for the
    *  UI-label visibility audit. When absent, only the AI confidence
@@ -91,14 +96,17 @@ export function DocReviewBanner({ selfAssessment, runId, markdown }: DocReviewBa
   const completeness = selfAssessment?.overallCompleteness
   const gaps = selfAssessment?.gaps ?? []
   const nextSteps = selfAssessment?.nextSteps ?? []
-  const hasAssessment = typeof completeness === 'number' || gaps.length > 0
+  const parseFailed = selfAssessment?.parseFailed === true
+  const hasAssessment = typeof completeness === 'number' || gaps.length > 0 || parseFailed
 
   // Don't render at all when there's neither an AI signal nor anything
   // worth alerting on.
   if (!hasAssessment && candidateLabels.length === 0) return null
 
   const summaryBits: string[] = []
-  if (typeof completeness === 'number') {
+  if (parseFailed) {
+    summaryBits.push('AI confidence unavailable — regenerate to refresh')
+  } else if (typeof completeness === 'number') {
     summaryBits.push(`${completeness}% confidence`)
   }
   if (gaps.length > 0) {
@@ -109,6 +117,7 @@ export function DocReviewBanner({ selfAssessment, runId, markdown }: DocReviewBa
   }
 
   const tone: 'ok' | 'warn' | 'alert' =
+    parseFailed ? 'warn' :
     typeof completeness === 'number' && completeness < 60 ? 'alert' :
     typeof completeness === 'number' && completeness < 80 ? 'warn' :
     gaps.some((g) => g.severity === 'major') ? 'warn' :
