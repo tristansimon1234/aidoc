@@ -593,6 +593,167 @@ export async function generateMarketingVideoForRun(
 }
 
 /**
+ * MCP path entry: the script (and per-scene mockCode TSX) is authored
+ * by the MCP caller — typically a Claude session (Code, Web, Desktop)
+ * with the Doclee MCP loaded — so the Doclee backend skips the architect
+ * and designer LLM passes entirely. The MCP tool's description teaches
+ * the caller what valid TSX looks like; this function just compiles it
+ * and runs the existing voice-over + music + render pipeline.
+ *
+ * Differences vs `generateMarketingVideoForRun`:
+ *  - No `generateMarketingScript` call (architect + N parallel designer
+ *    Pro calls). Caller provides the full script.
+ *  - No `repairMockCode` rescue on compile failure. We surface the
+ *    compile error to the caller so they can fix the TSX and resubmit
+ *    rather than burning Gemini tokens on a server-side rewrite.
+ *  - Otherwise identical pipeline: validate → compile → voice-over →
+ *    music → manifest → render.
+ *
+ * The in-app flow (`generateMarketingVideoForRun`) is untouched.
+ */
+export async function submitMarketingVideoFromScript(args: {
+  runId: string
+  script: import('./marketing-video.types.js').MarketingScript
+  options?: GenerateMarketingVideoOptions
+}): Promise<MarketingVideoSummary> {
+  const { runId, script } = args
+  const options = args.options ?? {}
+
+  const run = await findRunById(runId)
+  if (!run) throw new Error(`Run not found: ${runId}`)
+  if (!run.docPageId) {
+    throw new Error('This run has no linked page. Marketing video needs a page as input.')
+  }
+  const page = await findPageById(run.docPageId)
+  if (!page) throw new Error('Linked page not found')
+  const branding = await resolveBranding(page.projectId)
+  const screenshots = await collectScreenshots(runId)
+
+  console.log(`[marketing-video/mcp] Run ${runId}: ${script.scenes.length} scenes, product="${branding.productName}", caller-authored TSX`)
+
+  // Per-scene compile. NO LLM rescue — we want zero LLM cost on the
+  // MCP path. Compile errors bubble up as a structured message so the
+  // MCP caller can fix the TSX and retry. Scenes with no mockCode
+  // (legacy / screenshot-only) are skipped — same as the in-app flow.
+  const { compileMockCode } = await import('./mock-code.compiler.js')
+  const compileFailures: { sceneIndex: number; headline: string; error: string }[] = []
+  for (let i = 0; i < script.scenes.length; i++) {
+    const scene = script.scenes[i]!
+    if (!scene.mockCode || scene.mockCode.trim().length === 0) continue
+    try {
+      const { compiled } = await compileMockCode(scene.mockCode)
+      scene.mockCompiledCode = compiled
+    } catch (err) {
+      compileFailures.push({
+        sceneIndex: i,
+        headline: scene.headline,
+        error: (err as Error).message,
+      })
+    }
+  }
+  if (compileFailures.length > 0) {
+    const summary = compileFailures
+      .map((f) => `  scene[${f.sceneIndex}] "${f.headline}": ${f.error}`)
+      .join('\n')
+    throw new Error(
+      `mockCode compile failed for ${compileFailures.length} scene(s). Fix the TSX and resubmit:\n${summary}`,
+    )
+  }
+
+  const compiledCount = script.scenes.filter((s) => s.mockCompiledCode).length
+  console.log(`[marketing-video/mcp] Compiled ${compiledCount}/${script.scenes.length} scene mocks`)
+
+  // Voice-over.
+  const withVoiceover = options.withVoiceover ?? true
+  let voiceoverPath: string | null = null
+  let voiceoverUrl: string | null = null
+  let voiceoverDurationSeconds: number | undefined
+  if (withVoiceover) {
+    const result = await synthesizeMarketingVoiceover(runId, script, options)
+    voiceoverPath = result.voiceoverPath
+    voiceoverUrl = result.voiceoverUrl
+    voiceoverDurationSeconds = result.voiceoverDurationSeconds
+  }
+
+  // Music — same priority ladder as the in-app flow: explicit upload >
+  // AI generation > preset > none. Failures are non-fatal.
+  let musicUrl: string | null = null
+  let musicPath: string | null = null
+  let musicError: string | null = null
+  try {
+    if (options.musicUploadPath) {
+      musicPath = options.musicUploadPath
+      musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
+    } else if (options.musicTrackId === 'ai' || (options.musicTrackId && options.musicTrackId.startsWith('ai-'))) {
+      if (!isElevenLabsConfigured()) {
+        throw new Error('ELEVENLABS_API_KEY is required for AI music generation.')
+      }
+      const tone = options.tone ?? 'punchy'
+      const styleId = options.musicTrackId
+      let musicPrompt: string
+      if (styleId !== 'ai' && AI_MUSIC_STYLES[styleId]) {
+        const style = AI_MUSIC_STYLES[styleId]!
+        const userBrief = options.aiMusicPrompt?.trim()
+        musicPrompt = userBrief
+          ? `${style.prompt}, ${userBrief}. Background music for a ${branding.productName} marketing video.`
+          : `${style.prompt}. Background music for a ${branding.productName} marketing video.`
+      } else {
+        musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
+      }
+      const durationMs = Math.round(script.totalDurationSeconds * 1000)
+      const buffer = await generateMusic(musicPrompt, { durationMs })
+      musicPath = `runs/${runId}/marketing-music-ai.mp3`
+      await uploadToStorage('artifacts', musicPath, buffer, 'audio/mpeg')
+      musicUrl = `${getPublicUrl('artifacts', musicPath) ?? ''}?v=${Date.now()}`
+    } else if (options.musicTrackId && options.musicTrackId !== 'none') {
+      const preset = MUSIC_PRESETS.find((p) => p.id === options.musicTrackId)
+      if (preset) musicUrl = preset.url
+    }
+  } catch (err) {
+    musicError = (err as Error).message
+    musicUrl = null
+    musicPath = null
+    console.warn(`[marketing-video/mcp] Music generation failed (non-fatal): ${musicError}`)
+  }
+  const musicVolume = options.musicVolume ?? DEFAULT_MUSIC_VOLUME
+
+  const manifest: MarketingManifest = {
+    runId,
+    generatedAt: new Date().toISOString(),
+    script,
+    screenshots,
+    branding,
+    voiceoverUrl,
+    voiceoverPath,
+    voiceoverDurationSeconds,
+    musicUrl,
+    musicPath,
+    musicVolume,
+    musicError,
+  }
+
+  const manifestPath = `runs/${runId}/marketing-manifest.json`
+  await uploadToStorage(
+    'artifacts',
+    manifestPath,
+    Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8'),
+    'application/json',
+  )
+  const manifestUrl = `${getPublicUrl('artifacts', manifestPath) ?? ''}?v=${Date.now()}`
+
+  const summary: MarketingVideoSummary = {
+    manifest,
+    manifestUrl,
+    videoUrl: null,
+    videoPath: null,
+    renderStatus: 'idle',
+    renderError: null,
+  }
+  await saveMarketingVideo(runId, summary)
+  return summary
+}
+
+/**
  * GET the bundle's index.html and verify it's actually a Remotion bundle
  * (contains the `getStaticCompositions` global registered by `remotion`).
  *

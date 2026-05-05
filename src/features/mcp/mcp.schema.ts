@@ -152,3 +152,29 @@ export const ReorderPagesToolArgsSchema = z.object({
     .min(1, 'At least one item is required')
     .max(500, 'Too many items in a single reorder call'),
 })
+
+/** Args for generate_marketing_video — the caller (a Claude session
+ *  with the Doclee MCP loaded) authors the full script + per-scene
+ *  TSX directly and submits via this tool. Doclee compiles the TSX,
+ *  synthesizes the voice-over, generates / loads music, and renders.
+ *  No LLM call on the Doclee side. The `script` shape mirrors
+ *  MarketingScriptSchema; we keep it loose here (z.unknown) and
+ *  validate inside the handler so structural errors surface with
+ *  precise paths instead of getting flattened into a single Zod issue
+ *  before they reach Doclee's own schema. */
+export const GenerateMarketingVideoToolArgsSchema = z.object({
+  projectId: UuidField,
+  slug: z.string().min(1).max(200),
+  script: z.unknown(),
+  // Voice options
+  withVoiceover: z.boolean().optional(),
+  voiceId: z.string().min(1).max(200).optional(),
+  tone: z
+    .enum(['punchy', 'calm', 'playful', 'serious', 'confident', 'inspirational', 'conversational'])
+    .optional(),
+  // Music options — passed through to the existing music block.
+  // 'none' / '<presetId>' / 'ai' / 'ai-<style>' (e.g. 'ai-cinematic').
+  musicTrackId: z.string().min(1).max(40).optional(),
+  musicVolume: z.number().min(0).max(1).optional(),
+  aiMusicPrompt: z.string().max(300).optional(),
+})
