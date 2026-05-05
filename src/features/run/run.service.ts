@@ -538,6 +538,18 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
     const correctedSteps = correctTimestamps(analysis.steps, videoDuration)
     const sortedSteps = [...correctedSteps].sort((a, b) => a.timestamp - b.timestamp)
 
+    // Safety-net clamp: a Gemini timestamp that bleeds into the next step
+    // produces a screenshot of the wrong state. Cap each step at
+    // `next.timestamp - 0.6s` so frames never show the start of step i+1.
+    // Only clamps downward; the prompt is responsible for picking the right
+    // moment within the step's own window.
+    const SAFETY_GAP = 0.6
+    for (let i = 0; i < sortedSteps.length - 1; i++) {
+      const next = sortedSteps[i + 1]!
+      const ceil = Math.max(0, next.timestamp - SAFETY_GAP)
+      if (sortedSteps[i]!.timestamp > ceil) sortedSteps[i]!.timestamp = ceil
+    }
+
     console.log(`[video] Final ${sortedSteps.length} steps:`)
     for (const s of sortedSteps) {
       console.log(`  [${s.timestamp.toFixed(1)}s] ${s.userAction}`)

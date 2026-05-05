@@ -442,15 +442,20 @@ For each step:
    - 45 seconds → 45
    - 1 minute 27 seconds → 87 (= 1×60 + 27), NOT 127
    - 2 minutes 8 seconds → 128 (= 2×60 + 8), NOT 208
-   The timestamp MUST be the moment AFTER the action completes, showing the RESULT on screen.
-2. Describe what's visible on screen AFTER the action (UI elements, page layout, text)
+   Pick the SINGLE FRAME a doc author would screenshot to illustrate this step — the frame that BEST shows what the step is about. The right moment depends on the action:
+   - Click that triggers a result (Submit, Save, navigate, open page) → moment AFTER the result is fully loaded and visible
+   - Form fill / typing → moment when the field is filled, BEFORE the next action starts
+   - Open menu / dropdown / modal → while it's fully open
+   - Hover / tooltip → while the tooltip is visible
+   - Selection from a list → while the selected state is visible
+   Do NOT systematically pick "1 second after the action" — pick the frame that's most informative for this specific step. If unsure, prefer slightly later over slightly earlier, but never so late that the next step has already begun.
+2. Describe what's visible on screen at that frame (UI elements, page layout, text)
 3. Describe what the user accomplished (not each individual click — the outcome)
 4. If there's narration/voiceover, transcribe what's being said at that moment
 
 IMPORTANT:
 - Steps MUST be in chronological order (timestamps ascending)
-- Each timestamp should show the RESULT state, not the initial state
-- Add 0.5-1 second after a click/navigation to capture the loaded result
+- The timestamp MUST point to the most illustrative frame for the step, NOT a generic "+1s after click" offset
 - Skip idle moments or pauses where nothing changes
 - Timestamps are in SECONDS — convert from MM:SS to seconds (e.g. 2:30 = 150, not 230)
 
