@@ -77,13 +77,16 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [dragId, setDragId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
-  const [optimisticPages, setOptimisticPages] = useState<DocPageDTO[] | null>(null)
-  // Reorder writes are fire-and-forget but a fast user can drop two pages
-  // before the first PUT round-trips. We must keep the optimistic view
-  // alive until ALL pending writes settle — otherwise the first response
-  // clears it and the props (which still reflect pre-drag-2 state on the
-  // server) flash through before drag #2 lands. Track in-flight writes
-  // and only release optimistic when the last one completes.
+  // PageTree owns the order locally after the first user action. The
+  // parent's `pages` prop continues to flow through for *metadata*
+  // changes (rename, isPublic toggle, deleted/added pages) — see the
+  // merge useEffect below — but its parentId / sortOrder are ignored
+  // once the user has reordered. Same pattern as BlockEditor: the
+  // caller doesn't yank state back from under the user just because a
+  // refetch returned slightly stale data.
+  const [localPages, setLocalPages] = useState<DocPageDTO[] | null>(null)
+  // Tracks in-flight reorders so an error response that arrives after a
+  // newer drag doesn't roll back the user's latest action.
   const pendingReordersRef = useRef(0)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -91,8 +94,31 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   )
 
-  // Use optimistic pages if available, otherwise use prop pages
-  const effectivePages = optimisticPages ?? pages
+  // Merge prop changes into local state without clobbering the user's
+  // ordering: refresh metadata (title, isPublic, status, etc.) for IDs
+  // present in both, drop IDs the parent removed, append IDs the parent
+  // added at the end of their natural group. Parent's parentId /
+  // sortOrder are intentionally NOT applied to known IDs — that's our
+  // local truth.
+  useEffect(() => {
+    setLocalPages((prev) => {
+      if (!prev) return null
+      const propsById = new Map(pages.map((p) => [p.id, p]))
+      const knownIds = new Set(prev.map((p) => p.id))
+      const kept = prev
+        .filter((p) => propsById.has(p.id))
+        .map((p) => {
+          const fresh = propsById.get(p.id)!
+          // Preserve our local order/parent; refresh everything else.
+          return { ...fresh, parentId: p.parentId, sortOrder: p.sortOrder }
+        })
+      const added = pages.filter((p) => !knownIds.has(p.id))
+      return [...kept, ...added]
+    })
+  }, [pages])
+
+  // Use local pages once we've taken ownership; otherwise pass through.
+  const effectivePages = localPages ?? pages
 
   // Close menu on outside click
   useEffect(() => {
@@ -163,41 +189,47 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
       sortOrder: i,
     }))
 
-    // Optimistic update — apply reorder instantly, save to DB in background
+    // Apply reorder instantly + take ownership of the order; save in
+    // background. We don't reset to props on success — that would flash
+    // back to whatever the parent refetched (often slightly stale due
+    // to RLS / index propagation), which is exactly the symptom we're
+    // fixing.
     const updatedPages = effectivePages.map((p) => {
       const update = updates.find((u) => u.id === p.id)
       if (!update) return p
       return { ...p, parentId: update.parentId, sortOrder: update.sortOrder }
     })
-    setOptimisticPages(updatedPages)
+    setLocalPages(updatedPages)
 
-    // Save in background. Only release optimistic state once the LAST
-    // in-flight reorder settles, so a fast double-drag never flashes the
-    // pre-drag-2 server view.
     pendingReordersRef.current++
     void reorderPages(projectId, updates)
-      .then(async () => {
+      .then(() => {
         pendingReordersRef.current--
-        if (pendingReordersRef.current === 0) {
-          await onRefresh()
-          setOptimisticPages(null)
-        }
+        // Successful save — keep local state, no refetch. New pages /
+        // renames flow in via the merge useEffect on prop changes.
       })
       .catch(() => {
         pendingReordersRef.current--
+        // Only revert to server truth when we're not racing another
+        // pending drag; a refresh in the middle of a second drag would
+        // overwrite the user's still-valid local move.
         if (pendingReordersRef.current === 0) {
-          setOptimisticPages(null)
+          setLocalPages(null)
           void onRefresh()
         }
       })
   }
 
   const handleMove = async (pageId: string, newParentId: string | null): Promise<void> => {
-    // Optimistic: update the page's parentId instantly
+    // Compute sort order BEFORE we mutate so the new sibling list is
+    // accurate at this moment.
+    const siblings = effectivePages.filter((p) => p.parentId === newParentId)
+    const maxSort = siblings.reduce((max, p) => Math.max(max, p.sortOrder), -1)
+
     const updatedPages = effectivePages.map((p) =>
-      p.id === pageId ? { ...p, parentId: newParentId, sortOrder: 999 } : p,
+      p.id === pageId ? { ...p, parentId: newParentId, sortOrder: maxSort + 1 } : p,
     )
-    setOptimisticPages(updatedPages)
+    setLocalPages(updatedPages)
 
     // Auto-expand parent if nesting
     if (newParentId) {
@@ -209,26 +241,20 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
       })
     }
 
-    const siblings = effectivePages.filter((p) => p.parentId === newParentId)
-    const maxSort = siblings.reduce((max, p) => Math.max(max, p.sortOrder), -1)
-
     pendingReordersRef.current++
     void reorderPages(projectId, [{
       id: pageId,
       parentId: newParentId,
       sortOrder: maxSort + 1,
     }])
-      .then(async () => {
+      .then(() => {
         pendingReordersRef.current--
-        if (pendingReordersRef.current === 0) {
-          await onRefresh()
-          setOptimisticPages(null)
-        }
+        // Successful save — keep local state, no refetch.
       })
       .catch(() => {
         pendingReordersRef.current--
         if (pendingReordersRef.current === 0) {
-          setOptimisticPages(null)
+          setLocalPages(null)
           void onRefresh()
         }
       })
