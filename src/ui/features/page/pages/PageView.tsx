@@ -517,11 +517,7 @@ function PageViewInner(): React.ReactElement {
               )}
             </p>
           )}
-          <DocReviewBanner
-            selfAssessment={selfAssessment}
-            runId={latestRunId}
-            markdown={page.content ?? ''}
-          />
+          <DocReviewBanner selfAssessment={selfAssessment} />
           <Suspense fallback={<div style={{ padding: '2rem' }}><Spinner size="md" /></div>}>
             <BlockEditor
               key={`${pageId}-${externalRev}`}

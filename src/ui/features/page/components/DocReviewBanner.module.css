@@ -130,23 +130,3 @@
   font-size: var(--text-sm);
   margin: 0;
 }
-
-.labelList {
-  list-style: none;
-  padding: 0;
-  margin: 4px 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.labelChip {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--color-warning) 14%, var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--color-warning) 40%, var(--color-border));
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-}
