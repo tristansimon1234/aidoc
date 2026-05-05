@@ -85,8 +85,12 @@ export function AcceptInvite(): React.ReactElement {
 
   if (authLoading) return <div className={styles.page}><Spinner size="lg" /></div>
 
-  // Not signed in: send them to login; preserve the invite path via returnTo.
+  // Not signed in: send them to login; preserve the invite path via
+  // returnTo. Two explicit CTAs (sign in / sign up) — the previous
+  // single "Continue" left invitees unsure which flow they were
+  // about to land on.
   if (!user) {
+    const returnToParam = encodeURIComponent(`/invite/${token}`)
     return (
       <div className={styles.page}>
         <div className={styles.card}>
@@ -95,11 +99,17 @@ export function AcceptInvite(): React.ReactElement {
             {invite.inviterName ?? 'Someone'} invited you to <strong>{invite.teamName}</strong>.
           </p>
           <p className={styles.subtitle} style={{ fontSize: 'var(--text-xs)' }}>
-            Sign in or create an account with the email the invitation was sent to.
+            Use the email the invitation was sent to.
           </p>
           <div className={styles.actions}>
-            <Button onClick={() => navigate(`/login?returnTo=${encodeURIComponent(`/invite/${token}`)}`)}>
-              Continue
+            <Button onClick={() => navigate(`/login?mode=signup&returnTo=${returnToParam}`)}>
+              Create an account
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => navigate(`/login?mode=signin&returnTo=${returnToParam}`)}
+            >
+              I already have an account
             </Button>
           </div>
         </div>
