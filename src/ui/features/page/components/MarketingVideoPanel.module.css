@@ -405,6 +405,10 @@
   border-radius: 12px;
 }
 
+.audioPlayer {
+  width: 100%;
+}
+
 .videoPlayer {
   width: 100%;
   border-radius: 8px;
