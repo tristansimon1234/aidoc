@@ -16,8 +16,6 @@ import {
 // and the rest of PageView don't pay for it on first paint.
 const BlockEditor = lazy(() => import('../../../design-system/components/BlockEditor.js').then((m) => ({ default: m.BlockEditor })))
 import { api, isAlreadyRunningError, type AlreadyRunningDetails, type DocPageDTO, type ProjectDTO, type StepEventDTO, type TryDocReportDTO, type PreflightResultDTO } from '../../../shared/api/client.js'
-import { DocReviewBanner } from '../components/DocReviewBanner.js'
-import type { DocSelfAssessment } from '../../../../features/documentation/documentation.types.js'
 import { fetchPageFull, updatePage as dbUpdatePage, fetchLatestTestReport } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
 import { useJobs } from '../../../shared/jobs/JobContext.js'
@@ -65,10 +63,6 @@ function PageViewInner(): React.ReactElement {
   // Composed into the BlockEditor `key` so external updates remount
   // the editor cleanly while user-driven saves leave it untouched.
   const [externalRev, setExternalRev] = useState(0)
-  // AI self-assessment from the most-recent generated doc — feeds the
-  // DocReviewBanner above the editor. Refreshed every fetchData() so a
-  // regenerate picks up the new gaps automatically.
-  const [selfAssessment, setSelfAssessment] = useState<DocSelfAssessment | null>(null)
   const [loading, setLoading] = useState(!cachedPage)
   const abortRef = useRef<AbortController | null>(null)
   const [liveUrl, setLiveUrl] = useState<string | null>(hasRunningTest ? (initialTestJob.liveUrl ?? null) : null)
@@ -122,12 +116,6 @@ function PageViewInner(): React.ReactElement {
 
       // Track latest run ID for voiceover generation
       setLatestRunId(runData?.id ?? null)
-
-      // Surface the AI self-assessment if the doc-gen Gemini call left
-      // one. This is what powers the DocReviewBanner; absent for legacy
-      // / hand-written pages.
-      const assessment = (docData?.jsonContent as { selfAssessment?: DocSelfAssessment } | null)?.selfAssessment ?? null
-      setSelfAssessment(assessment)
 
       // Extract voiceover + video URLs from latest run summary
       // Uses public URLs (artifacts bucket is public)
@@ -517,7 +505,6 @@ function PageViewInner(): React.ReactElement {
               )}
             </p>
           )}
-          <DocReviewBanner selfAssessment={selfAssessment} />
           <Suspense fallback={<div style={{ padding: '2rem' }}><Spinner size="md" /></div>}>
             <BlockEditor
               key={`${pageId}-${externalRev}`}
