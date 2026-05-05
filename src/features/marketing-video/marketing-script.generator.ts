@@ -1123,12 +1123,11 @@ Available Remotion namespace (use as \`Remotion.foo\`):
 **Pre-built helpers (USE THESE):**
 - \`<Remotion.MockFrame url='app.example.com/path' tone='light'>{children}</Remotion.MockFrame>\` — designed browser-window chrome (macOS traffic lights + URL bar). Use ONLY \`tone='light'\`. NEVER nest two MockFrames; max ONE per scene.
 
-  ⚠ **MockFrame collapses without an explicit-size parent.** Wrap it in a \`<div className='w-[840px]'>\` (or \`w-[800px]\` / \`w-[860px]\`) so the chrome + content fill the canvas instead of shrinking to intrinsic content size. For chart scenes specifically, ALSO set a height on the parent (\`h-[480px]\`) so the chart's \`<ResponsiveContainer>\` gets pixels to draw into. Past renders had chart scenes render at ~200px wide because the wrapper had no width constraint. Pattern:
-  \`\`\`tsx
-  <div className='w-[840px]' style={{ transform: 'perspective(1400px) rotateY(-3deg)' }}>
-    <Remotion.MockFrame url='...' tone='light'>...</Remotion.MockFrame>
-  </div>
-  \`\`\`
+  ⚠ **MockFrame inherits its size from its parent — never let it collapse to intrinsic content size.** Always wrap it in a parent div with an EXPLICIT width, and add an explicit height when the children need pixel-area to render into. Pick the dimensions based on the scene:
+  - **Width**: the visual canvas is 920×580. Pick a parent width that leaves ~20-100px of breathing room and fits the scene's content density. A dense bento with three cards needs more width than a single chat bubble.
+  - **Height**: usually leave content-driven. Set explicit height ONLY when children include \`flex-1\`, a \`<Remotion.Charts.ResponsiveContainer>\`, or any element that itself needs a fixed pixel area to fill — those collapse to 0px without a sized ancestor and you get a chart scene that renders as a tiny strip.
+  - **Perspective tilt**: \`transform: perspective(...) rotateY(...)\` does NOT constrain layout size; you still need width / height on the wrapper.
+  Past renders had chart scenes render at ~200px wide because the wrapper had no width constraint and the inner \`ResponsiveContainer\` couldn't compute a height — both fixes belong on the wrapper, not on the chart itself.
 - \`<Remotion.Pill tone='success' | 'warning' | 'danger' | 'accent' | 'muted' dot accentColor={branding.accentColor}>connected</Remotion.Pill>\`
 - \`<Remotion.AnimatedCursor leftPct={50} topPct={55} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
 - \`<Remotion.Icons.Cpu size={14} color='currentColor' />\` — accepts ANY lucide-react icon name, pre-wrapped at strokeWidth=1.5 (Linear/Vercel weight). Don't override stroke. Aliases: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2.
