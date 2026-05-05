@@ -1,6 +1,14 @@
 import { z } from 'zod'
 import { generateText, type GeminiUsage } from '../../shared/ai/gemini.client.js'
-import { buildDocumentationPrompt, getDocSystemPrompt, VIDEO_DOC_SYSTEM_PROMPT, buildScreenshotMap, replaceScreenshotPlaceholders } from '../../shared/ai/prompt.builder.js'
+import {
+  buildDocumentationPrompt,
+  buildSelfAssessmentPrompt,
+  getDocSystemPrompt,
+  SELF_ASSESSMENT_RESPONSE_SCHEMA,
+  VIDEO_DOC_SYSTEM_PROMPT,
+  buildScreenshotMap,
+  replaceScreenshotPlaceholders,
+} from '../../shared/ai/prompt.builder.js'
 import type { StepSummary } from '../exploration/exploration.types.js'
 
 const StepAssessmentSchema = z.object({
@@ -21,29 +29,11 @@ const NextStepSchema = z.object({
   priority: z.enum(['high', 'medium', 'low']),
 })
 
-const StructuralSuggestionSchema = z.object({
-  type: z.enum(['move', 'merge', 'split', 'rename', 'new']),
-  targetSlug: z.string().optional(),
-  details: z.string(),
-  suggestedTitle: z.string().optional(),
-  suggestedParentSlug: z.string().optional(),
-})
-
 const SelfAssessmentSchema = z.object({
   overallCompleteness: z.number().min(0).max(100),
   stepAssessments: z.array(StepAssessmentSchema),
   gaps: z.array(GapSchema),
   nextSteps: z.array(NextStepSchema),
-  structuralSuggestions: z.array(StructuralSuggestionSchema).optional(),
-})
-
-const DocJsonSchema = z.object({
-  featureName: z.string(),
-  totalSteps: z.number(),
-  keyPages: z.array(z.string()),
-  userActions: z.array(z.string()),
-  screenshots: z.number().optional(),
-  selfAssessment: SelfAssessmentSchema,
 })
 
 export interface GenerationResult {
@@ -52,82 +42,19 @@ export interface GenerationResult {
   usage: GeminiUsage
 }
 
-/** Pull the JSON object out of `text`. Tolerant of:
- *  - ```json fenced code blocks
- *  - leading/trailing prose
- *  - the JSON appearing inline in the markdown if the separator was dropped
- *
- *  Returns the raw JSON string, or null if no plausible block was found.
- */
-function extractJsonBlock(text: string): string | null {
-  const trimmed = text.trim()
-  if (!trimmed) return null
-
-  // Fenced block has highest priority — its delimiters are unambiguous.
-  const fence = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
-  if (fence?.[1]) return fence[1].trim()
-
-  // Otherwise scan for the LAST `{ ... }` block — most common when
-  // Gemini forgets the separator and just appends the JSON after the
-  // final markdown paragraph.
-  const lastOpen = trimmed.lastIndexOf('{')
-  if (lastOpen === -1) return null
-  // Walk forward to find the matching brace that closes the document.
-  let depth = 0
-  let start = -1
-  for (let i = trimmed.indexOf('{'); i < trimmed.length && i !== -1; i++) {
-    const ch = trimmed[i]
-    if (ch === '{') {
-      if (depth === 0) start = i
-      depth++
-    } else if (ch === '}') {
-      depth--
-      if (depth === 0 && start !== -1) {
-        // Capture this candidate; keep scanning in case a later block
-        // is the actual self-assessment (we want the last one).
-        const candidate = trimmed.slice(start, i + 1)
-        // Heuristic: real assessment includes the schema's required key.
-        if (candidate.includes('"selfAssessment"')) return candidate
-      }
-    }
-  }
-  // No `selfAssessment` keyword anywhere — give up rather than return a
-  // random JSON-shaped substring (e.g. an example from the doc body).
-  return null
-}
-
 interface DocContext {
   featureName: string
-  steps: { url: string; action: string; observation?: string; screenshotUrl?: string | null }[]
+  steps: StepSummary[]
 }
 
-function parseSelfAssessment(rawTail: string, context: DocContext): Record<string, unknown> {
-  const block = extractJsonBlock(rawTail)
-  if (!block) {
-    console.warn('[doc] No JSON block found in Gemini response — self-assessment will be missing.')
-    return missingSelfAssessment(context, 'no-json-block')
-  }
-  try {
-    const parsed = JSON.parse(block) as unknown
-    return DocJsonSchema.parse(parsed) as unknown as Record<string, unknown>
-  } catch (err) {
-    const preview = block.slice(0, 200).replace(/\s+/g, ' ')
-    console.warn(`[doc] Failed to parse self-assessment JSON: ${(err as Error).message}. Preview: ${preview}`)
-    return missingSelfAssessment(context, 'parse-failed')
-  }
-}
-
-/** Sentinel fallback used when Gemini's self-assessment can't be parsed.
- *  Marked with `parseFailed: true` so the UI can render "Assessment
- *  unavailable" instead of the misleading "0 % confidence" we used to
- *  show. `overallCompleteness` is left undefined for the same reason. */
-function missingSelfAssessment(context: DocContext, reason: 'no-json-block' | 'parse-failed'): Record<string, unknown> {
+/** Sentinel fallback used when the structured-output assessment call
+ *  itself fails (network, safety block, malformed schema response).
+ *  Marked with `parseFailed: true` so the UI renders "Assessment
+ *  unavailable" instead of misleading "0 % confidence". */
+function missingSelfAssessment(context: DocContext, reason: 'call-failed' | 'validation-failed'): Record<string, unknown> {
   return {
     featureName: context.featureName,
     totalSteps: context.steps.length,
-    keyPages: [],
-    userActions: [],
-    screenshots: 0,
     selfAssessment: {
       parseFailed: true,
       parseFailureReason: reason,
@@ -153,6 +80,72 @@ function rewriteInternalLinks(markdown: string, projectId?: string, knownSlugs?:
   )
 }
 
+/** Strip a stray `---JSON---{...}` tail if Gemini emitted one despite
+ *  the prompt now telling it not to. Cheap belt-and-braces — the second
+ *  pass owns the assessment, but we don't want a fake JSON tail
+ *  surviving into the published markdown. */
+function stripTrailingJsonTail(markdown: string): string {
+  const idx = markdown.lastIndexOf('---JSON---')
+  if (idx === -1) return markdown
+  return markdown.slice(0, idx).trimEnd()
+}
+
+/** Run the structured self-assessment call. Uses Gemini's
+ *  `responseSchema` so the model can't drift the shape — the API
+ *  rejects any deviation server-side. Falls back to a "parseFailed"
+ *  sentinel on call / validation errors so the banner stays informative
+ *  rather than crashing the whole doc-gen on a flaky second pass. */
+async function runSelfAssessment(
+  markdown: string,
+  context: DocContext & { projectContext?: string },
+): Promise<{ json: Record<string, unknown>; usage: GeminiUsage }> {
+  const userPrompt = buildSelfAssessmentPrompt({
+    markdown,
+    steps: context.steps,
+    projectContext: context.projectContext,
+  })
+
+  let result: { text: string; usage: GeminiUsage }
+  try {
+    result = await generateText({
+      userPrompt,
+      json: true,
+      responseSchema: SELF_ASSESSMENT_RESPONSE_SCHEMA,
+      maxTokens: 4096,
+      temperature: 0.2,
+      // No reasoning needed — we hand Gemini the doc and ask for a
+      // structured rating. Letting "thinking" run wastes the token
+      // budget without improving output.
+      thinkingBudget: 0,
+    })
+  } catch (err) {
+    console.warn(`[doc] Self-assessment call failed: ${(err as Error).message}`)
+    return { json: missingSelfAssessment(context, 'call-failed'), usage: { inputTokens: 0, outputTokens: 0 } }
+  }
+
+  if (!result.text) {
+    console.warn('[doc] Self-assessment returned empty text — banner will show unavailable.')
+    return { json: missingSelfAssessment(context, 'call-failed'), usage: result.usage }
+  }
+
+  try {
+    const parsed = JSON.parse(result.text) as unknown
+    const validated = SelfAssessmentSchema.parse(parsed)
+    return {
+      json: {
+        featureName: context.featureName,
+        totalSteps: context.steps.length,
+        selfAssessment: validated,
+      },
+      usage: result.usage,
+    }
+  } catch (err) {
+    const preview = result.text.slice(0, 200).replace(/\s+/g, ' ')
+    console.warn(`[doc] Self-assessment JSON validation failed: ${(err as Error).message}. Preview: ${preview}`)
+    return { json: missingSelfAssessment(context, 'validation-failed'), usage: result.usage }
+  }
+}
+
 export async function generateDocumentation(context: {
   featureName: string
   goal: string
@@ -170,49 +163,29 @@ export async function generateDocumentation(context: {
   const systemPrompt = context.isVideoRun ? VIDEO_DOC_SYSTEM_PROMPT : getDocSystemPrompt()
   const userPrompt = buildDocumentationPrompt(context)
 
-  const response = await generateText({
+  // --- Pass 1: markdown only ---
+  // The system prompt now explicitly tells Gemini not to emit any
+  // trailing JSON; the assessment is generated in a separate
+  // schema-constrained call below so the model can't hallucinate the
+  // shape (which is what blew up the original single-pass design).
+  const mdResponse = await generateText({
     systemPrompt,
     userPrompt,
-    // Bumped from 16k — long docs were eating the token budget before
-    // Gemini got to the trailing self-assessment JSON, leaving it
-    // truncated and unparseable. Banner then displayed a misleading
-    // 0 % confidence because the fallback path defaulted to 0.
-    maxTokens: 32768,
+    maxTokens: 24576,
   })
 
-  // Robust split: prefer the explicit `---JSON---` separator the prompt
-  // asks for, but fall back to "everything before the trailing JSON
-  // block" if Gemini drops the separator. We always look at the LAST
-  // `{ ... }` block on the page to avoid grabbing inline `{example}` from
-  // mid-doc snippets.
-  const sep = response.text.lastIndexOf('---JSON---')
-  let markdownPart: string
-  let jsonPart: string
-  if (sep >= 0) {
-    markdownPart = response.text.slice(0, sep)
-    jsonPart = response.text.slice(sep + '---JSON---'.length)
-  } else {
-    markdownPart = response.text
-    jsonPart = ''
-  }
-
-  // Replace screenshot placeholders with actual URLs (Gemini can't reproduce UUIDs reliably)
-  const screenshotMap = buildScreenshotMap(context.steps)
-  let markdown = replaceScreenshotPlaceholders(markdownPart.trim(), screenshotMap)
-  // Rewrite Gemini-generated `/slug` links to absolute public-doc URLs so they
-  // resolve consistently in both the editor and the public docs SPA.
+  let markdown = replaceScreenshotPlaceholders(stripTrailingJsonTail(mdResponse.text.trim()), buildScreenshotMap(context.steps))
   markdown = rewriteInternalLinks(markdown, context.projectId, context.knownSlugs)
 
-  // Strip ```json … ``` fences and grab the outer-most { ... } block.
-  // Gemini wraps the JSON in fences ~30 % of the time, sometimes adds
-  // a closing prose line after it ("Hope this helps!"), and on the
-  // hardest path emits the JSON inline in the markdown if it forgot
-  // the separator.
-  const json = parseSelfAssessment(jsonPart || markdownPart, context)
+  // --- Pass 2: structured self-assessment ---
+  const assessment = await runSelfAssessment(markdown, context)
 
   return {
     markdown,
-    json,
-    usage: response.usage,
+    json: assessment.json,
+    usage: {
+      inputTokens: mdResponse.usage.inputTokens + assessment.usage.inputTokens,
+      outputTokens: mdResponse.usage.outputTokens + assessment.usage.outputTokens,
+    },
   }
 }
