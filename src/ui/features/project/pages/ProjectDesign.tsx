@@ -282,6 +282,40 @@ export function ProjectDesign(): React.ReactElement {
             </div>
           </div>
 
+          {/* Secondary accent (marketing video brand-kit) */}
+          <div className={styles.section}>
+            <label className={styles.label}>Secondary accent</label>
+            <p className={styles.hint}>Two-tone gradients in marketing videos. Optional — falls back to a darker shade of the main accent.</p>
+            <div className={styles.swatchRow}>
+              <label className={styles.customColor}>
+                <input
+                  type="color"
+                  value={design.accentSecondary ?? design.accentColor}
+                  onChange={(e) => update({ accentSecondary: e.target.value })}
+                  className={styles.colorPicker}
+                />
+              </label>
+              {design.accentSecondary && (
+                <Button size="sm" variant="ghost" onClick={() => update({ accentSecondary: undefined })}>Clear</Button>
+              )}
+            </div>
+          </div>
+
+          {/* Corner radius (marketing video brand-kit) */}
+          <div className={styles.section}>
+            <label className={styles.label}>Corner radius</label>
+            <p className={styles.hint}>Marketing-video primitives + Cta button. {design.radius ?? 14}px</p>
+            <input
+              type="range"
+              min={0}
+              max={32}
+              step={1}
+              value={design.radius ?? 14}
+              onChange={(e) => update({ radius: Number(e.target.value) })}
+              style={{ width: '100%' }}
+            />
+          </div>
+
           {/* Actions */}
           <div className={styles.actions}>
             <Button size="sm" onClick={() => void handleSave()} disabled={saving}>

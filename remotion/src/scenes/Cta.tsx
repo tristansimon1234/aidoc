@@ -40,9 +40,14 @@ export const Cta: React.FC<CtaProps> = ({ headline, buttonLabel, branding }) => 
 
   const urlOpacity = interpolate(urlT, [0, 1], [0, 0.6]) * fadeOut
 
-  // Derive a product URL — branding has productName but not a URL field;
-  // generate a plausible one (typical SaaS: productname.com or .app).
-  const productUrl = `${branding.productName.toLowerCase().replace(/\s+/g, '')}.com`
+  // Use the project's actual website URL when set (resolved from
+  // `projects.base_url` upstream). Fall back to a slugified guess for
+  // older manifests that pre-date the websiteUrl field — `.com` is wrong
+  // for ~half the top-level domains in the wild but it's a one-off
+  // legacy fallback, not the steady state.
+  const productUrl = branding.websiteUrl
+    ? branding.websiteUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+    : `${branding.productName.toLowerCase().replace(/\s+/g, '')}.com`
 
   // Chevron arrow icon for the button — same accent the rest of the brand uses.
   const ChevronRight = (Icons as unknown as Record<string, React.FC<{ size?: number; color?: string }>>)['ChevronRight']

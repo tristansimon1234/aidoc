@@ -244,6 +244,9 @@ export interface ProjectDesignDTO {
   logoUrl?: string
   widgetPosition?: string
   widgetGreeting?: string
+  /** Optional brand-kit fields surfaced in marketing-video rendering. */
+  accentSecondary?: string
+  radius?: number
 }
 
 export interface ProjectDTO {
