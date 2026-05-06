@@ -23,10 +23,13 @@ interface FeatureSceneProps {
  *   index % 3 === 1 → split-right  (mirrored: text right, visual left)
  *   index % 3 === 2 → stacked      (headline top, visual below)
  *
- * Opt-out: set `scene.framing = 'fullbleed-total'` to skip the headline
- * panel entirely — the mock then fills the full 1920×1080 canvas and
- * the voice-over carries the narrative. Use for a cinematic single-
- * visual beat where on-screen copy would compete with the mock.
+ * Opt-out: set `scene.headlinePanel = false` to skip the headline panel
+ * entirely — the mock then fills the full 1920×1080 canvas and the
+ * voice-over carries the narrative. Use for a cinematic single-visual
+ * beat where on-screen copy would compete with the mock. `framing` is
+ * an orthogonal concern (cadrage of the mock itself: browser / mobile
+ * / terminal / fullbleed / split); keep them separate so a
+ * `headlinePanel: false` mock can still pick whatever cadrage fits.
  *
  * The previous "fullscreen" variant (visual fills the canvas, text in
  * a backdrop-blur card on top) is dropped — overlaying a glass card on
@@ -71,12 +74,19 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   const kbPanX = interpolate(kbProgress, [0, 1], [0, 28 * kbDirX])
   const kbPanY = interpolate(kbProgress, [0, 1], [0, 16 * kbDirY])
 
-  // Fullbleed-total: caller wants the mock to own the whole canvas and
-  // the voice-over to carry the narrative — skip the headline panel and
-  // let the visual element fill 1920×1080. Useful for a "single
-  // cinematic shot" beat where any on-screen copy would compete with
-  // the mock for attention.
-  const layout: LayoutVariant = scene.framing === 'fullbleed-total'
+  // headlinePanel === false → caller wants the mock to own the whole
+  // canvas and the voice-over to carry the narrative. We skip the
+  // headline panel and let the visual element fill 1920×1080. Useful
+  // for a "single cinematic shot" beat where any on-screen copy would
+  // compete with the mock for attention. Default is true (current
+  // three-variant layout).
+  //
+  // `framing === 'fullbleed-total'` stays accepted as a legacy alias
+  // for the same effect — one early caller used it before we settled
+  // on the explicit boolean. New callers should pass `headlinePanel`.
+  const headlinePanelOff =
+    scene.headlinePanel === false || scene.framing === 'fullbleed-total'
+  const layout: LayoutVariant = headlinePanelOff
     ? 'fullbleed-total'
     : LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
 

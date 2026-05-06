@@ -122,6 +122,11 @@ export const MarketingSceneSchema = z.object({
    *  fullbleed / split). Free-string for backwards-compat with future
    *  additions. Loosely capped at 40 chars. */
   framing: z.string().max(40).optional(),
+  /** When false, the composition skips the headline panel and the
+   *  mock fills the full 1920×1080 canvas. Orthogonal to `framing`:
+   *  pick this regardless of cadrage for a "voice-over carries the
+   *  story" beat. */
+  headlinePanel: z.boolean().optional(),
 })
 
 export const MarketingScriptSchema = z.object({

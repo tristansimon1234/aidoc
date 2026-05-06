@@ -549,7 +549,8 @@ Voice-over budget: **~85 words total** across all parts. Audio tags + em-dashes 
     durationSeconds: number;
     visualMode?: string;       // 'hero-stat' | 'bento' | 'chat' | 'chart' | 'cursor-click' | 'flow-diagram' | 'logo-hero' | 'custom'
     visualBrief?: string;      // your own design brief (optional, persisted for diagnostics)
-    framing?: string;          // optional cadrage override: 'browser' | 'mobile' | 'terminal' | 'fullbleed' | 'fullbleed-total' | 'split'
+    framing?: string;          // optional cadrage of the mock itself: 'browser' | 'mobile' | 'terminal' | 'fullbleed' | 'split'
+    headlinePanel?: boolean;   // default true. Set false to suppress the composition's headline panel and let the mock fill the full 1920×1080 canvas — voice-over carries the story.
     mockCode?: string;         // TSX — see rules below
   }>,
   cta: { voiceover: string; headline: string; buttonLabel: string; durationSeconds: number },
@@ -567,13 +568,15 @@ Voice-over budget: **~85 words total** across all parts. Audio tags + em-dashes 
 }
 \`\`\`
 
-## Critical: the headline panel + the mock are TWO things
+## Critical: the headline panel + the mock are TWO things (by default)
 
-The composition layer ALWAYS draws the scene's \`headline\` in a separate panel beside your mock visual. So the mock MUST NOT render the headline text again — that produces two titles glued together. The mock illustrates the IDEA of the headline (a counter for a metric headline, a flow for a process headline, a chat UI for a Q&A headline), NOT a giant copy of the same words.
+By default, the composition layer ALWAYS draws the scene's \`headline\` in a separate panel beside your mock visual. So the mock MUST NOT render the headline text again — that produces two titles glued together. The mock illustrates the IDEA of the headline (a counter for a metric headline, a flow for a process headline, a chat UI for a Q&A headline), NOT a giant copy of the same words.
 
 Canvas the mock renders in: **920 × 580** (the visual half of the scene; the headline sits in the OTHER half). Position relative to that, not 1920×1080.
 
-**Exception — \`framing: 'fullbleed-total'\`**: when this is set, the composition layer DOES NOT draw a headline panel and your mock owns the full **1920 × 1080** canvas. Position relative to 1920×1080, and feel free to render large on-screen copy inside the mock itself (no clash with a separate headline panel because there isn't one). The voice-over carries the narrative on these scenes.
+**Opt-out — \`headlinePanel: false\`**: set this on a scene to tell the composition layer NOT to draw a headline panel. The mock then owns the full **1920 × 1080** canvas and the voice-over carries the narrative on its own. Position your TSX for 1920×1080 (NOT 920×580); you can render large on-screen copy inside the mock since there's no separate headline panel to clash with — \`scene.headline\` becomes accessible metadata only on these scenes. Use SPARINGLY (max 1 per video) — it's a "single cinematic shot" beat. Orthogonal to \`framing\`: a mock can be \`framing: 'browser'\` AND \`headlinePanel: false\` (a browser-framed mock that takes the whole canvas).
+
+⚠️ \`framing: 'fullbleed'\` does NOT suppress the headline panel — it only tells the designer not to wrap the mock in a frame chrome. The 920×580 mock area + headline panel split stays in place. To get the full canvas you need \`headlinePanel: false\`.
 
 ## mockCode TSX — sandbox rules
 
@@ -623,11 +626,10 @@ The earlier MCP contract forced \`<Remotion.MockFrame>\` as the OUTERMOST elemen
 - **\`browser\`** — \`<Remotion.MockFrame url='…' tone='light'>{children}</Remotion.MockFrame>\`. Use when the scene shows the product UI as a web app.
 - **\`mobile\`** — write your own phone-shape wrapper inline: rounded corners (radius 36-44), thin Dynamic Island bar, ~9:19 aspect. Use when the product is mobile-first.
 - **\`terminal\`** — write your own dark panel wrapper: \`#0B0B0F\` bg, three traffic dots, monospace text inside. Use for code / CLI / agent output.
-- **\`fullbleed\`** — NO frame. Hero typography, full-canvas color blocks, magazine-cover. Use for "big claim" / "single number" beats. The composition layer STILL draws the scene \`headline\` in a panel beside the mock (the mock occupies a 920×580 area).
-- **\`fullbleed-total\`** — NO frame AND NO headline panel from the composition layer. The mock owns the **full 1920×1080 canvas** and the voice-over carries the narrative on its own. Use for a single cinematic shot where any on-screen copy would compete with the mock for attention. ⚠️ When you pick this, position your mockCode for 1920×1080 (NOT 920×580) AND \`scene.headline\` is silently ignored on screen — you can still set it (it's used as accessible metadata) but it won't appear in the rendered frame.
+- **\`fullbleed\`** — no frame chrome around the mock. Hero typography, color blocks, magazine-cover composition INSIDE the 920×580 mock area. Use for "big claim" / "single number" beats. ⚠️ Composition layer still draws the headline panel beside the 920×580 mock area — to get the FULL 1920×1080 canvas, ALSO set \`headlinePanel: false\` on the scene (orthogonal field).
 - **\`split\`** — divide the canvas in two via flex: before/after, problem/solution. NO outer frame; each side is its own composition.
 
-When you set \`framing\` on the scene (optional field), the cadrage is explicit. Otherwise pick based on the scene's idea — don't reach for \`browser\` by default.
+When you set \`framing\` on the scene (optional field), the cadrage is explicit. Otherwise pick based on the scene's idea — don't reach for \`browser\` by default. \`framing\` is orthogonal to \`headlinePanel\`: pick the cadrage of the mock itself, then independently decide whether the headline panel should be drawn.
 
 Pre-built helpers (use when they fit):
 - \`<Remotion.MockFrame url='app.example.com/path' tone='light'>{children}</Remotion.MockFrame>\` — designed browser-window chrome (macOS traffic lights + URL bar). Use ONLY \`tone='light'\`. Max ONE per scene; never nest. **Optional — pick a different cadrage when the scene calls for it.** **MockFrame inherits its size from its parent — never let it collapse to intrinsic content size.** Always wrap it in a parent div with an EXPLICIT width, and add an explicit height when the children need pixel-area to render into. Pick the dimensions based on the scene: the visual canvas is 920×580, so leave ~20-100px of breathing room. Width: matched to scene content density (a dense bento needs more than a single chat bubble). Height: usually content-driven; set explicit pixel height ONLY when children include \`flex-1\`, \`<Remotion.Charts.ResponsiveContainer>\`, or any element that itself needs fixed pixel area (those collapse to 0px without a sized ancestor — a common cause of "chart renders as a tiny strip"). Perspective tilts (\`transform: perspective(...) rotateY(...)\`) do NOT constrain layout size; you still need width / height on the wrapper.

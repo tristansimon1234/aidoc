@@ -81,13 +81,17 @@ export type MarketingScene = {
    *  backwards-compat reason. */
   visualBrief?: string
   /** Optional cadrage override picked by the architect: 'browser' |
-   *  'mobile' | 'terminal' | 'fullbleed' | 'fullbleed-total' | 'split'.
-   *  Lets the architect break the "every UI mode = browser frame"
-   *  coupling. Designer reads it for cadrage choice; the renderer
-   *  consumes 'fullbleed-total' specifically — that one suppresses the
-   *  composition-drawn headline panel and lets the mock occupy the
-   *  full 1920×1080 canvas. Other values are designer-only hints. */
+   *  'mobile' | 'terminal' | 'fullbleed' | 'split'. Designer-only hint
+   *  — the renderer doesn't consume it. Use `headlinePanel: false` to
+   *  ALSO suppress the composition's headline panel (orthogonal: a mock
+   *  can be `framing: 'browser'` AND `headlinePanel: false`). */
   framing?: string
+  /** When false, the composition layer skips the headline panel and
+   *  the mock occupies the full 1920×1080 canvas (instead of the
+   *  default 920×580 area beside the panel). Default true. Use for a
+   *  cinematic single-visual beat where any on-screen headline would
+   *  compete with the mock; the voice-over carries the narrative. */
+  headlinePanel?: boolean
 }
 
 export interface MarketingScript {
