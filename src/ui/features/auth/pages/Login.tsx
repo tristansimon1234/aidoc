@@ -30,6 +30,7 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
 
   const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [isSignUp, setIsSignUp] = useState(initialMode)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -38,8 +39,12 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
 
   const handleSubmit = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
-    setLoading(true)
     setError(null)
+    if (isSignUp && password !== confirmPassword) {
+      setError("Passwords don't match.")
+      return
+    }
+    setLoading(true)
 
     // For sign-up, pass the returnTo so the Supabase confirmation email
     // redirects the user back to the invite acceptance page (or wherever they
@@ -117,6 +122,17 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
             required
           />
 
+          {isSignUp && (
+            <Field
+              label="confirm password"
+              type="password"
+              placeholder="••••••••"
+              value={confirmPassword}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setConfirmPassword(e.target.value)}
+              required
+            />
+          )}
+
           {error && <p className={styles.error}>{error}</p>}
 
           <div className={styles.actions}>
@@ -137,7 +153,7 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
           <button
             className={styles.toggleLink}
             type="button"
-            onClick={() => { setIsSignUp(!isSignUp); setError(null) }}
+            onClick={() => { setIsSignUp(!isSignUp); setError(null); setConfirmPassword('') }}
           >
             {isSignUp ? 'Sign In' : 'Sign Up'}
           </button>
