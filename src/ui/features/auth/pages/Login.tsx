@@ -81,6 +81,9 @@ export function Login({ onSignIn, onSignUp }: LoginProps): React.ReactElement {
             We sent a confirmation link to {signedUpEmail ? <strong>{signedUpEmail}</strong> : 'your inbox'}.
             Click it to activate your account, then come back here to continue.
           </p>
+          <p className={styles.subtitle} style={{ fontSize: 'var(--text-xs)' }}>
+            Didn&apos;t get it? Check your spam folder — confirmation emails sometimes land there.
+          </p>
         </div>
       </div>
     )
