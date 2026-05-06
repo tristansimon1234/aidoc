@@ -1091,7 +1091,8 @@ Your response MUST contain a complete \`script\` object with EVERY field present
         "durationSeconds": <number>,
         "visualMode": "<one of: hero-stat | bento | chat | chart | cursor-click | flow-diagram | headline-burst | logo-hero | custom>",
         "visualBrief": "<2-3 sentences naming SPECIFIC elements / numbers / words / motion the designer will put on screen. The designer ONLY sees this brief + the headline/voiceover, so be concrete: exact text, focal element, motion idea.>",
-        "framing": "<optional: browser | mobile | terminal | fullbleed | fullbleed-total | split — overrides the mode's default cadrage. fullbleed-total = mock owns the full 1920×1080 canvas, no composition-drawn headline panel.>"
+        "framing": "<optional: browser | mobile | terminal | fullbleed | split — cadrage of the mock itself.>",
+        "headlinePanel": "<optional boolean. Default true. Set false to suppress the composition's headline panel and let the mock fill the full 1920×1080 canvas — voice-over carries the story. Orthogonal to framing.>"
       }
       // ... one entry per existing scene, SAME ORDER
     ],
@@ -1224,7 +1225,8 @@ Return ONLY valid JSON: { "message": string, "script": <full edited script>, "br
       a.voiceover === b.voiceover &&
       (a.visualMode ?? '') === (b.visualMode ?? '') &&
       (a.visualBrief ?? '') === (b.visualBrief ?? '') &&
-      (a.framing ?? '') === (b.framing ?? '')
+      (a.framing ?? '') === (b.framing ?? '') &&
+      (a.headlinePanel ?? true) === (b.headlinePanel ?? true)
     )
   }
 
@@ -1249,6 +1251,7 @@ Return ONLY valid JSON: { "message": string, "script": <full edited script>, "br
           visualMode: scene.visualMode,
           visualBrief: scene.visualBrief,
           framing: scene.framing,
+          headlinePanel: scene.headlinePanel,
         },
         productName,
         styleSeedLabel: styleSeedLabel ?? undefined,

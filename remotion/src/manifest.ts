@@ -169,6 +169,12 @@ export const SceneSchema = z.object({
    *  responsible for its own framing. Kept here so an editor UI can
    *  surface the architect's pick without re-deriving it from the TSX. */
   framing: z.string().optional(),
+  /** When false, the composition layer skips the headline panel and
+   *  the mock owns the full 1920×1080 canvas. Default true (canvas
+   *  is split: headline panel + 920×580 mock area). Pick this for a
+   *  single cinematic shot where any second on-screen title would
+   *  compete with the visual; the voice-over carries the narrative. */
+  headlinePanel: z.boolean().optional(),
 })
 
 // (thumbnail fields are on the manifest, not the scene — see below)

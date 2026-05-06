@@ -52,6 +52,11 @@ export const SKELETON_RESPONSE_SCHEMA: ResponseSchema = {
           // hero-stat" or "split chat", which the previous monolithic
           // mode-defines-frame coupling couldn't express.
           framing: { type: SchemaType.STRING },
+          // Optional: when false, the composition layer skips the
+          // headline panel and the mock owns the full 1920×1080 canvas.
+          // Pick for a single cinematic shot — voice-over carries the
+          // narrative. Orthogonal to `framing`. Default true.
+          headlinePanel: { type: SchemaType.BOOLEAN },
         },
         required: ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds'],
       },
@@ -1150,8 +1155,7 @@ The earlier prompt forced \`<Remotion.MockFrame>\` as the OUTERMOST element of e
 - **\`browser\`** — \`<Remotion.MockFrame url='…' tone='light'>{children}</Remotion.MockFrame>\`. Use when the scene genuinely shows the product UI as a web app.
 - **\`mobile\`** — write your own phone-shape wrapper inline: a div with rounded corners (radius 36-44), a thin notch / Dynamic Island bar, fixed aspect ratio ~9:19. Use when the product is mobile-first or the scene is "in the user's hand".
 - **\`terminal\`** — write your own terminal wrapper: dark panel (\`#0B0B0F\`), thin top bar with three traffic dots, monospace text inside. Use when the scene is code / CLI / agent output.
-- **\`fullbleed\`** — NO frame at all. Hero typography, full-canvas color blocks, magazine-cover composition. Use for the "big claim" / "single number" moments. The composition layer STILL draws a separate headline panel beside the mock (the mock area is 920×580); don't repeat \`scene.headline\` inside your TSX.
-- **\`fullbleed-total\`** — NO frame AND the composition layer SUPPRESSES the headline panel — the mock owns the **full 1920×1080 canvas** and the voice-over carries the narrative on its own. Pick this for a single cinematic shot where any second on-screen title would compete with the visual. Position your TSX for 1920×1080 (NOT 920×580); you can render large copy inside the mock since there's no separate headline panel to clash with. \`scene.headline\` becomes accessible metadata only — it's not painted on screen.
+- **\`fullbleed\`** — no frame chrome around the mock. Hero typography, color blocks, magazine-cover composition INSIDE the default 920×580 mock area. Use for the "big claim" / "single number" moments. The composition layer STILL draws a separate headline panel beside the mock; don't repeat \`scene.headline\` inside your TSX. To get the FULL 1920×1080 canvas, set \`headlinePanel: false\` on the scene (orthogonal field) — \`framing\` alone never removes the panel.
 - **\`split\`** — divide the canvas in two via an inner flex layout: before/after, problem/solution, two product surfaces side-by-side. NO outer frame; each side is its own composition.
 
 When the architect's brief names a cadrage explicitly, use it. Otherwise PICK based on the brief — don't reach for \`browser\` by default just because MockFrame exists.
@@ -1320,10 +1324,15 @@ interface BuildSceneMockPromptArgs {
    *  uses this cadrage instead of the mode's default frame choice.
    *  Empty string when the architect didn't pick. */
   framing: string
+  /** When false, the composition layer skips the headline panel and
+   *  the mock owns the FULL 1920×1080 canvas. Designer needs to know
+   *  so it positions the TSX for 1920×1080 instead of 920×580.
+   *  Default true (panel drawn, mock area is 920×580). */
+  headlinePanel: boolean
 }
 
 function buildSceneMockPrompt(args: BuildSceneMockPromptArgs): string {
-  const { scene, mode, productName, styleSeed, styleSeedLabel, visualBrief, framing } = args
+  const { scene, mode, productName, styleSeed, styleSeedLabel, visualBrief, framing, headlinePanel } = args
   const frameCount = Math.round(scene.durationSeconds * 30)
   const idioms = ANIMATION_IDIOMS
     .replace('<DURATION>', String(scene.durationSeconds))
@@ -1340,7 +1349,16 @@ function buildSceneMockPrompt(args: BuildSceneMockPromptArgs): string {
     ? `\n${RESTRAINT_GUIDE}\n`
     : ''
   const framingBlock = framing
-    ? `\n## Cadrage override\n\nThe architect picked **${framing}** as the cadrage for this scene — override the mode's default frame choice. Compose the scene inside the matching cadrage:\n- **browser** → \`<Remotion.MockFrame url='…' tone='light'>\` wrapper.\n- **mobile** → write a phone-shape wrapper inline (rounded radius 36-44, thin top notch, ~9:19 aspect).\n- **terminal** → write a terminal wrapper inline (dark panel #0B0B0F, 3 traffic dots, monospace text).\n- **fullbleed** → NO frame. Hero typography or full-canvas color blocks. Magazine-cover composition (composition layer still draws a separate headline panel; canvas is 920×580).\n- **fullbleed-total** → NO frame AND no headline panel from the composition layer. The mock OWNS the full **1920×1080** canvas; the voice-over carries the narrative. Position the TSX for 1920×1080 (NOT 920×580). You can render large on-screen copy inside the mock since there is no separate headline panel to clash with — \`scene.headline\` is metadata only on these scenes.\n- **split** → divide the canvas into two via flex, no outer frame; each side is its own composition.\n`
+    ? `\n## Cadrage override\n\nThe architect picked **${framing}** as the cadrage for this scene — override the mode's default frame choice. Compose the scene inside the matching cadrage:\n- **browser** → \`<Remotion.MockFrame url='…' tone='light'>\` wrapper.\n- **mobile** → write a phone-shape wrapper inline (rounded radius 36-44, thin top notch, ~9:19 aspect).\n- **terminal** → write a terminal wrapper inline (dark panel #0B0B0F, 3 traffic dots, monospace text).\n- **fullbleed** → NO frame chrome around the mock. Hero typography or color blocks INSIDE the mock area.\n- **split** → divide the canvas into two via flex, no outer frame; each side is its own composition.\n`
+    : ''
+  // headlinePanel === false means the composition will NOT draw a
+  // headline panel beside the mock — the mock takes the full
+  // 1920×1080. Force the designer to position TSX for that canvas
+  // instead of the default 920×580. Big perceptual difference: a
+  // mock written for 920×580 looks tiny in the corner of an empty
+  // 1920×1080 frame.
+  const headlinePanelBlock = headlinePanel === false
+    ? `\n## Headline panel disabled — mock owns the FULL canvas\n\nThe composition layer is NOT drawing a headline panel for this scene. Your mock fills the **full 1920×1080 canvas** (NOT the default 920×580 mock area). Position every element relative to 1920×1080. You CAN render large on-screen copy inside the mock since there's no separate headline panel to clash with — but it's still a single cinematic shot, voice-over carries the narrative.\n`
     : ''
   // The brief is THE source of truth for what's on screen. When the
   // architect provided one, point the designer at it as the primary
@@ -1398,7 +1416,7 @@ These are 4 TSX examples drawn from across different marketing-video aesthetics 
 **These are NOT templates to copy. They are vocabulary to remix.** Steal a layout idea from one, a motion idiom from another, a type treatment from a third, and compose YOUR scene with the brief as the spec. A designer that ships a near-copy of any single inspiration is failing the brief — push further, mix elements, invent the combination that hasn't been done before.
 
 ${inspirationsBlock}
-${styleSeedBlock}${framingBlock}
+${styleSeedBlock}${framingBlock}${headlinePanelBlock}
 ## Hard rules — non-negotiable
 
 ${MOCK_CODE_HARD_RULES}
@@ -1466,6 +1484,7 @@ export async function regenerateSceneMockCode(args: {
     visualMode?: string
     visualBrief?: string
     framing?: string
+    headlinePanel?: boolean
   }
   productName: string
   /** Style-seed label from the existing manifest (e.g. "editorial").
@@ -1506,6 +1525,7 @@ export async function regenerateSceneMockCode(args: {
     styleSeedLabel: seed.label,
     visualBrief: args.scene.visualBrief ?? '',
     framing: args.scene.framing ?? '',
+    headlinePanel: args.scene.headlinePanel !== false,
   })
 }
 
@@ -1561,7 +1581,8 @@ Set \`screenshotIndex: null\` for every scene (mocks mode never references doc s
 
 - **\`visualMode\`** — pick the BEST mode for THIS scene's idea from the catalog below. NEVER reuse a mode across scenes within the same video — variety is the headline goal of this architecture. With 3 scenes, mix at least 1 UI + 1 abstract; with 4 scenes, aim for 2 of each.
 - **\`visualBrief\`** — 2-3 sentences naming the SPECIFIC elements / numbers / words / motion the designer should put on screen. Be concrete: a designer reading "show that it's fast" can't act on it; a designer reading "Counter ticking from 0 to 12,847 across 1.6s, then drifting +1 every 30 frames. Eyebrow label 'QUERIES THIS MONTH'. Subhead 'and growing'. Use accentColor on the number." builds exactly the right scene. ALWAYS include: the exact text/numbers to show, the focal element (what the eye lands on), and one line on motion.
-- **\`framing\`** (OPTIONAL) — explicit cadrage override: \`'browser'\`, \`'mobile'\`, \`'terminal'\`, \`'fullbleed'\` (no frame, full-canvas typo / blocks; composition still draws a headline panel beside the 920×580 mock), \`'fullbleed-total'\` (no frame AND no composition-drawn headline panel — the mock fills the full 1920×1080 and the voice-over carries the narrative), or \`'split'\` (canvas divided in two). When omitted the designer picks based on the mode's default. Use this to break the "every UI scene is a browser" pattern — e.g. a \`bento\` scene with \`framing: 'fullbleed'\` removes the Chrome and lets the cards float on the canvas; a \`hero-stat\` with \`framing: 'fullbleed-total'\` lets a single number own the whole frame; a \`chat\` scene with \`framing: 'mobile'\` reads as messaging app rather than web app. Browser is no longer the default — pick deliberately. Use \`fullbleed-total\` SPARINGLY (max 1 scene per video) — it's a "single cinematic shot" beat.
+- **\`framing\`** (OPTIONAL) — cadrage of the mock itself: \`'browser'\`, \`'mobile'\`, \`'terminal'\`, \`'fullbleed'\` (no frame chrome around the mock), or \`'split'\` (canvas divided in two). When omitted the designer picks based on the mode's default. Use this to break the "every UI scene is a browser" pattern — e.g. a \`bento\` with \`framing: 'fullbleed'\` removes the Chrome and lets the cards float; a \`chat\` with \`framing: 'mobile'\` reads as a messaging app. Browser is no longer the default — pick deliberately. \`framing\` ONLY changes the mock's cadrage; it does NOT remove the headline panel.
+- **\`headlinePanel\`** (OPTIONAL boolean, default true) — set to \`false\` to suppress the composition-drawn headline panel. The mock then owns the full **1920×1080 canvas** and the voice-over carries the narrative on its own. Pick this for a single cinematic shot where any second on-screen title would compete with the visual. Orthogonal to \`framing\`: a mock can be \`framing: 'browser'\` AND \`headlinePanel: false\` (browser-framed mock taking the whole canvas). Use SPARINGLY — max 1 scene per video.
 
 ### Mode catalog (pick ONE per scene, NEVER repeat)
 
@@ -1868,6 +1889,7 @@ export async function generateMarketingScript(
         styleSeedLabel: resolvedSeed.label,
         visualBrief: scene.visualBrief ?? '',
         framing: scene.framing ?? '',
+        headlinePanel: scene.headlinePanel !== false,
       }).catch((err) => {
         console.warn(
           `[marketing-script/scene-${i}/${resolvedModes[i]?.id ?? '?'}] mockCode gen failed: ${(err as Error).message}`,
