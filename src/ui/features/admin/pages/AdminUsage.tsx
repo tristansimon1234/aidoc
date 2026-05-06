@@ -44,10 +44,11 @@ export function AdminUsage(): React.ReactElement {
       voiceover: acc.voiceover + u.counts.voiceover,
       tryDoc: acc.tryDoc + u.counts.try_doc,
       chatSessions: acc.chatSessions + u.counts.chat_sessions,
+      marketingVideo: acc.marketingVideo + u.counts.marketing_video,
       euroCost: acc.euroCost + u.euroCost,
       overageEur: acc.overageEur + u.overageEur,
     }),
-    { docRun: 0, voiceover: 0, tryDoc: 0, chatSessions: 0, euroCost: 0, overageEur: 0 },
+    { docRun: 0, voiceover: 0, tryDoc: 0, chatSessions: 0, marketingVideo: 0, euroCost: 0, overageEur: 0 },
   )
 
   const formatEuro = (n: number): string =>
@@ -83,6 +84,7 @@ export function AdminUsage(): React.ReactElement {
                 <div><span className={styles.totalsLabel}>Voice-overs</span><span className={styles.totalsValue}>{formatNumber(totals.voiceover)}</span></div>
                 <div><span className={styles.totalsLabel}>Try Doc</span><span className={styles.totalsValue}>{formatNumber(totals.tryDoc)}</span></div>
                 <div><span className={styles.totalsLabel}>Chat sessions</span><span className={styles.totalsValue}>{formatNumber(totals.chatSessions)}</span></div>
+                <div><span className={styles.totalsLabel}>Marketing videos</span><span className={styles.totalsValue}>{formatNumber(totals.marketingVideo)}</span></div>
                 <div><span className={styles.totalsLabel}>AI cost</span><span className={styles.totalsValue}>{formatEuro(totals.euroCost)}</span></div>
                 <div><span className={styles.totalsLabel}>Overage (billable)</span><span className={styles.totalsValue}>{formatEuro(totals.overageEur)}</span></div>
               </div>
@@ -98,6 +100,7 @@ export function AdminUsage(): React.ReactElement {
                     <th className={styles.num}>Voice-overs</th>
                     <th className={styles.num}>Try Doc</th>
                     <th className={styles.num}>Chat</th>
+                    <th className={styles.num}>Marketing</th>
                     <th className={styles.num}>AI cost</th>
                     <th className={styles.num}>Overage</th>
                     <th className={styles.num}>Quota %</th>
@@ -119,7 +122,8 @@ export function AdminUsage(): React.ReactElement {
                         <td className={styles.num}>{formatNumber(u.counts.voiceover)}</td>
                         <td className={styles.num}>{formatNumber(u.counts.try_doc)}</td>
                         <td className={styles.num}>{formatNumber(u.counts.chat_sessions)}</td>
-                        <td className={styles.num} title={`Doc ${formatEuro(u.euroByFeature.doc_run)} · VO ${formatEuro(u.euroByFeature.voiceover)} · Try ${formatEuro(u.euroByFeature.try_doc)} · Chat ${formatEuro(u.euroByFeature.chat_sessions)}`}>
+                        <td className={styles.num}>{formatNumber(u.counts.marketing_video)}</td>
+                        <td className={styles.num} title={`Doc ${formatEuro(u.euroByFeature.doc_run)} · VO ${formatEuro(u.euroByFeature.voiceover)} · Try ${formatEuro(u.euroByFeature.try_doc)} · Chat ${formatEuro(u.euroByFeature.chat_sessions)} · Mkt ${formatEuro(u.euroByFeature.marketing_video)}`}>
                           {formatEuro(u.euroCost)}
                         </td>
                         <td className={styles.num}>{u.overageEur > 0 ? formatEuro(u.overageEur) : '—'}</td>
@@ -128,7 +132,7 @@ export function AdminUsage(): React.ReactElement {
                     )
                   })}
                   {report.users.length === 0 && (
-                    <tr><td colSpan={9} className={styles.empty}>No data for this month.</td></tr>
+                    <tr><td colSpan={10} className={styles.empty}>No data for this month.</td></tr>
                   )}
                 </tbody>
               </table>

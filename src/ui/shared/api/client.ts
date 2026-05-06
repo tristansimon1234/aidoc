@@ -324,7 +324,7 @@ export interface BillingSummaryDTO {
   team: { id: string; name: string; personal: boolean }
 }
 
-export type UsageFeatureKey = 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions'
+export type UsageFeatureKey = 'doc_run' | 'voiceover' | 'try_doc' | 'chat_sessions' | 'marketing_video'
 
 export interface AdminUsageRowDTO {
   userId: string
