@@ -1091,7 +1091,7 @@ Your response MUST contain a complete \`script\` object with EVERY field present
         "durationSeconds": <number>,
         "visualMode": "<one of: hero-stat | bento | chat | chart | cursor-click | flow-diagram | headline-burst | logo-hero | custom>",
         "visualBrief": "<2-3 sentences naming SPECIFIC elements / numbers / words / motion the designer will put on screen. The designer ONLY sees this brief + the headline/voiceover, so be concrete: exact text, focal element, motion idea.>",
-        "framing": "<optional: browser | mobile | terminal | fullbleed | split — overrides the mode's default cadrage>"
+        "framing": "<optional: browser | mobile | terminal | fullbleed | fullbleed-total | split — overrides the mode's default cadrage. fullbleed-total = mock owns the full 1920×1080 canvas, no composition-drawn headline panel.>"
       }
       // ... one entry per existing scene, SAME ORDER
     ],

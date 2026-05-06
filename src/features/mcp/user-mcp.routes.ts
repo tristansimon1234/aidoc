@@ -14,6 +14,7 @@ import {
   ReorderPagesToolArgsSchema,
   GenerateVoiceoverToolArgsSchema,
   GenerateMarketingVideoToolArgsSchema,
+  GetMarketingVideoToolArgsSchema,
 } from './mcp.schema.js'
 import {
   findActiveTokenByValue,
@@ -81,6 +82,7 @@ const TOOL_SCOPE_REQUIREMENT: Record<string, McpScope> = {
   list_projects: 'read',
   list_pages: 'read',
   get_page: 'read',
+  get_marketing_video: 'read',
   search_documentation: 'read',
   create_project: 'write',
   create_page: 'write',
@@ -485,6 +487,35 @@ Companion tools: \`generate_doc\` (prerequisite when no content exists), \`get_p
     },
   },
   {
+    name: 'get_marketing_video',
+    description:
+      `Fetch the full manifest of the latest marketing video attached to a page — script (hook + scenes + cta), per-scene mockCode TSX, styleSeed, language, voice tone, music settings, and the rendered video / thumbnail URLs.
+
+Use this BEFORE iterating on a marketing video so you can edit ONE scene (or just the hook voiceover, or the CTA button label) and resubmit the full script via \`generate_marketing_video\` — instead of rewriting all 45 seconds from scratch every time. The returned shape matches exactly what \`generate_marketing_video\` accepts as \`script\`.
+
+Returns:
+- \`script\`: the full MarketingScript (hook, scenes[], cta, totalDurationSeconds, language, styleSeed). Each scene includes \`mockCode\` (your TSX source). \`mockCompiledCode\` (esbuild output) is omitted by default — it's derived and recomputed on resubmit; pass \`includeCompiledCode: true\` for diagnostics.
+- \`branding\`: the productName / colors / logo / fontFamily Doclee bound to the last render. Read-only here (drive it from project settings).
+- \`options\`: tone, withVoiceover, musicTrackId, musicVolume, aiMusicPrompt — pass them straight back in your next \`generate_marketing_video\` call to keep the same audio direction.
+- \`render\`: \`videoUrl\`, \`thumbnailUrl\`, \`renderStatus\`, \`renderError\`, \`generatedAt\` — for diagnostics and to confirm which version you're editing.
+
+Returns a "no marketing video yet" message when the page has no manifest. In that case start fresh with \`generate_marketing_video\`.
+
+Companion tools: \`generate_marketing_video\` (resubmit edits), \`get_page\` (read the source doc the video pitches).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        slug: { type: 'string', description: 'Page slug — must already have a marketing video manifest.' },
+        includeCompiledCode: {
+          type: 'boolean',
+          description: 'Include each scene\'s esbuild-compiled code (~25 kB/scene). Default false — the source mockCode is enough for editing.',
+        },
+      },
+      required: ['projectId', 'slug'],
+    },
+  },
+  {
     name: 'generate_marketing_video',
     description:
       `Submit a fully-authored 45-second marketing video for the page and have Doclee compile, narrate, score, and render it. **You author the script AND the per-scene TSX animations** — Doclee runs the build pipeline (esbuild → ElevenLabs voice + music → Remotion render) but does NO LLM call of its own on this path. The video URL comes back when render finishes (~2-3 min total).
@@ -518,7 +549,7 @@ Voice-over budget: **~85 words total** across all parts. Audio tags + em-dashes 
     durationSeconds: number;
     visualMode?: string;       // 'hero-stat' | 'bento' | 'chat' | 'chart' | 'cursor-click' | 'flow-diagram' | 'logo-hero' | 'custom'
     visualBrief?: string;      // your own design brief (optional, persisted for diagnostics)
-    framing?: string;          // optional cadrage override: 'browser' | 'mobile' | 'terminal' | 'fullbleed' | 'split'
+    framing?: string;          // optional cadrage override: 'browser' | 'mobile' | 'terminal' | 'fullbleed' | 'fullbleed-total' | 'split'
     mockCode?: string;         // TSX — see rules below
   }>,
   cta: { voiceover: string; headline: string; buttonLabel: string; durationSeconds: number },
@@ -541,6 +572,8 @@ Voice-over budget: **~85 words total** across all parts. Audio tags + em-dashes 
 The composition layer ALWAYS draws the scene's \`headline\` in a separate panel beside your mock visual. So the mock MUST NOT render the headline text again — that produces two titles glued together. The mock illustrates the IDEA of the headline (a counter for a metric headline, a flow for a process headline, a chat UI for a Q&A headline), NOT a giant copy of the same words.
 
 Canvas the mock renders in: **920 × 580** (the visual half of the scene; the headline sits in the OTHER half). Position relative to that, not 1920×1080.
+
+**Exception — \`framing: 'fullbleed-total'\`**: when this is set, the composition layer DOES NOT draw a headline panel and your mock owns the full **1920 × 1080** canvas. Position relative to 1920×1080, and feel free to render large on-screen copy inside the mock itself (no clash with a separate headline panel because there isn't one). The voice-over carries the narrative on these scenes.
 
 ## mockCode TSX — sandbox rules
 
@@ -590,7 +623,8 @@ The earlier MCP contract forced \`<Remotion.MockFrame>\` as the OUTERMOST elemen
 - **\`browser\`** — \`<Remotion.MockFrame url='…' tone='light'>{children}</Remotion.MockFrame>\`. Use when the scene shows the product UI as a web app.
 - **\`mobile\`** — write your own phone-shape wrapper inline: rounded corners (radius 36-44), thin Dynamic Island bar, ~9:19 aspect. Use when the product is mobile-first.
 - **\`terminal\`** — write your own dark panel wrapper: \`#0B0B0F\` bg, three traffic dots, monospace text inside. Use for code / CLI / agent output.
-- **\`fullbleed\`** — NO frame. Hero typography, full-canvas color blocks, magazine-cover. Use for "big claim" / "single number" beats.
+- **\`fullbleed\`** — NO frame. Hero typography, full-canvas color blocks, magazine-cover. Use for "big claim" / "single number" beats. The composition layer STILL draws the scene \`headline\` in a panel beside the mock (the mock occupies a 920×580 area).
+- **\`fullbleed-total\`** — NO frame AND NO headline panel from the composition layer. The mock owns the **full 1920×1080 canvas** and the voice-over carries the narrative on its own. Use for a single cinematic shot where any on-screen copy would compete with the mock for attention. ⚠️ When you pick this, position your mockCode for 1920×1080 (NOT 920×580) AND \`scene.headline\` is silently ignored on screen — you can still set it (it's used as accessible metadata) but it won't appear in the rendered frame.
 - **\`split\`** — divide the canvas in two via flex: before/after, problem/solution. NO outer frame; each side is its own composition.
 
 When you set \`framing\` on the scene (optional field), the cadrage is explicit. Otherwise pick based on the scene's idea — don't reach for \`browser\` by default.
@@ -747,6 +781,8 @@ async function dispatchTool(
       return handleGenerateVoiceover(rawArgs, ctx)
     case 'generate_marketing_video':
       return handleGenerateMarketingVideo(rawArgs, ctx)
+    case 'get_marketing_video':
+      return handleGetMarketingVideo(rawArgs, ctx)
     default:
       return toolText(`Unknown tool: ${name}`)
   }
@@ -1418,4 +1454,92 @@ async function handleGenerateMarketingVideo(
   } catch (err) {
     return toolText(`Marketing video pipeline failed: ${(err as Error).message}`)
   }
+}
+
+async function handleGetMarketingVideo(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = GetMarketingVideoToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+
+  let page
+  try {
+    page = await resolvePageBySlug(parsed.data.projectId, parsed.data.slug, ctx)
+  } catch (err) {
+    if (err instanceof AppError) return toolText(err.message)
+    throw err
+  }
+
+  const { findLatestRunByPageId } = await import('../run/run.repository.js')
+  const run = await findLatestRunByPageId(page.id)
+  if (!run) {
+    return toolText(
+      `No run attached to "${parsed.data.slug}" yet — and so no marketing video. Author one with \`generate_marketing_video\`.`,
+    )
+  }
+
+  const { findMarketingVideoByRunId } = await import('../marketing-video/marketing-video.repository.js')
+  const summary = await findMarketingVideoByRunId(run.id)
+  if (!summary) {
+    return toolText(
+      `Page "${parsed.data.slug}" has no marketing video manifest yet. Start fresh with \`generate_marketing_video\`.`,
+    )
+  }
+
+  // Strip the heavy esbuild output unless explicitly asked — it's derived
+  // from `mockCode` and re-computed on every resubmit, so a session
+  // editing the script doesn't need it round-tripped.
+  const includeCompiled = parsed.data.includeCompiledCode === true
+  const manifest = summary.manifest
+  const script = {
+    ...manifest.script,
+    scenes: manifest.script.scenes.map((s) => {
+      const out: Record<string, unknown> = { ...s }
+      if (!includeCompiled) delete out.mockCompiledCode
+      return out
+    }),
+  }
+
+  // Surface what we actually stored on the manifest. Tone and the
+  // original musicTrackId aren't persisted (only the resolved music
+  // URL / volume), so we can't round-trip them — caller must re-pass
+  // these on the next `generate_marketing_video` call if they want to
+  // keep the same audio direction. We flag this explicitly in the
+  // header text so the model doesn't silently lose the choice.
+  const options = {
+    withVoiceover: manifest.voiceoverUrl !== null,
+    musicVolume: manifest.musicVolume ?? null,
+  }
+
+  const render = {
+    renderStatus: summary.renderStatus,
+    renderError: summary.renderError,
+    videoUrl: summary.videoUrl,
+    thumbnailUrl: manifest.thumbnailUrl ?? null,
+    voiceoverUrl: manifest.voiceoverUrl,
+    voiceoverDurationSeconds: manifest.voiceoverDurationSeconds ?? null,
+    musicUrl: manifest.musicUrl ?? null,
+    musicError: manifest.musicError ?? null,
+    generatedAt: manifest.generatedAt,
+    runId: manifest.runId,
+  }
+
+  const payload = {
+    script,
+    branding: manifest.branding,
+    options,
+    render,
+  }
+
+  const sceneCount = script.scenes.length
+  const compiledCount = manifest.script.scenes.filter((s) => s.mockCompiledCode).length
+  const header =
+    `Marketing video manifest for **${page.title}** (/${parsed.data.slug}).\n` +
+    `- ${sceneCount} scene(s), ${compiledCount} with compiled mockCode\n` +
+    `- Render: ${render.renderStatus}${render.videoUrl ? ` — ${render.videoUrl}` : ''}\n` +
+    `- Generated: ${render.generatedAt}\n\n` +
+    `Edit any subset of \`script\` (a single scene's \`mockCode\`, the hook \`voiceover\`, the cta \`buttonLabel\`, …) and resubmit the FULL \`script\` via \`generate_marketing_video\`. ⚠️ \`tone\` and \`musicTrackId\` are NOT persisted on the manifest — re-pass them on the next call to keep the same audio direction (defaults: tone='punchy', musicTrackId='ai-inspirational').`
+
+  return toolText(`${header}\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``)
 }

@@ -81,9 +81,12 @@ export type MarketingScene = {
    *  backwards-compat reason. */
   visualBrief?: string
   /** Optional cadrage override picked by the architect: 'browser' |
-   *  'mobile' | 'terminal' | 'fullbleed' | 'split'. Lets the architect
-   *  break the "every UI mode = browser frame" coupling. Designer
-   *  reads it; renderer ignores it. */
+   *  'mobile' | 'terminal' | 'fullbleed' | 'fullbleed-total' | 'split'.
+   *  Lets the architect break the "every UI mode = browser frame"
+   *  coupling. Designer reads it for cadrage choice; the renderer
+   *  consumes 'fullbleed-total' specifically — that one suppresses the
+   *  composition-drawn headline panel and lets the mock occupy the
+   *  full 1920×1080 canvas. Other values are designer-only hints. */
   framing?: string
 }
 

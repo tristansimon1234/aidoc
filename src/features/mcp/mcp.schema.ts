@@ -165,3 +165,19 @@ export const GenerateMarketingVideoToolArgsSchema = z.object({
   musicVolume: z.number().min(0).max(1).optional(),
   aiMusicPrompt: z.string().max(500).optional(),
 })
+
+/** Args for get_marketing_video — retrieves the full manifest (script,
+ *  per-scene TSX, voice/music settings, render URLs) of the latest
+ *  marketing video attached to a page. Lets a Claude session edit ONE
+ *  scene's mockCode (or the hook voiceover, or the CTA) and resubmit
+ *  via generate_marketing_video without rewriting the whole script
+ *  from scratch. */
+export const GetMarketingVideoToolArgsSchema = z.object({
+  projectId: UuidField,
+  slug: z.string().min(1).max(200),
+  /** When true, the (large) esbuild output for each scene is included in
+   *  the response. Default false because that field is derived from
+   *  mockCode and adds ~25 kB per scene without helping a human-driven
+   *  edit. Set true only for diagnostics. */
+  includeCompiledCode: z.boolean().optional(),
+})
