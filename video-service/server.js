@@ -1,7 +1,5 @@
 import express from 'express'
 import ffmpeg from 'fluent-ffmpeg'
-import { createClient } from '@supabase/supabase-js'
-import ws from 'ws'
 import { writeFileSync, readFileSync, unlinkSync, mkdirSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -16,54 +14,72 @@ app.get('/', (_req, res) => {
   res.json({ status: 'ok', service: 'aidoc-video' })
 })
 
-// Helper: create supabase client from request.
+// --- Storage I/O over plain HTTP (no Supabase SDK, no service key) ---
 //
-// `realtime: { transport: ws }` is required because supabase-js >= 2.100
-// initializes a RealtimeClient on createClient() even when we don't
-// subscribe to realtime channels — and on Node < 22 (this service runs
-// on Node 20 in the Railway image) the SDK throws on boot if no
-// WebSocket transport is provided. Service only uses storage upload /
-// download; the transport is wired so the SDK's init-time check
-// passes, not because realtime is actually used.
-function getSupabase(body) {
-  if (!body.supabaseUrl || !body.serviceKey) throw new Error('supabaseUrl and serviceKey required')
-  return createClient(body.supabaseUrl, body.serviceKey, {
-    realtime: { transport: ws },
+// The API server pre-signs a Supabase upload URL for every output the
+// video-service is about to write, and passes a public download URL
+// for every input it has to read (artifacts bucket is public). The
+// video-service uses those URLs directly with `fetch()` — it never
+// holds a Supabase service-role key, so a malicious mockCode path
+// during a Remotion render can no longer pivot to read/write the
+// artifacts bucket cross-tenant.
+
+async function downloadToBuffer(downloadUrl, label = 'download') {
+  const res = await fetch(downloadUrl)
+  if (!res.ok) {
+    throw new Error(`${label} failed: ${res.status} ${res.statusText} — ${downloadUrl.slice(0, 80)}…`)
+  }
+  return Buffer.from(await res.arrayBuffer())
+}
+
+async function uploadBuffer(uploadUrl, buffer, contentType) {
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': contentType, 'x-upsert': 'true' },
+    body: buffer,
   })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Upload failed: ${res.status} ${res.statusText} — ${body.slice(0, 200)}`)
+  }
 }
 
-// Helper: download from supabase storage
-async function downloadVideo(supabase, videoPath) {
-  const { data, error } = await supabase.storage.from('artifacts').download(videoPath)
-  if (error || !data) throw new Error(`Download failed: ${error?.message ?? 'no data'}`)
-  return Buffer.from(await data.arrayBuffer())
+function requireField(req, name) {
+  const v = req.body[name]
+  if (!v) throw new HttpError(400, `${name} required`)
+  return v
 }
 
-// Helper: upload to supabase storage
-async function uploadFile(supabase, path, buffer, contentType) {
-  const { error } = await supabase.storage.from('artifacts').upload(path, buffer, { contentType, upsert: true })
-  if (error) throw new Error(`Upload failed: ${error.message}`)
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message)
+    this.status = status
+  }
 }
 
 /**
  * POST /convert
  * Convert video to MP4 (H.264 + faststart)
+ *
+ * Body: { runId, videoPath, input: { downloadUrl }, output: { path, uploadUrl } }
+ * Out:  { mp4Path, skipped? }
  */
 app.post('/convert', async (req, res) => {
   const start = Date.now()
   try {
-    const { videoPath, runId } = req.body
-    if (!videoPath || !runId) return res.status(400).json({ error: 'videoPath and runId required' })
+    const { videoPath, runId, input, output } = req.body
+    if (!videoPath || !runId || !input?.downloadUrl || !output?.path || !output?.uploadUrl) {
+      return res.status(400).json({ error: 'videoPath, runId, input.downloadUrl, output.{path,uploadUrl} required' })
+    }
 
-    const supabase = getSupabase(req.body)
-    const buffer = await downloadVideo(supabase, videoPath)
-    const sizeMB = (buffer.length / 1024 / 1024).toFixed(1)
-    console.log(`[convert] ${sizeMB}MB ${videoPath}`)
-
-    // Skip if already MP4
+    // Skip if already MP4 — return the input path verbatim, no upload needed.
     if (videoPath.endsWith('.mp4')) {
       return res.json({ mp4Path: videoPath, skipped: true })
     }
+
+    const buffer = await downloadToBuffer(input.downloadUrl, 'video download')
+    const sizeMB = (buffer.length / 1024 / 1024).toFixed(1)
+    console.log(`[convert] ${sizeMB}MB ${videoPath}`)
 
     const ext = videoPath.substring(videoPath.lastIndexOf('.')) || '.webm'
     const tmpIn = join(tmpdir(), `in-${Date.now()}${ext}`)
@@ -119,31 +135,31 @@ app.post('/convert', async (req, res) => {
     }
 
     const mp4Buffer = readFileSync(tmpOut)
-    const mp4Path = videoPath.replace(/\.[^.]+$/, '.mp4')
-    await uploadFile(supabase, mp4Path, mp4Buffer, 'video/mp4')
+    await uploadBuffer(output.uploadUrl, mp4Buffer, 'video/mp4')
 
     unlinkSync(tmpIn)
     unlinkSync(tmpOut)
 
-    console.log(`[convert] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${mp4Path}`)
-    res.json({ mp4Path })
+    console.log(`[convert] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${output.path} (${(mp4Buffer.length / 1024 / 1024).toFixed(1)}MB)`)
+    res.json({ mp4Path: output.path })
   } catch (err) {
     console.error('[convert] Error:', err.message)
-    res.status(500).json({ error: err.message })
+    res.status(err.status ?? 500).json({ error: err.message })
   }
 })
 
 /**
  * POST /probe
- * Get video duration via ffprobe
+ *
+ * Body: { videoPath, input: { downloadUrl } }
+ * Out:  { durationSeconds }
  */
 app.post('/probe', async (req, res) => {
   try {
-    const { videoPath } = req.body
-    if (!videoPath) return res.status(400).json({ error: 'videoPath required' })
+    const { videoPath, input } = req.body
+    if (!videoPath || !input?.downloadUrl) return res.status(400).json({ error: 'videoPath and input.downloadUrl required' })
 
-    const supabase = getSupabase(req.body)
-    const buffer = await downloadVideo(supabase, videoPath)
+    const buffer = await downloadToBuffer(input.downloadUrl, 'video download')
 
     const tmpIn = join(tmpdir(), `probe-${Date.now()}.mp4`)
     writeFileSync(tmpIn, buffer)
@@ -167,18 +183,19 @@ app.post('/probe', async (req, res) => {
 
 /**
  * POST /extract-frames
- * Extract JPEG frames at specific timestamps
+ *
+ * Body: { runId, videoPath, timestamps, input: { downloadUrl }, outputs: [{ path, uploadUrl } x N] }
+ * Out:  { framePaths: (string|null)[] }
  */
 app.post('/extract-frames', async (req, res) => {
   const start = Date.now()
   try {
-    const { videoPath, runId, timestamps } = req.body
-    if (!videoPath || !runId || !timestamps?.length) {
-      return res.status(400).json({ error: 'videoPath, runId, and timestamps required' })
+    const { videoPath, runId, timestamps, input, outputs } = req.body
+    if (!videoPath || !runId || !timestamps?.length || !input?.downloadUrl || !Array.isArray(outputs) || outputs.length !== timestamps.length) {
+      return res.status(400).json({ error: 'videoPath, runId, timestamps, input.downloadUrl, outputs[N == timestamps.length] required' })
     }
 
-    const supabase = getSupabase(req.body)
-    const buffer = await downloadVideo(supabase, videoPath)
+    const buffer = await downloadToBuffer(input.downloadUrl, 'video download')
     console.log(`[frames] Extracting ${timestamps.length} frames from ${videoPath}`)
 
     const tmpIn = join(tmpdir(), `frames-${Date.now()}.mp4`)
@@ -190,6 +207,7 @@ app.post('/extract-frames', async (req, res) => {
 
     for (let i = 0; i < timestamps.length; i++) {
       const t = timestamps[i]
+      const out = outputs[i]
       const outPath = join(tmpDir, `frame-${i}.jpg`)
 
       await new Promise((resolve, reject) => {
@@ -205,10 +223,10 @@ app.post('/extract-frames', async (req, res) => {
 
       try {
         const frameBuffer = readFileSync(outPath)
-        const framePath = `runs/${runId}/frame-${i}.jpg`
-        await uploadFile(supabase, framePath, frameBuffer, 'image/jpeg')
-        framePaths.push(framePath)
-      } catch {
+        await uploadBuffer(out.uploadUrl, frameBuffer, 'image/jpeg')
+        framePaths.push(out.path)
+      } catch (err) {
+        console.warn(`[frames] frame ${i} upload failed: ${err.message}`)
         framePaths.push(null)
       }
     }
@@ -217,7 +235,7 @@ app.post('/extract-frames', async (req, res) => {
     try { unlinkSync(tmpIn) } catch {}
     try { for (const f of readdirSync(tmpDir)) unlinkSync(join(tmpDir, f)) } catch {}
 
-    console.log(`[frames] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${framePaths.length} frames`)
+    console.log(`[frames] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${framePaths.filter(Boolean).length} frames`)
     res.json({ framePaths })
   } catch (err) {
     console.error('[frames] Error:', err.message)
@@ -227,17 +245,18 @@ app.post('/extract-frames', async (req, res) => {
 
 /**
  * POST /trim
- * Trim video to a time range
+ *
+ * Body: { runId, videoPath, startTime, endTime, input: { downloadUrl }, output: { path, uploadUrl } }
+ * Out:  { trimmedPath }
  */
 app.post('/trim', async (req, res) => {
   try {
-    const { videoPath, runId, startTime, endTime } = req.body
-    if (!videoPath || !runId || startTime == null || endTime == null) {
-      return res.status(400).json({ error: 'videoPath, runId, startTime, endTime required' })
+    const { videoPath, runId, startTime, endTime, input, output } = req.body
+    if (!videoPath || !runId || startTime == null || endTime == null || !input?.downloadUrl || !output?.path || !output?.uploadUrl) {
+      return res.status(400).json({ error: 'videoPath, runId, startTime, endTime, input.downloadUrl, output.{path,uploadUrl} required' })
     }
 
-    const supabase = getSupabase(req.body)
-    const buffer = await downloadVideo(supabase, videoPath)
+    const buffer = await downloadToBuffer(input.downloadUrl, 'video download')
 
     const tmpIn = join(tmpdir(), `trim-in-${Date.now()}.mp4`)
     const tmpOut = join(tmpdir(), `trim-out-${Date.now()}.mp4`)
@@ -255,13 +274,12 @@ app.post('/trim', async (req, res) => {
     })
 
     const trimmedBuffer = readFileSync(tmpOut)
-    const trimmedPath = videoPath.replace(/\.[^.]+$/, '-trimmed.mp4')
-    await uploadFile(supabase, trimmedPath, trimmedBuffer, 'video/mp4')
+    await uploadBuffer(output.uploadUrl, trimmedBuffer, 'video/mp4')
 
     unlinkSync(tmpIn)
     unlinkSync(tmpOut)
 
-    res.json({ trimmedPath })
+    res.json({ trimmedPath: output.path })
   } catch (err) {
     console.error('[trim] Error:', err.message)
     res.status(500).json({ error: err.message })
@@ -271,18 +289,20 @@ app.post('/trim', async (req, res) => {
 /**
  * POST /concat-audio
  * Concatenate audio segments with precise silence padding to sync with video timestamps
+ *
+ * Body: { runId, segments: [{ audioPath, targetStartTime, input: { downloadUrl } } x N], output: { path, uploadUrl } }
+ * Out:  { audioPath }
  */
 app.post('/concat-audio', async (req, res) => {
   const start = Date.now()
   try {
-    const { runId, segments: rawSegments } = req.body
-    if (!runId || !rawSegments?.length) {
-      return res.status(400).json({ error: 'runId and segments required' })
+    const { runId, segments: rawSegments, output } = req.body
+    if (!runId || !rawSegments?.length || !output?.path || !output?.uploadUrl) {
+      return res.status(400).json({ error: 'runId, segments, output.{path,uploadUrl} required' })
     }
     // Sort by targetStartTime to ensure correct silence calculation
     const segments = [...rawSegments].sort((a, b) => a.targetStartTime - b.targetStartTime)
 
-    const supabase = getSupabase(req.body)
     const tmpDir = join(tmpdir(), `concat-${Date.now()}`)
     mkdirSync(tmpDir, { recursive: true })
 
@@ -292,9 +312,11 @@ app.post('/concat-audio', async (req, res) => {
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i]
       const targetStart = seg.targetStartTime
+      if (!seg.input?.downloadUrl) {
+        return res.status(400).json({ error: `segment ${i} missing input.downloadUrl` })
+      }
 
-      // Download segment audio from Supabase
-      const audioBuffer = await downloadVideo(supabase, seg.audioPath)
+      const audioBuffer = await downloadToBuffer(seg.input.downloadUrl, `segment ${i} download`)
       const segPath = join(tmpDir, `seg-${i}.mp3`)
       writeFileSync(segPath, audioBuffer)
 
@@ -365,14 +387,13 @@ app.post('/concat-audio', async (req, res) => {
 
     // Upload final file
     const finalBuffer = readFileSync(outputPath)
-    const finalPath = `runs/${runId}/voiceover.mp3`
-    await uploadFile(supabase, finalPath, finalBuffer, 'audio/mpeg')
+    await uploadBuffer(output.uploadUrl, finalBuffer, 'audio/mpeg')
 
     // Cleanup
     try { for (const f of readdirSync(tmpDir)) unlinkSync(join(tmpDir, f)) } catch {}
 
-    console.log(`[concat] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${finalPath} (${(finalBuffer.length / 1024).toFixed(0)}KB)`)
-    res.json({ audioPath: finalPath })
+    console.log(`[concat] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${output.path} (${(finalBuffer.length / 1024).toFixed(0)}KB)`)
+    res.json({ audioPath: output.path })
   } catch (err) {
     console.error('[concat] Error:', err.message)
     res.status(500).json({ error: err.message })
@@ -381,30 +402,21 @@ app.post('/concat-audio', async (req, res) => {
 
 /**
  * POST /mux
- * Combine a silent video with a narration audio track into a single MP4.
- * Used by the export feature so the ZIP backup contains a self-contained
- * playable file (VS Code, Obsidian, GitHub preview).
  *
- * Request:  { videoPath, audioPath, runId }
- * Response: { muxedPath: "runs/<runId>/video-with-voiceover.mp4" }
- *
- * Strategy: copy video stream (no re-encode), re-encode audio to AAC
- * (MP4 doesn't support MP3-in-video reliably across browsers). `-shortest`
- * trims to the shorter of the two streams so we don't dangle a black tail
- * when the voice-over runs longer than the video, or vice-versa.
+ * Body: { runId, videoPath, audioPath, input: { downloadUrl }, audioInput: { downloadUrl }, output: { path, uploadUrl } }
+ * Out:  { muxedPath }
  */
 app.post('/mux', async (req, res) => {
   const start = Date.now()
   try {
-    const { videoPath, audioPath, runId } = req.body
-    if (!videoPath || !audioPath || !runId) {
-      return res.status(400).json({ error: 'videoPath, audioPath, runId required' })
+    const { videoPath, audioPath, runId, input, audioInput, output } = req.body
+    if (!videoPath || !audioPath || !runId || !input?.downloadUrl || !audioInput?.downloadUrl || !output?.path || !output?.uploadUrl) {
+      return res.status(400).json({ error: 'videoPath, audioPath, runId, input.downloadUrl, audioInput.downloadUrl, output.{path,uploadUrl} required' })
     }
 
-    const supabase = getSupabase(req.body)
     const [videoBuffer, audioBuffer] = await Promise.all([
-      downloadVideo(supabase, videoPath),
-      downloadVideo(supabase, audioPath),
+      downloadToBuffer(input.downloadUrl, 'video download'),
+      downloadToBuffer(audioInput.downloadUrl, 'audio download'),
     ])
 
     const tmpVideo = join(tmpdir(), `mux-v-${Date.now()}.mp4`)
@@ -433,15 +445,14 @@ app.post('/mux', async (req, res) => {
     })
 
     const muxedBuffer = readFileSync(tmpOut)
-    const muxedPath = `runs/${runId}/video-with-voiceover.mp4`
-    await uploadFile(supabase, muxedPath, muxedBuffer, 'video/mp4')
+    await uploadBuffer(output.uploadUrl, muxedBuffer, 'video/mp4')
 
     try { unlinkSync(tmpVideo) } catch {}
     try { unlinkSync(tmpAudio) } catch {}
     try { unlinkSync(tmpOut) } catch {}
 
-    console.log(`[mux] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${muxedPath} (${(muxedBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
-    res.json({ muxedPath })
+    console.log(`[mux] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${output.path} (${(muxedBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+    res.json({ muxedPath: output.path })
   } catch (err) {
     console.error('[mux] Error:', err.message)
     res.status(500).json({ error: err.message })
@@ -450,16 +461,16 @@ app.post('/mux', async (req, res) => {
 
 /**
  * POST /render-marketing-video
- * Render a Remotion composition to MP4. Doclee owns the trigger + the
- * compositions (shipped as a pre-bundled site at `remotionServeUrl`); we
- * just run Chromium + the Remotion renderer here because Vercel functions
- * can't host Chromium.
  *
- * Request:  { runId, manifestUrl, remotionServeUrl, compositionId, fps, widthPx, heightPx }
- * Response: { videoPath: "runs/<runId>/marketing.mp4" }
+ * Body: { runId, manifestUrl?, manifest?, remotionServeUrl, compositionId?, fps?, widthPx?, heightPx?, output: { path, uploadUrl } }
+ * Out:  { videoPath }
  *
- * The first call after a cold start downloads Chromium to /tmp via
- * `ensureBrowser()` (~150 MB, one-shot). Subsequent calls reuse it.
+ * The render runs USER-SUPPLIED TSX (compiled into the Remotion bundle by the API
+ * server before it reaches us). The video-service deliberately holds NO Supabase
+ * service-role key — its only write capability comes from the per-call signed
+ * upload URL the API hands it. So even if mockCode escapes the lint and runs
+ * arbitrary code during render, it cannot pivot to read or write the artifacts
+ * bucket cross-tenant.
  */
 app.post('/render-marketing-video', async (req, res) => {
   const start = Date.now()
@@ -473,9 +484,7 @@ app.post('/render-marketing-video', async (req, res) => {
       manifest: inlineManifest,
       remotionServeUrl,
       compositionId,
-      fps,
-      widthPx,
-      heightPx,
+      output,
     } = req.body
     if (!runId || !remotionServeUrl) {
       return res.status(400).json({ error: 'runId and remotionServeUrl required' })
@@ -483,10 +492,11 @@ app.post('/render-marketing-video', async (req, res) => {
     if (!inlineManifest && !manifestUrl) {
       return res.status(400).json({ error: 'manifest or manifestUrl required' })
     }
+    if (!output?.path || !output?.uploadUrl) {
+      return res.status(400).json({ error: 'output.{path,uploadUrl} required' })
+    }
 
     console.log(`[render-marketing] Start runId=${runId} bundle=${remotionServeUrl}`)
-
-    const supabase = getSupabase(req.body)
 
     let manifest
     if (inlineManifest && typeof inlineManifest === 'object') {
@@ -566,13 +576,12 @@ app.post('/render-marketing-video', async (req, res) => {
 
     console.log('[render-marketing] Render done, uploading…')
     const videoBuffer = readFileSync(tmpOut)
-    const videoPath = `runs/${runId}/marketing.mp4`
-    await uploadFile(supabase, videoPath, videoBuffer, 'video/mp4')
+    await uploadBuffer(output.uploadUrl, videoBuffer, 'video/mp4')
 
     try { unlinkSync(tmpOut) } catch {}
 
-    console.log(`[render-marketing] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${videoPath} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
-    res.json({ videoPath })
+    console.log(`[render-marketing] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${output.path} (${(videoBuffer.length / 1024 / 1024).toFixed(1)}MB)`)
+    res.json({ videoPath: output.path })
   } catch (err) {
     // Full stack to logs so we can see WHERE the error came from. Send a
     // truncated stack back so Doclee surfaces it in the UI banner without
