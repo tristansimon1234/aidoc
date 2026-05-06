@@ -87,23 +87,27 @@ function lintRuntimeReferences(source: string): string | null {
   // Icons.X is intentionally not linted — every lucide name is valid at
   // runtime via the Proxy + Wrapped fallback in DynamicScene.
 
-  // Inline <svg> is forbidden — every icon must come from Remotion.Icons.
-  // Ad-hoc inline SVGs end up rendering as visual junk (off-size, wrong
-  // stroke, no animation hooks). This catches the LLM smuggling them in.
-  // Message names BOTH alternatives so the rescue prompt knows what to
-  // replace inline <svg> with: icons → Remotion.Icons; lines / arrows /
-  // branches between nodes → absolute-positioned <div>s with width +
-  // height + transform: rotate(). Without the second alternative the
-  // model has no way to draw connectors and re-emits <svg> on rescue.
-  if (/<svg\b/i.test(source)) {
-    errors.push(
-      'Inline <svg> tag is forbidden. Replacements: for ICONS use Remotion.Icons.X ' +
-        '(any lucide name). For LINES / ARROWS / BRANCHING CONNECTORS between nodes ' +
-        'use absolute-positioned <div>s — set width + height (1-3px on the short axis), ' +
-        'background, and transform: rotate(<angle>deg) to draw any straight line; ' +
-        'compose multiple lines for branches. Inline SVG breaks frequently and is ' +
-        'banned full stop.',
-    )
+  // Inline <svg> is allowed under the creative-by-default mode — but
+  // only when the tag carries an explicit viewBox. SVGs without
+  // viewBox collapse to an intrinsic 0×0 size in flex layouts and
+  // render as nothing visible (the failure mode the previous outright
+  // ban was trying to prevent). With viewBox the SVG scales correctly
+  // and the LLM gets full access to paths, curves, animated strokes —
+  // necessary for organic / cinematic / brutalist scenes that the
+  // icon set + rotated divs can't express.
+  const svgTags = source.match(/<svg\b[^>]*>/gi) ?? []
+  for (const tag of svgTags) {
+    if (!/\bviewBox\s*=/.test(tag)) {
+      errors.push(
+        'Inline <svg> without a `viewBox` attribute collapses to 0×0 in flex layouts. ' +
+          'Add an explicit viewBox (e.g. viewBox="0 0 100 100") so the SVG scales. ' +
+          'For simple icons, prefer Remotion.Icons.X (any lucide name) over hand-written SVG.',
+      )
+      // Stop after the first offender — repeating the same error for
+      // every <svg> in the source bloats the rescue prompt without
+      // adding signal.
+      break
+    }
   }
 
   // AnimatedCursor uses leftPct/topPct numeric props — the LLM keeps
