@@ -158,6 +158,17 @@ export const SceneSchema = z.object({
   /** esbuild output of mockCode. The bundle's <DynamicScene>
    *  evaluates this with React + Remotion + branding bound. */
   mockCompiledCode: z.string().optional(),
+  /** Architect-picked mode label for the scene (hero-stat / bento /
+   *  chat / …). Persisted in manifests for round-trip + diagnostics. */
+  visualMode: z.string().optional(),
+  /** Architect-written brief naming the elements / motion the
+   *  designer should put on screen. Persisted for round-trip. */
+  visualBrief: z.string().optional(),
+  /** Optional cadrage hint (browser / mobile / terminal / fullbleed /
+   *  split). When absent the renderer is unaffected — the mockCode is
+   *  responsible for its own framing. Kept here so an editor UI can
+   *  surface the architect's pick without re-deriving it from the TSX. */
+  framing: z.string().optional(),
 })
 
 // (thumbnail fields are on the manifest, not the scene — see below)
@@ -175,8 +186,14 @@ export const ScriptSchema = z.object({
     buttonLabel: z.string(),
     durationSeconds: z.number().positive(),
   }),
-  totalDurationSeconds: z.number().positive(),
+  /** Snapshot of the total duration. Optional in input — when omitted
+   *  the renderer derives it from the parts via `totalDurationInFrames`.
+   *  Kept on persisted manifests as a cached value. */
+  totalDurationSeconds: z.number().positive().optional(),
   language: z.string(),
+  /** Aesthetic seed for the whole video. Either a known STYLE_SEEDS
+   *  label or a free-text architect brief. */
+  styleSeed: z.string().optional(),
 })
 
 export const ScreenshotSchema = z.object({
@@ -187,10 +204,20 @@ export const ScreenshotSchema = z.object({
 export const BrandingSchema = z.object({
   productName: z.string(),
   accentColor: z.string(),
+  /** Optional secondary accent for two-tone gradients / variant chips. Falls
+   *  back to a darker shade of `accentColor` when absent. */
+  accentSecondary: z.string().optional(),
   bgColor: z.string(),
   textColor: z.string(),
   fontFamily: z.string(),
   logoUrl: z.string().nullable(),
+  /** Public URL of the user's product (e.g. https://doclee.tech). Drives the
+   *  Cta scene's URL line and any "where to find this" affordance. Optional
+   *  for backwards-compat with manifests rendered before this field existed —
+   *  the renderer falls back to a `<slug>.com` heuristic when null. */
+  websiteUrl: z.string().nullable().optional(),
+  /** Corner radius (px) used by primitives + Cta button. Default 14. */
+  radius: z.number().min(0).max(64).optional(),
 })
 
 export const ManifestSchema = z.object({

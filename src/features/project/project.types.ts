@@ -24,6 +24,13 @@ export interface ProjectDesign {
   logoUrl?: string
   widgetPosition?: string
   widgetGreeting?: string
+  /** Secondary brand accent. Used in marketing videos for two-tone
+   *  gradients / variant chips. Optional — falls back to a darker shade
+   *  of `accentColor` when missing. */
+  accentSecondary?: string
+  /** Corner radius (px) used by marketing-video primitives + the Cta
+   *  button. Defaults to 14 in the renderer. */
+  radius?: number
 }
 
 export interface Project {

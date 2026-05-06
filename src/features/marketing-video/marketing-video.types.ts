@@ -80,6 +80,11 @@ export type MarketingScene = {
    *  The designer call turns this into TSX. Optional for the same
    *  backwards-compat reason. */
   visualBrief?: string
+  /** Optional cadrage override picked by the architect: 'browser' |
+   *  'mobile' | 'terminal' | 'fullbleed' | 'split'. Lets the architect
+   *  break the "every UI mode = browser frame" coupling. Designer
+   *  reads it; renderer ignores it. */
+  framing?: string
 }
 
 export interface MarketingScript {
@@ -123,12 +128,20 @@ export interface MarketingBranding {
   productName: string
   /** Hex (#RRGGBB) — drives accent + button + glow effects. */
   accentColor: string
+  /** Optional secondary accent for two-tone gradients / variant chips.
+   *  When absent the renderer falls back to a darker shade of accentColor. */
+  accentSecondary?: string
   /** Hex — composition background. */
   bgColor: string
   /** Hex — primary text color. */
   textColor: string
   fontFamily: string
   logoUrl: string | null
+  /** Public URL of the product (e.g. https://doclee.tech). When null, the
+   *  Cta scene falls back to `${slugified-productName}.com`. */
+  websiteUrl?: string | null
+  /** Corner radius in px for primitives + the Cta button. Default 14. */
+  radius?: number
 }
 
 export interface MarketingManifest {

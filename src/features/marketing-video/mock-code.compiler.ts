@@ -25,14 +25,22 @@ const BRANDING_FIELDS = new Set([
   // legitimate logo-hero scenes that read branding.logoUrl into a
   // <Remotion.Img>. Adding it so the lint stops blocking valid usage.
   'logoUrl',
+  // Brand-kit-minimal additions: secondary accent for two-tone
+  // gradients, radius for primitive corner sizing, websiteUrl for the
+  // Cta scene + any "where to find us" affordance the LLM might want
+  // to render.
+  'accentSecondary', 'radius', 'websiteUrl',
 ])
 
 const REMOTION_NAMESPACE = new Set([
   // Core Remotion exports
   'interpolate', 'spring', 'useCurrentFrame', 'useVideoConfig',
   'AbsoluteFill', 'Img', 'Audio',
-  // Helpers + namespaces
+  // Designed helpers + namespaces
   'MockFrame', 'Pill', 'AccentGlow', 'AnimatedCursor', 'Icons', 'Charts',
+  // Animation primitives (logic only, no visual identity).
+  'TypewriterText', 'FadeInStagger', 'PulseGlow', 'BreathingScale',
+  'OrbitingDot', 'Connector', 'TravelingPhoton', 'ParticleField',
 ])
 
 // Icons whitelist removed — Remotion now exposes the full lucide-react
@@ -155,7 +163,7 @@ function lintRuntimeReferences(source: string): string | null {
 export async function compileMockCode(source: string): Promise<CompiledMock> {
   const trimmed = source.trim()
   if (trimmed.length === 0) throw new Error('mockCode is empty')
-  if (trimmed.length > 10_000) throw new Error(`mockCode too large (${trimmed.length} bytes, cap 10_000)`)
+  if (trimmed.length > 15_000) throw new Error(`mockCode too large (${trimmed.length} bytes, cap 15_000)`)
 
   // Naive but cheap dangerous-pattern check. We're not running this in a
   // browser sandbox — it executes inside the Remotion bundle running in

@@ -46,6 +46,12 @@ export const SKELETON_RESPONSE_SCHEMA: ResponseSchema = {
           // Concrete brief: 2-3 sentences naming specific elements,
           // numbers, motion. Stage 2 implements this brief in TSX.
           visualBrief: { type: SchemaType.STRING },
+          // Optional cadrage override: 'browser' | 'mobile' | 'terminal'
+          // | 'fullbleed' | 'split'. When set, overrides the mode's
+          // default frame choice — lets the architect pick "fullbleed
+          // hero-stat" or "split chat", which the previous monolithic
+          // mode-defines-frame coupling couldn't express.
+          framing: { type: SchemaType.STRING },
         },
         required: ['voiceover', 'headline', 'screenshotIndex', 'durationSeconds'],
       },
@@ -1107,7 +1113,7 @@ const MOCK_CODE_HARD_RULES = `🚨 CRITICAL — these have FAILED in past render
 
 6. **\`<Remotion.AnimatedCursor>\` takes \`leftPct\` + \`topPct\` numbers (0-100), NOT a path array.** Maximum ONE per scene, and ONLY when the MockFrame interior shows a populated UI (header + empty-state + CTA), never an isolated button.
 
-7. **Branding fields available:** \`productName\`, \`accentColor\`, \`bgColor\`, \`textColor\`, \`fontFamily\`, \`logoUrl\`. Nothing else exists on \`branding\`.
+7. **Branding fields available:** \`productName\`, \`accentColor\`, \`bgColor\`, \`textColor\`, \`fontFamily\`, \`logoUrl\`, \`websiteUrl\` (string | null), \`accentSecondary\` (string | undefined), \`radius\` (number | undefined, defaults to 14). Nothing else exists on \`branding\`.
 
 8. **Layout stability — entries NEVER displace siblings.** Reserve the full layout from frame 0; animate ONLY \`opacity\` and \`transform\` (those don't affect layout). Never animate \`width\` / \`height\` / \`padding\` / \`margin\`. Never use conditional \`{cond && <div>}\` for elements that mount mid-scene. Pre-allocate slots; cross-fade content within them.
 
@@ -1124,8 +1130,20 @@ Available Remotion namespace (use as \`Remotion.foo\`):
 - \`Remotion.spring({ frame, fps, config: { damping, stiffness, mass } })\`
 - \`Remotion.AbsoluteFill\`, \`Remotion.Img\`
 
-**Pre-built helpers (USE THESE):**
-- \`<Remotion.MockFrame url='app.example.com/path' tone='light'>{children}</Remotion.MockFrame>\` — designed browser-window chrome (macOS traffic lights + URL bar). Use ONLY \`tone='light'\`. NEVER nest two MockFrames; max ONE per scene.
+## Cadrage — OPTIONAL, pick the right one per scene
+
+The earlier prompt forced \`<Remotion.MockFrame>\` as the OUTERMOST element of every mock. That converged every video onto a "look at our app in a Chrome window" look. **MockFrame is now optional.** Pick the cadrage that fits the scene's idea:
+
+- **\`browser\`** — \`<Remotion.MockFrame url='…' tone='light'>{children}</Remotion.MockFrame>\`. Use when the scene genuinely shows the product UI as a web app.
+- **\`mobile\`** — write your own phone-shape wrapper inline: a div with rounded corners (radius 36-44), a thin notch / Dynamic Island bar, fixed aspect ratio ~9:19. Use when the product is mobile-first or the scene is "in the user's hand".
+- **\`terminal\`** — write your own terminal wrapper: dark panel (\`#0B0B0F\`), thin top bar with three traffic dots, monospace text inside. Use when the scene is code / CLI / agent output.
+- **\`fullbleed\`** — NO frame at all. Hero typography, full-canvas color blocks, magazine-cover composition. Use for the "big claim" / "single number" moments.
+- **\`split\`** — divide the canvas in two via an inner flex layout: before/after, problem/solution, two product surfaces side-by-side. NO outer frame; each side is its own composition.
+
+When the architect's brief names a cadrage explicitly, use it. Otherwise PICK based on the brief — don't reach for \`browser\` by default just because MockFrame exists.
+
+**Pre-built helpers (USE THESE when they fit):**
+- \`<Remotion.MockFrame url='app.example.com/path' tone='light'>{children}</Remotion.MockFrame>\` — designed browser-window chrome (macOS traffic lights + URL bar). Use ONLY \`tone='light'\`. NEVER nest two MockFrames; max ONE per scene. **Optional**, not mandatory — pick a different cadrage when the scene calls for it.
 
   ⚠ **MockFrame inherits its size from its parent — never let it collapse to intrinsic content size.** Always wrap it in a parent div with an EXPLICIT width, and add an explicit height when the children need pixel-area to render into. Pick the dimensions based on the scene:
   - **Width**: the visual canvas is 920×580. Pick a parent width that leaves ~20-100px of breathing room and fits the scene's content density. A dense bento with three cards needs more width than a single chat bubble.
@@ -1136,6 +1154,21 @@ Available Remotion namespace (use as \`Remotion.foo\`):
 - \`<Remotion.AnimatedCursor leftPct={50} topPct={55} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
 - \`<Remotion.Icons.Cpu size={14} color='currentColor' />\` — pre-wrapped at strokeWidth=1.5 (Linear/Vercel weight). Don't override stroke. **Use only icon names you're confident exist in lucide-react** — unknown names hit a Proxy fallback that renders a generic empty square, which the user sees as "an icon didn't appear". When in doubt, prefer the safe core list: Cpu, Workflow, Database, BookOpen, Rocket, Zap, TrendingUp, Activity, Layers, Boxes, Code, Globe, Lock, Sparkles is BANNED, MessageSquare (NOT Message), Volume2 (NOT Volume), BarChart2 (NOT BarChart), Bot, FileText, Image, Camera, Video, Settings, Search, Plus, Check, ArrowRight, ArrowUp, ArrowLeft, ArrowDown. Aliases that resolve correctly: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2, Trash → Trash2, Share → Share2. NEW or version-specific names like \`BarChart3\`, \`ChartColumn\`, \`FileQuestion\`, \`AlertCircle\` may or may not be in the bundled lucide version — pick a guaranteed alternative.
 - \`Remotion.Charts\` — recharts subset: \`ResponsiveContainer\`, \`LineChart\`, \`Line\`, \`AreaChart\`, \`Area\`, \`BarChart\`, \`Bar\`, \`PieChart\`, \`Pie\`, \`Cell\`, \`XAxis\`, \`YAxis\`, \`CartesianGrid\`, \`Tooltip\`. Wrap in \`<Remotion.Charts.ResponsiveContainer width='100%' height='100%'>\` inside a fixed-size parent. Set \`isAnimationActive={false}\` and drive data via Remotion.interpolate.
+
+## Animation primitives — pure logic, compose freely
+
+Pre-built primitives that encapsulate non-trivial timing math. They impose NO visual identity — colors / sizes come from props (typically \`branding.accentColor\`, \`branding.radius\`). Use them anywhere; they don't replace creative composition, they free you from rewriting easing math.
+
+- \`<Remotion.TypewriterText text='hello' startFrame={10} charsPerFrame={0.6} cursor />\` — types text out one character at a time. Wrap in a span/div with your typography (font / color / size). Optional caret blinks at the end.
+- \`<Remotion.FadeInStagger startFrame={6} stagger={6} fadeFrames={12} slideY={8}>{children}</Remotion.FadeInStagger>\` — cascades each child via opacity + translateY. Floor of 12 fadeFrames recommended (matches the smoothness rule). Use for lists, multi-card reveals, paragraph beats.
+- \`<Remotion.PulseGlow color={branding.accentColor} intensity={32} period={42}>{children}</Remotion.PulseGlow>\` — wraps children in a div whose boxShadow pulses on a sine. ONE per scene max. Use on the focal element only.
+- \`<Remotion.BreathingScale amplitude={0.02} period={64}>{children}</Remotion.BreathingScale>\` — subtle 2-4% scale oscillation for "alive" feel. Use on a hero number / logo / focal card.
+- \`<Remotion.OrbitingDot center={{x:50,y:50}} radius={64} period={90} phase={0} size={8} color={branding.accentColor} />\` — small dot orbiting a point as % of parent. Parent must be \`position: relative\`. Stack with different \`phase\` values for multiple dots.
+- \`<Remotion.Connector from={{x:10,y:50}} to={{x:90,y:50}} color={branding.accentColor} traveling startFrame={20} />\` — animated line between two % coordinates that draws in then optionally has a photon traveling along it. Use for flow-diagram connectors WITHOUT writing your own SVG. Parent must be \`position: relative\`.
+- \`<Remotion.TravelingPhoton from={{x:10,y:50}} to={{x:90,y:50}} speed={60} color={branding.accentColor} glow />\` — a glowing dot that traverses the segment and loops. Use for signal-flow visuals.
+- \`<Remotion.ParticleField count={24} color={branding.accentColor} drift={0.4} opacity={0.3} />\` — drifting particles as ambient backdrop. Cap count at ~60. Parent must be \`position: relative; overflow: hidden\`. ONE field per scene.
+
+These primitives REPLACE inline timing math (\`Math.sin\` glow, manual character-slicing typewriters, hand-rolled traveling-dot loops). Smaller mockCode + consistent smoothness across videos.
 
 Canvas is **920 wide × 580 tall** (the visual half of the scene; the headline sits in the OTHER half). Position relative to this — NOT 1920×1080. Prefer flex centering over absolute pixel coordinates.`
 
@@ -1226,16 +1259,24 @@ interface BuildSceneMockPromptArgs {
    *  one (older manifest, model dropped the field) — designer falls
    *  back to inventing from headline + voiceover. */
   visualBrief: string
+  /** Optional architect-picked cadrage override: 'browser' | 'mobile'
+   *  | 'terminal' | 'fullbleed' | 'split'. When set, the designer
+   *  uses this cadrage instead of the mode's default frame choice.
+   *  Empty string when the architect didn't pick. */
+  framing: string
 }
 
 function buildSceneMockPrompt(args: BuildSceneMockPromptArgs): string {
-  const { scene, mode, productName, styleSeed, visualBrief } = args
+  const { scene, mode, productName, styleSeed, visualBrief, framing } = args
   const frameCount = Math.round(scene.durationSeconds * 30)
   const idioms = ANIMATION_IDIOMS
     .replace('<DURATION>', String(scene.durationSeconds))
     .replace('<FRAMES>', String(frameCount))
   const styleSeedBlock = styleSeed
     ? `\n## Style direction for this video\n\n${styleSeed}\n\nThis is a vibe nudge, not a constraint — the brief is still the spec.\n`
+    : ''
+  const framingBlock = framing
+    ? `\n## Cadrage override\n\nThe architect picked **${framing}** as the cadrage for this scene — override the mode's default frame choice. Compose the scene inside the matching cadrage:\n- **browser** → \`<Remotion.MockFrame url='…' tone='light'>\` wrapper.\n- **mobile** → write a phone-shape wrapper inline (rounded radius 36-44, thin top notch, ~9:19 aspect).\n- **terminal** → write a terminal wrapper inline (dark panel #0B0B0F, 3 traffic dots, monospace text).\n- **fullbleed** → NO frame. Hero typography or full-canvas color blocks. Magazine-cover composition.\n- **split** → divide the canvas into two via flex, no outer frame; each side is its own composition.\n`
     : ''
   // The brief is THE source of truth for what's on screen. When the
   // architect provided one, point the designer at it as the primary
@@ -1293,7 +1334,7 @@ These are 4 TSX examples drawn from across different marketing-video aesthetics 
 **These are NOT templates to copy. They are vocabulary to remix.** Steal a layout idea from one, a motion idiom from another, a type treatment from a third, and compose YOUR scene with the brief as the spec. A designer that ships a near-copy of any single inspiration is failing the brief — push further, mix elements, invent the combination that hasn't been done before.
 
 ${inspirationsBlock}
-${styleSeedBlock}
+${styleSeedBlock}${framingBlock}
 ## Hard rules — non-negotiable
 
 ${MOCK_CODE_HARD_RULES}
@@ -1360,6 +1401,7 @@ export async function regenerateSceneMockCode(args: {
     durationSeconds: number
     visualMode?: string
     visualBrief?: string
+    framing?: string
   }
   productName: string
   /** Style-seed label from the existing manifest (e.g. "editorial").
@@ -1375,8 +1417,17 @@ export async function regenerateSceneMockCode(args: {
     const found = modeId ? SCENE_MODES.find((m) => m.id === modeId) : undefined
     mode = found ?? pickSceneModes(1)[0]!
   }
-  const seed = args.styleSeedLabel
-    ? STYLE_SEEDS.find((s) => s.label === args.styleSeedLabel) ?? pickStyleSeed()
+  // Same open-seed resolution as the orchestrator: known label →
+  // catalog brief; free-text → verbatim brief; missing → random catalog
+  // preset.
+  const raw = args.styleSeedLabel?.trim()
+  const fromCatalog = raw
+    ? STYLE_SEEDS.find((s) => s.label.toLowerCase() === raw.toLowerCase())
+    : undefined
+  const seed: { label: string; brief: string } = fromCatalog
+    ? fromCatalog
+    : raw && raw.length >= 8
+    ? { label: raw.slice(0, 40), brief: raw }
     : pickStyleSeed()
   return generateSceneMockCode({
     scene: {
@@ -1389,6 +1440,7 @@ export async function regenerateSceneMockCode(args: {
     productName: args.productName,
     styleSeed: seed.brief,
     visualBrief: args.scene.visualBrief ?? '',
+    framing: args.scene.framing ?? '',
   })
 }
 
@@ -1410,13 +1462,22 @@ function buildSkeletonPrompt(input: GenerateMarketingScriptInput): string {
     .map((s) => `- **${s.label}**: ${s.brief}`)
     .join('\n')
   const styleSeedBlock = input.visualMode === 'mocks'
-    ? `\n## Whole-video aesthetic — pick a style seed
+    ? `\n## Whole-video aesthetic — pick OR write a style seed
 
-Pick ONE label from the catalog below as the \`styleSeed\` field. This sets the visual vocabulary the designers lean on across all scenes. Pick based on the brand vibe + the creative brief + the audience — NOT at random. If the doc says "for technical CTOs" → data-density or high-contrast; "for designers" → editorial; "for solo founders" → conversational; "metrics-heavy product" → metric-driven; "AI/chat product" → conversational or brand-first. The right seed makes every scene feel coherent.
+The \`styleSeed\` field sets the visual vocabulary the designers lean on across all scenes. You have TWO ways to fill it:
+
+**Option A — pick a catalog label** (safe, fast, predictable):
 
 ${styleSeedCatalog}
 
-Output as \`styleSeed: "<label>"\` at the top level. Do NOT mention the label in the voiceover or headlines — it's a designer cue, not user-facing copy.
+**Option B — write a custom seed brief** (recommended when none of the labels capture the brand vibe). Write 1-3 sentences naming the vocabulary directly: typography moves (serif XL? compressed sans? mixed weights?), color treatment (monochrome with one accent? duotone gradient? saturated blocks?), motion vocabulary (sharp brutalist cuts? fluid liquid motion? choreographed grid reveals?), texture cues (risograph noise? glass + frosted layers? hand-drawn edges?). Be specific — "modern" / "clean" / "premium" are not styles, they're vibes.
+
+Examples of GOOD custom seeds:
+- "Monochrome editorial with one warm-orange accent. Serif XL headlines, sans-serif body, generous whitespace. Cards float on subtle drop-shadows; no gradients. Motion is restrained spring entries with long settling tails."
+- "Brutalist swiss grid. Black backgrounds, white type at extreme scale, ONE saturated red as accent. Sharp cuts between scenes; numbers stutter-tick into place rather than smoothly counting; lines are 1-pixel hairlines."
+- "Soft pastel with risograph texture. Coral + cream + sage palette, hand-drawn edges on cards, halftone dot fills. Motion is gentle, breathing, almost lazy."
+
+Output as \`styleSeed: "<label or brief>"\` at the top level (≤600 chars). Pick based on the brand vibe + the creative brief + the audience — NOT at random. The right seed makes every scene feel coherent. Do NOT mention the seed in the voiceover or headlines — it's a designer cue, not user-facing copy.
 `
     : ''
 
@@ -1435,6 +1496,7 @@ Set \`screenshotIndex: null\` for every scene (mocks mode never references doc s
 
 - **\`visualMode\`** — pick the BEST mode for THIS scene's idea from the catalog below. NEVER reuse a mode across scenes within the same video — variety is the headline goal of this architecture. With 3 scenes, mix at least 1 UI + 1 abstract; with 4 scenes, aim for 2 of each.
 - **\`visualBrief\`** — 2-3 sentences naming the SPECIFIC elements / numbers / words / motion the designer should put on screen. Be concrete: a designer reading "show that it's fast" can't act on it; a designer reading "Counter ticking from 0 to 12,847 across 1.6s, then drifting +1 every 30 frames. Eyebrow label 'QUERIES THIS MONTH'. Subhead 'and growing'. Use accentColor on the number." builds exactly the right scene. ALWAYS include: the exact text/numbers to show, the focal element (what the eye lands on), and one line on motion.
+- **\`framing\`** (OPTIONAL) — explicit cadrage override: \`'browser'\`, \`'mobile'\`, \`'terminal'\`, \`'fullbleed'\` (no frame, full-canvas typo / blocks), or \`'split'\` (canvas divided in two). When omitted the designer picks based on the mode's default. Use this to break the "every UI scene is a browser" pattern — e.g. a \`bento\` scene with \`framing: 'fullbleed'\` removes the Chrome and lets the cards float on the canvas; a \`chat\` scene with \`framing: 'mobile'\` reads as messaging app rather than web app. Browser is no longer the default — pick deliberately.
 
 ### Mode catalog (pick ONE per scene, NEVER repeat)
 
@@ -1680,16 +1742,31 @@ export async function generateMarketingScript(
     return skeleton
   }
 
-  // Resolve the whole-video aesthetic from the architect's pick. Fall
-  // back to a random orchestrator-side seed when the architect dropped
-  // the field or picked an unknown label.
-  const archSeedLabel = skeleton.styleSeed
-  const archSeed = archSeedLabel ? STYLE_SEEDS.find((s) => s.label === archSeedLabel) : undefined
+  // Resolve the whole-video aesthetic from the architect's pick. Two
+  // valid inputs:
+  //   1. A known STYLE_SEEDS label (editorial / brutalist / …) → look up
+  //      the catalog brief.
+  //   2. A free-text architect-written brief (any other string) → use
+  //      verbatim. This is the OPEN-SEED path: lets the architect
+  //      describe an aesthetic that doesn't exist in the catalog
+  //      ("monochrome editorial with risograph noise + serif XL headlines"
+  //      etc.), so the designer's vibe nudge is genuinely diverse across
+  //      videos instead of cycling through 8 fixed labels.
+  // When the architect dropped the field entirely we fall back to a
+  // random catalog preset (preserves prior behavior).
+  const archSeedRaw = skeleton.styleSeed?.trim()
+  const archSeedFromCatalog = archSeedRaw
+    ? STYLE_SEEDS.find((s) => s.label.toLowerCase() === archSeedRaw.toLowerCase())
+    : undefined
   const fallbackSeed = pickStyleSeed()
-  const resolvedSeed = archSeed ?? fallbackSeed
-  if (archSeedLabel && !archSeed) {
-    console.warn(
-      `[marketing-script] architect picked unknown styleSeed "${archSeedLabel}" — falling back to "${fallbackSeed.label}"`,
+  const resolvedSeed = archSeedFromCatalog
+    ? archSeedFromCatalog
+    : archSeedRaw && archSeedRaw.length >= 8
+    ? { label: archSeedRaw.slice(0, 40), brief: archSeedRaw }
+    : fallbackSeed
+  if (archSeedRaw && !archSeedFromCatalog) {
+    console.info(
+      `[marketing-script] architect wrote free-text styleSeed (${archSeedRaw.length} chars) — using verbatim as designer brief.`,
     )
   }
 
@@ -1724,6 +1801,7 @@ export async function generateMarketingScript(
         productName: input.productName,
         styleSeed: styleSeedBrief,
         visualBrief: scene.visualBrief ?? '',
+        framing: scene.framing ?? '',
       }).catch((err) => {
         console.warn(
           `[marketing-script/scene-${i}/${resolvedModes[i]?.id ?? '?'}] mockCode gen failed: ${(err as Error).message}`,

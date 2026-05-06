@@ -4,6 +4,7 @@ import { findPageById } from '../page/page.repository.js'
 import { getPublicUrl, uploadToStorage } from '../../shared/db/storage.repository.js'
 import { synthesizeSpeech, generateMusic, isElevenLabsConfigured } from '../../shared/ai/elevenlabs.client.js'
 import { generateMarketingScript } from './marketing-script.generator.js'
+import { computeTotalDuration } from './marketing-video.schema.js'
 import { saveMarketingVideo } from './marketing-video.repository.js'
 import type {
   GenerateMarketingVideoOptions,
@@ -157,6 +158,21 @@ const DEFAULT_BRANDING: MarketingBranding = {
   textColor: '#F5F5F7',
   fontFamily: 'Inter',
   logoUrl: null,
+  websiteUrl: null,
+  radius: 14,
+}
+
+/** Derive a clean origin URL from `project.baseUrl` (which may include a
+ *  path, query, or trailing slash). Returns null when baseUrl is empty or
+ *  unparseable so the renderer can fall back to its heuristic. */
+function deriveWebsiteUrl(rawBaseUrl: string | null | undefined): string | null {
+  if (!rawBaseUrl || rawBaseUrl.trim().length === 0) return null
+  try {
+    const u = new URL(rawBaseUrl)
+    return `${u.protocol}//${u.host}`
+  } catch {
+    return null
+  }
 }
 
 /** Cheap diacritic + stopword heuristic — same approach as the doc voice-over.
@@ -189,13 +205,24 @@ async function resolveBranding(projectId: string | null): Promise<MarketingBrand
   }
 
   const design = project.design
+  // ProjectDesign carries optional brand-kit fields (accentSecondary,
+  // radius) added in the brand-kit-minimal scope. They default to safe
+  // values when missing so old projects keep rendering identically.
+  type DesignWithKit = (typeof design) & {
+    accentSecondary?: string
+    radius?: number
+  }
+  const kit = design as DesignWithKit | null
   return {
     productName: project.name,
     accentColor: design?.accentColor ?? DEFAULT_BRANDING.accentColor,
+    accentSecondary: kit?.accentSecondary,
     bgColor: design?.bgColor ?? DEFAULT_BRANDING.bgColor,
     textColor: design?.textColor ?? DEFAULT_BRANDING.textColor,
     fontFamily: design?.font ?? DEFAULT_BRANDING.fontFamily,
     logoUrl: design?.logoUrl ?? null,
+    websiteUrl: deriveWebsiteUrl(project.baseUrl),
+    radius: kit?.radius ?? DEFAULT_BRANDING.radius,
   }
 }
 
@@ -413,7 +440,13 @@ export async function generateMarketingVideoForRun(
     userPrompt: options.userPrompt,
   })
 
-  console.log(`[marketing-video] Script: ${script.scenes.length} scenes, ${script.totalDurationSeconds}s total`)
+  // Derive total from the parts so a script with a stale / missing
+  // `totalDurationSeconds` stays internally consistent. Snapshot it back
+  // onto the script so the persisted manifest carries an authoritative
+  // value (the renderer derives at render-time anyway, but tooling /
+  // edit prompts read this directly).
+  script.totalDurationSeconds = computeTotalDuration(script)
+  console.log(`[marketing-video] Script: ${script.scenes.length} scenes, ${script.totalDurationSeconds.toFixed(2)}s total`)
 
   // Per-scene TSX compile + rescue loop. Two failure modes routed
   // through the same path:
@@ -526,7 +559,7 @@ export async function generateMarketingVideoForRun(
       } else {
         musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
       }
-      const durationMs = Math.round(script.totalDurationSeconds * 1000)
+      const durationMs = Math.round(computeTotalDuration(script) * 1000)
       console.log(`[marketing-video] Music: AI-generating (${styleId}), durationMs=${durationMs}`)
       const buffer = await generateMusic(musicPrompt, { durationMs })
       musicPath = `runs/${runId}/marketing-music-ai.mp3`
@@ -629,7 +662,11 @@ export async function submitMarketingVideoFromScript(args: {
   const branding = await resolveBranding(page.projectId)
   const screenshots = await collectScreenshots(runId)
 
-  console.log(`[marketing-video/mcp] Run ${runId}: ${script.scenes.length} scenes, product="${branding.productName}", caller-authored TSX`)
+  // Snapshot a derived total — MCP callers can omit / mis-sum
+  // `totalDurationSeconds` (it's no longer required in input). The
+  // composition derives at render-time anyway, but tooling reads this.
+  script.totalDurationSeconds = computeTotalDuration(script)
+  console.log(`[marketing-video/mcp] Run ${runId}: ${script.scenes.length} scenes, ${script.totalDurationSeconds.toFixed(2)}s total, product="${branding.productName}", caller-authored TSX`)
 
   // Per-scene compile. NO LLM rescue — we want zero LLM cost on the
   // MCP path. Compile errors bubble up as a structured message so the
@@ -700,7 +737,7 @@ export async function submitMarketingVideoFromScript(args: {
       } else {
         musicPrompt = buildMusicPrompt(tone, options.aiMusicPrompt, branding.productName)
       }
-      const durationMs = Math.round(script.totalDurationSeconds * 1000)
+      const durationMs = Math.round(computeTotalDuration(script) * 1000)
       const buffer = await generateMusic(musicPrompt, { durationMs })
       musicPath = `runs/${runId}/marketing-music-ai.mp3`
       await uploadToStorage('artifacts', musicPath, buffer, 'audio/mpeg')
@@ -1053,7 +1090,8 @@ Your response MUST contain a complete \`script\` object with EVERY field present
         "screenshotIndex": <number or null>,
         "durationSeconds": <number>,
         "visualMode": "<one of: hero-stat | bento | chat | chart | cursor-click | flow-diagram | headline-burst | logo-hero | custom>",
-        "visualBrief": "<2-3 sentences naming SPECIFIC elements / numbers / words / motion the designer will put on screen. The designer ONLY sees this brief + the headline/voiceover, so be concrete: exact text, focal element, motion idea.>"
+        "visualBrief": "<2-3 sentences naming SPECIFIC elements / numbers / words / motion the designer will put on screen. The designer ONLY sees this brief + the headline/voiceover, so be concrete: exact text, focal element, motion idea.>",
+        "framing": "<optional: browser | mobile | terminal | fullbleed | split — overrides the mode's default cadrage>"
       }
       // ... one entry per existing scene, SAME ORDER
     ],
@@ -1074,7 +1112,7 @@ Your response MUST contain a complete \`script\` object with EVERY field present
 
 2. **Dropping per-scene fields.** When you rewrite \`visualBrief\` for a creative refine, you forget to copy \`durationSeconds\` / \`screenshotIndex\` / \`headline\` from the existing scene → validator sees \`undefined\` → edit aborts. Carry every existing field through, then layer your changes on top.
 
-3. **Total duration math.** \`totalDurationSeconds\` MUST equal \`hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds\`. If you adjust durations, recompute the total.
+3. **Total duration math.** Doclee derives \`totalDurationSeconds\` from \`hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds\`. You MAY omit \`totalDurationSeconds\` entirely; if you include it, an inconsistent value is overridden (no longer rejected). What matters is the per-part durations adding up to ~45s.
 
 4. **Null instead of omit on branding.** \`branding\` is a partial patch: include ONLY the fields you want to change. Don't set unchanged fields to \`null\` to "signal no change". \`{ "branding": { "accentColor": "#0070f3" } }\` is correct. \`{ "branding": { "accentColor": "#0070f3", "bgColor": null } }\` is WRONG. If branding is unchanged, omit the whole \`branding\` key.
 
@@ -1185,7 +1223,8 @@ Return ONLY valid JSON: { "message": string, "script": <full edited script>, "br
       a.headline === b.headline &&
       a.voiceover === b.voiceover &&
       (a.visualMode ?? '') === (b.visualMode ?? '') &&
-      (a.visualBrief ?? '') === (b.visualBrief ?? '')
+      (a.visualBrief ?? '') === (b.visualBrief ?? '') &&
+      (a.framing ?? '') === (b.framing ?? '')
     )
   }
 
@@ -1209,6 +1248,7 @@ Return ONLY valid JSON: { "message": string, "script": <full edited script>, "br
           durationSeconds: scene.durationSeconds,
           visualMode: scene.visualMode,
           visualBrief: scene.visualBrief,
+          framing: scene.framing,
         },
         productName,
         styleSeedLabel: styleSeedLabel ?? undefined,

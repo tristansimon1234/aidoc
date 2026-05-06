@@ -43,6 +43,10 @@ const DesignSchema = z.object({
   font: z.string(),
   widgetPosition: z.string().optional(),
   widgetGreeting: z.string().optional(),
+  /** Optional brand-kit fields (added 2026-05). Older projects don't
+   *  have these and the renderer falls back to safe defaults. */
+  accentSecondary: z.string().optional(),
+  radius: z.number().min(0).max(64).optional(),
 })
 
 export const UpdateProjectSchema = z.object({

@@ -163,5 +163,5 @@ export const GenerateMarketingVideoToolArgsSchema = z.object({
   // 'none' / '<presetId>' / 'ai' / 'ai-<style>' (e.g. 'ai-cinematic').
   musicTrackId: z.string().min(1).max(40).optional(),
   musicVolume: z.number().min(0).max(1).optional(),
-  aiMusicPrompt: z.string().max(300).optional(),
+  aiMusicPrompt: z.string().max(500).optional(),
 })

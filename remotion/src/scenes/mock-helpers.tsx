@@ -45,9 +45,13 @@ interface MockFrameProps {
  * + macOS traffic-light dots + URL bar + content area. The interior tone
  * picks the chrome theme (chrome bg, border, URL color) consistently.
  *
- * Use as the OUTERMOST element of every mock — full-bleed inside its
- * parent (the FeatureScene's 920×580 panel). Children fill the remaining
- * space below the 36px chrome bar.
+ * **OPTIONAL — pick the cadrage per scene.** Earlier guidance forced
+ * MockFrame as the outermost element of every mock; that converged every
+ * video onto a "look at our app in a Chrome window" aesthetic. Now it's
+ * one of several cadrages the architect picks from (browser / mobile /
+ * terminal / fullbleed / split). Use MockFrame ONLY when the scene
+ * genuinely benefits from a browser frame; otherwise compose the cadrage
+ * from primitives.
  */
 export const MockFrame: React.FC<MockFrameProps> = ({ url, tone = 'light', children, style }) => {
   const isDark = tone === 'dark'

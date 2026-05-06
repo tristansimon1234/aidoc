@@ -10,6 +10,16 @@ import {
 } from 'remotion'
 import type { Branding } from '../manifest.js'
 import { MockFrame, Pill, AccentGlow, AnimatedCursor, Icons, Charts } from './mock-helpers.js'
+import {
+  TypewriterText,
+  FadeInStagger,
+  PulseGlow,
+  BreathingScale,
+  OrbitingDot,
+  Connector,
+  TravelingPhoton,
+  ParticleField,
+} from './animation-primitives.js'
 
 interface DynamicSceneProps {
   /** esbuild-compiled JS that defines a function/const named MockScene.
@@ -73,11 +83,24 @@ const DynamicSceneInner: React.FC<DynamicSceneProps> = ({ mockCompiledCode, bran
     const Remotion = {
       interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio,
       // Designed helpers — let the LLM stop rewriting the same browser
-      // chrome / pill / glow / cursor every scene.
+      // chrome / pill / glow / cursor every scene. MockFrame is now
+      // OPTIONAL (per-scene; the architect picks the cadrage); the
+      // others are pure utilities the LLM can compose freely.
       MockFrame, Pill, AccentGlow, AnimatedCursor,
       Icons: safeIcons,
       // Recharts components for data scenes — line / area / bar / pie.
       Charts,
+      // Animation primitives — pure-logic helpers (timing, easing,
+      // particle math). They impose no visual identity, only behavior,
+      // so they don't converge videos to the same look.
+      TypewriterText,
+      FadeInStagger,
+      PulseGlow,
+      BreathingScale,
+      OrbitingDot,
+      Connector,
+      TravelingPhoton,
+      ParticleField,
     }
     // The LLM is asked to define a function named MockScene. We append
     // `;return MockScene` to expose it to the caller.

@@ -93,18 +93,18 @@ export const MarketingSceneSchema = z.object({
   durationSeconds: z.number().positive(),
   /** Legacy DSL mock — backwards-compat for any persisted manifests. */
   mock: MarketingMockSchema.optional(),
-  /** Free TSX written by Gemini for this scene's animation. Compiled
-   *  server-side; the bundle never sees this directly. */
-  // 10k chars upper bound — when the model rewrites with rich
-  // animations (charts + chat threads + cursors + cards) the TSX
-  // legitimately runs ~5-9k chars. 6k was too tight and rejected
-  // valid creative rewrites. The compile step still rejects > 10k
-  // separately as a safety net.
-  mockCode: z.string().max(10_000).optional(),
+  /** Free TSX written by Gemini / the MCP caller for this scene's
+   *  animation. Compiled server-side; the bundle never sees this
+   *  directly. Cap raised to 15k after seeing legitimate rewrites at
+   *  9-12k once primitives + chrome-optional layouts entered the
+   *  vocabulary. The compile step still enforces its own per-scene cap
+   *  as a safety net. */
+  mockCode: z.string().max(15_000).optional(),
   /** esbuild output of mockCode. Remotion's <DynamicScene> wraps it in
    *  a `new Function(...)` with React + Remotion + branding bound,
-   *  evaluates, and renders the resulting component. */
-  mockCompiledCode: z.string().max(20_000).optional(),
+   *  evaluates, and renders the resulting component. Cap kept ~1.7×
+   *  the source cap to absorb esbuild's helpers + JSX → React.createElement. */
+  mockCompiledCode: z.string().max(25_000).optional(),
   /** Architect-picked visual mode for this scene (hero-stat / bento /
    *  chat / …). Skeleton stage 1 fills it; stage 2 reads it to pick
    *  the right reference template. Kept loose (z.string) so a future
@@ -118,6 +118,10 @@ export const MarketingSceneSchema = z.object({
    *  notes) and 800 chars rejected legitimate output. 3000 covers the
    *  rich-brief case while still bounding the prompt size downstream. */
   visualBrief: z.string().max(3000).optional(),
+  /** Architect-picked cadrage override (browser / mobile / terminal /
+   *  fullbleed / split). Free-string for backwards-compat with future
+   *  additions. Loosely capped at 40 chars. */
+  framing: z.string().max(40).optional(),
 })
 
 export const MarketingScriptSchema = z.object({
@@ -133,13 +137,36 @@ export const MarketingScriptSchema = z.object({
     buttonLabel: z.string().min(1).max(40),
     durationSeconds: z.number().positive(),
   }),
-  totalDurationSeconds: z.number().positive(),
+  /** Total duration in seconds. Optional in input — when omitted (or
+   *  inconsistent with the parts) the service derives it via
+   *  `computeTotalDuration(script)`. Kept on the persisted manifest as
+   *  a snapshot so older manifests round-trip cleanly. */
+  totalDurationSeconds: z.number().positive().optional(),
   language: z.string().default('en'),
-  /** Architect-picked aesthetic for the whole video — one of the
-   *  STYLE_SEEDS labels. Optional for backwards-compat with manifests
-   *  generated before the architect-picked seed. */
-  styleSeed: z.string().max(40).optional(),
+  /** Aesthetic for the whole video. Either a known STYLE_SEEDS label
+   *  (editorial, brutalist, …) or a free-text architect-written brief.
+   *  The orchestrator looks up the label first; on miss it treats the
+   *  string as the brief verbatim. Cap relaxed to 600 chars so the
+   *  architect can write a full creative direction (was 40 — too tight
+   *  for free-text). */
+  styleSeed: z.string().max(600).optional(),
 })
+
+/** Sum of hook + scenes + cta in seconds. Source of truth for any
+ *  downstream consumer that needs a total — call this instead of reading
+ *  `script.totalDurationSeconds` directly so input scripts that omitted
+ *  the field (or got it wrong) still produce a coherent value. */
+export function computeTotalDuration(script: {
+  hook: { durationSeconds: number }
+  scenes: Array<{ durationSeconds: number }>
+  cta: { durationSeconds: number }
+}): number {
+  return (
+    script.hook.durationSeconds +
+    script.scenes.reduce((acc, s) => acc + s.durationSeconds, 0) +
+    script.cta.durationSeconds
+  )
+}
 
 /** Voice-over tone presets. Each maps to a tuned (stability, style,
  *  similarityBoost) triplet on the ElevenLabs side — surface them as
@@ -208,7 +235,9 @@ export const GenerateMarketingVideoOptionsSchema = z.object({
   musicVolume: z.number().min(0).max(1).optional(),
   /** Free-form steering for AI music generation. Only used when
    *  musicTrackId === 'ai'. Concatenated with a tone-derived base
-   *  prompt by the service. */
-  aiMusicPrompt: z.string().max(300).optional(),
+   *  prompt by the service. 500 chars covers the realistic-brief case
+   *  (was 300 — too tight once users started naming instruments,
+   *  tempo, and reference tracks together). */
+  aiMusicPrompt: z.string().max(500).optional(),
   userPrompt: z.string().max(800).optional(),
 })

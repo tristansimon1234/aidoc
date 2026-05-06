@@ -498,7 +498,7 @@ The video is **45 seconds**, three acts:
 - **SCENES** (3-4 scenes, 7-12s each): each scene shows ONE benefit. Headline reinforces what the narrator says.
 - **CTA** (4-6s): clear call-to-action with a short button label.
 
-**\`hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds === totalDurationSeconds === 45\`** (±0.5).
+Total target: **\`hook.durationSeconds + sum(scenes[].durationSeconds) + cta.durationSeconds ≈ 45s\`**. \`totalDurationSeconds\` is OPTIONAL in input — Doclee derives it from the parts. If you pass an inconsistent value it's overridden (with a warning logged) rather than rejected.
 
 Voice-over budget: **~85 words total** across all parts. Audio tags + em-dashes + ellipses each add real silence. ElevenLabs v3 reads the concatenated voiceover — embed delivery cues:
 - \`[excited]\`, \`[calm]\`, \`[short pause]\`, \`[laughs]\`, \`[whispers]\`, \`[building]\`, \`[happy gasp]\`
@@ -518,12 +518,21 @@ Voice-over budget: **~85 words total** across all parts. Audio tags + em-dashes 
     durationSeconds: number;
     visualMode?: string;       // 'hero-stat' | 'bento' | 'chat' | 'chart' | 'cursor-click' | 'flow-diagram' | 'logo-hero' | 'custom'
     visualBrief?: string;      // your own design brief (optional, persisted for diagnostics)
+    framing?: string;          // optional cadrage override: 'browser' | 'mobile' | 'terminal' | 'fullbleed' | 'split'
     mockCode?: string;         // TSX — see rules below
   }>,
   cta: { voiceover: string; headline: string; buttonLabel: string; durationSeconds: number },
-  totalDurationSeconds: number,
+  totalDurationSeconds?: number,  // OPTIONAL — derived from parts when omitted
   language: string,            // 'en' | 'fr' | …
-  styleSeed?: string           // optional aesthetic tag
+  // Optional aesthetic seed for the whole video. Either a known catalog
+  // label (editorial / brutalist / data-density / metric-driven /
+  // product-tour / brand-first / conversational / high-contrast / process-flow)
+  // OR a free-text architect-written brief (1-3 sentences naming the
+  // typography, color treatment, motion vocabulary, texture cues for
+  // this video). Free-text gives access to aesthetics outside the catalog
+  // — "monochrome editorial with risograph noise + serif XL headlines",
+  // "brutalist swiss grid with stutter-tick numbers", etc. Cap 600 chars.
+  styleSeed?: string
 }
 \`\`\`
 
@@ -543,10 +552,10 @@ The TSX runs inside \`new Function(...)\` with React + Remotion + branding bound
 4. **No inline \`<svg>\` tags.** Two alternatives depending on the need: (a) **Icons** → \`Remotion.Icons.X\` (any lucide-react name — see safe list below); (b) **Connecting lines / arrows / branches between nodes (flow-diagram, etc.)** → absolute-positioned \`<div>\` elements with explicit \`width\` + \`height\` (1-3px on the short axis) + \`background\` + \`transform: rotate(<angle>deg)\` for diagonal lines. Compose multiple lines for branches. Inline SVG breaks frequently and is banned full stop.
 5. **Never use \`<Remotion.AccentGlow>\`** — deprecated, the halo bleeds onto the canvas.
 6. **\`<Remotion.AnimatedCursor>\` takes \`leftPct\` + \`topPct\` numbers (0-100), NOT a path array.** Maximum ONE per scene.
-7. **Branding fields available:** \`productName\`, \`accentColor\`, \`bgColor\`, \`textColor\`, \`fontFamily\`, \`logoUrl\`. Nothing else.
+7. **Branding fields available:** \`productName\`, \`accentColor\`, \`bgColor\`, \`textColor\`, \`fontFamily\`, \`logoUrl\`, \`websiteUrl\` (string | null — the project's actual URL, e.g. https://acme.tech), \`accentSecondary\` (string | undefined — for two-tone gradients), \`radius\` (number | undefined — corner radius in px, default 14). Nothing else.
 8. **Layout stability — entries NEVER displace siblings.** Reserve the full layout from frame 0; animate ONLY \`opacity\` and \`transform\`. Never animate \`width\`/\`height\`/\`padding\`/\`margin\`. Never use conditional \`{cond && <div>}\` for elements that mount mid-scene. Pre-allocate slots; cross-fade content within them.
 9. **Tailwind className for static styling**, inline \`style={{}}\` only for animated values. Twind is installed; every Tailwind utility works at runtime.
-10. **Code length cap: 9000 chars per scene.** The compiler rejects anything longer.
+10. **Code length cap: 15000 chars per scene** for the source TSX (mockCode). The compile output is bounded separately at 25000 chars.
 11. **Mock interiors match the canvas \`branding.bgColor\`.** When the canvas is white (the default), the inside of MockFrame and visible card surfaces should be white / zinc-50. A dark panel (\`#18181b\`, \`bg-zinc-900\`) on a white canvas reads as a render glitch — a black box glued onto the design. Dark interiors are reserved ONLY for code editors / terminals (where the dark theme IS the product UI being demoed) or an explicit dark style-seed.
 12. **Restraint on accent color — max 2 elements per scene.** Pick ONE focal element (the hero number, the CTA button, the user chat bubble, the middle flow node) — that gets full \`branding.accentColor\`. One small supporting hint (a tiny dot indicator, a thin accent line, an icon) can also use accent. Everything else: zinc / white / black. Outer cards stay neutral (\`bg-white\` / \`bg-zinc-50\`, \`border-zinc-200/80\`). Glows subtle (\`boxShadow: 0 8px 32px \${accent}22\` is the cap, not \`\${accent}55\` / \`\${accent}77\`). 2026 marketing video aesthetic is restrained — accent is a punch, not a wash.
 13. **Smooth motion (avoid choppy / saccadée).** Floor of 12 frames for any opacity / position change (\`interpolate(f, [0, 4], ...)\` snaps; \`[55, 70], ...\` is smooth). Spring damping 14-18 (oscillates visibly below 12). Sin frequency \`f / 14-22\` for ambient pulses (~3-5s cycles); \`f / 6\` reads nervous. Stagger entries 6-12 frames apart, not all at frame 0. Never use \`f > N ? 1 : 0\` opacity flips on big elements — use interpolate.
@@ -564,12 +573,39 @@ Remotion.AbsoluteFill   // component, fills parent
 Remotion.Img            // for remote images (use sparingly)
 \`\`\`
 
-Pre-built helpers:
-- \`<Remotion.MockFrame url='app.example.com/path' tone='light'>{children}</Remotion.MockFrame>\` — designed browser-window chrome (macOS traffic lights + URL bar). Use ONLY \`tone='light'\`. Max ONE per scene; never nest. **MockFrame inherits its size from its parent — never let it collapse to intrinsic content size.** Always wrap it in a parent div with an EXPLICIT width, and add an explicit height when the children need pixel-area to render into. Pick the dimensions based on the scene: the visual canvas is 920×580, so leave ~20-100px of breathing room. Width: matched to scene content density (a dense bento needs more than a single chat bubble). Height: usually content-driven; set explicit pixel height ONLY when children include \`flex-1\`, \`<Remotion.Charts.ResponsiveContainer>\`, or any element that itself needs fixed pixel area (those collapse to 0px without a sized ancestor — a common cause of "chart renders as a tiny strip"). Perspective tilts (\`transform: perspective(...) rotateY(...)\`) do NOT constrain layout size; you still need width / height on the wrapper.
+## Cadrage — OPTIONAL, pick one per scene (no longer "browser by default")
+
+The earlier MCP contract forced \`<Remotion.MockFrame>\` as the OUTERMOST element of every mock. That converged every video onto a "look at our app in a Chrome window" look. **MockFrame is now optional.** Pick the cadrage that fits the scene:
+
+- **\`browser\`** — \`<Remotion.MockFrame url='…' tone='light'>{children}</Remotion.MockFrame>\`. Use when the scene shows the product UI as a web app.
+- **\`mobile\`** — write your own phone-shape wrapper inline: rounded corners (radius 36-44), thin Dynamic Island bar, ~9:19 aspect. Use when the product is mobile-first.
+- **\`terminal\`** — write your own dark panel wrapper: \`#0B0B0F\` bg, three traffic dots, monospace text inside. Use for code / CLI / agent output.
+- **\`fullbleed\`** — NO frame. Hero typography, full-canvas color blocks, magazine-cover. Use for "big claim" / "single number" beats.
+- **\`split\`** — divide the canvas in two via flex: before/after, problem/solution. NO outer frame; each side is its own composition.
+
+When you set \`framing\` on the scene (optional field), the cadrage is explicit. Otherwise pick based on the scene's idea — don't reach for \`browser\` by default.
+
+Pre-built helpers (use when they fit):
+- \`<Remotion.MockFrame url='app.example.com/path' tone='light'>{children}</Remotion.MockFrame>\` — designed browser-window chrome (macOS traffic lights + URL bar). Use ONLY \`tone='light'\`. Max ONE per scene; never nest. **Optional — pick a different cadrage when the scene calls for it.** **MockFrame inherits its size from its parent — never let it collapse to intrinsic content size.** Always wrap it in a parent div with an EXPLICIT width, and add an explicit height when the children need pixel-area to render into. Pick the dimensions based on the scene: the visual canvas is 920×580, so leave ~20-100px of breathing room. Width: matched to scene content density (a dense bento needs more than a single chat bubble). Height: usually content-driven; set explicit pixel height ONLY when children include \`flex-1\`, \`<Remotion.Charts.ResponsiveContainer>\`, or any element that itself needs fixed pixel area (those collapse to 0px without a sized ancestor — a common cause of "chart renders as a tiny strip"). Perspective tilts (\`transform: perspective(...) rotateY(...)\`) do NOT constrain layout size; you still need width / height on the wrapper.
 - \`<Remotion.Pill tone='success' | 'warning' | 'danger' | 'accent' | 'muted' dot accentColor={branding.accentColor}>connected</Remotion.Pill>\`
 - \`<Remotion.AnimatedCursor leftPct={50} topPct={55} ripple={click} rippleRadius={r} rippleOpacity={ro} accentColor={branding.accentColor} />\`
 - \`<Remotion.Icons.Cpu size={14} color='currentColor' />\` — any lucide name, pre-wrapped at strokeWidth=1.5. Aliases: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2.
 - \`Remotion.Charts\` — recharts subset: ResponsiveContainer, LineChart, Line, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip. Wrap in \`<Remotion.Charts.ResponsiveContainer width='100%' height='100%'>\` inside a fixed-size parent. Set \`isAnimationActive={false}\` and drive data via Remotion.interpolate.
+
+## Animation primitives — pure logic, compose freely
+
+These primitives encapsulate non-trivial timing math (typewriter character pacing, particle drift, traveling photons, orbital motion). They impose NO visual identity — colors / sizes come from your props. Use them anywhere instead of rewriting the math inline.
+
+- \`<Remotion.TypewriterText text='hello' startFrame={10} charsPerFrame={0.6} cursor />\` — types text out one character at a time. Caller controls font / color / size via parent style.
+- \`<Remotion.FadeInStagger startFrame={6} stagger={6} fadeFrames={12} slideY={8}>{children}</Remotion.FadeInStagger>\` — cascades children via opacity + translateY.
+- \`<Remotion.PulseGlow color={branding.accentColor} intensity={32} period={42}>{children}</Remotion.PulseGlow>\` — wrapper with pulsing boxShadow on a sine. ONE per scene max.
+- \`<Remotion.BreathingScale amplitude={0.02} period={64}>{children}</Remotion.BreathingScale>\` — subtle 2-4% scale oscillation for "alive" feel.
+- \`<Remotion.OrbitingDot center={{x:50,y:50}} radius={64} period={90} phase={0} color={branding.accentColor} />\` — dot orbiting a point as % of parent. Parent must be \`position: relative\`.
+- \`<Remotion.Connector from={{x:10,y:50}} to={{x:90,y:50}} color={branding.accentColor} traveling startFrame={20} />\` — animated line between two % coordinates with optional traveling photon. Use for flow connectors WITHOUT inline SVG.
+- \`<Remotion.TravelingPhoton from={{x:10,y:50}} to={{x:90,y:50}} speed={60} color={branding.accentColor} glow />\` — glowing dot traversing a segment on a loop. Signal-flow visuals.
+- \`<Remotion.ParticleField count={24} color={branding.accentColor} drift={0.4} opacity={0.3} />\` — drifting particles as ambient backdrop. Cap count at ~60. Parent must be \`position: relative; overflow: hidden\`.
+
+These REPLACE inline timing math (Math.sin glow, manual character-slicing typewriters, hand-rolled traveling-dot loops). Smaller mockCode + consistent smoothness across videos.
 
 ## Visual mode dispatch (assign one per scene; NEVER repeat within a video)
 
@@ -1276,18 +1312,23 @@ async function handleGenerateMarketingVideo(
   }
   const script = scriptResult.data
 
-  // Sanity check: durations must add up to totalDurationSeconds (±0.5).
-  // The in-app architect enforces this in its prompt; on the MCP path we
-  // catch it explicitly so a bad sum doesn't slip through to render.
-  const partsSum =
-    script.hook.durationSeconds +
-    script.scenes.reduce((acc, s) => acc + s.durationSeconds, 0) +
-    script.cta.durationSeconds
-  if (Math.abs(partsSum - script.totalDurationSeconds) > 0.5) {
-    return toolText(
-      `Duration math is off: hook (${script.hook.durationSeconds}s) + scenes (${script.scenes.map((s) => s.durationSeconds).join('+')}s) + cta (${script.cta.durationSeconds}s) = ${partsSum}s but totalDurationSeconds = ${script.totalDurationSeconds}s. Adjust so they add up to ~45 (±0.5).`,
+  // `totalDurationSeconds` is derived from the parts downstream
+  // (computeTotalDuration in the service). The MCP caller no longer
+  // needs to pass it — and if they do and it's wrong, we ignore it
+  // rather than reject the whole submission. We DO warn loudly in the
+  // logs when the caller sent an inconsistent value so the discrepancy
+  // is observable for diagnostics.
+  const { computeTotalDuration } = await import('../marketing-video/marketing-video.schema.js')
+  const partsSum = computeTotalDuration(script)
+  if (
+    typeof script.totalDurationSeconds === 'number' &&
+    Math.abs(partsSum - script.totalDurationSeconds) > 0.5
+  ) {
+    console.warn(
+      `[mcp/marketing-video] totalDurationSeconds (${script.totalDurationSeconds}s) is inconsistent with parts sum (${partsSum.toFixed(2)}s) — overriding with the derived value.`,
     )
   }
+  script.totalDurationSeconds = partsSum
 
   let page
   try {
