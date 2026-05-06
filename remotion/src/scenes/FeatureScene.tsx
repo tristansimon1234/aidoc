@@ -23,6 +23,11 @@ interface FeatureSceneProps {
  *   index % 3 === 1 → split-right  (mirrored: text right, visual left)
  *   index % 3 === 2 → stacked      (headline top, visual below)
  *
+ * Opt-out: set `scene.framing = 'fullbleed-total'` to skip the headline
+ * panel entirely — the mock then fills the full 1920×1080 canvas and
+ * the voice-over carries the narrative. Use for a cinematic single-
+ * visual beat where on-screen copy would compete with the mock.
+ *
  * The previous "fullscreen" variant (visual fills the canvas, text in
  * a backdrop-blur card on top) is dropped — overlaying a glass card on
  * a busy product screenshot produced a visually cluttered result the
@@ -32,7 +37,7 @@ interface FeatureSceneProps {
  * The screenshot can be null; layouts gracefully fall back to a tinted
  * accent panel so the structure doesn't collapse.
  */
-type LayoutVariant = 'split-left' | 'split-right' | 'stacked'
+type LayoutVariant = 'split-left' | 'split-right' | 'stacked' | 'fullbleed-total'
 const LAYOUT_CYCLE: LayoutVariant[] = ['split-left', 'split-right', 'stacked']
 
 export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, branding, sceneIndex }) => {
@@ -66,7 +71,14 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
   const kbPanX = interpolate(kbProgress, [0, 1], [0, 28 * kbDirX])
   const kbPanY = interpolate(kbProgress, [0, 1], [0, 16 * kbDirY])
 
-  const layout: LayoutVariant = LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
+  // Fullbleed-total: caller wants the mock to own the whole canvas and
+  // the voice-over to carry the narrative — skip the headline panel and
+  // let the visual element fill 1920×1080. Useful for a "single
+  // cinematic shot" beat where any on-screen copy would compete with
+  // the mock for attention.
+  const layout: LayoutVariant = scene.framing === 'fullbleed-total'
+    ? 'fullbleed-total'
+    : LAYOUT_CYCLE[sceneIndex % LAYOUT_CYCLE.length]!
 
   // Visual priority for the scene:
   //   1. template → structured JSON, fixed React component (preferred).
@@ -172,6 +184,12 @@ export const FeatureScene: React.FC<FeatureSceneProps> = ({ scene, screenshot, b
             {visualElement}
           </div>
         </>
+      )}
+
+      {layout === 'fullbleed-total' && (
+        <AbsoluteFill style={{ opacity: imgOpacity }}>
+          {visualElement}
+        </AbsoluteFill>
       )}
     </AbsoluteFill>
   )
