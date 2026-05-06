@@ -339,18 +339,20 @@ Rewrite this scene's mockCode.`
 
   const userPrompt = `${promptHeader}
 
-Hard rules (the same rules the original prompt enforced):
+Technical invariants (break these and the scene crashes — everything else is yours to compose):
 - Define a function exactly named \`MockScene\` taking \`{ branding }\` as its only prop.
 - DO NOT \`import\` or \`require\` anything. \`React\`, \`Remotion\`, and \`branding\` are passed in as parameters.
 - DO NOT call \`fetch\`, \`new XMLHttpRequest\`, \`eval\`, \`new Function\`, \`document.write\`, \`window.open\`.
 - DO NOT use \`<Remotion.AccentGlow>\` (deprecated).
-- Only access these branding fields: productName, accentColor, bgColor, textColor, fontFamily.
-- Only invoke these Remotion symbols: interpolate, spring, useCurrentFrame, useVideoConfig, AbsoluteFill, Img, Audio, MockFrame, Pill, AnimatedCursor, Icons, Charts.
-- Icons: \`Remotion.Icons[NAME]\` accepts ANY lucide-react icon name (e.g. Cpu, BookOpen, Sparkles, Workflow, Rocket, TrendingUp, Database, Video, Camera, Inbox — pick what fits the scene). The full lucide catalog is exposed; if the icon exists in lucide-react, you can use it. Aliases also work: Message → MessageSquare, Volume → Volume2, BarChart → BarChart2, Trash → Trash2, Share → Share2.
-- Outer element: \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` — no background, no overflow-hidden.
-- Use \`<Remotion.MockFrame tone='light'>\` for UI mocks.
-- Static styling via Tailwind \`className\`; inline \`style={{}}\` only for animated values.
-- Stay under 2500 characters.
+- Branding fields: \`productName\`, \`accentColor\`, \`bgColor\`, \`textColor\`, \`fontFamily\`, \`logoUrl\`, \`websiteUrl\`, \`accentSecondary\`, \`radius\`. Nothing else.
+- Remotion namespace: \`interpolate\`, \`spring\`, \`useCurrentFrame\`, \`useVideoConfig\`, \`AbsoluteFill\`, \`Img\`, \`Audio\`, \`MockFrame\`, \`Pill\`, \`AnimatedCursor\`, \`Icons\`, \`Charts\`, \`TypewriterText\`, \`FadeInStagger\`, \`PulseGlow\`, \`BreathingScale\`, \`OrbitingDot\`, \`Connector\`, \`TravelingPhoton\`, \`ParticleField\`.
+- Icons: \`Remotion.Icons[NAME]\` accepts any lucide-react icon name. The full lucide catalog is exposed via Proxy.
+- Outer element: \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\` — no background, no overflow-hidden ON THE OUTER. (Backdrops go on a CHILD div, freely — that's where you paint dark canvases, gradients, particle fields, anything.)
+- Layout stability: animate only \`opacity\` / \`transform\`. Never animate width / height / padding / margin (causes layout shift the user reads as bug).
+- Inline \`<svg>\` is fine when you need shapes the icon set can't express; always include \`viewBox\`.
+- Stay under 15000 characters.
+
+Creative latitude: any palette, any glow intensity, any background, inline fontFamily — all fine. Match the scene's intent. The technical invariants above are all that's strict.
 
 Return ONLY the raw TSX (no markdown fences, no explanation, no surrounding prose). It will be passed straight to esbuild.`
 
@@ -1082,11 +1084,19 @@ function pickSceneModes(count: number): SceneMode[] {
   return shuffle(picked).slice(0, count)
 }
 
-/** Hard rules every per-scene mockCode call must enforce. Extracted as
- *  a constant so the surface doesn't drift between calls. The 🚨
- *  callouts are deliberately at the TOP — past renders failed because
- *  these rules were buried in a 500-line monolithic prompt. */
-const MOCK_CODE_HARD_RULES = `🚨 CRITICAL — these have FAILED in past renders, get them right or the scene falls back to a flat color:
+/** Technical invariants every per-scene mockCode call must respect.
+ *  Extracted as a constant so the surface doesn't drift between calls.
+ *
+ *  These are RUNTIME / SECURITY invariants, not aesthetic rules. Past
+ *  prompts piled "max 2 accents", "glow capped at 22%", "dark interiors
+ *  only for terminals" into the same hard-rules block — those killed
+ *  creative pieces (dark canvas surreal scenes, saturated brutalist
+ *  energy, Matrix-rain style, cinematic noir). Aesthetic rules now
+ *  live in `RESTRAINT_GUIDE` and are surfaced ONLY when the style seed
+ *  asks for a clean product-tour SaaS look. The rules below are the
+ *  ones that, when broken, crash the render or break the runtime
+ *  contract — keep them strict. */
+const MOCK_CODE_HARD_RULES = `🚨 TECHNICAL INVARIANTS — break these and the scene crashes / falls back to a flat color:
 
 1. **Function name MUST be exactly \`MockScene\`.** Not Scene, not Hook, not anything else. Signature:
    \`\`\`tsx
@@ -1096,30 +1106,33 @@ const MOCK_CODE_HARD_RULES = `🚨 CRITICAL — these have FAILED in past render
 
 2. **Outer \`<Remotion.AbsoluteFill>\` MUST be transparent.** Use ONLY:
    \`<Remotion.AbsoluteFill className='flex items-center justify-center p-10'>\`
-   - NO \`style={{ background: ... }}\` of any kind on the outer
-   - NO Tailwind background utility (\`bg-white\`, \`bg-slate-900\`, \`bg-zinc-100\`, \`bg-gradient-to-br\` are ALL forbidden on the outer)
+   - NO \`style={{ background: ... }}\` on the outer
+   - NO Tailwind background utility on the outer
    - NO \`overflow-hidden\` on the outer
-   The video canvas is already painted \`branding.bgColor\`. A different background on the outer creates a visible colored panel that doesn't match the rest of the video. If you want depth, layer it INSIDE a card / MockFrame, NEVER on the outer.
+   The video canvas is already painted \`branding.bgColor\`; the outer is structural. To paint a backdrop (gradient, dark panel, particle field, anything), put it INSIDE a child div — THAT child can be \`bg-black\`, \`bg-gradient-to-br\`, whatever the scene calls for. The constraint is on the OUTER only.
 
 3. **NO imports, NO require, NO fetch, NO XMLHttpRequest, NO eval, NO new Function.** \`React\`, \`Remotion\`, and \`branding\` are passed as parameters; everything you need lives on those.
 
-4. **NEVER write inline \`<svg>\` tags.** Two alternatives, depending on what you need:
-   - **Icons** → \`Remotion.Icons.X\` (any lucide-react name — Cpu, Workflow, Database, BookOpen, Rocket, Zap, TrendingUp, etc; \`Sparkles\` is BANNED). The full ~1500-icon lucide catalog is exposed via a Proxy.
-   - **Connecting lines, arrows, branches between nodes (flow-diagram, etc.)** → absolute-positioned \`<div>\` elements with explicit \`width\` + \`height\` (1-3px on the short axis) + \`background\` + \`transform: rotate(<angle>deg)\` for diagonal lines. Compose multiple lines to build branches or curves. Example: a line from node A to node B at 45° is a \`<div className='absolute' style={{ width: 120, height: 2, background: branding.accentColor, transform: 'rotate(45deg)', top: ..., left: ... }} />\`.
+4. **NEVER use \`<Remotion.AccentGlow>\`.** Deprecated — the halo bleeds onto the canvas as a render glitch.
 
-   Inline SVG breaks frequently (off-size, wrong stroke, no animation hooks) and is banned full stop.
+5. **\`<Remotion.AnimatedCursor>\` takes \`leftPct\` + \`topPct\` numbers (0-100), NOT a path array.**
 
-5. **NEVER use \`<Remotion.AccentGlow>\`.** Deprecated — the halo bleeds onto the canvas and reads as a render glitch.
+6. **Branding fields available:** \`productName\`, \`accentColor\`, \`bgColor\`, \`textColor\`, \`fontFamily\`, \`logoUrl\`, \`websiteUrl\` (string | null), \`accentSecondary\` (string | undefined), \`radius\` (number | undefined, default 14). Nothing else.
 
-6. **\`<Remotion.AnimatedCursor>\` takes \`leftPct\` + \`topPct\` numbers (0-100), NOT a path array.** Maximum ONE per scene, and ONLY when the MockFrame interior shows a populated UI (header + empty-state + CTA), never an isolated button.
+7. **Layout stability — entries NEVER displace siblings.** Reserve the full layout from frame 0; animate ONLY \`opacity\` and \`transform\`. Never animate \`width\` / \`height\` / \`padding\` / \`margin\`. Never use conditional \`{cond && <div>}\` for elements that mount mid-scene. Pre-allocate slots; cross-fade content within them. (This is a perceptual invariant, not an aesthetic one — animated layout shifts read as render bugs.)
 
-7. **Branding fields available:** \`productName\`, \`accentColor\`, \`bgColor\`, \`textColor\`, \`fontFamily\`, \`logoUrl\`, \`websiteUrl\` (string | null), \`accentSecondary\` (string | undefined), \`radius\` (number | undefined, defaults to 14). Nothing else exists on \`branding\`.
+8. **Smooth motion floors** (perceptual, not aesthetic):
+   - **12 frames minimum** for any opacity / position interpolate. \`interpolate(f, [0, 4], [0, 1])\` snaps; use \`[0, 12]\` or wider.
+   - **Spring damping 14-18** typically. Below 10 the spring oscillates visibly.
+   - **Ambient pulses on \`Math.sin(f / 14-22)\`** for ~3-5s cycles. \`f / 6\` reads nervous.
+   - Stagger entries 6-12 frames apart, not all at frame 0.
+   - Hard \`(f%30)<15\` step blinks: OK on a tiny cursor caret or live-indicator dot, distracting on anything bigger — use the smooth \`opacity: 0.6 + 0.4 * Math.sin(f/14)\` form for big elements.
 
-8. **Layout stability — entries NEVER displace siblings.** Reserve the full layout from frame 0; animate ONLY \`opacity\` and \`transform\` (those don't affect layout). Never animate \`width\` / \`height\` / \`padding\` / \`margin\`. Never use conditional \`{cond && <div>}\` for elements that mount mid-scene. Pre-allocate slots; cross-fade content within them.
+9. **Tailwind className for static styling, inline \`style={{}}\` for animated values.** Twind is installed; every Tailwind utility works at runtime. \`fontFamily\` inline is fine when typography is the move.
 
-9. **Tailwind className for static styling, inline \`style={{}}\` only for animated values.** Twind is installed; every Tailwind utility works at runtime.
+10. **Inline \`<svg>\` is allowed** when you need shapes / paths / curves the icon set or absolute-positioned divs can't express. **Always include \`viewBox\`** — viewBox-less SVGs collapse to 0×0 and are rejected by the lint. For simple icons prefer \`Remotion.Icons.X\` (the lucide catalog is 1500+ icons exposed via Proxy); \`Sparkles\` is banned (cliché).
 
-10. **Code length: HARD CAP 9000 characters.** The compiler rejects anything longer.`
+11. **Code length cap: 15000 characters.** The compiler rejects anything longer.`
 
 const MOCK_HELPERS_REFERENCE = `Available React: \`React.useMemo\`, \`React.Fragment\`. Don't use \`React.useEffect\` — frames re-render fresh.
 
@@ -1205,55 +1218,97 @@ Animation idioms (steal these — all SMOOTH by construction):
 
 **Typography: Geist by default — NEVER set fontFamily inline.** The bundle ships Geist Sans as the default for every Tailwind \`text-*\` className. DO NOT override with \`fontFamily: 'ui-monospace, ...'\`. Use \`font-mono\` className ONLY for actual code, URLs, or terminal lines. Never for prose, chat bubbles, or headings.
 
-**Icons: never \`Sparkles\`** (banned cliché). Use \`Cpu\` / \`Workflow\` / \`Atom\` / \`CircuitBoard\` / \`Layers\` / \`Boxes\` for AI moments. \`BarChart3\` / \`TrendingUp\` / \`LineChart\` for analytics.
+**Icons: avoid \`Sparkles\`** (overused cliché). Use \`Cpu\` / \`Workflow\` / \`Atom\` / \`CircuitBoard\` / \`Layers\` / \`Boxes\` for AI moments. \`BarChart3\` / \`TrendingUp\` / \`LineChart\` for analytics.
 
-# 2026 modern aesthetic — restraint + texture
+# Creative latitude — the default
 
-This is the section that separates "branded SaaS template" from "modern marketing video". The references above show ONE acceptable shape per mode; the visual TREATMENT below is what makes them feel current. Apply it on top of the assigned mode.
+You have full creative latitude on visuals. The video canvas is painted \`branding.bgColor\` and the outer AbsoluteFill stays transparent; everything below the outer is yours. That includes:
 
-## RESTRAINT — accent is a punch, not a wash
+- **Any palette.** Saturated, dark, monochrome, neon, oversaturated, glitchy. Multiple elements in accent color is fine when the brief calls for it ("controls everything", "data flooding in", "the void"). Restraint is one option among many — not the default.
+- **Any background.** Pure black, gradient, conic, mesh, particle field, video frame, scanline overlay. Paint it on a CHILD div (the outer must stay transparent — that's a runtime invariant, not an aesthetic one).
+- **Any glow intensity.** \`boxShadow: 0 0 80px \${accent}\` is fine for cinematic focal elements. The "subtle 22 alpha" cap was a default-mode taste; push it when the scene calls for it.
+- **Inline SVG** for paths, curves, organic shapes the icon set can't express. Always include \`viewBox\`.
+- **Inline \`fontFamily\`** when typography is part of the visual move (display serif for editorial, mono for noir, condensed sans for brutalist).
+- **Dark mock interiors** independent of the canvas color. The "match canvas bgColor" rule was for clean SaaS product-tour scenes; surreal / noir / cinematic pieces routinely have dark interiors on a light canvas (or vice versa).
 
-Past renders had \`accentColor\` on the bg gradient + the border + the number + the dot + the button + the icon — every element competing for attention, the result reads "branded" not "designed". Modern marketing video aesthetics (Linear 2026, Vercel, Stripe, Arc, Cursor, Raycast) use accent SPARINGLY: **1, maximum 2 elements per scene get full accent saturation; everything else is neutral**.
+The only constraints are the **technical invariants** above (function name, transparent outer, layout stability, smooth-motion floors). Everything visual is yours to compose.
 
-Concrete rules:
-- **Maximum 2 accent-colored elements per scene.** Pick the focal element (the hero number, the CTA button, the middle node of a flow, the user chat bubble) — that gets full \`branding.accentColor\`. One small supporting hint (a tiny dot indicator, a thin accent line under a number, an icon) can also use accent. Everything else: zinc / white / black.
-- **Mock interiors MUST match the canvas \`branding.bgColor\`.** The video canvas is painted \`branding.bgColor\` (usually white). When you fill the inside of a \`<Remotion.MockFrame>\` or any visible surface, default to white / zinc-50 to match. A dark panel (\`#18181b\`, \`#09090b\`, \`bg-zinc-900\`) on a white canvas looks like a render glitch — a black box glued onto the design. Dark interiors are reserved ONLY for: (a) actual code editors / terminals where the dark theme IS the product UI being demoed, and (b) the rare style-seed that explicitly calls for a dark video (which inverts \`branding.bgColor\` — check it before assuming). When in doubt, white.
-- **Outer cards / containers: NEUTRAL.** Use \`bg-white\` or \`bg-zinc-50\`, \`border border-zinc-200/80\`. NOT accent-tinted backgrounds (\`linear-gradient(..., \${accent}15, ...)\` is banned on container cards — only the SINGLE focal card may have an accent tint, and even then prefer \`\${accent}08\` not \`\${accent}15\`).
-- **Borders: zinc, not accent.** \`border-zinc-200/70\` or \`border-zinc-100\`. Reserve accent borders for the ONE focal card.
-- **Glows: subtle.** \`boxShadow: 0 8px 32px \${accent}22\` is the upper bound. NOT \`\${accent}55\` / \`\${accent}77\`. Past renders had glows so heavy they bled into adjacent cards.
-- **Secondary text: zinc-600/500 not accent.** Eyebrow labels \`text-zinc-500\`, body \`text-zinc-700\`, supporting captions \`text-zinc-500\`. Only headline-level focal text gets accent (and only if it's the ONE focal element).
-- **Pills / status badges:** prefer \`Remotion.Pill tone='success'\` / \`'muted'\` (zinc-toned). Reserve \`tone='accent'\` for ONE pill per scene.
+When the brief / style seed calls for a clean SaaS product-tour video specifically, fall back to the restraint guide injected separately. Otherwise: make the piece you'd want to watch.`
 
-Mental check before shipping: count the accent-colored elements in your scene. If it's > 2, strip the supporting ones to zinc.
+/** Optional restraint guide — opt-in via the style seed. Surfaced ONLY
+ *  when the seed signals a clean SaaS product-tour aesthetic. The
+ *  default prompt now leans creative; this block is what brings the
+ *  Linear / Vercel / Stripe quiet-design vocabulary back when the
+ *  scene calls for it. */
+const RESTRAINT_GUIDE = `## Restraint guide — applies because the style seed asks for it
 
-## TEXTURE + DEPTH — what makes 2026 feel modern
+The style seed for this video signals a clean SaaS product-tour aesthetic. Lean restrained:
 
-Modern compositions feel layered without being noisy. Specific moves to lean on:
+**Accent is a punch, not a wash.** Modern marketing videos (Linear 2026, Vercel, Stripe, Arc, Cursor, Raycast) use accent SPARINGLY: 1, maximum 2 elements per scene get full accent saturation; everything else stays neutral.
 
-- **Subtle dot grid backdrop** on cards (or behind hero stats): a low-opacity radial dot pattern via \`background: radial-gradient(circle, #18181b08 1px, transparent 1px); backgroundSize: 24px 24px\`. Almost invisible but adds dimension. Use on the inside of large cards.
-- **Glass / frosted highlights:** floating element on top of layered cards with \`backdrop-filter: blur(12px); background: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.7)\`. ONE per scene max. Reads premium. **Never put text directly on / over a backdrop-filter element** — Chromium rasterizes the blurred layer and the text on top inherits the same compositing path, reading as "slightly hazy". Glass goes on a *background* surface, not under copy.
-- **Conic / multi-stop gradients on the focal element only:** \`background: conic-gradient(from 220deg at 50% 50%, \${accent}, #18181b 60%, \${accent})\` — used as a 1px gradient border on a single hero card via the \`padding: 1px; border-radius: 16px\` trick (place a white card inside).
-- **Inner shadow on big numbers:** \`textShadow: 0 1px 0 rgba(0,0,0,0.06)\` (not accent glow). Feels carved-in, premium.
-- **Layered translucent surfaces:** card on top of card with \`bg-white/70 backdrop-blur-sm\`. The lower layer shows through subtly.
-- **Asymmetric balance:** off-center hero (focal element at 35-45% rather than dead center). One side denser, other side breathes.
-- **3D transforms (perspective + rotate) — use sparingly on text-heavy scenes.** The bento mode's tilt looks magazine-grade, but Chromium rasterizes 3D-transformed layers to a texture before projecting, which softens fine type. Keep tilts on bento (where the tradeoff is worth it for the layered-card aesthetic) but AVOID them on hero-stat / chart / chat where the focal element is text or thin chart strokes — those modes look much sharper with no perspective.
-- **Mixed type weights with extreme contrast:** tiny eyebrow \`text-[10px] font-bold tracking-[0.2em] uppercase text-zinc-500\` paired with massive hero \`text-[120px] font-black tracking-tighter\`. The size jump is what reads as "magazine cover".
-- **Lower contrast palette:** zinc-700 for body (not zinc-900). zinc-100 for secondary surfaces (not pure white). zinc-200 for borders. Only the focal element pops in zinc-900 / accent.
-- **Generous whitespace:** \`p-8\` to \`p-12\` on outer cards, \`gap-5\` to \`gap-8\` between elements. Space says "designed", crammed says "form".
-- **Soft thin shadows, NOT layered drops:** \`shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px -4px rgba(0,0,0,0.06)\`. Not the 2010-era \`shadow-2xl\` triple-stack with accent halos.
-- **Number / unit hierarchy:** \`92\` huge in zinc-900, \`%\` smaller in zinc-400. Or \`240\` huge with \`ms\` tiny in zinc-500 next to it. Makes data feel typeset.
-- **Single bright moment:** ONE element does something striking (a counter ticking + glow, a chart line drawing in, a pill flashing) — and the rest of the scene is calm support. Don't make 4 elements all "do something".
+- **Max 2 accent-colored elements.** Pick the focal element (hero number, CTA button, middle node of a flow, user chat bubble) — that gets full \`branding.accentColor\`. One small supporting hint can also use accent. Everything else: zinc / white / black.
+- **Mock interiors match the canvas \`branding.bgColor\`.** Default to white / zinc-50 inside a MockFrame. Dark interiors only for actual code editors / terminals.
+- **Outer cards: NEUTRAL.** \`bg-white\` or \`bg-zinc-50\`, \`border border-zinc-200/80\`. Reserve accent tint for the ONE focal card, and even there prefer \`\${accent}08\` over \`\${accent}15\`.
+- **Borders: zinc, not accent.** \`border-zinc-200/70\` or \`border-zinc-100\`.
+- **Glows subtle.** \`boxShadow: 0 8px 32px \${accent}22\` upper bound under restraint mode.
+- **Body text \`text-zinc-700\`, secondary \`text-zinc-500\`.** Only the ONE focal title gets accent.
+- **Pills: prefer \`tone='success'\` / \`'muted'\`.** Reserve \`tone='accent'\` for ONE pill per scene.
 
-Anti-pattern reference: 2018 SaaS dashboard mockup energy = pastel gradients on every card, accent borders on every card, drop shadows everywhere, "vibrant" everywhere, equal visual weight on every element. **You're not making a 2018 dashboard.** You're making a 2026 marketing video. Restraint > maximalism.`
+**Texture cues that read modern under restraint:**
+- Subtle dot-grid backdrop on a card (\`background: radial-gradient(circle, #18181b08 1px, transparent 1px); backgroundSize: 24px 24px\`).
+- Glass / frosted layer on a background surface (NOT under copy — Chromium hazes the text).
+- Conic gradient as a 1px hero-card border (padding:1px trick).
+- Asymmetric balance (focal at 35-45%, not dead center).
+- Mixed type weights: tiny eyebrow + huge hero number.
+- Generous whitespace (\`p-8\`–\`p-12\`, \`gap-5\`–\`gap-8\`).
+- Soft thin shadows: \`shadow: 0 1px 2px rgba(0,0,0,0.04), 0 4px 16px -4px rgba(0,0,0,0.06)\`. Not the 2010-era multi-layer drop with accent halo.
+
+Mental check before shipping: count the accent-colored elements. If > 2, strip the supporting ones to zinc.`
+
+/** Heuristic: does this style seed signal a clean SaaS product-tour
+ *  aesthetic that should invoke the restraint guide?
+ *
+ *  We deliberately keep this list narrow — false positives are worse
+ *  than false negatives. Calling restraint mode on a "brutalist /
+ *  cinematic / surreal" seed re-gags the designer; missing it on a
+ *  plain "product-tour" seed just means the designer composes free.
+ *  The known catalog labels that map to clean-SaaS are listed by
+ *  exact match; for free-text seeds we look for an explicit "clean
+ *  SaaS / product-tour / minimalist / Linear-style" cue. */
+const RESTRAINT_LABELS = new Set([
+  'editorial',
+  'product-tour',
+  'metric-driven',
+  'process-flow',
+  'brand-first',
+  'data-density',
+])
+function styleSeedAsksForRestraint(label: string, brief: string): boolean {
+  if (RESTRAINT_LABELS.has(label.toLowerCase())) return true
+  const blob = `${label} ${brief}`.toLowerCase()
+  // Narrow keyword set — only fires on explicit clean-SaaS cues. Words
+  // like "minimal" can appear in surreal briefs too, so they're not
+  // alone enough to flip restraint mode.
+  const cues = [
+    'clean saas', 'product tour', 'product-tour', 'linear-style',
+    'vercel-style', 'stripe-style', 'minimalist saas', 'restrained',
+    'clean dashboard', 'professional saas',
+  ]
+  return cues.some((c) => blob.includes(c))
+}
 
 interface BuildSceneMockPromptArgs {
   scene: { headline: string; voiceover: string; subhead?: string; durationSeconds: number }
   mode: SceneMode
   productName: string
-  /** Pre-fab style seed direction. Steers the visual language
-   *  (editorial, high-contrast, etc.) WITHOUT overriding the assigned
-   *  mode. Empty string when no seed picked. */
+  /** Pre-fab style seed direction (the brief text). Steers the visual
+   *  vocabulary across all scenes. Empty string when no seed picked. */
   styleSeed: string
+  /** Style seed label (e.g. "editorial", "brutalist", or the first
+   *  40 chars of a free-text seed). Used as one input to
+   *  `styleSeedAsksForRestraint` — the label match is the strong
+   *  signal, free-text keyword check is the soft one. */
+  styleSeedLabel: string
   /** Architect-written brief naming exact elements / numbers / motion
    *  for THIS scene. Empty string when the architect didn't provide
    *  one (older manifest, model dropped the field) — designer falls
@@ -1267,13 +1322,21 @@ interface BuildSceneMockPromptArgs {
 }
 
 function buildSceneMockPrompt(args: BuildSceneMockPromptArgs): string {
-  const { scene, mode, productName, styleSeed, visualBrief, framing } = args
+  const { scene, mode, productName, styleSeed, styleSeedLabel, visualBrief, framing } = args
   const frameCount = Math.round(scene.durationSeconds * 30)
   const idioms = ANIMATION_IDIOMS
     .replace('<DURATION>', String(scene.durationSeconds))
     .replace('<FRAMES>', String(frameCount))
   const styleSeedBlock = styleSeed
     ? `\n## Style direction for this video\n\n${styleSeed}\n\nThis is a vibe nudge, not a constraint — the brief is still the spec.\n`
+    : ''
+  // Restraint guide is opt-in. The default prompt now leans creative
+  // (any palette, any glow, any background, inline svg / fontFamily
+  // OK). Restraint mode comes back ONLY when the style seed asks for
+  // a clean SaaS product-tour aesthetic. Surreal / cinematic /
+  // brutalist / dark-canvas pieces stay free.
+  const restraintBlock = styleSeedAsksForRestraint(styleSeedLabel, styleSeed)
+    ? `\n${RESTRAINT_GUIDE}\n`
     : ''
   const framingBlock = framing
     ? `\n## Cadrage override\n\nThe architect picked **${framing}** as the cadrage for this scene — override the mode's default frame choice. Compose the scene inside the matching cadrage:\n- **browser** → \`<Remotion.MockFrame url='…' tone='light'>\` wrapper.\n- **mobile** → write a phone-shape wrapper inline (rounded radius 36-44, thin top notch, ~9:19 aspect).\n- **terminal** → write a terminal wrapper inline (dark panel #0B0B0F, 3 traffic dots, monospace text).\n- **fullbleed** → NO frame. Hero typography or full-canvas color blocks. Magazine-cover composition.\n- **split** → divide the canvas into two via flex, no outer frame; each side is its own composition.\n`
@@ -1346,7 +1409,7 @@ ${MOCK_HELPERS_REFERENCE}
 ## Sustained motion + animation idioms
 
 ${idioms}
-
+${restraintBlock}
 ## Output
 
 Return ONLY the raw TSX — no markdown fences, no explanation, no surrounding prose. Your output is fed directly to esbuild. The first character of your response should be \`f\` (start of \`function MockScene\`) or \`c\` (start of \`const MockScene =\`).`
@@ -1439,6 +1502,7 @@ export async function regenerateSceneMockCode(args: {
     mode,
     productName: args.productName,
     styleSeed: seed.brief,
+    styleSeedLabel: seed.label,
     visualBrief: args.scene.visualBrief ?? '',
     framing: args.scene.framing ?? '',
   })
@@ -1522,9 +1586,9 @@ Past videos converged on the SAME trio across totally different products: \`flow
 
 **Reminder on richness:** every brief — even on abstract modes — names AT LEAST ONE supporting visual element beyond the text (motif, gradient, sparkline, parallax, geometric shape, animated indicator). A brief that says only "headline X with subhead Y" is incomplete; add the motif. The designer can't add visual richness if the brief doesn't request it.
 
-**Reminder on restraint (2026 aesthetic):** each scene gets ONE focal element with the brand accent — the hero number, the CTA button, the user chat bubble, the middle node of a flow. Every other element stays neutral (zinc / white / black). Briefs that ask for "accent gradient bg + accent border + accent number + accent button" produce 2018-era branded mockups, not 2026 marketing video. When you write the brief, name the single focal element AND explicitly call out that supporting elements are zinc/neutral. Modern marketing video is restrained; let the eye land on ONE point of color per scene.
+**On palette + intensity** — match the brief to the style seed. If the seed asks for clean SaaS / Linear-style restraint, write briefs that lean restrained (one focal accent on a neutral card, zinc supporting elements). If the seed asks for cinematic / brutalist / surreal / dark / saturated, write briefs that match — multiple accents, dark backgrounds, oversized glows, saturated palettes are all fine when they serve the idea. The designer follows your brief literally; if you write "one focal accent on a neutral card", they build that even when the seed wanted Black Mirror void. Be deliberate about which intensity you want and SAY IT in the brief.
 
-**Texture cues (steal these in briefs when they fit):** subtle dot-grid backdrop on a card · frosted/glass element layered on top · low-contrast palette (zinc-700 body, zinc-900 only for the focal title) · asymmetric balance (focal at 35-45% not dead-center) · mixed type weights (tiny eyebrow + huge hero number) · soft thin shadows (not heavy multi-layer drops) · generous whitespace.`
+**Texture cues — pick whichever fit the seed:** for clean briefs — subtle dot-grid backdrop on a card · frosted/glass layered on top · low-contrast palette (zinc-700 body) · soft thin shadows · generous whitespace. For dramatic / cinematic briefs — saturated palette · heavy multi-layer glows · scanline / noise overlay · vignette · oversized hero typography · asymmetric off-balance composition. Mixed type weights (tiny eyebrow + huge hero number) work in both directions.`
     : `**Visuals = SCREENSHOTS.** Every scene MUST have \`screenshotIndex\` set to a real doc screenshot index (0..${Math.max(0, input.availableScreenshots - 1)}). If a scene has no relevant screenshot, set \`screenshotIndex: null\` and the renderer shows an accent gradient placeholder. Do NOT output \`visualMode\` or \`visualBrief\` in screenshots mode.`
 
   return `You are writing the SKELETON of a 45-second marketing video script for a SaaS product feature.
@@ -1800,6 +1864,7 @@ export async function generateMarketingScript(
         mode: resolvedModes[i] ?? resolvedModes[0]!,
         productName: input.productName,
         styleSeed: styleSeedBrief,
+        styleSeedLabel: resolvedSeed.label,
         visualBrief: scene.visualBrief ?? '',
         framing: scene.framing ?? '',
       }).catch((err) => {
