@@ -109,3 +109,28 @@ export async function updateActiveSubscriptionPlan(ownerUserId: string, teamId: 
   if (error) throw new DatabaseError(error.message)
   return mapToSubscription(data as SubscriptionRow)
 }
+
+/**
+ * Look up the email of the team owner (teams.created_by → profiles.email).
+ * Returns null when the team is missing or the owner has no profile row yet.
+ * Used to short-circuit quota enforcement for admin-owned teams — admins
+ * defined in `ADMIN_EMAILS` get unlimited usage so dogfooding never hits
+ * the same hard cap as paying users.
+ */
+export async function findTeamOwnerEmail(teamId: string): Promise<string | null> {
+  const { data: team, error: teamErr } = await supabase
+    .from('teams')
+    .select('created_by')
+    .eq('id', teamId)
+    .single()
+  if (teamErr || !team) return null
+  const ownerId = (team as { created_by: string | null }).created_by
+  if (!ownerId) return null
+  const { data: profile, error: profErr } = await supabase
+    .from('profiles')
+    .select('email')
+    .eq('id', ownerId)
+    .single()
+  if (profErr || !profile) return null
+  return (profile as { email: string | null }).email
+}

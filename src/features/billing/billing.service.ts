@@ -2,7 +2,28 @@ import { NotFoundError } from '../../shared/middleware/error.middleware.js'
 import * as billingRepo from './billing.repository.js'
 import { findTeamById } from '../team/team.repository.js'
 import { listUsageForCurrentMonth } from '../../shared/usage/usage.repository.js'
+import { isAdminEmail } from '../../shared/config/env.js'
 import type { BillingSummary, Plan, PlanId, UsageSnapshot } from './billing.types.js'
+
+/**
+ * True when the team is owned by an email in `ADMIN_EMAILS`. Admin-owned
+ * teams bypass every monthly quota — operators dogfood the product on
+ * the same plans paying users have, and we don't want them to hit the
+ * Free / Founder hard cap on their own account.
+ *
+ * Lookup is one JOIN (teams.created_by → profiles.email). Failures are
+ * logged and treated as "not admin" so a profile-row glitch never
+ * accidentally upgrades a regular user.
+ */
+export async function isAdminTeam(teamId: string): Promise<boolean> {
+  try {
+    const email = await billingRepo.findTeamOwnerEmail(teamId)
+    return isAdminEmail(email)
+  } catch (err) {
+    console.warn(`[billing/admin-bypass] lookup failed for team ${teamId}: ${(err as Error).message}`)
+    return false
+  }
+}
 
 export async function listPlans(): Promise<Plan[]> {
   return billingRepo.listPlans(MAX_TEAM_MEMBERS)
@@ -66,11 +87,12 @@ function pctOf(tokens: number, budget: number): number {
 }
 
 export async function getSummary(ownerUserId: string, teamId: string): Promise<BillingSummary> {
-  const [plans, subscription, counters, team] = await Promise.all([
+  const [plans, subscription, counters, team, adminBypass] = await Promise.all([
     billingRepo.listPlans(MAX_TEAM_MEMBERS),
     billingRepo.ensureFreeSubscription(ownerUserId, teamId),
     listUsageForCurrentMonth(teamId),
     findTeamById(teamId),
+    isAdminTeam(teamId),
   ])
   const plan = plans.find((p) => p.id === subscription.planId)
   if (!plan) throw new NotFoundError('Plan')
@@ -84,10 +106,13 @@ export async function getSummary(ownerUserId: string, teamId: string): Promise<B
     counters.marketing_video * TOKEN_COSTS.marketing_video
 
   const overageEnabled = OVERAGE_ENABLED_PLANS.has(plan.id)
+  // Admin teams: report 0 % so the UI never shows a half-full bar that
+  // doesn't actually gate anything. `allowed` is forced true to mirror
+  // what `checkQuota` returns for the same team.
   const snapshot: UsageSnapshot = {
-    percent: pctOf(tokensUsed, plan.monthlyTokens),
+    percent: adminBypass ? 0 : pctOf(tokensUsed, plan.monthlyTokens),
     periodMonth: currentPeriodMonth(),
-    allowed: overageEnabled || tokensUsed < plan.monthlyTokens,
+    allowed: adminBypass || overageEnabled || tokensUsed < plan.monthlyTokens,
     overageEnabled,
   }
   return {
@@ -117,15 +142,22 @@ export interface QuotaCheck {
  * Accepts a teamId since subscriptions are team-scoped post-teams migration.
  */
 export async function checkQuota(teamId: string): Promise<QuotaCheck> {
-  const [plans, subscription, counters] = await Promise.all([
+  const [plans, subscription, counters, adminBypass] = await Promise.all([
     billingRepo.listPlans(MAX_TEAM_MEMBERS),
     billingRepo.findActiveSubscriptionByTeam(teamId),
     listUsageForCurrentMonth(teamId),
+    isAdminTeam(teamId),
   ])
 
   // Every team should have an active subscription (created by the signup
-  // trigger or createTeam). If not, treat as blocked to be safe.
+  // trigger or createTeam). If not, treat as blocked to be safe — UNLESS
+  // the team is admin-owned, in which case we still let the op through
+  // (operators may dogfood on freshly-minted teams before the trigger
+  // backfills a Free subscription).
   if (!subscription) {
+    if (adminBypass) {
+      return { allowed: true, percent: 0, planId: 'free', monthlyTokens: 0, tokensUsed: 0, overageEnabled: true }
+    }
     return { allowed: false, percent: 100, planId: 'free', monthlyTokens: 0, tokensUsed: 0, overageEnabled: false }
   }
 
@@ -141,7 +173,11 @@ export async function checkQuota(teamId: string): Promise<QuotaCheck> {
 
   const percent = pctOf(tokensUsed, plan.monthlyTokens)
   const overageEnabled = OVERAGE_ENABLED_PLANS.has(plan.id)
-  const allowed = overageEnabled || tokensUsed < plan.monthlyTokens
+  // Admin emails listed in `ADMIN_EMAILS` always pass — same plan as
+  // any other user, but the hard cap is lifted so dogfooding doesn't
+  // 402 on production. We still report the real percent so the UI can
+  // show how much they'd be using if they were on this plan for real.
+  const allowed = adminBypass || overageEnabled || tokensUsed < plan.monthlyTokens
 
   return {
     allowed,
