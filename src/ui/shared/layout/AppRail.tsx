@@ -1,41 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { createPortal } from 'react-dom'
-import { useAuth } from '../hooks/useAuth.js'
 import { useTheme } from '../hooks/useTheme.js'
 import { AvatarMenu } from './AvatarMenu.js'
+import { useFeedback } from './FeedbackModal.js'
 import styles from './AppRail.module.css'
-
-const FEEDBACK_EMBED_BASE =
-  'https://grave-clutch-91b.notion.site/ebd/4f758e66cecd42048cb9f6709d69fb74'
 
 export function AppRail(): React.ReactElement {
   const location = useLocation()
   const { theme, toggle } = useTheme()
-  const { user } = useAuth()
+  const feedback = useFeedback()
   const isHome = location.pathname === '/'
-  const [feedbackOpen, setFeedbackOpen] = useState(false)
-
-  const feedbackUrl = useMemo(() => {
-    const email = user?.email
-    if (!email) return FEEDBACK_EMBED_BASE
-    const params = new URLSearchParams({ Email: email })
-    return `${FEEDBACK_EMBED_BASE}?${params.toString()}`
-  }, [user?.email])
-
-  useEffect(() => {
-    if (!feedbackOpen) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setFeedbackOpen(false)
-    }
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('keydown', onKey)
-      document.body.style.overflow = prevOverflow
-    }
-  }, [feedbackOpen])
 
   return (
     <aside className={styles.rail}>
@@ -65,7 +38,7 @@ export function AppRail(): React.ReactElement {
         <button
           type="button"
           className={styles.feedbackButton}
-          onClick={() => setFeedbackOpen(true)}
+          onClick={feedback.open}
           aria-label="Give us feedback"
           title="Give us feedback"
         >
@@ -101,42 +74,6 @@ export function AppRail(): React.ReactElement {
         </button>
         <AvatarMenu />
       </div>
-
-      {feedbackOpen
-        ? createPortal(
-            <div
-              className={styles.modalBackdrop}
-              role="dialog"
-              aria-modal="true"
-              aria-label="Give us feedback"
-              onClick={() => setFeedbackOpen(false)}
-            >
-              <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-                <div className={styles.modalHeader}>
-                  <span className={styles.modalTitle}>Give us feedback</span>
-                  <button
-                    type="button"
-                    className={styles.modalClose}
-                    onClick={() => setFeedbackOpen(false)}
-                    aria-label="Close"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-                <iframe
-                  src={feedbackUrl}
-                  title="Doclee feedback form"
-                  className={styles.modalIframe}
-                  allowFullScreen
-                />
-              </div>
-            </div>,
-            document.body
-          )
-        : null}
     </aside>
   )
 }
