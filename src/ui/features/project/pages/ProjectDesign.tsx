@@ -207,7 +207,7 @@ export function ProjectDesign(): React.ReactElement {
               <input
                 ref={logoInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg,image/webp"
                 onChange={(e) => void handleLogoUpload(e)}
                 hidden
               />
