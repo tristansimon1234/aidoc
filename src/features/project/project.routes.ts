@@ -125,6 +125,14 @@ projectRouter.post('/analyze-url', (req: Request, res: Response, next: NextFunct
 
       // Single Gemini call — product info + design
       const { generateText } = await import('../../shared/ai/gemini.client.js')
+      // Surface the allowlist to the model so the auto-fill picks from the
+      // curated catalog instead of inventing a font name. Sanitization
+      // downstream still drops anything that escapes the prompt — defence
+      // in depth — but a constrained prompt produces clean output the
+      // user actually sees on their dashboard.
+      const { GOOGLE_FONTS } = await import('../../shared/design/fonts.js')
+      const fontList = GOOGLE_FONTS.map((f) => f.googleName).filter(Boolean).join(', ')
+
       const result = await generateText({
         userPrompt: `Analyze this website. Return ONLY valid JSON.
 
@@ -136,15 +144,16 @@ ${info}
   "audience": "1 sentence, max 15 words",
   "workflow": "1 sentence, max 15 words",
   "design": {
-    "accentColor": "#hex — the PRIMARY brand color (buttons, CTAs, links). If unknown, pick a color that matches the brand's industry. NEVER return null — always provide a valid hex.",
-    "bgColor": "#hex — page background. Default #FFFFFF if unknown.",
-    "textColor": "#hex — body text. Default #1A1A1A if unknown.",
-    "font": "font name. Default 'Inter' if unknown."
-  },
+    "accentColor": "#RRGGBB — the PRIMARY brand color (buttons, CTAs, links). If unknown, pick a color that matches the brand's industry. NEVER return null — always provide a valid 6-char hex starting with #.",
+    "bgColor": "#RRGGBB — page background. Default #FFFFFF if unknown.",
+    "textColor": "#RRGGBB — body text. Default #1A1A1A if unknown.",
+    "font": "Google Font name from this exact list (case-sensitive): ${fontList}. Pick the closest match to the brand's actual font, or 'Inter' if unknown."
+  }
 }
 
 RULES:
-- ALL design values must be valid hex (no null). Guess from the brand if needed.
+- All color values MUST be 6-char hex \`#RRGGBB\` (uppercase preferred). No rgb(), hsl(), named colors, or alpha.
+- font MUST be one of the listed names, exactly. No other strings.
 - Keep text values SHORT.
 - Return ONLY raw JSON, no markdown fences.`,
         maxTokens: 2048,
@@ -164,13 +173,24 @@ RULES:
         analysis = JSON.parse(jsonStr) as typeof analysis
       } catch { console.warn('[analyze-url] JSON parse failed') }
 
-      // Ensure design has no null values — fallback to defaults
+      // Sanitize what the AI returns BEFORE handing it back to the
+      // client: hex colors only (normalize 3-char / unprefixed / case
+      // drift, fall back to a safe default on invalid), font name must
+      // match the curated allowlist (else fall back to System). This
+      // closes the obvious vector — AI hallucinates `rgba(...)`, a
+      // CSS expression, or an unknown Google Font — without rejecting
+      // the whole analysis. The result is also re-validated by
+      // `DesignSchema` when the client POSTs it back.
       if (analysis.design) {
+        const { normalizeHex } = await import('../../shared/design/colors.js')
+        const { findGoogleFont, DEFAULT_FONT } = await import('../../shared/design/fonts.js')
+        const namedFont = analysis.design.font?.trim()
+        const matchedFont = namedFont ? findGoogleFont(namedFont) : null
         analysis.design = {
-          accentColor: analysis.design.accentColor || '#2563EB',
-          bgColor: analysis.design.bgColor || '#FFFFFF',
-          textColor: analysis.design.textColor || '#1A1A1A',
-          font: analysis.design.font || '',
+          accentColor: normalizeHex(analysis.design.accentColor) ?? '#2563EB',
+          bgColor: normalizeHex(analysis.design.bgColor) ?? '#FFFFFF',
+          textColor: normalizeHex(analysis.design.textColor) ?? '#1A1A1A',
+          font: matchedFont?.cssValue ?? DEFAULT_FONT.cssValue,
         }
       }
 

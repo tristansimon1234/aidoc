@@ -400,20 +400,30 @@ export function PublicDocs(): React.ReactElement {
     if (projectId) navigate(`/docs/${projectId}/${page.slug}`, { replace: true })
   }, [navigate, projectId])
 
-  // Load Google Font if the design uses a custom font
+  // Load the Google Font matching the stored design.font, if any. We
+  // resolve the CSS family value against the curated allowlist
+  // (src/shared/design/fonts.ts) — anything that doesn't match (legacy
+  // data, hand-edited DB row) silently no-ops instead of hitting an
+  // attacker-shaped URL.
   const designFont = project?.design?.font
   useEffect(() => {
     if (!designFont) return
-    const match = designFont.match(/^["']?([^"',]+)/)
-    const fontName = match?.[1]?.trim()
-    if (!fontName || ['system', '-apple-system', 'georgia', 'jetbrains'].some((s) => fontName.toLowerCase().includes(s))) return
-    const id = `gf-${fontName.replace(/\s+/g, '-').toLowerCase()}`
-    if (document.getElementById(id)) return
-    const link = document.createElement('link')
-    link.id = id
-    link.rel = 'stylesheet'
-    link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@300..800&display=swap`
-    document.head.appendChild(link)
+    void (async () => {
+      const { findByCssValue, googleFontStylesheetUrl } = await import('../../../../shared/design/fonts.js')
+      const opt = findByCssValue(designFont)
+      if (!opt?.googleName) return
+      const href = googleFontStylesheetUrl(opt.googleName)
+      if (!href) return
+      const id = `gf-${opt.googleName.replace(/\s+/g, '-').toLowerCase()}`
+      if (document.getElementById(id)) return
+      const link = document.createElement('link')
+      link.id = id
+      link.rel = 'stylesheet'
+      link.href = href
+      link.crossOrigin = 'anonymous'
+      link.referrerPolicy = 'no-referrer'
+      document.head.appendChild(link)
+    })()
   }, [designFont])
 
   if (loading) {
