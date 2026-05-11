@@ -127,8 +127,10 @@ Same shell. Button: `Sign in` → `{{ .ConfirmationURL }}`.
 ## 5 · Smoke test after config
 
 1. Sign up with a fresh email → the confirm email arrives within ~30 s, branded, from `hello@doclee.tech`.
+   *(Note: while the design-partner allowlist is on, the email must be added at `/admin/allowlist` first or the signup is rejected at the DB level.)*
 2. Sign in, sign out, click "Forgot password?" → recovery email arrives, branded. Click → lands on `/auth/reset`, new password flow works.
-3. Create a new team (non-personal), invite a second address → team-invite email arrives (this one is built by our own code in `src/shared/email/templates/invite.ts`, sent through the same Resend account via `src/shared/email/resend.client.ts`).
+3. Create a new team (non-personal), invite a second address → team-invite email arrives (this one is built by our own code in `src/shared/email/templates/invite.ts`, sent through the same Resend account via `src/shared/email/resend.client.ts`). The same call also auto-allowlists the invitee so the signup at step 1 passes.
+4. From `/admin/allowlist`, add a fresh email → welcome email (`src/shared/email/templates/welcome-allowlist.ts`) arrives. Re-adding the same email is a no-op — no duplicate message.
 
 ---
 

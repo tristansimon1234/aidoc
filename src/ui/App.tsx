@@ -17,6 +17,7 @@ import { PublicDocs } from './features/docs/pages/PublicDocs.js'
 import { AnalyticsPage } from './features/analytics/pages/AnalyticsPage.js'
 import { AccountSettings } from './features/account/pages/AccountSettings.js'
 import { AdminUsage } from './features/admin/pages/AdminUsage.js'
+import { AdminAllowlist } from './features/admin/pages/AdminAllowlist.js'
 import { ForgotPassword } from './features/auth/pages/ForgotPassword.js'
 import { ResetPassword } from './features/auth/pages/ResetPassword.js'
 import { AcceptInvite } from './features/team/pages/AcceptInvite.js'
@@ -55,6 +56,7 @@ export function App(): React.ReactElement {
             <Route path="/" element={<ProjectList onSignOut={signOut} />} />
             <Route path="/account" element={<AccountSettings />} />
             <Route path="/admin/usage" element={<AdminUsage />} />
+            <Route path="/admin/allowlist" element={<AdminAllowlist />} />
             <Route path="/projects/new" element={<NewProject />} />
             <Route path="/projects/:projectId" element={<ProjectDetail />}>
               <Route path="pages/new" element={<NewPage />} />

@@ -170,6 +170,21 @@ PRIMARY KEY (project_id, session_token, period_month)
 **RLS**: SELECT `auth.uid() = user_id`. Inserts via service_role only.
 **Purpose**: deduplicates chat sessions (widget + in-app ChatPanel) per calendar month — only the first insert for a (project, token) in a month triggers a `chat_sessions` counter increment. `source` lets us split widget vs app traffic without affecting billing.
 
+### allowed_emails *(provisional — design-partner phase only)*
+```sql
+email      text PK CHECK (email = lower(email))
+note       text                                                  -- free-form context, e.g. "design partner #3"
+created_at timestamptz NOT NULL DEFAULT now()
+created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL
+```
+**RLS**: enabled, no policies (service-role access only).
+**Trigger**: `enforce_email_allowlist()` (BEFORE INSERT on `auth.users`) — rejects any signup whose `lower(new.email)` isn't present, with a `check_violation` error. Catches every signup path (password, magic link, OAuth, Supabase dashboard "invite user") because it fires at the DB level — the app can't bypass it and neither can any future route we forget to update.
+**Purpose**: closed-beta gate while Doclee is in the design-partner phase. Two ways an email lands here:
+1. **Manual** — admin adds via `/admin/allowlist`; a "you're in" welcome email is sent on first add (`shared/email/templates/welcome-allowlist.ts`).
+2. **Auto** — when an allowlisted user invites someone to a team workspace, `team.service.inviteMember` writes the invitee's email here with note `auto: invited to "<teamName>"`. No welcome email — the regular team-invite email already covers it.
+
+**Sunset**: when we open public signups, drop the trigger in a follow-up migration (`DROP TRIGGER enforce_email_allowlist_trigger ON auth.users;`). The table itself can stay as historical record or be dropped — it has no FKs from elsewhere.
+
 ### profiles
 ```sql
 id                 uuid PK REFERENCES auth.users(id) ON DELETE CASCADE
@@ -302,6 +317,8 @@ is_public         boolean NOT NULL DEFAULT false  -- per-page public sharing tog
 | 46 | `20260422000000_mcp_token_scope_and_observability.sql` | Add `scope` / `expires_at` / `last_used_ip` to `mcp_user_tokens` for scoped tokens + observability. |
 | 47 | `20260422000001_hash_mcp_tokens_at_rest.sql` | Hash MCP tokens at rest — add `token_hash` + `preview` columns; app-layer SHA-256. Legacy `token` column kept NOT NULL for transition. |
 | 48 | `20260422000002_extend_jobs_for_exclusive_locks.sql` | Add `triggered_by_user_id` to `jobs`, make `page_id` nullable for project-scoped locks, add UNIQUE `(project_id, type) WHERE status='running' AND page_id IS NULL` for project-scoped exclusivity (indexing). |
+| 49 | `20260429000000_usage_marketing_video.sql` | Extend `usage_counters.feature` enum with `marketing_video`. |
+| 50 | `20260511000000_add_email_allowlist.sql` | **Provisional (design-partner phase).** `allowed_emails` table + BEFORE INSERT trigger on `auth.users` that rejects any signup whose lowercased email isn't on the list. Bootstrap INSERT seeds every existing auth user so no one is locked out. Drop the trigger when public signups open. |
 
 ## `mcp_user_tokens` — user MCP personal access tokens
 

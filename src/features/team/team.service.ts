@@ -146,6 +146,23 @@ export async function inviteMember(teamId: string, callerId: string, email: stri
     role,
   })
 
+  // Auto-allowlist the invitee so the BEFORE INSERT trigger on auth.users
+  // lets them sign up when they click the invite link. Best-effort: don't
+  // fail the invite creation on an allowlist write error. We skip the
+  // welcome email because the team-invite email is already being sent
+  // below — a second message would be redundant.
+  try {
+    const { addAllowedEmail } = await import('../admin/allowlist.service.js')
+    await addAllowedEmail(
+      email.toLowerCase(),
+      `auto: invited to "${team.name}"`,
+      callerId,
+      { sendWelcome: false },
+    )
+  } catch (err) {
+    console.warn(`[team-invite] failed to allowlist ${email}: ${(err as Error).message}`)
+  }
+
   const baseUrl = env.PUBLIC_APP_URL ?? ''
   // Embed the invitee's email in the URL so the accept page can prefill
   // the sign-in / sign-up form. Safe to expose here: the URL only exists
