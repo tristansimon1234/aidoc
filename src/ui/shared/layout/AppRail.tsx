@@ -1,18 +1,27 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { createPortal } from 'react-dom'
+import { useAuth } from '../hooks/useAuth.js'
 import { useTheme } from '../hooks/useTheme.js'
 import { AvatarMenu } from './AvatarMenu.js'
 import styles from './AppRail.module.css'
 
-const FEEDBACK_EMBED_URL =
+const FEEDBACK_EMBED_BASE =
   'https://grave-clutch-91b.notion.site/ebd/4f758e66cecd42048cb9f6709d69fb74'
 
 export function AppRail(): React.ReactElement {
   const location = useLocation()
   const { theme, toggle } = useTheme()
+  const { user } = useAuth()
   const isHome = location.pathname === '/'
   const [feedbackOpen, setFeedbackOpen] = useState(false)
+
+  const feedbackUrl = useMemo(() => {
+    const email = user?.email
+    if (!email) return FEEDBACK_EMBED_BASE
+    const params = new URLSearchParams({ Email: email })
+    return `${FEEDBACK_EMBED_BASE}?${params.toString()}`
+  }, [user?.email])
 
   useEffect(() => {
     if (!feedbackOpen) return
@@ -118,7 +127,7 @@ export function AppRail(): React.ReactElement {
                   </button>
                 </div>
                 <iframe
-                  src={FEEDBACK_EMBED_URL}
+                  src={feedbackUrl}
                   title="Doclee feedback form"
                   className={styles.modalIframe}
                   allowFullScreen
