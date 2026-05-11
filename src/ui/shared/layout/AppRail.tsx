@@ -1,12 +1,32 @@
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { createPortal } from 'react-dom'
 import { useTheme } from '../hooks/useTheme.js'
 import { AvatarMenu } from './AvatarMenu.js'
 import styles from './AppRail.module.css'
+
+const FEEDBACK_EMBED_URL =
+  'https://grave-clutch-91b.notion.site/ebd/4f758e66cecd42048cb9f6709d69fb74'
 
 export function AppRail(): React.ReactElement {
   const location = useLocation()
   const { theme, toggle } = useTheme()
   const isHome = location.pathname === '/'
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+
+  useEffect(() => {
+    if (!feedbackOpen) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setFeedbackOpen(false)
+    }
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [feedbackOpen])
 
   return (
     <aside className={styles.rail}>
@@ -33,11 +53,10 @@ export function AppRail(): React.ReactElement {
       </div>
 
       <div className={styles.bottom}>
-        <a
+        <button
+          type="button"
           className={styles.feedbackButton}
-          href="https://www.notion.so/297dd66a234643a89b34cb97af25ec06?v=35dca64447d781ffa7aa000c94bebcac"
-          target="_blank"
-          rel="noopener noreferrer"
+          onClick={() => setFeedbackOpen(true)}
           aria-label="Give us feedback"
           title="Give us feedback"
         >
@@ -45,7 +64,7 @@ export function AppRail(): React.ReactElement {
             <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
           </svg>
           <span className={styles.feedbackLabel}>Feedback</span>
-        </a>
+        </button>
         <a
           className={styles.docsButton}
           href="https://app.doclee.tech/docs/d8577a1d-b81b-4c0b-b009-25b351a6376a"
@@ -73,6 +92,42 @@ export function AppRail(): React.ReactElement {
         </button>
         <AvatarMenu />
       </div>
+
+      {feedbackOpen
+        ? createPortal(
+            <div
+              className={styles.modalBackdrop}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Give us feedback"
+              onClick={() => setFeedbackOpen(false)}
+            >
+              <div className={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+                <div className={styles.modalHeader}>
+                  <span className={styles.modalTitle}>Give us feedback</span>
+                  <button
+                    type="button"
+                    className={styles.modalClose}
+                    onClick={() => setFeedbackOpen(false)}
+                    aria-label="Close"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+                <iframe
+                  src={FEEDBACK_EMBED_URL}
+                  title="Doclee feedback form"
+                  className={styles.modalIframe}
+                  allowFullScreen
+                />
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </aside>
   )
 }
