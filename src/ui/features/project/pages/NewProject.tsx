@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Shell } from '../../../shared/layout/Shell.js'
-import { Button, ProgressLoader } from '../../../design-system/components/index.js'
+import { Button, ProgressLoader, ColorPicker } from '../../../design-system/components/index.js'
 import { createProject } from '../../../shared/api/db.js'
 import { api } from '../../../shared/api/client.js'
 
@@ -9,6 +9,26 @@ interface Credential {
   label: string
   username: string
   password: string
+}
+
+// Reused as the preset row inside the brand color popovers.
+const BRAND_PALETTE = [
+  '#635BFF', '#2563EB', '#059669', '#E11D48', '#D97706', '#7C3AED', '#0891B2', '#0F172A',
+  '#FFFFFF', '#F8FAFC', '#FFFBF5', '#F0F4F8', '#A1A1AA', '#475569', '#1A1A2E', '#0A0A0A',
+]
+
+/** Brand color row: ColorPicker trigger + the role label beside it. */
+function BrandColorField({ label, value, onChange }: {
+  label: string
+  value: string
+  onChange: (hex: string) => void
+}): React.ReactElement {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+      <ColorPicker value={value} onChange={onChange} presets={BRAND_PALETTE} ariaLabel={`${label} brand color`} />
+      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>{label}</span>
+    </span>
+  )
 }
 
 export function NewProject(): React.ReactElement {
@@ -251,7 +271,10 @@ export function NewProject(): React.ReactElement {
                 </div>
               </div>
 
-              {/* Brand colors — always shown, pre-filled by analysis or defaults */}
+              {/* Brand colors — always shown, pre-filled by analysis or defaults.
+                  Hex is the source of truth: the picker emits it, the text input
+                  accepts it, the chip shows it. normalizeHex keeps the stored
+                  state canonical regardless of which control changed it. */}
               <div style={{
                 borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-md)',
                 marginTop: 'var(--space-xs)',
@@ -259,25 +282,22 @@ export function NewProject(): React.ReactElement {
                 <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
                   Brand colors
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-lg)', flexWrap: 'wrap' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer' }}>
-                    <input type="color" value={design?.accentColor || '#2563EB'}
-                      onChange={(e) => setDesign({ accentColor: e.target.value, bgColor: design?.bgColor || '#FFFFFF', textColor: design?.textColor || '#1A1A1A', font: design?.font || '' })}
-                      style={{ width: 28, height: 28, border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: 0 }} />
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Accent</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer' }}>
-                    <input type="color" value={design?.bgColor || '#FFFFFF'}
-                      onChange={(e) => setDesign({ accentColor: design?.accentColor || '#2563EB', bgColor: e.target.value, textColor: design?.textColor || '#1A1A1A', font: design?.font || '' })}
-                      style={{ width: 28, height: 28, border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: 0 }} />
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Background</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', cursor: 'pointer' }}>
-                    <input type="color" value={design?.textColor || '#1A1A1A'}
-                      onChange={(e) => setDesign({ accentColor: design?.accentColor || '#2563EB', bgColor: design?.bgColor || '#FFFFFF', textColor: e.target.value, font: design?.font || '' })}
-                      style={{ width: 28, height: 28, border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer', padding: 0 }} />
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Text</span>
-                  </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
+                  <BrandColorField
+                    label="Accent"
+                    value={design?.accentColor || '#2563EB'}
+                    onChange={(v) => setDesign({ accentColor: v, bgColor: design?.bgColor || '#FFFFFF', textColor: design?.textColor || '#1A1A1A', font: design?.font || '' })}
+                  />
+                  <BrandColorField
+                    label="Background"
+                    value={design?.bgColor || '#FFFFFF'}
+                    onChange={(v) => setDesign({ accentColor: design?.accentColor || '#2563EB', bgColor: v, textColor: design?.textColor || '#1A1A1A', font: design?.font || '' })}
+                  />
+                  <BrandColorField
+                    label="Text"
+                    value={design?.textColor || '#1A1A1A'}
+                    onChange={(v) => setDesign({ accentColor: design?.accentColor || '#2563EB', bgColor: design?.bgColor || '#FFFFFF', textColor: v, font: design?.font || '' })}
+                  />
                   {design?.font && (
                     <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--color-muted-fg)', background: 'var(--color-secondary)', padding: '2px 8px', borderRadius: 'var(--radius-sm)' }}>
                       {design.font}

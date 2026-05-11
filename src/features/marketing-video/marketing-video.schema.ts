@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { LenientHexColorSchema } from '../../shared/design/colors.js'
+import { isAllowedFontFamily, DEFAULT_FONT } from '../../shared/design/fonts.js'
 
 /** Mirrors MockTone from marketing-video.types.ts. Wrapped in preprocess
  *  so anything Gemini hallucinates ("primary", "highlight", a hex code,
@@ -201,13 +203,24 @@ const MarketingScreenshotSchema = z.object({
   caption: z.string(),
 })
 
+// Hex + font validation lives in the shared design module (imported at
+// the top). The persistence path is synchronous; same source of truth
+// as project settings, the AI auto-fill route, and the manifest editor.
+const ManifestFontFamilySchema = z.preprocess(
+  (v) => (typeof v === 'string' && isAllowedFontFamily(v) ? v : DEFAULT_FONT.cssValue),
+  z.string(),
+)
+
 const MarketingBrandingSchema = z.object({
   productName: z.string(),
-  accentColor: z.string(),
-  bgColor: z.string(),
-  textColor: z.string(),
-  fontFamily: z.string(),
+  accentColor: LenientHexColorSchema,
+  bgColor: LenientHexColorSchema,
+  textColor: LenientHexColorSchema,
+  fontFamily: ManifestFontFamilySchema,
   logoUrl: z.string().nullable(),
+  accentSecondary: LenientHexColorSchema.optional(),
+  radius: z.number().min(0).max(64).optional(),
+  websiteUrl: z.string().nullable().optional(),
 })
 
 /** Partial branding patch — used by the AI edit endpoint where the

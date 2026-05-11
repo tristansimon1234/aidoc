@@ -1,16 +1,25 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { Button } from '../../../design-system/components/index.js'
+import { Button, ColorPicker } from '../../../design-system/components/index.js'
 import { type ProjectDTO, type ProjectDesignDTO } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
+import {
+  ALL_FONTS,
+  SYSTEM_FONTS,
+  GOOGLE_FONTS,
+  findByCssValue,
+  googleFontStylesheetUrl,
+  DEFAULT_FONT,
+} from '../../../../shared/design/fonts.js'
+import { normalizeHex } from '../../../../shared/design/colors.js'
 import styles from './ProjectDesign.module.css'
 
 const DEFAULTS: ProjectDesignDTO = {
   accentColor: '#635BFF',
   bgColor: '#0C0C0E',
   textColor: '#E5E5E5',
-  font: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  font: DEFAULT_FONT.cssValue,
 }
 
 const COLOR_PRESETS = [
@@ -44,30 +53,27 @@ const TEXT_PRESETS = [
   { label: 'Ink', value: '#0A0A0A' },
 ]
 
-const BASE_FONT_OPTIONS = [
-  { label: 'System', value: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', preview: 'System UI' },
-  { label: 'Inter', value: '"Inter", sans-serif', preview: 'Inter' },
-  { label: 'DM Sans', value: '"DM Sans", sans-serif', preview: 'DM Sans' },
-  { label: 'Geist', value: '"Geist", sans-serif', preview: 'Geist' },
-  { label: 'Serif', value: 'Georgia, "Times New Roman", serif', preview: 'Serif' },
-  { label: 'Mono', value: '"JetBrains Mono", "Fira Code", monospace', preview: 'Monospace' },
-]
-
-/** Load a Google Font dynamically by injecting a <link> tag */
+/**
+ * Inject a Google Fonts `<link>` for an allowlisted font name. The URL is
+ * built by `googleFontStylesheetUrl` which (a) checks the name is in our
+ * allowlist and (b) checks it against a strict regex before encoding it
+ * into the path component of `https://fonts.googleapis.com/...`. If both
+ * gates fail it returns null and we don't inject anything — silently
+ * falling back to the CSS family's own fallback chain.
+ */
 function loadGoogleFont(fontName: string): void {
+  const href = googleFontStylesheetUrl(fontName)
+  if (!href) return
   const id = `gf-${fontName.replace(/\s+/g, '-').toLowerCase()}`
   if (document.getElementById(id)) return
   const link = document.createElement('link')
   link.id = id
   link.rel = 'stylesheet'
-  link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName)}:wght@300..800&display=swap`
+  link.href = href
+  // crossorigin + referrerpolicy keep the load private + cache-friendly.
+  link.crossOrigin = 'anonymous'
+  link.referrerPolicy = 'no-referrer'
   document.head.appendChild(link)
-}
-
-/** Extract the primary font family name from a CSS font-family string */
-function extractFontName(fontValue: string): string | null {
-  const match = fontValue.match(/^["']?([^"',]+)/)
-  return match?.[1]?.trim() ?? null
 }
 
 export function ProjectDesign(): React.ReactElement {
@@ -77,39 +83,49 @@ export function ProjectDesign(): React.ReactElement {
   const [design, setDesign] = useState<ProjectDesignDTO>(existing)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [fontQuery, setFontQuery] = useState('')
 
-  // Build font options — include detected brand font if not already in the list
-  const fontOptions = (() => {
-    const options = [...BASE_FONT_OPTIONS]
-    const currentFont = design.font
-    if (currentFont && !options.some((o) => o.value === currentFont)) {
-      const name = extractFontName(currentFont)
-      if (name && !options.some((o) => o.label.toLowerCase() === name.toLowerCase())) {
-        // Add as first option (brand font)
-        options.unshift({
-          label: name,
-          value: currentFont.includes(',') ? currentFont : `"${name}", sans-serif`,
-          preview: name,
-        })
-        loadGoogleFont(name)
-      }
-    }
-    return options
-  })()
+  // Resolve the currently-selected font from the allowlist. When the stored
+  // value doesn't match (legacy data, AI auto-fill that dodged the
+  // sanitizer, manual DB edit) we fall back to the System default for the
+  // UI — the actual CSS value still renders via its own fallback chain.
+  const selectedFont = useMemo(() => findByCssValue(design.font) ?? DEFAULT_FONT, [design.font])
 
-  // Load Google Font if the current font is custom
-  const currentFontName = extractFontName(design.font)
-  if (currentFontName && !['system', 'georgia', 'jetbrains'].some((s) => currentFontName.toLowerCase().includes(s))) {
-    loadGoogleFont(currentFontName)
-  }
+  // Pre-load every Google Font in the picker once, so previews show the
+  // real face instead of flashing the fallback. ~30 fonts at 5-20kB each
+  // = ~300kB once cached; comparable to a single hero image and only paid
+  // by users who actually open the Design tab. The loader is allowlist-
+  // gated so this loop can't be tricked into fetching arbitrary URLs.
+  useMemo(() => {
+    GOOGLE_FONTS.forEach((f) => { if (f.googleName) loadGoogleFont(f.googleName) })
+    // also load the currently-selected font (covers the legacy case above)
+    if (selectedFont.googleName) loadGoogleFont(selectedFont.googleName)
+  }, [selectedFont])
+
+  // Filter for the picker search — case-insensitive substring on the label.
+  const filteredFonts = useMemo(() => {
+    const q = fontQuery.trim().toLowerCase()
+    if (!q) return ALL_FONTS
+    return ALL_FONTS.filter((f) => f.label.toLowerCase().includes(q))
+  }, [fontQuery])
 
   const update = (partial: Partial<ProjectDesignDTO>): void => {
     setDesign((prev) => {
-      const next = { ...prev, ...partial }
-      // If font changed, try loading it as a Google Font
+      // Force any color field to canonical #RRGGBB before it lands in
+      // state — keeps the preview, the save payload, and the eventual
+      // server-side validation all aligned.
+      const cleaned: Partial<ProjectDesignDTO> = { ...partial }
+      for (const key of ['accentColor', 'bgColor', 'textColor', 'accentSecondary'] as const) {
+        const v = cleaned[key]
+        if (typeof v === 'string') {
+          const norm = normalizeHex(v)
+          if (norm) cleaned[key] = norm
+        }
+      }
+      const next = { ...prev, ...cleaned }
       if (partial.font) {
-        const name = extractFontName(partial.font)
-        if (name) loadGoogleFont(name)
+        const opt = findByCssValue(partial.font)
+        if (opt?.googleName) loadGoogleFont(opt.googleName)
       }
       return next
     })
@@ -215,12 +231,15 @@ export function ProjectDesign(): React.ReactElement {
                   className={`${styles.swatch} ${design.accentColor === c.value ? styles.swatchActive : ''}`}
                   style={{ background: c.value }}
                   onClick={() => update({ accentColor: c.value })}
-                  title={c.label}
+                  title={`${c.label} · ${c.value}`}
                 />
               ))}
-              <label className={styles.customColor}>
-                <input type="color" value={design.accentColor} onChange={(e) => update({ accentColor: e.target.value })} className={styles.colorPicker} />
-              </label>
+              <ColorPicker
+                value={design.accentColor}
+                onChange={(v) => update({ accentColor: v })}
+                presets={COLOR_PRESETS.map((c) => c.value)}
+                ariaLabel="Accent color"
+              />
             </div>
           </div>
 
@@ -238,9 +257,12 @@ export function ProjectDesign(): React.ReactElement {
                   title={c.label}
                 />
               ))}
-              <label className={styles.customColor}>
-                <input type="color" value={design.bgColor} onChange={(e) => update({ bgColor: e.target.value })} className={styles.colorPicker} />
-              </label>
+              <ColorPicker
+                value={design.bgColor}
+                onChange={(v) => update({ bgColor: v })}
+                presets={BG_PRESETS.map((c) => c.value)}
+                ariaLabel="Background color"
+              />
             </div>
           </div>
 
@@ -255,30 +277,48 @@ export function ProjectDesign(): React.ReactElement {
                   className={`${styles.swatch} ${design.textColor === c.value ? styles.swatchActive : ''} ${c.value === '#E5E5E5' || c.value === '#FFFFFF' || c.value === '#A1A1AA' ? styles.swatchLight : ''}`}
                   style={{ background: c.value }}
                   onClick={() => update({ textColor: c.value })}
-                  title={c.label}
+                  title={`${c.label} · ${c.value}`}
                 />
               ))}
-              <label className={styles.customColor}>
-                <input type="color" value={design.textColor} onChange={(e) => update({ textColor: e.target.value })} className={styles.colorPicker} />
-              </label>
+              <ColorPicker
+                value={design.textColor}
+                onChange={(v) => update({ textColor: v })}
+                presets={TEXT_PRESETS.map((c) => c.value)}
+                ariaLabel="Text color"
+              />
             </div>
           </div>
 
           {/* Font */}
           <div className={styles.section}>
             <label className={styles.label}>Font</label>
-            <p className={styles.hint}>Typography for widget and doc content</p>
+            <p className={styles.hint}>
+              {SYSTEM_FONTS.length} system + {GOOGLE_FONTS.length} Google Fonts. Search to filter.
+            </p>
+            <input
+              type="search"
+              placeholder="Search fonts…"
+              value={fontQuery}
+              onChange={(e) => setFontQuery(e.target.value)}
+              className={styles.fontSearch}
+            />
             <div className={styles.fontGrid}>
-              {fontOptions.map((f) => (
+              {filteredFonts.map((f) => (
                 <button
                   key={f.label}
-                  className={`${styles.fontOption} ${design.font === f.value ? styles.fontOptionActive : ''}`}
-                  style={{ fontFamily: f.value }}
-                  onClick={() => update({ font: f.value })}
+                  className={`${styles.fontOption} ${design.font === f.cssValue ? styles.fontOptionActive : ''}`}
+                  style={{ fontFamily: f.cssValue }}
+                  onClick={() => update({ font: f.cssValue })}
+                  title={`${f.label} · ${f.category}`}
                 >
-                  {f.preview}
+                  {f.label}
                 </button>
               ))}
+              {filteredFonts.length === 0 && (
+                <p className={styles.hint} style={{ gridColumn: '1 / -1' }}>
+                  No font matches "{fontQuery}". Try fewer characters, or open an issue if it's a Google Font we should add.
+                </p>
+              )}
             </div>
           </div>
 
@@ -287,14 +327,12 @@ export function ProjectDesign(): React.ReactElement {
             <label className={styles.label}>Secondary accent</label>
             <p className={styles.hint}>Two-tone gradients in marketing videos. Optional — falls back to a darker shade of the main accent.</p>
             <div className={styles.swatchRow}>
-              <label className={styles.customColor}>
-                <input
-                  type="color"
-                  value={design.accentSecondary ?? design.accentColor}
-                  onChange={(e) => update({ accentSecondary: e.target.value })}
-                  className={styles.colorPicker}
-                />
-              </label>
+              <ColorPicker
+                value={design.accentSecondary ?? design.accentColor}
+                onChange={(v) => update({ accentSecondary: v })}
+                presets={COLOR_PRESETS.map((c) => c.value)}
+                ariaLabel="Secondary accent color"
+              />
               {design.accentSecondary && (
                 <Button size="sm" variant="ghost" onClick={() => update({ accentSecondary: undefined })}>Clear</Button>
               )}

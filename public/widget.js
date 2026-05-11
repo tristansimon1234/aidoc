@@ -18,9 +18,32 @@
   var USER_PLAN = script.getAttribute('data-user-plan') || '';
   var USER_CONTEXT = script.getAttribute('data-user-context') || '';
 
+  // Color + font sanitizers. The widget concatenates these into a <style>
+  // string at runtime, so anything that escapes the validated server-side
+  // schema (legacy data, hand-edited data-cfg attribute, future regression)
+  // could otherwise smuggle CSS into the host page. Two hardening rules:
+  //   - colors MUST be #RRGGBB hex (6-digit, with #); anything else → fallback
+  //   - font MUST contain only [A-Za-z0-9 ,"\'-.()] and no semicolons or braces
+  // These mirror the server-side validation in
+  //   src/shared/design/colors.ts + src/shared/design/fonts.ts
+  // — keep them in sync if the backend rules loosen.
+  function safeHex(v, fallback) {
+    if (typeof v !== 'string') return fallback;
+    return /^#[0-9a-fA-F]{6}$/.test(v.trim()) ? v.trim() : fallback;
+  }
+  function safeFont(v, fallback) {
+    if (typeof v !== 'string') return fallback;
+    var s = v.trim();
+    if (s.length > 200) return fallback;
+    // Only allow chars that legitimately appear in a font-family list.
+    // No `;`, no `{}`, no `<>`, no `@`, no `/` — these are the building blocks
+    // of CSS injection (rule break-out, @import, comment break-out).
+    return /^[A-Za-z0-9 ,"'\-.()]+$/.test(s) ? s : fallback;
+  }
+
   // Defaults — overridden by data-cfg, localStorage cache, or config endpoint
   var C = {
-    accent: script.getAttribute('data-color') || '#635BFF',
+    accent: safeHex(script.getAttribute('data-color'), '#635BFF'),
     bg: '#0C0C0E',
     text: '#E5E5E5',
     font: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
@@ -33,12 +56,12 @@
     var inlineCfg = script.getAttribute('data-cfg');
     if (inlineCfg) {
       var d = JSON.parse(inlineCfg);
-      if (d.accentColor) C.accent = d.accentColor;
-      if (d.bgColor) C.bg = d.bgColor;
-      if (d.textColor) C.text = d.textColor;
-      if (d.font) C.font = d.font;
-      if (d.widgetPosition) C.position = d.widgetPosition;
-      if (d.widgetGreeting) C.greeting = d.widgetGreeting;
+      if (d.accentColor) C.accent = safeHex(d.accentColor, C.accent);
+      if (d.bgColor) C.bg = safeHex(d.bgColor, C.bg);
+      if (d.textColor) C.text = safeHex(d.textColor, C.text);
+      if (d.font) C.font = safeFont(d.font, C.font);
+      if (d.widgetPosition) C.position = d.widgetPosition === 'left' ? 'left' : 'right';
+      if (d.widgetGreeting) C.greeting = String(d.widgetGreeting).slice(0, 200);
     }
   } catch (e) {}
 
@@ -196,13 +219,14 @@
 
     var changed = false;
     if (cfg.design) {
-      if (cfg.design.accentColor && !script.getAttribute('data-color')) { C.accent = cfg.design.accentColor; changed = true; }
-      if (cfg.design.bgColor) { C.bg = cfg.design.bgColor; changed = true; }
-      if (cfg.design.textColor) { C.text = cfg.design.textColor; changed = true; }
-      if (cfg.design.font) { C.font = cfg.design.font; changed = true; }
+      // Same sanitization rules as the data-cfg path — see safeHex / safeFont above.
+      if (cfg.design.accentColor && !script.getAttribute('data-color')) { C.accent = safeHex(cfg.design.accentColor, C.accent); changed = true; }
+      if (cfg.design.bgColor) { C.bg = safeHex(cfg.design.bgColor, C.bg); changed = true; }
+      if (cfg.design.textColor) { C.text = safeHex(cfg.design.textColor, C.text); changed = true; }
+      if (cfg.design.font) { C.font = safeFont(cfg.design.font, C.font); changed = true; }
     }
-    if (cfg.widgetPosition && !script.getAttribute('data-position')) { C.position = cfg.widgetPosition; changed = true; }
-    if (cfg.widgetGreeting && !script.getAttribute('data-greeting')) { C.greeting = cfg.widgetGreeting; }
+    if (cfg.widgetPosition && !script.getAttribute('data-position')) { C.position = cfg.widgetPosition === 'left' ? 'left' : 'right'; changed = true; }
+    if (cfg.widgetGreeting && !script.getAttribute('data-greeting')) { C.greeting = String(cfg.widgetGreeting).slice(0, 200); }
     return changed;
   }
 

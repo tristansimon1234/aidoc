@@ -172,7 +172,16 @@ export async function updateProject(id: string, body: Record<string, unknown>): 
   if (body.credentials !== undefined) updates.credentials = body.credentials
   if (body.resources !== undefined) updates.resources = body.resources
   if (body.discoveredContext !== undefined) updates.discovered_context = body.discoveredContext
-  if (body.design !== undefined) updates.design = body.design
+  // Design is JSONB on the DB side and writes go straight to Supabase
+  // (RLS-gated, no /api/* round-trip). Without normalization here, a
+  // hand-shaped color value, an unknown font, or a tracking-pixel
+  // logoUrl would land verbatim — bypassing the Zod schema that only
+  // fires on /api/projects/:id PATCH. Single chokepoint = single source
+  // of truth.
+  if (body.design !== undefined) {
+    const { normalizeDesign } = await import('../../../shared/design/normalize.js')
+    updates.design = normalizeDesign(body.design)
+  }
   if (body.walkthroughEnabled !== undefined) updates.walkthrough_enabled = body.walkthroughEnabled
   if (body.publicDocsChatEnabled !== undefined) updates.public_docs_chat_enabled = body.publicDocsChatEnabled
   if (body.archivedAt !== undefined) updates.archived_at = body.archivedAt

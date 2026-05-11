@@ -1,0 +1,172 @@
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  background: var(--color-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.trigger:hover { border-color: var(--color-primary); }
+.trigger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+.triggerSwatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  /* Checkerboard for transparent / very-light surfaces so the chip is always
+     visible against the page background. */
+  background-image:
+    linear-gradient(45deg, rgba(0,0,0,0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(0,0,0,0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(0,0,0,0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.04) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+}
+.triggerSwatchInner {
+  position: absolute;
+  inset: 0;
+}
+
+/* Floating popover. Positioned by JS to anchor below the trigger. */
+.popover {
+  position: fixed;
+  z-index: 1000;
+  width: 248px;
+  padding: 12px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Avoid layout-shift when the picker mounts */
+  font-family: var(--font-sans);
+}
+
+/* The S/V square — 100% width of the popover content area, 4:3 aspect.
+   `cursor: crosshair` so users know it's interactive. */
+.svPlane {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--radius-sm);
+  cursor: crosshair;
+  touch-action: none;
+  overflow: hidden;
+}
+.svPlaneSat {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, #fff, transparent);
+}
+.svPlaneVal {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, #000, transparent);
+}
+
+.dot {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.45);
+  pointer-events: none;
+}
+
+/* Hue slider — full-bleed rainbow background, thumb is positioned by JS */
+.hueSlider {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    #ff0000 0%,
+    #ffff00 17%,
+    #00ff00 33%,
+    #00ffff 50%,
+    #0000ff 67%,
+    #ff00ff 83%,
+    #ff0000 100%
+  );
+  cursor: pointer;
+  touch-action: none;
+}
+.hueThumb {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.45), 0 1px 2px rgba(0,0,0,0.25);
+  pointer-events: none;
+}
+
+/* Bottom row — hex input + (optionally) a preview swatch */
+.bottomRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hexInput {
+  flex: 1;
+  padding: 6px 8px;
+  background: var(--color-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  color: var(--color-fg);
+  outline: none;
+}
+.hexInput:focus { border-color: var(--color-primary); }
+
+/* Preset row */
+.presets {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+.presetSwatch {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+  transition: transform 0.1s, box-shadow 0.1s;
+  padding: 0;
+}
+.presetSwatch:hover { transform: scale(1.08); }
+.presetSwatch:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08), 0 0 0 2px var(--color-primary);
+}
+.presetSwatchActive {
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08), 0 0 0 2px var(--color-fg);
+}
