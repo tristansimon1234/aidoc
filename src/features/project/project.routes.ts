@@ -326,9 +326,23 @@ projectRouter.post('/:id/logo', (req: Request, res: Response, next: NextFunction
       if (body.length === 0) throw new ValidationError('No file uploaded')
       if (body.length > 5_000_000) throw new ValidationError('File too large (max 5MB)')
 
-      const contentType = req.headers['content-type'] ?? 'image/png'
-      const ext = contentType.includes('svg') ? 'svg' : contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg'
-      const path = `projects/${projectId}/logo.${ext}`
+      // SVG is rejected: the artifacts bucket is public and a malicious
+      // <script> inside an SVG executes in the docs origin when opened
+      // directly. PNG / JPEG / WebP only. Content-Type is client-supplied
+      // so we re-derive the extension from the allowed set rather than
+      // trusting whatever string the client sent.
+      const rawContentType = (req.headers['content-type'] ?? 'image/png').toLowerCase()
+      const allowed: Record<string, { mime: string; ext: string }> = {
+        'image/png': { mime: 'image/png', ext: 'png' },
+        'image/jpeg': { mime: 'image/jpeg', ext: 'jpg' },
+        'image/jpg': { mime: 'image/jpeg', ext: 'jpg' },
+        'image/webp': { mime: 'image/webp', ext: 'webp' },
+      }
+      const head = rawContentType.split(';')[0]?.trim() ?? ''
+      const match = allowed[head]
+      if (!match) throw new ValidationError('Unsupported image type (png, jpeg, webp only)')
+      const contentType = match.mime
+      const path = `projects/${projectId}/logo.${match.ext}`
 
       const { uploadToStorage, getSignedUrl } = await import('../../shared/db/storage.repository.js')
       await uploadToStorage('artifacts', path, body, contentType)

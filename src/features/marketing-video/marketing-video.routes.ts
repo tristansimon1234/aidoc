@@ -1,11 +1,24 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { ValidationError } from '../../shared/middleware/error.middleware.js'
+import { AppError, ValidationError } from '../../shared/middleware/error.middleware.js'
 import { RunIdParamSchema } from '../run/run.schema.js'
 import { z } from 'zod'
 import { GenerateMarketingVideoOptionsSchema, UpdateMarketingManifestSchema, VoiceTonePresetSchema } from './marketing-video.schema.js'
 import { enforceQuotaOrThrow } from '../../shared/middleware/quota.middleware.js'
 import { incrementUsage, findTeamIdByRunId } from '../../shared/usage/usage.repository.js'
+import { assertRunAccess } from '../run/run.service.js'
+
+/** Parse the :id param, then assert the caller is a member of the run's
+ *  team. Returns the runId. Throws 404 on no-access so callers can't
+ *  enumerate run ids across teams. */
+async function assertRunAccessFromReq(req: Request): Promise<string> {
+  const parsed = RunIdParamSchema.safeParse(req.params)
+  if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+  const userId = (req as Request & { userId?: string }).userId
+  if (!userId) throw new AppError('Unauthorized', 'UNAUTHORIZED', 401)
+  await assertRunAccess(parsed.data.id, userId)
+  return parsed.data.id
+}
 import {
   findMarketingVideoByRunId,
 } from './marketing-video.repository.js'
@@ -111,8 +124,7 @@ marketingVideoRouter.get('/marketing-video/voices', (_req: Request, res: Respons
 marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
       const opts = GenerateMarketingVideoOptionsSchema.safeParse(req.body ?? {})
       if (!opts.success) throw new ValidationError(opts.error.flatten())
@@ -121,15 +133,15 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
       // their monthly token budget. Marketing video is the heaviest single
       // op (600 tokens) so the gate matters. Resolved via the run → project
       // → team chain.
-      const teamId = await findTeamIdByRunId(params.data.id)
+      const teamId = await findTeamIdByRunId(runId)
       if (teamId) await enforceQuotaOrThrow(teamId)
 
       const isAsync = req.query.async === '1'
 
       if (!isAsync) {
         // Sync mode: block the request, return the final summary.
-        await generateMarketingVideoForRun(params.data.id, opts.data)
-        const summary = await renderMarketingVideoForRun(params.data.id)
+        await generateMarketingVideoForRun(runId, opts.data)
+        const summary = await renderMarketingVideoForRun(runId)
         // Bump usage AFTER success so a failed pipeline doesn't burn budget.
         if (teamId) {
           try { await incrementUsage(teamId, 'marketing_video') }
@@ -146,7 +158,7 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
       const { updateJobStatus } = await import('../run/job.repository.js')
       const { ensureExclusiveJob, AlreadyRunningError } = await import('../run/job.service.js')
 
-      const run = await findRunById(params.data.id)
+      const run = await findRunById(runId)
       if (!run) {
         res.status(404).json({ error: 'Run not found', code: 'RUN_NOT_FOUND' })
         return
@@ -168,7 +180,7 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
         // permanently lock the page. createJob alone left users stuck on
         // JOB_ALREADY_RUNNING for jobs that died ages ago.
         const job = await ensureExclusiveJob({
-          runId: params.data.id,
+          runId,
           pageId: run.docPageId,
           projectId: page.projectId,
           type: 'marketing-video',
@@ -192,7 +204,7 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
         return
       }
 
-      res.status(202).json({ runId: params.data.id, jobId, status: 'running' })
+      res.status(202).json({ runId, jobId, status: 'running' })
 
       // Critical: register the background promise with Vercel's
       // `waitUntil` so the function stays alive until the pipeline
@@ -201,8 +213,8 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
       const { waitUntil } = await import('@vercel/functions')
       waitUntil((async () => {
         try {
-          await generateMarketingVideoForRun(params.data.id, opts.data)
-          await renderMarketingVideoForRun(params.data.id)
+          await generateMarketingVideoForRun(runId, opts.data)
+          await renderMarketingVideoForRun(runId)
           // Bump usage only AFTER the full pipeline succeeds — a failed
           // render shouldn't burn the user's budget.
           if (teamId) {
@@ -212,7 +224,7 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
           if (jobId) await updateJobStatus(jobId, 'completed').catch(() => {})
         } catch (err) {
           const message = (err as Error).message
-          console.error(`[marketing-video] Background pipeline failed for ${params.data.id}: ${message}`)
+          console.error(`[marketing-video] Background pipeline failed for ${runId}: ${message}`)
           if (jobId) await updateJobStatus(jobId, 'failed', message).catch(() => {})
         }
       })())
@@ -241,13 +253,12 @@ marketingVideoRouter.post('/:id/marketing-video', (req: Request, res: Response, 
 marketingVideoRouter.post('/:id/marketing-video/voiceover', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
       const body = UpdateVoiceoverBodySchema.safeParse(req.body ?? {})
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      const summary = await updateMarketingVoiceoverForRun(params.data.id, body.data)
+      const summary = await updateMarketingVoiceoverForRun(runId, body.data)
       res.status(200).json(summary)
     } catch (err) {
       next(err)
@@ -269,13 +280,12 @@ marketingVideoRouter.post('/:id/marketing-video/voiceover', (req: Request, res: 
 marketingVideoRouter.put('/:id/marketing-video/manifest', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
       const body = UpdateMarketingManifestSchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      const summary = await updateMarketingManifestForRun(params.data.id, body.data)
+      const summary = await updateMarketingManifestForRun(runId, body.data)
       res.status(200).json(summary)
     } catch (err) {
       next(err)
@@ -293,13 +303,12 @@ marketingVideoRouter.put('/:id/marketing-video/manifest', (req: Request, res: Re
 marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
       const body = EditManifestBodySchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      const teamId = await findTeamIdByRunId(params.data.id)
+      const teamId = await findTeamIdByRunId(runId)
       if (teamId) await enforceQuotaOrThrow(teamId)
 
       // Background job — same pattern as /generate-marketing. The combined
@@ -313,7 +322,7 @@ marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Respo
       const { updateJobStatus } = await import('../run/job.repository.js')
       const { ensureExclusiveJob, AlreadyRunningError } = await import('../run/job.service.js')
 
-      const run = await findRunById(params.data.id)
+      const run = await findRunById(runId)
       if (!run) {
         res.status(404).json({ error: 'Run not found', code: 'RUN_NOT_FOUND' })
         return
@@ -333,7 +342,7 @@ marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Respo
         // ensureExclusiveJob auto-reclaims stale jobs >10min old, so a
         // dead refine doesn't permanently lock the page.
         const job = await ensureExclusiveJob({
-          runId: params.data.id,
+          runId,
           pageId: run.docPageId,
           projectId: page.projectId,
           // Reuse 'marketing-video' so the per-page UNIQUE WHERE running
@@ -360,17 +369,17 @@ marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Respo
         return
       }
 
-      res.status(202).json({ runId: params.data.id, jobId, status: 'running' })
+      res.status(202).json({ runId, jobId, status: 'running' })
 
       const { waitUntil } = await import('@vercel/functions')
       waitUntil((async () => {
         try {
-          await editMarketingManifestWithAi(params.data.id, body.data)
-          await renderMarketingVideoForRun(params.data.id)
+          await editMarketingManifestWithAi(runId, body.data)
+          await renderMarketingVideoForRun(runId)
           if (jobId) await updateJobStatus(jobId, 'completed').catch(() => {})
         } catch (err) {
           const message = (err as Error).message
-          console.error(`[marketing-edit] Background pipeline failed for ${params.data.id}: ${message}`)
+          console.error(`[marketing-edit] Background pipeline failed for ${runId}: ${message}`)
           if (jobId) await updateJobStatus(jobId, 'failed', message).catch(() => {})
         }
       })())
@@ -383,10 +392,9 @@ marketingVideoRouter.post('/:id/marketing-video/edit', (req: Request, res: Respo
 marketingVideoRouter.post('/:id/marketing-video/render', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      const summary = await renderMarketingVideoForRun(params.data.id)
+      const summary = await renderMarketingVideoForRun(runId)
       res.status(200).json(summary)
     } catch (err) {
       next(err)
@@ -407,12 +415,11 @@ const ThumbnailBodySchema = z.object({
 marketingVideoRouter.post('/:id/marketing-video/thumbnail', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
       const body = ThumbnailBodySchema.safeParse(req.body)
       if (!body.success) throw new ValidationError(body.error.flatten())
 
-      const result = await setMarketingThumbnailForRun(params.data.id, body.data.jpegBase64)
+      const result = await setMarketingThumbnailForRun(runId, body.data.jpegBase64)
       res.status(200).json(result)
     } catch (err) {
       next(err)
@@ -428,10 +435,9 @@ marketingVideoRouter.post('/:id/marketing-video/thumbnail', (req: Request, res: 
 marketingVideoRouter.get('/:id/marketing-video', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const params = RunIdParamSchema.safeParse(req.params)
-      if (!params.success) throw new ValidationError(params.error.flatten())
+      const runId = await assertRunAccessFromReq(req)
 
-      const summary = await findMarketingVideoByRunId(params.data.id)
+      const summary = await findMarketingVideoByRunId(runId)
       if (!summary) {
         res.status(404).json({
           error: 'No marketing video for this run yet',

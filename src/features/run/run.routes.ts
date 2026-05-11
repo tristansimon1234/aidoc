@@ -46,7 +46,7 @@ runRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
     try {
       const parsed = CreateRunSchema.safeParse(req.body)
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
-      const run = await runService.createRun(parsed.data)
+      const run = await runService.createRun(parsed.data, getUserId(req))
       res.status(201).json(run)
     } catch (err) {
       next(err)

@@ -175,7 +175,20 @@ async function enrichBriefingWithFileContents(
   }
 }
 
-export async function createRun(input: CreateRunInput): Promise<Run> {
+export async function createRun(input: CreateRunInput, userId: string): Promise<Run> {
+  // The repo resolves project_id from docPageId silently. Without an
+  // ownership check the caller could attach a run to any other team's
+  // page just by supplying that page's UUID.
+  if (input.docPageId) {
+    const { findPageById } = await import('../page/page.repository.js')
+    const page = await findPageById(input.docPageId)
+    if (!page) throw new NotFoundError('Doc page')
+    const { findProjectById } = await import('../project/project.repository.js')
+    const project = await findProjectById(page.projectId)
+    if (!project) throw new NotFoundError('Doc page')
+    const member = await findMember(project.teamId, userId)
+    if (!member) throw new NotFoundError('Doc page')
+  }
   return runRepo.createRun(input)
 }
 
