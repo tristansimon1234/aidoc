@@ -178,3 +178,21 @@ export function googleFontStylesheetUrl(name: string): string | null {
 
 /** Default font used when nothing is set / something invalid was stored. */
 export const DEFAULT_FONT: FontOption = SYSTEM_FONTS[0]!
+
+/** Resolve any font input (canonical CSS value, bare Google Fonts name,
+ *  legacy `'"Inter", sans-serif'`) to a canonical CSS value from the
+ *  allowlist. Returns DEFAULT_FONT.cssValue when nothing matches — caller
+ *  doesn't have to handle null. Used by the project-creation client-side
+ *  normalizer so we never persist a hand-shaped CSS family string. */
+export function resolveFontCssValue(input: unknown): string {
+  if (typeof input !== 'string') return DEFAULT_FONT.cssValue
+  const trimmed = input.trim()
+  if (!trimmed) return DEFAULT_FONT.cssValue
+  // Direct allowlist hit (full CSS value or primary-name match).
+  const direct = findByCssValue(trimmed)
+  if (direct) return direct.cssValue
+  // Bare Google Fonts name like "Inter" or "DM Sans".
+  const byName = findGoogleFont(trimmed)
+  if (byName) return byName.cssValue
+  return DEFAULT_FONT.cssValue
+}

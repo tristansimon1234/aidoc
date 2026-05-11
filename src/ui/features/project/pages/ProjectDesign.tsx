@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
-import { Button } from '../../../design-system/components/index.js'
+import { Button, ColorPicker } from '../../../design-system/components/index.js'
 import { type ProjectDTO, type ProjectDesignDTO } from '../../../shared/api/client.js'
 import { updateProject } from '../../../shared/api/db.js'
 import { supabase } from '../../../shared/api/supabase.js'
@@ -231,12 +231,15 @@ export function ProjectDesign(): React.ReactElement {
                   className={`${styles.swatch} ${design.accentColor === c.value ? styles.swatchActive : ''}`}
                   style={{ background: c.value }}
                   onClick={() => update({ accentColor: c.value })}
-                  title={c.label}
+                  title={`${c.label} · ${c.value}`}
                 />
               ))}
-              <label className={styles.customColor}>
-                <input type="color" value={design.accentColor} onChange={(e) => update({ accentColor: e.target.value })} className={styles.colorPicker} />
-              </label>
+              <ColorPicker
+                value={design.accentColor}
+                onChange={(v) => update({ accentColor: v })}
+                presets={COLOR_PRESETS.map((c) => c.value)}
+                ariaLabel="Accent color"
+              />
             </div>
           </div>
 
@@ -254,9 +257,12 @@ export function ProjectDesign(): React.ReactElement {
                   title={c.label}
                 />
               ))}
-              <label className={styles.customColor}>
-                <input type="color" value={design.bgColor} onChange={(e) => update({ bgColor: e.target.value })} className={styles.colorPicker} />
-              </label>
+              <ColorPicker
+                value={design.bgColor}
+                onChange={(v) => update({ bgColor: v })}
+                presets={BG_PRESETS.map((c) => c.value)}
+                ariaLabel="Background color"
+              />
             </div>
           </div>
 
@@ -271,12 +277,15 @@ export function ProjectDesign(): React.ReactElement {
                   className={`${styles.swatch} ${design.textColor === c.value ? styles.swatchActive : ''} ${c.value === '#E5E5E5' || c.value === '#FFFFFF' || c.value === '#A1A1AA' ? styles.swatchLight : ''}`}
                   style={{ background: c.value }}
                   onClick={() => update({ textColor: c.value })}
-                  title={c.label}
+                  title={`${c.label} · ${c.value}`}
                 />
               ))}
-              <label className={styles.customColor}>
-                <input type="color" value={design.textColor} onChange={(e) => update({ textColor: e.target.value })} className={styles.colorPicker} />
-              </label>
+              <ColorPicker
+                value={design.textColor}
+                onChange={(v) => update({ textColor: v })}
+                presets={TEXT_PRESETS.map((c) => c.value)}
+                ariaLabel="Text color"
+              />
             </div>
           </div>
 
@@ -318,14 +327,12 @@ export function ProjectDesign(): React.ReactElement {
             <label className={styles.label}>Secondary accent</label>
             <p className={styles.hint}>Two-tone gradients in marketing videos. Optional — falls back to a darker shade of the main accent.</p>
             <div className={styles.swatchRow}>
-              <label className={styles.customColor}>
-                <input
-                  type="color"
-                  value={design.accentSecondary ?? design.accentColor}
-                  onChange={(e) => update({ accentSecondary: e.target.value })}
-                  className={styles.colorPicker}
-                />
-              </label>
+              <ColorPicker
+                value={design.accentSecondary ?? design.accentColor}
+                onChange={(v) => update({ accentSecondary: v })}
+                presets={COLOR_PRESETS.map((c) => c.value)}
+                ariaLabel="Secondary accent color"
+              />
               {design.accentSecondary && (
                 <Button size="sm" variant="ghost" onClick={() => update({ accentSecondary: undefined })}>Clear</Button>
               )}
