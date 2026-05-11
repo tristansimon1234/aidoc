@@ -346,6 +346,13 @@ export interface AdminUsageReportDTO {
   users: AdminUsageRowDTO[]
 }
 
+export interface AllowedEmailDTO {
+  email: string
+  note: string | null
+  createdAt: string
+  createdBy: string | null
+}
+
 export interface PageResourceDTO {
   type: 'url' | 'credential' | 'endpoint' | 'file' | 'note'
   label: string
@@ -423,6 +430,13 @@ export const api = {
   admin: {
     usage: (month?: string): Promise<AdminUsageReportDTO> =>
       request(`/admin/usage${month ? `?month=${encodeURIComponent(month)}` : ''}`),
+    allowlist: {
+      list: (): Promise<{ items: AllowedEmailDTO[] }> => request('/admin/allowlist'),
+      add: (body: { email: string; note?: string | null }): Promise<AllowedEmailDTO> =>
+        request('/admin/allowlist', { method: 'POST', body: JSON.stringify(body) }),
+      remove: (email: string): Promise<void> =>
+        request(`/admin/allowlist/${encodeURIComponent(email)}`, { method: 'DELETE' }),
+    },
   },
   projects: {
     list: (): Promise<ProjectDTO[]> => request('/projects'),

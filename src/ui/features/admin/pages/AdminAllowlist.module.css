@@ -1,0 +1,107 @@
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: var(--space-xl);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.headerText { display: flex; flex-direction: column; gap: 4px; }
+.title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.subtitle {
+  font-size: var(--text-sm);
+  color: var(--color-muted-fg);
+  max-width: 60ch;
+}
+
+.addForm {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-md);
+  margin-bottom: var(--space-lg);
+  flex-wrap: wrap;
+}
+
+.input {
+  flex: 1 1 220px;
+  padding: 8px 12px;
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  color: var(--color-fg);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  outline: none;
+}
+.input:focus { border-color: var(--color-primary); }
+.noteInput { flex: 2 1 280px; font-family: inherit; }
+
+.loading { display: flex; justify-content: center; padding: var(--space-xl); }
+.error {
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-card);
+  border: 1px solid var(--color-destructive);
+  color: var(--color-destructive);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-md);
+}
+
+.tableWrap {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+
+.table th,
+.table td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.table thead th {
+  background: var(--color-secondary);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-muted-fg);
+}
+
+.table tbody tr:hover { background: var(--color-secondary); }
+.table tbody tr:last-child td { border-bottom: none; }
+
+.emailCell { font-family: var(--font-mono); color: var(--color-fg); }
+.noteCell { color: var(--color-muted-fg); }
+.dateCell { font-family: var(--font-mono); color: var(--color-muted-fg); font-size: var(--text-xs); }
+.actionCell { text-align: right; width: 1px; white-space: nowrap; }
+
+.empty {
+  text-align: center;
+  color: var(--color-muted-fg);
+  padding: var(--space-xl) !important;
+}
