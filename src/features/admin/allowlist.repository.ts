@@ -18,6 +18,16 @@ function toDomain(row: Row): AllowedEmail {
   }
 }
 
+export async function findAllowedEmail(email: string): Promise<AllowedEmail | null> {
+  const { data, error } = await supabase
+    .from('allowed_emails')
+    .select('email, note, created_at, created_by')
+    .eq('email', email)
+    .maybeSingle()
+  if (error) throw new DatabaseError(error.message)
+  return data ? toDomain(data as Row) : null
+}
+
 export async function listAllowedEmails(): Promise<AllowedEmail[]> {
   const { data, error } = await supabase
     .from('allowed_emails')

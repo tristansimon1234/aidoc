@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from 'express'
 import { ValidationError } from '../../shared/middleware/error.middleware.js'
 import * as adminService from './admin.service.js'
 import * as allowlistRepo from './allowlist.repository.js'
+import * as allowlistService from './allowlist.service.js'
 import { AddAllowedEmailSchema } from './allowlist.schema.js'
 
 export const adminRouter = Router()
@@ -53,12 +54,13 @@ adminRouter.post('/allowlist', (req: Request, res: Response, next: NextFunction)
       const parsed = AddAllowedEmailSchema.safeParse(req.body)
       if (!parsed.success) throw new ValidationError(parsed.error.flatten())
       const userId = (req as Request & { userId: string }).userId
-      const row = await allowlistRepo.addAllowedEmail(
+      const result = await allowlistService.addAllowedEmail(
         parsed.data.email,
         parsed.data.note ?? null,
         userId,
+        { sendWelcome: true },
       )
-      res.status(201).json(row)
+      res.status(201).json({ ...result.row, created: result.created, emailSent: result.emailSent })
     } catch (err) {
       next(err)
     }

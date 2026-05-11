@@ -109,7 +109,14 @@ src/
       admin.types.ts          # AdminUsageRow, AdminUsageReport
       admin.repository.ts     # listUsageCountersForMonth, listProfiles, listActiveSubscriptions
       admin.service.ts        # getUsageReport(periodMonth) — joins counters + profiles + subs + plans
-      admin.routes.ts         # GET /admin/usage?month=YYYY-MM
+      admin.routes.ts         # GET /admin/usage?month=YYYY-MM, GET/POST/DELETE /admin/allowlist
+      allowlist.types.ts      # AllowedEmail
+      allowlist.schema.ts     # Zod for add (email + optional note)
+      allowlist.repository.ts # listAllowedEmails, findAllowedEmail, addAllowedEmail (upsert), removeAllowedEmail
+      allowlist.service.ts    # addAllowedEmail({ sendWelcome }) — idempotent upsert + welcome email
+                              # on first add. Backed by a BEFORE INSERT trigger on auth.users that
+                              # rejects any signup whose email isn't on the list. Provisional —
+                              # drop the trigger when public signups open.
     mcp/                  # Per-user MCP server (workspace-scoped personal access tokens)
       mcp.types.ts            # McpUserToken, McpUserTokenSummary, McpAuthContext
       mcp.schema.ts           # Zod for token CRUD + every tool's arguments
@@ -377,6 +384,22 @@ Tunable in code, no migration needed:
 
 ---
 
+## Closed Beta — Email Allowlist *(provisional)*
+
+While Doclee is in the design-partner phase, signups are gated by an `allowed_emails` table. A `BEFORE INSERT` trigger on `auth.users` rejects any signup whose lowercased email isn't on the list. Because the gate lives at the DB level, every signup path is covered (password, magic link, OAuth, Supabase dashboard "invite user") and no client or future route can bypass it.
+
+**Two ways an email lands on the allowlist**:
+1. **Manual** — an admin adds it via `/admin/allowlist` (UI) or `POST /api/admin/allowlist` (API). On a *new* row, a one-shot welcome email is sent via Resend (`shared/email/templates/welcome-allowlist.ts`). Re-adding the same address doesn't re-email.
+2. **Auto via team invite** — `team.service.inviteMember` writes the invitee's email to the allowlist (note: `auto: invited to "<teamName>"`) right before sending the standard team-invite email. No welcome email — the team-invite email is the only outgoing message. This means **any allowlisted user can effectively grant signup access** by inviting someone to their workspace; that's deliberate (let design partners bring colleagues), but worth knowing.
+
+**Doesn't touch existing accounts**: removing an email from the allowlist only blocks *future* signups. The migration's bootstrap INSERT seeds every existing `auth.users` row so day-1 logins keep working.
+
+**Sunset path**: when public signups open, drop the trigger in a follow-up migration. The table itself has no FKs from elsewhere — keep it as historical record or drop it.
+
+**Files**: `supabase/migrations/20260511000000_add_email_allowlist.sql` · `src/features/admin/allowlist.{service,repository,schema,types}.ts` · `src/features/admin/admin.routes.ts` (CRUD) · `src/features/team/team.service.ts inviteMember` (auto-allowlist hook) · `src/shared/email/templates/welcome-allowlist.ts` · `src/ui/features/admin/pages/AdminAllowlist.tsx`.
+
+---
+
 ## API Design
 
 ### Route structure
@@ -389,6 +412,8 @@ Tunable in code, no migration needed:
 
 # Admin (authenticated + ADMIN_EMAILS allowlist)
 /api/admin/usage                           # GET ?month=YYYY-MM: per-user usage report
+/api/admin/allowlist                       # GET list; POST { email, note? } → adds + emails welcome (idempotent);
+                                           # DELETE /:email removes. Provisional, see "Closed Beta" section above.
 
 # User MCP — personal access tokens + JSON-RPC endpoint
 /api/mcp-tokens                            # GET list own tokens (masked); POST create { name, teamId } → full token once; DELETE /:id revoke
@@ -599,5 +624,5 @@ VITE_SENTRY_RELEASE      # Optional — override for the release tag
 
 ---
 
-*Last updated: 2026-04-30*
+*Last updated: 2026-05-11*
 *Stack: Node 20 / TS 5.9 / Gemini 2.5 Flash / Stagehand 3 (beta) / Supabase JS 2.x + pgvector / Vite 8 / React 19 / BlockNote 0.47*
