@@ -1,9 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { useAuth } from '../hooks/useAuth.js'
 import styles from './FeedbackModal.module.css'
 
-const FEEDBACK_EMBED_BASE =
+const FEEDBACK_EMBED_URL =
   'https://grave-clutch-91b.notion.site/ebd/4f758e66cecd42048cb9f6709d69fb74'
 
 interface FeedbackContextValue {
@@ -21,22 +20,10 @@ export function useFeedback(): FeedbackContextValue {
 }
 
 export function FeedbackProvider({ children }: { children: ReactNode }): React.ReactElement {
-  const { user } = useAuth()
   const [isOpen, setOpen] = useState(false)
 
   const open = useCallback(() => setOpen(true), [])
   const close = useCallback(() => setOpen(false), [])
-
-  // Notion accepts URL-param prefill on its /ebd/ form variant — passing
-  // ?Email=<address> populates the matching column. We already know the
-  // signed-in email, so prefilling removes a typing step and guarantees
-  // a reply channel.
-  const feedbackUrl = useMemo(() => {
-    const email = user?.email
-    if (!email) return FEEDBACK_EMBED_BASE
-    const params = new URLSearchParams({ Email: email })
-    return `${FEEDBACK_EMBED_BASE}?${params.toString()}`
-  }, [user?.email])
 
   useEffect(() => {
     if (!isOpen) return
@@ -82,7 +69,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }): React.R
                   </button>
                 </div>
                 <iframe
-                  src={feedbackUrl}
+                  src={FEEDBACK_EMBED_URL}
                   title="Doclee feedback form"
                   className={styles.modalIframe}
                   allowFullScreen
