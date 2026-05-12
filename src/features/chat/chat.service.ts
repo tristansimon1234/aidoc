@@ -143,6 +143,22 @@ function needsDocSearch(message: string, _history: ChatMessage[]): boolean {
   return true
 }
 
+// Only rewrite the query when it genuinely needs resolution — pronouns/
+// ellipsis referring back to history, or a query so short it embeds
+// poorly. Standalone questions go straight to embedding; rewriting them
+// is a no-op that costs a Gemini round-trip (~400ms).
+const PRONOUN_RE = /\b(it|its|that|this|these|those|they|them|their|le|la|les|leur|leurs|celui|celle|ceux|celles|ça|cela|en|y)\b/i
+
+function needsQueryRewrite(message: string, history: ChatMessage[]): boolean {
+  const trimmed = message.trim()
+  if (trimmed.length < 15) return true
+  // Even a long follow-up only needs a rewrite when it actually refers
+  // back to something. "How do I publish a doc?" sent after 5 turns is
+  // self-contained — no rewrite needed.
+  if (history.length >= 2 && PRONOUN_RE.test(trimmed)) return true
+  return false
+}
+
 // --- RAG Chat ---
 
 export async function chat(
@@ -158,11 +174,11 @@ export async function chat(
   let chunks: DocChunk[] = []
   const didSearch = needsDocSearch(message, history)
   if (didSearch) {
-    // Rewrite only when it buys us something — conversational follow-ups
-    // (need to resolve "it", "that") or very short queries ("publish?"
-    // = too vague for embedding). Otherwise use the raw message and
+    // Rewrite only when the query genuinely needs resolution: a follow-up
+    // with a pronoun ("and the other one?"), or a very short query
+    // ("publish?"). Standalone questions go straight to embedding and
     // save ~400ms on the round trip.
-    const needsRewrite = history.length >= 2 || message.trim().length < 20
+    const needsRewrite = needsQueryRewrite(message, history)
     const effectiveQuery = needsRewrite
       ? await rewriteQuery(message, history).catch(() => message)
       : message
@@ -170,11 +186,11 @@ export async function chat(
     const queryEmbedding = await embedText(effectiveQuery)
     const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
 
-    // Rerank when the candidate pool is large enough to triage. Drops
-    // only the clearest noise — users care about quality on vague hits,
-    // which is exactly when the pool is big.
+    // Rerank only when the pool is large enough that the top-5 cosine
+    // ranking is genuinely noisy. The Gemini-as-judge call is ~300ms,
+    // not worth it when the embedding already produced a tight pool.
     chunks = candidates.length > 0
-      ? (candidates.length >= 10
+      ? (candidates.length >= 15
           ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
           : candidates.slice(0, 8))
       : []
@@ -332,14 +348,14 @@ export async function* chatStream(
   let chunks: DocChunk[] = []
   const didSearch = needsDocSearch(message, history)
   if (didSearch) {
-    const needsRewrite = history.length >= 2 || message.trim().length < 20
+    const needsRewrite = needsQueryRewrite(message, history)
     const effectiveQuery = needsRewrite
       ? await rewriteQuery(message, history).catch(() => message)
       : message
     const queryEmbedding = await embedText(effectiveQuery)
     const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
     chunks = candidates.length > 0
-      ? (candidates.length >= 10
+      ? (candidates.length >= 15
           ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
           : candidates.slice(0, 8))
       : []

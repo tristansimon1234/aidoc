@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
+import { Spinner, EmptyState, MarkdownRenderer, TableOfContents, Tooltip } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO, ChatResponseDTO, ChatStreamEventDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
 import { ChatSurface, type ChatSurfaceApi } from '../../chat/components/ChatSurface.js'
+import { DocsChatPanel } from '../components/DocsChatPanel.js'
+import { StickyChatBar } from '../components/StickyChatBar.js'
+import { useDocsChat } from '../hooks/useDocsChat.js'
 import styles from './PublicDocs.module.css'
 
 /** Lightweight narrated video player for public docs — syncs video + voiceover audio */
@@ -226,11 +229,19 @@ function NavTree({ items, activePage, onSelect, onPrefetch, depth = 0 }: {
       {items.map((p) => {
         const hasChildren = p.children.length > 0
         const isCollapsed = collapsed.has(p.id)
+        // Top-level pages with children read as section headers — they
+        // group their sub-pages visually. Clicking the title still
+        // navigates (some sites use the section page as an overview);
+        // the chevron handles expand/collapse separately.
+        const isSection = depth === 0 && hasChildren
         return (
           <div key={p.id}>
-            <div className={styles.navRow} style={{ paddingLeft: `${depth * 14 + 4}px` }}>
+            <div
+              className={`${styles.navRow} ${isSection ? styles.navRowSection : ''}`}
+              style={isSection ? undefined : { paddingLeft: `${depth * 14 + 4}px` }}
+            >
               {hasChildren ? (
-                <button className={styles.navChevron} onClick={() => toggle(p.id)}>
+                <button className={styles.navChevron} onClick={() => toggle(p.id)} aria-label={isCollapsed ? 'Expand' : 'Collapse'}>
                   <svg
                     width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -253,7 +264,13 @@ function NavTree({ items, activePage, onSelect, onPrefetch, depth = 0 }: {
               </button>
             </div>
             {hasChildren && !isCollapsed && (
-              <NavTree items={p.children} activePage={activePage} onSelect={onSelect} onPrefetch={onPrefetch} depth={depth + 1} />
+              isSection ? (
+                <div className={styles.navSubGroup}>
+                  <NavTree items={p.children} activePage={activePage} onSelect={onSelect} onPrefetch={onPrefetch} depth={depth + 1} />
+                </div>
+              ) : (
+                <NavTree items={p.children} activePage={activePage} onSelect={onSelect} onPrefetch={onPrefetch} depth={depth + 1} />
+              )
             )}
           </div>
         )
@@ -266,9 +283,10 @@ export function PublicDocs(): React.ReactElement {
   const { projectId, slug } = useParams<{ projectId: string; slug?: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  // The /docs/:projectId/chat route renders the chat as a full page in
-  // the content area instead of as a drawer — still wrapped by the same
-  // sidebar + topbar so users can navigate back to a page in one click.
+  // The /docs/:projectId/chat route renders the chat full-screen inside
+  // the content area. Conversation state is still owned by the
+  // useDocsChat hook so the user can switch between panel + fullpage
+  // without losing context.
   const inChatMode = location.pathname.endsWith('/chat')
   const [project, setProject] = useState<PublicProject | null>(null)
   const [chatEnabled, setChatEnabled] = useState(false)
@@ -286,6 +304,11 @@ export function PublicDocs(): React.ReactElement {
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+
+  // Persistent chat state shared by the panel, the topbar button, the
+  // sticky bar, and the full-page route. Conversation is mirrored to
+  // sessionStorage so refreshes preserve it.
+  const docsChat = useDocsChat(projectId)
 
   // Close search on outside click
   useEffect(() => {
@@ -400,6 +423,19 @@ export function PublicDocs(): React.ReactElement {
     if (projectId) navigate(`/docs/${projectId}/${page.slug}`, { replace: true })
   }, [navigate, projectId])
 
+  const handleSourceClick = useCallback((s: { pageId: string; pageTitle: string; pageSlug: string }) => {
+    const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
+    if (target && projectId) navigate(`/docs/${projectId}/${target.slug}`)
+  }, [pages, projectId, navigate])
+
+  const resolveSourceMedia = useCallback((s: { pageId: string; pageSlug: string }) => {
+    const meta = pages.find((p) => p.id === s.pageId || p.slug === s.pageSlug)
+    if (!meta) return null
+    const cached = pageContents.get(meta.slug)
+    if (!cached?.videoUrl) return null
+    return { videoUrl: cached.videoUrl, audioUrl: cached.audioUrl ?? null }
+  }, [pages, pageContents])
+
   // Load the Google Font matching the stored design.font, if any. We
   // resolve the CSS family value against the curated allowlist
   // (src/shared/design/fonts.ts) — anything that doesn't match (legacy
@@ -481,6 +517,17 @@ export function PublicDocs(): React.ReactElement {
             )
           })()}
         </div>
+        {chatEnabled && !inChatMode && (
+          <Tooltip content="Posez une question à l'assistant" placement="bottom">
+            <button className={styles.askAi} onClick={() => docsChat.openChat()}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 3v4" /><path d="M3 5h4" /><path d="M6 17v4" /><path d="M4 19h4" />
+                <path d="m13 3 3.553 7.66L24 14l-7.447 3.34L13 25l-3.553-7.66L2 14l7.447-3.34Z" />
+              </svg>
+              Demander à l'IA
+            </button>
+          </Tooltip>
+        )}
       </header>
 
       <div className={styles.layout}>
@@ -506,24 +553,12 @@ export function PublicDocs(): React.ReactElement {
                 projectId={project.id}
                 projectName={project.name}
                 api={chatApiRef.current}
-                onSourceClick={(s) => {
-                  const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
-                  if (target) navigate(`/docs/${project.id}/${target.slug}`)
-                }}
-                // Attach the narrated video player inline when the cited
-                // page has one — so answers like "check how to publish"
-                // actually include the screen recording with voice-over.
-                // Only cited pages already visited (or ones whose content
-                // was warmed up elsewhere) can inline their video here.
-                // For uncached pages we fall back to the link-only source
-                // chip — same behaviour as any other unknown resource.
-                resolveSourceMedia={(s) => {
-                  const meta = pages.find((p) => p.id === s.pageId || p.slug === s.pageSlug)
-                  if (!meta) return null
-                  const cached = pageContents.get(meta.slug)
-                  if (!cached?.videoUrl) return null
-                  return { videoUrl: cached.videoUrl, audioUrl: cached.audioUrl ?? null }
-                }}
+                onSourceClick={handleSourceClick}
+                resolveSourceMedia={resolveSourceMedia}
+                messages={docsChat.messages}
+                onMessagesChange={docsChat.setMessages}
+                pendingMessage={docsChat.pendingMessage}
+                onPendingMessageConsumed={docsChat.consumePendingMessage}
               />
             </div>
           ) : (
@@ -570,28 +605,56 @@ export function PublicDocs(): React.ReactElement {
                       </div>
                     )
                   })()}
+
+                  {/* Sticky chat bar at the bottom of the article. Lives
+                      inside the content column so it scrolls with the doc
+                      but pins to the viewport while there's content below.
+                      Hidden when the panel is already open. */}
+                  {chatEnabled && !docsChat.open && (
+                    <StickyChatBar
+                      onSubmit={(msg) => docsChat.openChat(msg)}
+                      onFocus={() => { /* opening on focus would steal the input — only on submit */ }}
+                    />
+                  )}
                 </>
               )
             })()}
           </div>
           )}
-          {!inChatMode && activePage && pageContents.get(activePage.slug)?.content && (
-            <TableOfContents content={pageContents.get(activePage.slug)!.content!} scrollContainer={contentRef.current} />
-          )}
         </div>
+
+        {/* TOC column — only visible on wide screens. Sticky inside its
+            own grid cell, so it tracks the doc scroll without floating. */}
+        {!inChatMode && activePage && pageContents.get(activePage.slug)?.content && (
+          <div className={styles.tocColumn}>
+            <TableOfContents
+              mode="sticky"
+              content={pageContents.get(activePage.slug)!.content!}
+              scrollContainer={contentRef.current}
+            />
+          </div>
+        )}
       </div>
 
-      {chatEnabled && !inChatMode && (
-        <button
-          className={styles.chatLauncher}
-          onClick={() => navigate(`/docs/${project.id}/chat`)}
-          aria-label="Chat with the documentation"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          Chat with docs
-        </button>
+      {chatEnabled && !inChatMode && projectId && (
+        <DocsChatPanel
+          open={docsChat.open}
+          onClose={docsChat.closeChat}
+          onExpand={() => {
+            docsChat.closeChat()
+            navigate(`/docs/${projectId}/chat`)
+          }}
+          projectId={project.id}
+          projectName={project.name}
+          api={chatApiRef.current}
+          messages={docsChat.messages}
+          onMessagesChange={docsChat.setMessages}
+          pendingMessage={docsChat.pendingMessage}
+          onPendingMessageConsumed={docsChat.consumePendingMessage}
+          onSourceClick={handleSourceClick}
+          onReset={docsChat.reset}
+          resolveSourceMedia={resolveSourceMedia}
+        />
       )}
     </div>
   )
