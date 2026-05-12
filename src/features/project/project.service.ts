@@ -68,10 +68,16 @@ export async function createProject(userId: string, teamId: string, input: Creat
   await assertTeamMembership(teamId, userId)
   const project = await projectRepo.createProject(userId, teamId, input)
 
-  // Auto-create a "Getting Started" page so the project isn't empty
+  // Auto-create a "Getting Started" page so the project isn't empty.
+  // Resolve the project's default "main" tab first — every new project
+  // needs at least one tab, and pages can't be created without one
+  // since the tab_id column landed.
+  const { ensureMainTab } = await import('../tab/tab.repository.js')
+  const mainTab = await ensureMainTab(project.id)
   const { createPage } = await import('../page/page.repository.js')
   await createPage({
     projectId: project.id,
+    tabId: mainTab.id,
     title: 'Getting Started',
     slug: 'getting-started',
     startUrl: input.baseUrl,

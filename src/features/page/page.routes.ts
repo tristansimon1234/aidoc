@@ -43,7 +43,14 @@ pageRouter.get('/', (req: Request, res: Response, next: NextFunction) => {
     try {
       const params = ProjectIdParam.safeParse(req.params)
       if (!params.success) throw new ValidationError(params.error.flatten())
-      const tree = await pageService.getPageTree(params.data.projectId)
+      // Optional ?tabId=... filter — the admin UI sends it once the user
+      // picks a tab from the TabBar so the tree only renders that tab's
+      // pages. Omitted = every tab (used by exports / search).
+      const tabIdRaw = typeof req.query.tabId === 'string' ? req.query.tabId : undefined
+      const TabIdSchema = z.string().uuid().optional()
+      const parsed = TabIdSchema.safeParse(tabIdRaw)
+      if (!parsed.success) throw new ValidationError(parsed.error.flatten())
+      const tree = await pageService.getPageTree(params.data.projectId, parsed.data)
       res.status(200).json(tree)
     } catch (err) {
       next(err)

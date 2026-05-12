@@ -20,7 +20,7 @@ interface StickyChatBarProps {
  * material below. Visually styled as a floating pill — gradient mask
  * above it hides the content behind.
  */
-export function StickyChatBar({ onSubmit, onFocus, placeholder = 'Poser une question…' }: StickyChatBarProps): React.ReactElement {
+export function StickyChatBar({ onSubmit, onFocus, placeholder = 'Ask a question…' }: StickyChatBarProps): React.ReactElement {
   const [value, setValue] = useState('')
 
   const submit = (): void => {
@@ -51,13 +51,13 @@ export function StickyChatBar({ onSubmit, onFocus, placeholder = 'Poser une ques
           onChange={(e) => setValue(e.target.value)}
           onFocus={onFocus}
           onKeyDown={handleKey}
-          aria-label="Poser une question à l'assistant"
+          aria-label="Ask the assistant a question"
         />
         <button
           className={styles.submit}
           onClick={submit}
           disabled={!value.trim()}
-          aria-label="Envoyer"
+          aria-label="Send"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />

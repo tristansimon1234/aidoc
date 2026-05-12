@@ -3,9 +3,10 @@ import { useParams, useNavigate, Outlet, useLocation, Link } from 'react-router-
 import { Shell } from '../../../shared/layout/Shell.js'
 import { useLoadJobsFromDB } from '../../../shared/jobs/useJobRealtime.js'
 import { Button, Spinner, EmptyState } from '../../../design-system/components/index.js'
-import { type ProjectDTO, type DocPageDTO } from '../../../shared/api/client.js'
+import { api, type ProjectDTO, type DocPageDTO, type TabWithCountDTO } from '../../../shared/api/client.js'
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
+import { TabBar } from '../../page/components/TabBar.js'
 import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'analytics' | 'activity' | 'settings'
@@ -106,6 +107,21 @@ export function ProjectDetail(): React.ReactElement {
   const location = useLocation()
   const [project, setProject] = useState<ProjectDTO | null>(null)
   const [pages, setPages] = useState<DocPageDTO[]>([])
+  const [tabs, setTabs] = useState<TabWithCountDTO[]>([])
+  // Active tab persists per-project in localStorage so switching to another
+  // tab survives a page reload — same UX pattern as the main app's
+  // activeTeamId in client.ts. Fall back to first tab when nothing stored.
+  const ACTIVE_TAB_KEY = projectId ? `aidoc_active_tab:${projectId}` : null
+  const [activeTabId, setActiveTabIdState] = useState<string | null>(() => {
+    if (!ACTIVE_TAB_KEY) return null
+    try { return localStorage.getItem(ACTIVE_TAB_KEY) } catch { return null }
+  })
+  const setActiveTabId = (id: string): void => {
+    setActiveTabIdState(id)
+    if (ACTIVE_TAB_KEY) {
+      try { localStorage.setItem(ACTIVE_TAB_KEY, id) } catch { /* private mode */ }
+    }
+  }
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<NavTab>('pages')
   const [search, setSearch] = useState('')
@@ -118,9 +134,20 @@ export function ProjectDetail(): React.ReactElement {
   const fetchData = useCallback(async () => {
     if (!projectId) return
     try {
-      const [proj, tree] = await Promise.all([fetchProject(projectId), fetchPageTree(projectId)])
+      const [proj, tree, tabList] = await Promise.all([
+        fetchProject(projectId),
+        fetchPageTree(projectId),
+        api.tabs.list(projectId).catch(() => [] as TabWithCountDTO[]),
+      ])
       setProject(proj)
       setPages(tree)
+      setTabs(tabList)
+      // Default the active tab to the stored one (if still present) or
+      // the first tab in the list — never leave it null once tabs land.
+      setActiveTabIdState((prev) => {
+        if (prev && tabList.some((t) => t.id === prev)) return prev
+        return tabList[0]?.id ?? null
+      })
     } catch { /* handled */ }
     finally { setLoading(false) }
   }, [projectId])
@@ -162,6 +189,11 @@ export function ProjectDetail(): React.ReactElement {
   const isOnChildRoute = !routeTab && location.pathname !== `/projects/${projectId}`
   const showOutlet = isOnChildRoute || routeTab !== null
   const searchResults = searchPages(pages, search)
+  // Filter the page tree to the active tab so each tab has its own
+  // navigation surface. Search stays global so the user can jump across
+  // tabs in one shot. When no tab is selected yet (fresh load), fall
+  // back to every page to avoid a blank sidebar.
+  const visiblePages = activeTabId ? pages.filter((p) => p.tabId === activeTabId) : pages
 
   // Switch bar
   const switchBar = (
@@ -256,19 +288,28 @@ export function ProjectDetail(): React.ReactElement {
     >
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
+          {tabs.length > 0 && projectId && (
+            <TabBar
+              projectId={projectId}
+              tabs={tabs}
+              activeTabId={activeTabId}
+              onActiveTabChange={setActiveTabId}
+              onTabsChange={setTabs}
+            />
+          )}
           <div className={styles.sidebarHeader}>
             <span className={styles.sidebarTitle}>Pages</span>
-            <button className={styles.newPageBtn} onClick={() => navigate(`/projects/${projectId}/pages/new`)} title="New page">
+            <button className={styles.newPageBtn} onClick={() => navigate(`/projects/${projectId}/pages/new${activeTabId ? `?tab=${activeTabId}` : ''}`)} title="New page">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
             </button>
           </div>
           <div className={styles.pageList}>
-            {pages.length > 0 ? (
-              <PageTree pages={pages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
+            {visiblePages.length > 0 ? (
+              <PageTree pages={visiblePages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
             ) : (
               <div className={styles.emptyPages}>
-                <span>No pages yet</span>
-                <Button size="sm" onClick={() => navigate(`/projects/${projectId}/pages/new`)}>Create first page</Button>
+                <span>{pages.length === 0 ? 'No pages yet' : 'No pages in this tab'}</span>
+                <Button size="sm" onClick={() => navigate(`/projects/${projectId}/pages/new${activeTabId ? `?tab=${activeTabId}` : ''}`)}>Create page</Button>
               </div>
             )}
           </div>

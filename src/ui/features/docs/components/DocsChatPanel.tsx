@@ -82,7 +82,7 @@ export function DocsChatPanel({
           </div>
           <div className={styles.headerActions}>
             {messages.length > 0 && (
-              <Tooltip content="Nouvelle conversation" placement="bottom">
+              <Tooltip content="New conversation" placement="bottom">
                 <button className={styles.iconBtn} onClick={onReset} aria-label="New conversation">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 12a9 9 0 1 0 9-9" /><polyline points="3 4 3 10 9 10" />
@@ -91,7 +91,7 @@ export function DocsChatPanel({
               </Tooltip>
             )}
             {onExpand && (
-              <Tooltip content="Agrandir" placement="bottom">
+              <Tooltip content="Expand" placement="bottom">
                 <button className={styles.iconBtn} onClick={onExpand} aria-label="Expand to full page">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M15 3h6v6" /><path d="M9 21H3v-6" />
@@ -100,7 +100,7 @@ export function DocsChatPanel({
                 </button>
               </Tooltip>
             )}
-            <Tooltip content="Fermer (Esc)" placement="bottom">
+            <Tooltip content="Close (Esc)" placement="bottom">
               <button className={styles.iconBtn} onClick={onClose} aria-label="Close assistant">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M18 6 6 18" /><path d="m6 6 12 12" />

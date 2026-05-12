@@ -29,6 +29,10 @@ export interface PageBriefingWithContent {
 export interface DocPage {
   id: string
   projectId: string
+  /** Tab the page lives under. Every page belongs to exactly one tab —
+   *  the migration backfilled every legacy page into the project's
+   *  default "main" tab. */
+  tabId: string
   parentId: string | null
   title: string
   slug: string
@@ -76,6 +80,11 @@ export interface DocPageTreeNode extends DocPage {
 
 export interface CreatePageInput {
   projectId: string
+  /** Tab the page should live under. When omitted at the service layer,
+   *  the project's default "main" tab is resolved automatically — this
+   *  keeps existing API + MCP callers that pre-date the tabs feature
+   *  working without any change. */
+  tabId?: string
   parentId?: string
   title: string
   slug: string
@@ -90,6 +99,9 @@ export interface UpdatePageInput {
   startUrl?: string
   goal?: string
   parentId?: string | null
+  /** Move the page to another tab. The frontend uses this for the
+   *  delete-tab-with-move flow and for drag-between-tabs. */
+  tabId?: string
   sortOrder?: number
   status?: PageStatus
   content?: string

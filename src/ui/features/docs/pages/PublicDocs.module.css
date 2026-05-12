@@ -193,18 +193,32 @@
   color: var(--color-primary);
 }
 
-/* --- Layout: 3-col grid (sidebar / content / TOC) --- */
+/* --- Layout: 2-col grid (sidebar / right area).
+ *
+ * The right area is the single scroll container for content + TOC, so
+ * its scrollbar lands on the far-right edge of the window instead of
+ * the seam between content and TOC. The TOC itself is `position: sticky`
+ * inside that scroll container and tracks the doc as you scroll. */
 .layout {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr) 220px;
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 0;
 }
 
-@media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: 240px minmax(0, 1fr);
+/* Inner grid: content on the left, TOC pinned on the right.
+ * Lives INSIDE .contentWrapper (the scroll container) so the scrollbar
+ * stays at the window edge. */
+.rightInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  align-items: start;
+}
+
+@media (max-width: 1200px) {
+  .rightInner {
+    grid-template-columns: minmax(0, 1fr);
   }
   .tocColumn {
     display: none;
@@ -229,6 +243,43 @@
   flex-direction: column;
   gap: 1px;
   flex: 1;
+}
+
+/* Top-level tab nav (only renders when the project has >1 tab). Sits
+ * above the page tree inside the sidebar. */
+.tabNav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 calc(var(--space-sm) * -1) var(--space-sm);
+  padding: 0 var(--space-sm) var(--space-sm);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tabNavItem {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--color-muted-fg);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.tabNavItem:hover {
+  background: var(--color-secondary);
+  color: var(--color-fg);
+}
+
+.tabNavItemActive {
+  background: var(--color-accent);
+  color: var(--color-primary);
 }
 
 .poweredBy {
@@ -375,7 +426,7 @@
 
 /* --- TOC column wrapper --- */
 .tocColumn {
-  padding: 0 var(--space-md);
+  padding: 0 var(--space-sm) 0 var(--space-xs);
   min-width: 0;
 }
 

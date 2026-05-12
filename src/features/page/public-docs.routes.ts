@@ -2,7 +2,8 @@ import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
 import { NotFoundError, ValidationError } from '../../shared/middleware/error.middleware.js'
 import { findProjectById } from '../project/project.repository.js'
-import { findPublicPagesMetaByProjectId, findPublicPageBySlug } from './page.repository.js'
+import { findPublicPagesMetaByProjectId, findPublicPageBySlug, findPublicPageByTabAndSlug } from './page.repository.js'
+import { listTabsByProjectId, findTabBySlug } from '../tab/tab.repository.js'
 import { findLatestRunByPageId } from '../run/run.repository.js'
 import { getPublicUrl } from '../../shared/db/storage.repository.js'
 import * as chatService from '../chat/chat.service.js'
@@ -66,7 +67,18 @@ publicDocsRouter.get('/:projectId', (req: Request, res: Response, next: NextFunc
       const project = await getProject(req.params.projectId as string).catch(() => null)
       if (!project) throw new NotFoundError('Project not found')
 
-      const pages = await findPublicPagesMetaByProjectId(project.id)
+      const [pages, allTabs] = await Promise.all([
+        findPublicPagesMetaByProjectId(project.id),
+        listTabsByProjectId(project.id),
+      ])
+
+      // Only surface tabs that contain at least one public page —
+      // private-only tabs would otherwise appear in the public nav
+      // as empty groups.
+      const tabIdsWithPages = new Set(pages.map((p) => p.tabId))
+      const tabs = allTabs
+        .filter((t) => tabIdsWithPages.has(t.id))
+        .map((t) => ({ id: t.id, name: t.name, slug: t.slug, sortOrder: t.sortOrder }))
 
       res.status(200).json({
         project: {
@@ -76,6 +88,7 @@ publicDocsRouter.get('/:projectId', (req: Request, res: Response, next: NextFunc
           design: project.design,
         },
         chatEnabled: Boolean(project.publicDocsChatEnabled),
+        tabs,
         pages,
       })
     } catch (err) {
@@ -84,9 +97,72 @@ publicDocsRouter.get('/:projectId', (req: Request, res: Response, next: NextFunc
   })()
 })
 
-// GET /docs/:projectId/pages/:slug — single public page with content + media.
-// Called lazily as the user navigates between pages; the initial payload
-// from /docs/:projectId intentionally omits content to keep it light.
+// Internal: serialize a public page with media URLs. Same shape for both
+// the canonical (tab, slug) and the legacy (slug-only) endpoints.
+async function serializePublicPage(page: import('./page.types.js').DocPage): Promise<unknown> {
+  const briefing = page.briefing as Record<string, unknown> | null
+  const showVideo = briefing?.showVideoOnPublic === true
+
+  let videoUrl: string | null = null
+  let audioUrl: string | null = null
+
+  if (showVideo) {
+    const run = await findLatestRunByPageId(page.id)
+    const summary = run?.summaryJson as Record<string, unknown> | null
+    if (summary?.videoPath) {
+      videoUrl = getPublicUrl('artifacts', summary.videoPath as string)
+    }
+    const voiceover = summary?.voiceover as Record<string, unknown> | null
+    if (voiceover?.audioUrl) {
+      audioUrl = voiceover.audioUrl as string
+    } else if (voiceover?.audioPath) {
+      audioUrl = getPublicUrl('artifacts', voiceover.audioPath as string)
+    }
+  }
+
+  return {
+    id: page.id,
+    title: page.title,
+    slug: page.slug,
+    content: page.content,
+    parentId: page.parentId,
+    sortOrder: page.sortOrder,
+    tabId: page.tabId,
+    videoUrl,
+    audioUrl,
+  }
+}
+
+// GET /docs/:projectId/tabs/:tabSlug/pages/:slug — canonical lookup.
+// The public docs frontend uses this since slug uniqueness moved to
+// (project, tab, slug) — two tabs can host pages with the same slug.
+publicDocsRouter.get('/:projectId/tabs/:tabSlug/pages/:slug', (req: Request, res: Response, next: NextFunction) => {
+  void (async () => {
+    try {
+      const projectId = req.params.projectId as string
+      const tabSlug = req.params.tabSlug as string
+      const slug = req.params.slug as string
+
+      const project = await findProjectById(projectId)
+      if (!project) throw new NotFoundError('Project not found')
+
+      const tab = await findTabBySlug(projectId, tabSlug)
+      if (!tab) throw new NotFoundError('Tab not found')
+
+      const page = await findPublicPageByTabAndSlug(projectId, tab.id, slug)
+      if (!page) throw new NotFoundError('Page not found')
+
+      res.status(200).json(await serializePublicPage(page))
+    } catch (err) {
+      next(err)
+    }
+  })()
+})
+
+// GET /docs/:projectId/pages/:slug — legacy path kept for back-compat
+// with old links (pre-tabs URLs and inbound external references). If
+// the slug resolves uniquely we serve the page; otherwise we surface a
+// 409 so the frontend can fall back to the tab-aware path.
 publicDocsRouter.get('/:projectId/pages/:slug', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
@@ -99,36 +175,7 @@ publicDocsRouter.get('/:projectId/pages/:slug', (req: Request, res: Response, ne
       const page = await findPublicPageBySlug(projectId, slug)
       if (!page) throw new NotFoundError('Page not found')
 
-      const briefing = page.briefing as Record<string, unknown> | null
-      const showVideo = briefing?.showVideoOnPublic === true
-
-      let videoUrl: string | null = null
-      let audioUrl: string | null = null
-
-      if (showVideo) {
-        const run = await findLatestRunByPageId(page.id)
-        const summary = run?.summaryJson as Record<string, unknown> | null
-        if (summary?.videoPath) {
-          videoUrl = getPublicUrl('artifacts', summary.videoPath as string)
-        }
-        const voiceover = summary?.voiceover as Record<string, unknown> | null
-        if (voiceover?.audioUrl) {
-          audioUrl = voiceover.audioUrl as string
-        } else if (voiceover?.audioPath) {
-          audioUrl = getPublicUrl('artifacts', voiceover.audioPath as string)
-        }
-      }
-
-      res.status(200).json({
-        id: page.id,
-        title: page.title,
-        slug: page.slug,
-        content: page.content,
-        parentId: page.parentId,
-        sortOrder: page.sortOrder,
-        videoUrl,
-        audioUrl,
-      })
+      res.status(200).json(await serializePublicPage(page))
     } catch (err) {
       next(err)
     }

@@ -5,6 +5,9 @@ export const CreatePageSchema = z.object({
   title: z.string().min(1, 'Page title is required'),
   slug: z.string().min(1, 'Slug is required').regex(/^[a-z0-9-]+$/, 'Slug must be lowercase with hyphens'),
   parentId: z.string().uuid().optional(),
+  // When omitted, the service resolves the project's default "main" tab —
+  // existing API callers from before the tabs feature keep working.
+  tabId: z.string().uuid().optional(),
   startUrl: z.string().optional(),
   goal: z.string().optional(),
   sortOrder: z.number().int().optional(),
@@ -28,6 +31,8 @@ export const UpdatePageSchema = z.object({
   startUrl: z.string().optional(),
   goal: z.string().optional(),
   parentId: z.string().uuid().nullable().optional(),
+  // Move the page to a different tab. Skipped on most updates.
+  tabId: z.string().uuid().optional(),
   sortOrder: z.number().int().optional(),
   status: z.enum(['draft', 'exploring', 'published']).optional(),
   content: z.string().optional(),

@@ -365,9 +365,26 @@ export interface PageBriefingDTO {
   resources: PageResourceDTO[]
 }
 
+export interface TabDTO {
+  id: string
+  projectId: string
+  name: string
+  slug: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TabWithCountDTO extends TabDTO {
+  /** Pages currently in this tab — used by the admin to gate the
+   *  delete dialog (an empty tab can be removed without a move target). */
+  pageCount: number
+}
+
 export interface DocPageDTO {
   id: string
   projectId: string
+  tabId: string
   parentId: string | null
   title: string
   slug: string
@@ -506,8 +523,24 @@ export const api = {
       return res.json() as Promise<ImportResultDTO>
     },
   },
+  tabs: {
+    list: (projectId: string): Promise<TabWithCountDTO[]> =>
+      request(`/projects/${projectId}/tabs`),
+    create: (projectId: string, body: { name: string; slug?: string; sortOrder?: number }): Promise<TabDTO> =>
+      request(`/projects/${projectId}/tabs`, { method: 'POST', body: JSON.stringify(body) }),
+    update: (projectId: string, tabId: string, body: { name?: string; slug?: string; sortOrder?: number }): Promise<TabDTO> =>
+      request(`/projects/${projectId}/tabs/${tabId}`, { method: 'PATCH', body: JSON.stringify(body) }),
+    delete: (projectId: string, tabId: string, moveToTabId?: string): Promise<void> =>
+      request(`/projects/${projectId}/tabs/${tabId}`, {
+        method: 'DELETE',
+        body: JSON.stringify(moveToTabId ? { moveToTabId } : {}),
+      }),
+    reorder: (projectId: string, tabIds: string[]): Promise<{ success: true }> =>
+      request(`/projects/${projectId}/tabs/reorder`, { method: 'POST', body: JSON.stringify({ tabIds }) }),
+  },
   pages: {
-    list: (projectId: string): Promise<DocPageDTO[]> => request(`/projects/${projectId}/pages`),
+    list: (projectId: string, tabId?: string): Promise<DocPageDTO[]> =>
+      request(`/projects/${projectId}/pages${tabId ? `?tabId=${encodeURIComponent(tabId)}` : ''}`),
     get: (projectId: string, pageId: string): Promise<DocPageDTO> =>
       request(`/projects/${projectId}/pages/${pageId}`),
     full: (projectId: string, pageId: string): Promise<{ page: DocPageDTO; latestRun: RunDTO | null; doc: GeneratedDocDTO | null }> =>

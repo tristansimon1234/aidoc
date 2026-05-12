@@ -5,7 +5,10 @@ import styles from './ConfirmDialog.module.css'
 
 interface ConfirmDialogProps {
   title: string
-  message: string
+  /** Plain string or rich React node — lets callers embed selects, lists
+   *  or any contextual UI in the dialog body (e.g. picking a tab to move
+   *  pages into before deleting the source tab). */
+  message: React.ReactNode
   confirmLabel?: string
   cancelLabel?: string
   variant?: 'danger' | 'primary'
@@ -26,7 +29,11 @@ function DialogOverlay({ title, message, confirmLabel = 'Continue', cancelLabel 
     <div className={styles.overlay} onClick={onCancel}>
       <div className={styles.dialog} onClick={(e) => e.stopPropagation()}>
         <h3 className={styles.title}>{title}</h3>
-        <p className={styles.message}>{message}</p>
+        {typeof message === 'string' ? (
+          <p className={styles.message}>{message}</p>
+        ) : (
+          <div className={styles.message}>{message}</div>
+        )}
         <div className={styles.actions}>
           <Button variant="ghost" size="sm" onClick={onCancel}>{cancelLabel}</Button>
           <Button variant={variant} size="sm" onClick={onConfirm}>{confirmLabel}</Button>
@@ -39,7 +46,7 @@ function DialogOverlay({ title, message, confirmLabel = 'Continue', cancelLabel 
 
 interface ConfirmOptions {
   title: string
-  message: string
+  message: React.ReactNode
   confirmLabel?: string
   cancelLabel?: string
   variant?: 'danger' | 'primary'

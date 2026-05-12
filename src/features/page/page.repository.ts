@@ -5,6 +5,7 @@ import type { DocPage, CreatePageInput, UpdatePageInput, DocPageTreeNode, Reorde
 interface PageRow {
   id: string
   project_id: string
+  tab_id: string
   parent_id: string | null
   title: string
   slug: string
@@ -31,6 +32,7 @@ function mapToPage(row: PageRow): DocPage {
   return {
     id: row.id,
     projectId: row.project_id,
+    tabId: row.tab_id,
     parentId: row.parent_id,
     title: row.title,
     slug: row.slug,
@@ -55,10 +57,17 @@ function mapToPage(row: PageRow): DocPage {
 }
 
 export async function createPage(input: CreatePageInput): Promise<DocPage> {
+  if (!input.tabId) {
+    // The service layer is supposed to resolve a tab before getting here;
+    // this guard keeps a misuse from inserting a row that violates the
+    // NOT NULL constraint and returning a confusing Postgres error.
+    throw new DatabaseError('createPage requires tabId — resolve the project default tab in the service layer first')
+  }
   const { data, error } = await supabase
     .from('doc_pages')
     .insert({
       project_id: input.projectId,
+      tab_id: input.tabId,
       parent_id: input.parentId ?? null,
       title: input.title,
       slug: input.slug,
@@ -79,16 +88,18 @@ export async function findPageById(id: string): Promise<DocPage | null> {
   return data ? mapToPage(data as PageRow) : null
 }
 
-export async function findPagesByProjectId(projectId: string): Promise<DocPage[]> {
+export async function findPagesByProjectId(projectId: string, tabId?: string): Promise<DocPage[]> {
   // Hard-capped: projects with >500 pages are past the point where a tree
   // fetch per view is sensible anyway. If we hit this we need lazy loading
   // of subtrees, not a bigger payload.
-  const { data, error } = await supabase
+  let query = supabase
     .from('doc_pages')
     .select('*')
     .eq('project_id', projectId)
     .order('sort_order', { ascending: true })
     .limit(500)
+  if (tabId) query = query.eq('tab_id', tabId)
+  const { data, error } = await query
   if (error) throw new DatabaseError(error.message)
   return (data as PageRow[]).map(mapToPage)
 }
@@ -131,6 +142,9 @@ export interface PublicPageMeta {
   parentId: string | null
   sortOrder: number
   hasVideo: boolean
+  /** Tab the page is assigned to. The public docs frontend uses this to
+   *  bucket pages into the top-level tab navigation. */
+  tabId: string
 }
 
 function isShowVideo(briefing: unknown): boolean {
@@ -139,7 +153,7 @@ function isShowVideo(briefing: unknown): boolean {
 }
 
 export async function findPublicPagesMetaByProjectId(projectId: string): Promise<PublicPageMeta[]> {
-  const columns = 'id, title, slug, parent_id, sort_order, briefing'
+  const columns = 'id, title, slug, parent_id, sort_order, briefing, tab_id'
   const { data, error } = await supabase
     .from('doc_pages')
     .select(columns)
@@ -155,7 +169,7 @@ export async function findPublicPagesMetaByProjectId(projectId: string): Promise
       .eq('status', 'published')
       .order('sort_order', { ascending: true })
     if (fallback.error) throw new DatabaseError(fallback.error.message)
-    return (fallback.data as Array<{ id: string; title: string; slug: string; parent_id: string | null; sort_order: number; briefing: unknown }>)
+    return (fallback.data as Array<{ id: string; title: string; slug: string; parent_id: string | null; sort_order: number; briefing: unknown; tab_id: string }>)
       .map((r) => ({
         id: r.id,
         title: r.title,
@@ -163,11 +177,12 @@ export async function findPublicPagesMetaByProjectId(projectId: string): Promise
         parentId: r.parent_id,
         sortOrder: r.sort_order,
         hasVideo: isShowVideo(r.briefing),
+        tabId: r.tab_id,
       }))
   }
 
   if (error) throw new DatabaseError(error.message)
-  return (data as Array<{ id: string; title: string; slug: string; parent_id: string | null; sort_order: number; briefing: unknown }>)
+  return (data as Array<{ id: string; title: string; slug: string; parent_id: string | null; sort_order: number; briefing: unknown; tab_id: string }>)
     .map((r) => ({
       id: r.id,
       title: r.title,
@@ -175,10 +190,45 @@ export async function findPublicPagesMetaByProjectId(projectId: string): Promise
       parentId: r.parent_id,
       sortOrder: r.sort_order,
       hasVideo: isShowVideo(r.briefing),
+      tabId: r.tab_id,
     }))
 }
 
-/** Look up a single public page by slug within a project — for lazy content loads. */
+/** Look up a single public page by (tabId, slug). Since slug uniqueness
+ *  moved to (project, tab, slug), this is the canonical path for the
+ *  tab-aware public docs frontend. */
+export async function findPublicPageByTabAndSlug(projectId: string, tabId: string, slug: string): Promise<DocPage | null> {
+  const { data, error } = await supabase
+    .from('doc_pages')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('tab_id', tabId)
+    .eq('slug', slug)
+    .eq('is_public', true)
+    .maybeSingle()
+
+  if (error && error.message.includes('is_public')) {
+    const fallback = await supabase
+      .from('doc_pages')
+      .select('*')
+      .eq('project_id', projectId)
+      .eq('tab_id', tabId)
+      .eq('slug', slug)
+      .eq('status', 'published')
+      .maybeSingle()
+    if (fallback.error) throw new DatabaseError(fallback.error.message)
+    return fallback.data ? mapToPage(fallback.data as PageRow) : null
+  }
+
+  if (error) throw new DatabaseError(error.message)
+  return data ? mapToPage(data as PageRow) : null
+}
+
+/** Look up a single public page by slug within a project — legacy entry
+ *  for flat URLs (/docs/:projectId/:slug). After tabs landed, slug can
+ *  repeat across tabs, so this returns the *first* match (lowest
+ *  sort_order) and the caller should 301 to the canonical
+ *  (tab, page) path. */
 export async function findPublicPageBySlug(projectId: string, slug: string): Promise<DocPage | null> {
   const { data, error } = await supabase
     .from('doc_pages')
@@ -211,6 +261,7 @@ export async function updatePage(id: string, input: UpdatePageInput, editorUserI
   if (input.startUrl !== undefined) updates.start_url = input.startUrl
   if (input.goal !== undefined) updates.goal = input.goal
   if (input.parentId !== undefined) updates.parent_id = input.parentId
+  if (input.tabId !== undefined) updates.tab_id = input.tabId
   if (input.sortOrder !== undefined) updates.sort_order = input.sortOrder
   if (input.status !== undefined) updates.status = input.status
   if (input.content !== undefined) updates.content = input.content
