@@ -15,6 +15,11 @@ import {
   GenerateVoiceoverToolArgsSchema,
   GenerateMarketingVideoToolArgsSchema,
   GetMarketingVideoToolArgsSchema,
+  ListTabsToolArgsSchema,
+  CreateTabToolArgsSchema,
+  UpdateTabToolArgsSchema,
+  DeleteTabToolArgsSchema,
+  ReorderTabsToolArgsSchema,
 } from './mcp.schema.js'
 import {
   findActiveTokenByValue,
@@ -81,16 +86,22 @@ function extractClientIp(req: Request): string | null {
 const TOOL_SCOPE_REQUIREMENT: Record<string, McpScope> = {
   list_projects: 'read',
   list_pages: 'read',
+  list_tabs: 'read',
   get_page: 'read',
   get_marketing_video: 'read',
   search_documentation: 'read',
   create_project: 'write',
   create_page: 'write',
+  create_tab: 'write',
   update_page: 'write',
+  update_tab: 'write',
   reorder_pages: 'write',
+  reorder_tabs: 'write',
   generate_doc: 'write',
   generate_voiceover: 'write',
+  generate_marketing_video: 'write',
   delete_page: 'admin',
+  delete_tab: 'admin',
 }
 
 function scopeCovers(actual: McpScope, required: McpScope): boolean {
@@ -740,6 +751,104 @@ If any scene's mockCode fails to compile, this tool returns a structured error l
       required: ['projectId', 'slug', 'script'],
     },
   },
+  // ---------------------------------------------------------------------
+  // Tab tools — top-level grouping above the page tree. Every project
+  // has at least one tab (default name "main"); pages live inside tabs.
+  // ---------------------------------------------------------------------
+  {
+    name: 'list_tabs',
+    description:
+      `List every tab in a project, ordered the way they appear in the admin UI. Each item has id, name, slug, sortOrder and pageCount. Use this to discover tabs before calling create_page (with tabSlug), update_page (with newTabSlug to move pages), or delete_tab (to know how many pages need a move target).
+
+Companion tools: \`create_tab\`, \`update_tab\`, \`delete_tab\`, \`reorder_tabs\`, \`list_pages\` (filter by tab).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'create_tab',
+    description:
+      `Create a new tab in a project. The slug defaults to a kebab-cased version of the name. If the derived slug already exists it gets auto-suffixed (\`-2\`, \`-3\`, …) and the adjustment is surfaced in the response. Tabs are added to the end of the list by default.
+
+Companion tools: \`list_tabs\`, \`update_tab\`, \`reorder_tabs\`, \`create_page\` (with tabSlug).`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        name: { type: 'string', description: 'Human-readable tab name shown in the nav.' },
+        slug: { type: 'string', description: 'Optional URL slug (a-z, 0-9, -). Derived from the name when omitted.' },
+        sortOrder: { type: 'integer', minimum: 0, description: 'Optional 0-based position. Appended to the end when omitted.' },
+      },
+      required: ['projectId', 'name'],
+    },
+  },
+  {
+    name: 'update_tab',
+    description:
+      `Rename a tab, change its slug, or move it. Reference the tab by either \`tabId\` or its current \`tabSlug\`. At least one of \`name\`, \`newSlug\`, \`sortOrder\` must be provided.
+
+Note: renaming a tab does NOT change its slug — pass \`newSlug\` if you also want the public URL to follow.
+
+Companion tools: \`list_tabs\`, \`reorder_tabs\`, \`delete_tab\`.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        tabId: { type: 'string', description: 'Tab UUID (or use tabSlug).' },
+        tabSlug: { type: 'string', description: 'Current slug of the tab to update (or use tabId).' },
+        name: { type: 'string', description: 'New display name.' },
+        newSlug: { type: 'string', description: 'New slug. Must be unique within the project.' },
+        sortOrder: { type: 'integer', minimum: 0, description: 'New 0-based position.' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'delete_tab',
+    description:
+      `Delete a tab. The project must keep at least one tab — deleting the only remaining tab returns an error. When the tab still contains pages, you MUST provide a target via \`moveToTabId\` or \`moveToTabSlug\`: every page is moved to that tab before the source tab is dropped (no cascade delete on pages).
+
+Order of operations for an interactive UI:
+1. Call \`list_tabs\` to know the pageCount of the tab being removed.
+2. If > 0, prompt the user to pick a destination tab.
+3. Call \`delete_tab\` with the chosen \`moveToTabSlug\`.
+
+Companion tools: \`list_tabs\`, \`update_tab\`, \`reorder_tabs\`.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        tabId: { type: 'string', description: 'Tab UUID (or use tabSlug).' },
+        tabSlug: { type: 'string', description: 'Slug of the tab to delete (or use tabId).' },
+        moveToTabId: { type: 'string', description: 'Required if the tab has pages: target tab UUID for moved pages.' },
+        moveToTabSlug: { type: 'string', description: 'Required if the tab has pages: target tab slug for moved pages.' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
+    name: 'reorder_tabs',
+    description:
+      `Re-order the tabs left-to-right. Pass the full set of tab UUIDs in the desired order; sort_order is rewritten 0…N-1 so gaps from previous edits collapse.
+
+Companion tools: \`list_tabs\` (read current ids first), \`update_tab\`.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'string', description: 'Project UUID.' },
+        tabIds: {
+          type: 'array',
+          description: 'Tab UUIDs in the new left-to-right order. Every existing tab should appear once.',
+          items: { type: 'string' },
+        },
+      },
+      required: ['projectId', 'tabIds'],
+    },
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -785,6 +894,16 @@ async function dispatchTool(
       return handleGenerateMarketingVideo(rawArgs, ctx)
     case 'get_marketing_video':
       return handleGetMarketingVideo(rawArgs, ctx)
+    case 'list_tabs':
+      return handleListTabs(rawArgs, ctx)
+    case 'create_tab':
+      return handleCreateTab(rawArgs, ctx)
+    case 'update_tab':
+      return handleUpdateTab(rawArgs, ctx)
+    case 'delete_tab':
+      return handleDeleteTab(rawArgs, ctx)
+    case 'reorder_tabs':
+      return handleReorderTabs(rawArgs, ctx)
     default:
       return toolText(`Unknown tool: ${name}`)
   }
@@ -828,8 +947,21 @@ async function handleListPages(
   if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
   await assertProjectInTeam(parsed.data.projectId, ctx.teamId)
   const { findPagesByProjectId } = await import('../page/page.repository.js')
-  const pages = await findPagesByProjectId(parsed.data.projectId)
-  if (pages.length === 0) return toolText('No pages yet. Call create_page to add one.')
+  const { findTabBySlug } = await import('../tab/tab.repository.js')
+
+  let tabId: string | undefined
+  if (parsed.data.tabSlug) {
+    const tab = await findTabBySlug(parsed.data.projectId, parsed.data.tabSlug)
+    if (!tab) return toolText(`No tab with slug "${parsed.data.tabSlug}". Call list_tabs to see available tabs.`)
+    tabId = tab.id
+  }
+
+  const pages = await findPagesByProjectId(parsed.data.projectId, tabId)
+  if (pages.length === 0) {
+    return toolText(parsed.data.tabSlug
+      ? `No pages in tab "${parsed.data.tabSlug}" yet. Call create_page with tabSlug="${parsed.data.tabSlug}".`
+      : 'No pages yet. Call create_page to add one.')
+  }
 
   const byId = new Map(pages.map((p) => [p.id, { id: p.id, title: p.title, parentId: p.parentId }]))
   const lines = pages.map((p) => {
@@ -851,8 +983,34 @@ async function handleGetPage(
   await assertProjectInTeam(parsed.data.projectId, ctx.teamId)
   const { findPagesByProjectId } = await import('../page/page.repository.js')
   const pages = await findPagesByProjectId(parsed.data.projectId)
-  const page = pages.find((p) => p.slug === parsed.data.slug)
-  if (!page) return toolText(`No page with slug "${parsed.data.slug}". Call list_pages to see available slugs.`)
+
+  // Filter to the requested tab when one is provided, otherwise look
+  // across all tabs. If multiple pages share the slug (across tabs) and
+  // no tabSlug was passed, ask the caller to disambiguate so we don't
+  // silently return the wrong one.
+  const candidates = parsed.data.tabSlug
+    ? (await (async () => {
+        const { findTabBySlug } = await import('../tab/tab.repository.js')
+        const tab = await findTabBySlug(parsed.data.projectId, parsed.data.tabSlug!)
+        if (!tab) return null
+        return pages.filter((p) => p.slug === parsed.data.slug && p.tabId === tab.id)
+      })()) ?? []
+    : pages.filter((p) => p.slug === parsed.data.slug)
+
+  if (parsed.data.tabSlug && candidates.length === 0) {
+    return toolText(`No page with slug "${parsed.data.slug}" in tab "${parsed.data.tabSlug}". Call list_pages (with tabSlug) to see available slugs.`)
+  }
+  if (candidates.length === 0) return toolText(`No page with slug "${parsed.data.slug}". Call list_pages to see available slugs.`)
+  if (candidates.length > 1) {
+    const tabSlugs = await (async () => {
+      const { listTabsByProjectId } = await import('../tab/tab.repository.js')
+      const tabs = await listTabsByProjectId(parsed.data.projectId)
+      const byId = new Map(tabs.map((t) => [t.id, t.slug]))
+      return candidates.map((c) => byId.get(c.tabId) ?? '?')
+    })()
+    return toolText(`Slug "${parsed.data.slug}" exists in multiple tabs (${tabSlugs.join(', ')}). Pass \`tabSlug\` to disambiguate.`)
+  }
+  const page = candidates[0]!
 
   const byId = new Map(pages.map((p) => [p.id, { id: p.id, title: p.title, parentId: p.parentId }]))
   const crumb = breadcrumbOf(page.id, byId)
@@ -1057,14 +1215,30 @@ async function handleCreatePage(
   await enforceQuotaOrThrow(ctx.teamId)
 
   const { findPagesByProjectId } = await import('../page/page.repository.js')
-  const pages = await findPagesByProjectId(parsed.data.projectId)
+  const { findTabBySlug, ensureMainTab } = await import('../tab/tab.repository.js')
 
-  // Slug — use provided, else derive. Ensure it's unique within the project
-  // by suffixing -2, -3… on collision. We remember the requested slug so we
-  // can surface the adjustment to the caller (Claude) — previously the dedup
-  // was silent and Claude kept building docs around slugs that didn't exist.
+  // Resolve the target tab. Defaults to 'main' for back-compat with
+  // pre-tabs callers — every project has at least one 'main' tab post-
+  // migration, and ensureMainTab covers the corner case of a newly
+  // created project that bypassed the seed.
+  const targetTabSlug = parsed.data.tabSlug ?? 'main'
+  const tab = parsed.data.tabSlug
+    ? await findTabBySlug(parsed.data.projectId, targetTabSlug)
+    : await ensureMainTab(parsed.data.projectId)
+  if (!tab) {
+    return toolText(`No tab with slug "${targetTabSlug}". Call list_tabs to see available tabs, or omit tabSlug for the default "main" tab.`)
+  }
+
+  // Filter pages to the target tab for slug uniqueness + parent lookup.
+  // Slug uniqueness moved to (project, tab, slug), so the same slug can
+  // live in two different tabs — pages from other tabs shouldn't trip
+  // the dedup or accidentally satisfy parentSlug.
+  const allPages = await findPagesByProjectId(parsed.data.projectId)
+  const pagesInTab = allPages.filter((p) => p.tabId === tab.id)
+
+  // Slug — use provided, else derive. Ensure uniqueness within the tab.
   const baseSlug = parsed.data.slug ?? slugify(parsed.data.title)
-  const existing = new Set(pages.map((p) => p.slug))
+  const existing = new Set(pagesInTab.map((p) => p.slug))
   let slug = baseSlug
   let n = 2
   while (existing.has(slug)) {
@@ -1072,23 +1246,24 @@ async function handleCreatePage(
   }
   const slugAdjusted = slug !== baseSlug
 
-  // Optional parent lookup by slug.
+  // Optional parent lookup by slug — only inside the same tab.
   let parentId: string | undefined
   if (parsed.data.parentSlug) {
-    const parent = pages.find((p) => p.slug === parsed.data.parentSlug)
+    const parent = pagesInTab.find((p) => p.slug === parsed.data.parentSlug)
     if (!parent) {
       return toolText(
-        `No parent page with slug "${parsed.data.parentSlug}". Call list_pages to see available slugs, or omit parentSlug for a top-level page.`,
+        `No parent page with slug "${parsed.data.parentSlug}" in tab "${tab.slug}". Call list_pages (with tabSlug="${tab.slug}") to see available slugs, or omit parentSlug for a top-level page.`,
       )
     }
     parentId = parent.id
   }
 
-  const sortOrder = parsed.data.sortOrder ?? pages.reduce((max, p) => Math.max(max, p.sortOrder), -1) + 1
+  const sortOrder = parsed.data.sortOrder ?? pagesInTab.reduce((max, p) => Math.max(max, p.sortOrder), -1) + 1
 
   const { createPage } = await import('../page/page.service.js')
   const page = await createPage({
     projectId: parsed.data.projectId,
+    tabId: tab.id,
     parentId,
     title: parsed.data.title,
     slug,
@@ -1154,14 +1329,40 @@ async function handleUpdatePage(
   await enforceQuotaOrThrow(ctx.teamId)
 
   const { findPagesByProjectId } = await import('../page/page.repository.js')
+  const { findTabBySlug } = await import('../tab/tab.repository.js')
   const pages = await findPagesByProjectId(parsed.data.projectId)
-  const page = pages.find((p) => p.slug === parsed.data.slug)
-  if (!page) return toolText(`No page with slug "${parsed.data.slug}". Call list_pages to see available slugs.`)
 
-  // Guard against newSlug collisions within the same project.
-  if (parsed.data.newSlug && parsed.data.newSlug !== parsed.data.slug) {
-    const taken = pages.some((p) => p.slug === parsed.data.newSlug && p.id !== page.id)
-    if (taken) return toolText(`Slug "${parsed.data.newSlug}" is already taken by another page.`)
+  // Resolve source page — disambiguate by tabSlug when provided.
+  const sourceTab = parsed.data.tabSlug
+    ? await findTabBySlug(parsed.data.projectId, parsed.data.tabSlug)
+    : null
+  if (parsed.data.tabSlug && !sourceTab) {
+    return toolText(`No tab with slug "${parsed.data.tabSlug}". Call list_tabs to see available tabs.`)
+  }
+  const candidates = sourceTab
+    ? pages.filter((p) => p.slug === parsed.data.slug && p.tabId === sourceTab.id)
+    : pages.filter((p) => p.slug === parsed.data.slug)
+  if (candidates.length === 0) return toolText(`No page with slug "${parsed.data.slug}". Call list_pages to see available slugs.`)
+  if (candidates.length > 1) {
+    return toolText(`Slug "${parsed.data.slug}" exists in multiple tabs. Pass \`tabSlug\` to disambiguate.`)
+  }
+  const page = candidates[0]!
+
+  // Resolve target tab when the caller is moving the page across tabs.
+  let newTabId: string | undefined
+  if (parsed.data.newTabSlug) {
+    const target = await findTabBySlug(parsed.data.projectId, parsed.data.newTabSlug)
+    if (!target) return toolText(`No tab with slug "${parsed.data.newTabSlug}". Call list_tabs to see available tabs.`)
+    newTabId = target.id
+  }
+
+  // Guard against newSlug collisions in the (possibly new) tab.
+  const effectiveTabId = newTabId ?? page.tabId
+  if (parsed.data.newSlug && (parsed.data.newSlug !== parsed.data.slug || newTabId !== undefined)) {
+    const taken = pages.some(
+      (p) => p.slug === parsed.data.newSlug && p.tabId === effectiveTabId && p.id !== page.id,
+    )
+    if (taken) return toolText(`Slug "${parsed.data.newSlug}" is already taken by another page in this tab.`)
   }
 
   // Resolve the effective new content:
@@ -1194,6 +1395,7 @@ async function handleUpdatePage(
   const input: {
     title?: string
     slug?: string
+    tabId?: string
     content?: string
     contentBlocks?: unknown
     status?: 'draft' | 'exploring' | 'published'
@@ -1204,11 +1406,38 @@ async function handleUpdatePage(
     slug: parsed.data.newSlug,
     content: nextContent,
   }
+  if (newTabId !== undefined) input.tabId = newTabId
   if (nextContent !== undefined) input.contentBlocks = null
   if (parsed.data.status !== undefined) input.status = parsed.data.status
   if (parsed.data.isPublic !== undefined) input.isPublic = parsed.data.isPublic
   if (parsed.data.briefing !== undefined) input.briefing = parsed.data.briefing
   const updated = await updatePage(page.id, input, ctx.userId)
+
+  // When the page moves to another tab, cascade the new tab_id to
+  // every descendant so the sub-tree stays consistent — otherwise the
+  // parent ends up in tab B while its children still report tab A,
+  // and the public docs nav buckets them under the wrong section.
+  let movedDescendantCount = 0
+  if (newTabId !== undefined && newTabId !== page.tabId) {
+    const descendantIds = new Set<string>()
+    const stack = [page.id]
+    while (stack.length > 0) {
+      const id = stack.pop()!
+      for (const p of pages) {
+        if (p.parentId === id && !descendantIds.has(p.id)) {
+          descendantIds.add(p.id)
+          stack.push(p.id)
+        }
+      }
+    }
+    if (descendantIds.size > 0) {
+      const { updatePage: rawUpdatePage } = await import('../page/page.repository.js')
+      await Promise.all(
+        Array.from(descendantIds).map((id) => rawUpdatePage(id, { tabId: newTabId })),
+      )
+      movedDescendantCount = descendantIds.size
+    }
+  }
 
   const mode = parsed.data.content !== undefined ? 'replaced' : parsed.data.contentAppend !== undefined ? 'appended to' : 'updated'
   const notes: string[] = []
@@ -1218,6 +1447,9 @@ async function handleUpdatePage(
     )
   }
   if (h1Processing?.warning) notes.push(`⚠️ ${h1Processing.warning}`)
+  if (movedDescendantCount > 0) {
+    notes.push(`ℹ️ Moved ${movedDescendantCount} descendant page${movedDescendantCount === 1 ? '' : 's'} along with this one to the new tab.`)
+  }
 
   const summary = `Updated page **${updated.title}** (slug: ${updated.slug}, ${mode}).`
   return toolText(notes.length > 0 ? `${summary}\n\n${notes.join('\n')}` : summary)
@@ -1232,9 +1464,23 @@ async function handleDeletePage(
   await assertProjectInTeam(parsed.data.projectId, ctx.teamId)
 
   const { findPagesByProjectId } = await import('../page/page.repository.js')
+  const { findTabBySlug } = await import('../tab/tab.repository.js')
   const pages = await findPagesByProjectId(parsed.data.projectId)
-  const page = pages.find((p) => p.slug === parsed.data.slug)
-  if (!page) return toolText(`No page with slug "${parsed.data.slug}". Call list_pages to see available slugs.`)
+
+  const sourceTab = parsed.data.tabSlug
+    ? await findTabBySlug(parsed.data.projectId, parsed.data.tabSlug)
+    : null
+  if (parsed.data.tabSlug && !sourceTab) {
+    return toolText(`No tab with slug "${parsed.data.tabSlug}". Call list_tabs to see available tabs.`)
+  }
+  const candidates = sourceTab
+    ? pages.filter((p) => p.slug === parsed.data.slug && p.tabId === sourceTab.id)
+    : pages.filter((p) => p.slug === parsed.data.slug)
+  if (candidates.length === 0) return toolText(`No page with slug "${parsed.data.slug}". Call list_pages to see available slugs.`)
+  if (candidates.length > 1) {
+    return toolText(`Slug "${parsed.data.slug}" exists in multiple tabs. Pass \`tabSlug\` to disambiguate.`)
+  }
+  const page = candidates[0]!
 
   const { deletePage } = await import('../page/page.service.js')
   await deletePage(page.id)
@@ -1544,4 +1790,97 @@ async function handleGetMarketingVideo(
     `Edit any subset of \`script\` (a single scene's \`mockCode\`, the hook \`voiceover\`, the cta \`buttonLabel\`, …) and resubmit the FULL \`script\` via \`generate_marketing_video\`. ⚠️ \`tone\` and \`musicTrackId\` are NOT persisted on the manifest — re-pass them on the next call to keep the same audio direction (defaults: tone='punchy', musicTrackId='ai-inspirational').`
 
   return toolText(`${header}\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\``)
+}
+
+// ---------------------------------------------------------------------------
+// Tab tool handlers
+// ---------------------------------------------------------------------------
+
+async function handleListTabs(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = ListTabsToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+  await assertProjectInTeam(parsed.data.projectId, ctx.teamId)
+  const { listTabs } = await import('../tab/tab.service.js')
+  const tabs = await listTabs(parsed.data.projectId)
+  const lines = tabs.map((t) => `- **${t.name}** (slug: ${t.slug}, id: ${t.id}, ${t.pageCount} page${t.pageCount === 1 ? '' : 's'})`)
+  return toolText(lines.join('\n'))
+}
+
+async function handleCreateTab(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = CreateTabToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+  await assertProjectInTeam(parsed.data.projectId, ctx.teamId)
+  const { createTab } = await import('../tab/tab.service.js')
+  const tab = await createTab(parsed.data.projectId, {
+    name: parsed.data.name,
+    slug: parsed.data.slug,
+    sortOrder: parsed.data.sortOrder,
+  })
+  return toolText(`Created tab **${tab.name}** (slug: ${tab.slug}, id: ${tab.id}).`)
+}
+
+async function handleUpdateTab(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = UpdateTabToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+  await assertProjectInTeam(parsed.data.projectId, ctx.teamId)
+  const { resolveTab, updateTab } = await import('../tab/tab.service.js')
+  const target = await resolveTab(parsed.data.projectId, {
+    tabId: parsed.data.tabId,
+    tabSlug: parsed.data.tabSlug,
+  })
+  if (!target) return toolText(`No tab matching the given tabId/tabSlug. Call list_tabs to see available tabs.`)
+  const updated = await updateTab(parsed.data.projectId, target.id, {
+    name: parsed.data.name,
+    slug: parsed.data.newSlug,
+    sortOrder: parsed.data.sortOrder,
+  })
+  return toolText(`Updated tab **${updated.name}** (slug: ${updated.slug}, sortOrder: ${updated.sortOrder}).`)
+}
+
+async function handleDeleteTab(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = DeleteTabToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+  await assertProjectInTeam(parsed.data.projectId, ctx.teamId)
+  const { resolveTab, deleteTab } = await import('../tab/tab.service.js')
+  const target = await resolveTab(parsed.data.projectId, {
+    tabId: parsed.data.tabId,
+    tabSlug: parsed.data.tabSlug,
+  })
+  if (!target) return toolText(`No tab matching the given tabId/tabSlug. Call list_tabs to see available tabs.`)
+  try {
+    await deleteTab(parsed.data.projectId, target.id, {
+      moveToTabId: parsed.data.moveToTabId,
+      moveToTabSlug: parsed.data.moveToTabSlug,
+    })
+  } catch (err) {
+    // Surface the structured TAB_NOT_EMPTY / TAB_LAST_REMAINING errors as
+    // a readable string the MCP client can pass to the user.
+    if (err instanceof AppError) return toolText(`Could not delete tab: ${err.message}`)
+    throw err
+  }
+  return toolText(`Deleted tab **${target.name}** (slug: ${target.slug}).`)
+}
+
+async function handleReorderTabs(
+  raw: Record<string, unknown>,
+  ctx: McpAuthContext,
+): Promise<ReturnType<typeof toolText>> {
+  const parsed = ReorderTabsToolArgsSchema.safeParse(raw)
+  if (!parsed.success) return toolText(`Invalid arguments: ${parsed.error.message}`)
+  await assertProjectInTeam(parsed.data.projectId, ctx.teamId)
+  const { reorderTabs } = await import('../tab/tab.service.js')
+  await reorderTabs(parsed.data.projectId, parsed.data.tabIds)
+  return toolText(`Reordered ${parsed.data.tabIds.length} tab${parsed.data.tabIds.length === 1 ? '' : 's'}.`)
 }

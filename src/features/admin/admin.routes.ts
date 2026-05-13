@@ -70,7 +70,8 @@ adminRouter.post('/allowlist', (req: Request, res: Response, next: NextFunction)
 adminRouter.delete('/allowlist/:email', (req: Request, res: Response, next: NextFunction) => {
   void (async () => {
     try {
-      const email = decodeURIComponent(req.params.email ?? '').trim().toLowerCase()
+      const rawEmail = req.params.email
+      const email = decodeURIComponent(typeof rawEmail === 'string' ? rawEmail : '').trim().toLowerCase()
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         throw new ValidationError('email param required')
       }

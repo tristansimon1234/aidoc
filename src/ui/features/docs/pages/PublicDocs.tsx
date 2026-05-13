@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { Spinner, EmptyState, MarkdownRenderer, TableOfContents } from '../../../design-system/components/index.js'
+import { Spinner, EmptyState, MarkdownRenderer, TableOfContents, Tooltip } from '../../../design-system/components/index.js'
 import type { ProjectDesignDTO, ChatResponseDTO, ChatStreamEventDTO } from '../../../shared/api/client.js'
 import { computeFullTheme } from '../../../shared/theme/computeTheme.js'
 import { ChatSurface, type ChatSurfaceApi } from '../../chat/components/ChatSurface.js'
+import { DocsChatPanel } from '../components/DocsChatPanel.js'
+import { StickyChatBar } from '../components/StickyChatBar.js'
+import { useDocsChat } from '../hooks/useDocsChat.js'
 import styles from './PublicDocs.module.css'
 
 /** Lightweight narrated video player for public docs — syncs video + voiceover audio */
@@ -77,6 +80,16 @@ interface PublicPage {
   parentId: string | null
   sortOrder: number
   hasVideo?: boolean
+  /** Tab this page belongs to — used to filter the sidebar by active
+   *  tab and to resolve the canonical URL on legacy lookups. */
+  tabId: string
+}
+
+interface PublicTab {
+  id: string
+  name: string
+  slug: string
+  sortOrder: number
 }
 
 /** Content loaded on demand for a single page. */
@@ -226,11 +239,19 @@ function NavTree({ items, activePage, onSelect, onPrefetch, depth = 0 }: {
       {items.map((p) => {
         const hasChildren = p.children.length > 0
         const isCollapsed = collapsed.has(p.id)
+        // Top-level pages with children read as section headers — they
+        // group their sub-pages visually. Clicking the title still
+        // navigates (some sites use the section page as an overview);
+        // the chevron handles expand/collapse separately.
+        const isSection = depth === 0 && hasChildren
         return (
           <div key={p.id}>
-            <div className={styles.navRow} style={{ paddingLeft: `${depth * 14 + 4}px` }}>
+            <div
+              className={`${styles.navRow} ${isSection ? styles.navRowSection : ''}`}
+              style={isSection ? undefined : { paddingLeft: `${depth * 14 + 4}px` }}
+            >
               {hasChildren ? (
-                <button className={styles.navChevron} onClick={() => toggle(p.id)}>
+                <button className={styles.navChevron} onClick={() => toggle(p.id)} aria-label={isCollapsed ? 'Expand' : 'Collapse'}>
                   <svg
                     width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -253,7 +274,13 @@ function NavTree({ items, activePage, onSelect, onPrefetch, depth = 0 }: {
               </button>
             </div>
             {hasChildren && !isCollapsed && (
-              <NavTree items={p.children} activePage={activePage} onSelect={onSelect} onPrefetch={onPrefetch} depth={depth + 1} />
+              isSection ? (
+                <div className={styles.navSubGroup}>
+                  <NavTree items={p.children} activePage={activePage} onSelect={onSelect} onPrefetch={onPrefetch} depth={depth + 1} />
+                </div>
+              ) : (
+                <NavTree items={p.children} activePage={activePage} onSelect={onSelect} onPrefetch={onPrefetch} depth={depth + 1} />
+              )
             )}
           </div>
         )
@@ -263,17 +290,25 @@ function NavTree({ items, activePage, onSelect, onPrefetch, depth = 0 }: {
 }
 
 export function PublicDocs(): React.ReactElement {
-  const { projectId, slug } = useParams<{ projectId: string; slug?: string }>()
+  // React Router 7: the canonical route is /docs/:projectId/:tabSlug/:slug
+  // while the legacy 2-segment route is /docs/:projectId/:slug. The
+  // `tabSlug` param is only populated by the 3-segment route; we treat
+  // its absence as "legacy URL, redirect to canonical once we know the
+  // page's tab".
+  const { projectId, slug, tabSlug: urlTabSlug } = useParams<{ projectId: string; slug?: string; tabSlug?: string }>()
   const navigate = useNavigate()
   const location = useLocation()
-  // The /docs/:projectId/chat route renders the chat as a full page in
-  // the content area instead of as a drawer — still wrapped by the same
-  // sidebar + topbar so users can navigate back to a page in one click.
+  // The /docs/:projectId/chat route renders the chat full-screen inside
+  // the content area. Conversation state is still owned by the
+  // useDocsChat hook so the user can switch between panel + fullpage
+  // without losing context.
   const inChatMode = location.pathname.endsWith('/chat')
   const [project, setProject] = useState<PublicProject | null>(null)
   const [chatEnabled, setChatEnabled] = useState(false)
   const chatApiRef = useRef<ChatSurfaceApi>(buildPublicChatApi())
   const [pages, setPages] = useState<PublicPage[]>([])
+  const [tabs, setTabs] = useState<PublicTab[]>([])
+  const [activeTab, setActiveTab] = useState<PublicTab | null>(null)
   const [activePage, setActivePage] = useState<PublicPage | null>(null)
   // Per-slug cache for lazily-loaded page bodies. Revisiting a page is free
   // after the first hit; navigating a 200-page doc site no longer forces
@@ -286,6 +321,11 @@ export function PublicDocs(): React.ReactElement {
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+
+  // Persistent chat state shared by the panel, the topbar button, the
+  // sticky bar, and the full-page route. Conversation is mirrored to
+  // sessionStorage so refreshes preserve it.
+  const docsChat = useDocsChat(projectId)
 
   // Close search on outside click
   useEffect(() => {
@@ -303,12 +343,33 @@ export function PublicDocs(): React.ReactElement {
       try {
         const res = await fetch(`/api/docs/${projectId}`)
         if (!res.ok) throw new Error('Not found')
-        const data = await res.json() as { project: PublicProject; chatEnabled?: boolean; pages: PublicPage[] }
+        const data = await res.json() as { project: PublicProject; chatEnabled?: boolean; tabs?: PublicTab[]; pages: PublicPage[] }
         setProject(data.project)
         setChatEnabled(Boolean(data.chatEnabled))
         setPages(data.pages)
+        const tabList = (data.tabs ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder)
+        setTabs(tabList)
+
+        // Pick the active tab. Priority:
+        //   1. Explicit :tabSlug in the URL (canonical path).
+        //   2. The tab containing the legacy :slug if only that was given.
+        //   3. The first tab.
+        let initialTab = tabList[0] ?? null
+        if (urlTabSlug) {
+          initialTab = tabList.find((t) => t.slug === urlTabSlug) ?? initialTab
+        } else if (slug && slug !== 'chat') {
+          const matchPage = data.pages.find((p) => p.slug === slug)
+          if (matchPage) {
+            initialTab = tabList.find((t) => t.id === matchPage.tabId) ?? initialTab
+          }
+        }
+        setActiveTab(initialTab)
+
         if (data.pages.length > 0) {
-          const initial = (slug ? data.pages.find((p) => p.slug === slug) : null) ?? data.pages[0] ?? null
+          const pagesInTab = initialTab ? data.pages.filter((p) => p.tabId === initialTab!.id) : data.pages
+          const initial = (slug && slug !== 'chat'
+            ? pagesInTab.find((p) => p.slug === slug)
+            : null) ?? pagesInTab[0] ?? data.pages[0] ?? null
           setActivePage(initial)
         }
       } catch {
@@ -320,66 +381,96 @@ export function PublicDocs(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
-  // Sync active page when the URL slug changes (back/forward, deep link)
+  // Sync active page when the URL slug changes (back/forward, deep link).
+  // Tab disambiguates when the slug repeats across tabs — restrict to
+  // the active tab's pages when one is known, fall back to global match.
   useEffect(() => {
     if (!slug || pages.length === 0) return
-    const match = pages.find((p) => p.slug === slug)
-    if (match && match.id !== activePage?.id) setActivePage(match)
-  }, [slug, pages, activePage?.id])
+    const scope = activeTab ? pages.filter((p) => p.tabId === activeTab.id) : pages
+    const match = scope.find((p) => p.slug === slug) ?? pages.find((p) => p.slug === slug)
+    if (match && match.id !== activePage?.id) {
+      setActivePage(match)
+      // If we landed via a legacy /docs/:projectId/:slug URL, swap to
+      // the canonical /docs/:projectId/:tabSlug/:slug shape so refresh /
+      // bookmarks pick up the right tab.
+      if (!urlTabSlug && projectId && !inChatMode) {
+        const tab = tabs.find((t) => t.id === match.tabId)
+        if (tab) navigate(`/docs/${projectId}/${tab.slug}/${match.slug}`, { replace: true })
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, pages, activePage?.id, activeTab?.id, urlTabSlug])
 
   // Track in-flight prefetches so hovering twice on the same nav item
   // doesn't fire duplicate requests. Shared between the hover prefetch
   // and the active-page effect so they collapse into a single fetch.
   const inFlightRef = useRef<Set<string>>(new Set())
 
+  // Cache key includes the tab so slug-collisions across tabs land in
+  // different buckets. Falls back to slug-only for legacy data points.
+  const cacheKeyFor = useCallback((page: { tabId: string; slug: string }): string => `${page.tabId}/${page.slug}`, [])
+
   // Prefetch a page's content into the cache if we don't already have it.
   // Called from the nav tree on hover/focus so clicking feels instant,
   // and from the active-page effect on direct navigation.
   const prefetchPage = useCallback((page: PublicPage): void => {
     if (!projectId) return
-    if (pageContents.has(page.slug)) return
-    if (inFlightRef.current.has(page.slug)) return
-    inFlightRef.current.add(page.slug)
+    const key = cacheKeyFor(page)
+    if (pageContents.has(key)) return
+    if (inFlightRef.current.has(key)) return
+    inFlightRef.current.add(key)
+    const tabForPage = tabs.find((t) => t.id === page.tabId)
     void (async () => {
       try {
-        const res = await fetch(`/api/docs/${projectId}/pages/${encodeURIComponent(page.slug)}`)
+        // Prefer the tab-aware canonical endpoint when we know the tab —
+        // it disambiguates when the same slug exists in two tabs. Fall
+        // back to the legacy endpoint for early-loaded scenarios where
+        // tabs[] hasn't landed yet.
+        const url = tabForPage
+          ? `/api/docs/${projectId}/tabs/${encodeURIComponent(tabForPage.slug)}/pages/${encodeURIComponent(page.slug)}`
+          : `/api/docs/${projectId}/pages/${encodeURIComponent(page.slug)}`
+        const res = await fetch(url)
         if (!res.ok) throw new Error('Page not found')
-        const body = await res.json() as PublicPageContent
+        const body = await res.json() as PublicPageContent & { tabId?: string }
         setPageContents((prev) => {
           const next = new Map(prev)
-          next.set(body.slug, body)
+          next.set(`${body.tabId ?? page.tabId}/${body.slug}`, body)
           return next
         })
       } catch {
         // Soft-fail: the page shell still renders, just without content.
       } finally {
-        inFlightRef.current.delete(page.slug)
+        inFlightRef.current.delete(key)
       }
     })()
-  }, [projectId, pageContents])
+  }, [projectId, pageContents, cacheKeyFor, tabs])
 
   // Drive the loading spinner for the currently-viewed page. Prefetch
   // dedupes with inFlightRef so this doesn't trigger a second request.
   useEffect(() => {
     if (!projectId || !activePage) return
-    if (pageContents.has(activePage.slug)) { setContentLoading(false); return }
+    const key = cacheKeyFor(activePage)
+    if (pageContents.has(key)) { setContentLoading(false); return }
     setContentLoading(true)
     prefetchPage(activePage)
-  }, [projectId, activePage, pageContents, prefetchPage])
+  }, [projectId, activePage, pageContents, prefetchPage, cacheKeyFor])
 
   // Clear the spinner once the active page's content lands in cache.
   useEffect(() => {
     if (!activePage) return
-    if (pageContents.has(activePage.slug)) setContentLoading(false)
-  }, [activePage, pageContents])
+    if (pageContents.has(cacheKeyFor(activePage))) setContentLoading(false)
+  }, [activePage, pageContents, cacheKeyFor])
 
   // Fire-and-forget: ping the view endpoint so the owner sees page-view
   // analytics. Dedupe per slug so strict-mode / re-renders don't double-count.
   const viewedSlugsRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (!projectId || !activePage) return
-    if (viewedSlugsRef.current.has(activePage.slug)) return
-    viewedSlugsRef.current.add(activePage.slug)
+    // Key views by (tab, slug) so the same slug across two tabs counts
+    // separately for owner-facing analytics.
+    const viewKey = `${activePage.tabId}/${activePage.slug}`
+    if (viewedSlugsRef.current.has(viewKey)) return
+    viewedSlugsRef.current.add(viewKey)
     void (async () => {
       try {
         const { getChatSessionToken } = await import('../../../shared/hooks/useChatSessionToken.js')
@@ -397,8 +488,38 @@ export function PublicDocs(): React.ReactElement {
 
   const selectPage = useCallback((page: PublicPage) => {
     setActivePage(page)
-    if (projectId) navigate(`/docs/${projectId}/${page.slug}`, { replace: true })
-  }, [navigate, projectId])
+    if (!projectId) return
+    // Always navigate to the canonical tab-aware URL so the link is
+    // shareable. Fall back to flat path when somehow the tab metadata
+    // hasn't loaded yet — shouldn't happen post-bootstrap.
+    const tab = tabs.find((t) => t.id === page.tabId)
+    if (tab) navigate(`/docs/${projectId}/${tab.slug}/${page.slug}`, { replace: true })
+    else navigate(`/docs/${projectId}/${page.slug}`, { replace: true })
+  }, [navigate, projectId, tabs])
+
+  // Click handler for the top tab nav. Switches the active tab and
+  // lands the user on the first page of the new tab so the content
+  // pane never goes blank.
+  const selectTab = useCallback((tab: PublicTab) => {
+    setActiveTab(tab)
+    const firstPage = pages.find((p) => p.tabId === tab.id && !p.parentId) ?? pages.find((p) => p.tabId === tab.id)
+    if (!projectId) return
+    if (firstPage) navigate(`/docs/${projectId}/${tab.slug}/${firstPage.slug}`)
+    else navigate(`/docs/${projectId}/${tab.slug}`)
+  }, [navigate, projectId, pages])
+
+  const handleSourceClick = useCallback((s: { pageId: string; pageTitle: string; pageSlug: string }) => {
+    const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
+    if (target && projectId) navigate(`/docs/${projectId}/${target.slug}`)
+  }, [pages, projectId, navigate])
+
+  const resolveSourceMedia = useCallback((s: { pageId: string; pageSlug: string }) => {
+    const meta = pages.find((p) => p.id === s.pageId || p.slug === s.pageSlug)
+    if (!meta) return null
+    const cached = pageContents.get(cacheKeyFor(meta))
+    if (!cached?.videoUrl) return null
+    return { videoUrl: cached.videoUrl, audioUrl: cached.audioUrl ?? null }
+  }, [pages, pageContents, cacheKeyFor])
 
   // Load the Google Font matching the stored design.font, if any. We
   // resolve the CSS family value against the curated allowlist
@@ -481,12 +602,44 @@ export function PublicDocs(): React.ReactElement {
             )
           })()}
         </div>
+        {chatEnabled && !inChatMode && (
+          <Tooltip content="Ask the assistant a question" placement="bottom">
+            <button className={styles.askAi} onClick={() => docsChat.openChat()}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M5 3v4" /><path d="M3 5h4" /><path d="M6 17v4" /><path d="M4 19h4" />
+                <path d="m13 3 3.553 7.66L24 14l-7.447 3.34L13 25l-3.553-7.66L2 14l7.447-3.34Z" />
+              </svg>
+              Ask AI
+            </button>
+          </Tooltip>
+        )}
       </header>
+
+      {tabs.length > 1 && (
+        <div className={styles.tabRow} role="tablist" aria-label="Documentation sections">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={activeTab?.id === t.id}
+              className={`${styles.tabRowItem} ${activeTab?.id === t.id ? styles.tabRowItemActive : ''}`}
+              onClick={() => selectTab(t)}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
           <nav className={styles.nav}>
-            <NavTree items={buildPageTree(pages)} activePage={activePage} onSelect={selectPage} onPrefetch={prefetchPage} />
+            <NavTree
+              items={buildPageTree(activeTab ? pages.filter((p) => p.tabId === activeTab.id) : pages)}
+              activePage={activePage}
+              onSelect={selectPage}
+              onPrefetch={prefetchPage}
+            />
           </nav>
           <a
             className={styles.poweredBy}
@@ -506,92 +659,112 @@ export function PublicDocs(): React.ReactElement {
                 projectId={project.id}
                 projectName={project.name}
                 api={chatApiRef.current}
-                onSourceClick={(s) => {
-                  const target = pages.find((p) => p.slug === s.pageSlug || p.id === s.pageId)
-                  if (target) navigate(`/docs/${project.id}/${target.slug}`)
-                }}
-                // Attach the narrated video player inline when the cited
-                // page has one — so answers like "check how to publish"
-                // actually include the screen recording with voice-over.
-                // Only cited pages already visited (or ones whose content
-                // was warmed up elsewhere) can inline their video here.
-                // For uncached pages we fall back to the link-only source
-                // chip — same behaviour as any other unknown resource.
-                resolveSourceMedia={(s) => {
-                  const meta = pages.find((p) => p.id === s.pageId || p.slug === s.pageSlug)
-                  if (!meta) return null
-                  const cached = pageContents.get(meta.slug)
-                  if (!cached?.videoUrl) return null
-                  return { videoUrl: cached.videoUrl, audioUrl: cached.audioUrl ?? null }
-                }}
+                onSourceClick={handleSourceClick}
+                resolveSourceMedia={resolveSourceMedia}
+                messages={docsChat.messages}
+                onMessagesChange={docsChat.setMessages}
+                pendingMessage={docsChat.pendingMessage}
+                onPendingMessageConsumed={docsChat.consumePendingMessage}
               />
             </div>
           ) : (
-          <div className={styles.content}>
-            {activePage && (() => {
-              const cached = pageContents.get(activePage.slug)
-              return (
-                <>
-                  <h1 className={styles.pageTitle}>{activePage.title}</h1>
-                  <div className={styles.articleIndent}>
-                    {cached?.videoUrl && (
-                      <NarratedVideo videoUrl={cached.videoUrl} audioUrl={cached.audioUrl ?? undefined} />
-                    )}
-                    {cached ? (
-                      cached.content ? (
-                        <MarkdownRenderer content={cached.content} />
-                      ) : (
-                        <p className={styles.empty}>This page has no content yet.</p>
+          <div className={styles.rightInner}>
+            <div className={styles.content}>
+              {activePage && (() => {
+                const cached = pageContents.get(cacheKeyFor(activePage))
+                return (
+                  <>
+                    <h1 className={styles.pageTitle}>{activePage.title}</h1>
+                    <div className={styles.articleIndent}>
+                      {cached?.videoUrl && (
+                        <NarratedVideo videoUrl={cached.videoUrl} audioUrl={cached.audioUrl ?? undefined} />
+                      )}
+                      {cached ? (
+                        cached.content ? (
+                          <MarkdownRenderer content={cached.content} />
+                        ) : (
+                          <p className={styles.empty}>This page has no content yet.</p>
+                        )
+                      ) : contentLoading ? (
+                        <div style={{ padding: 'var(--space-xl) 0', display: 'flex', justifyContent: 'center' }}>
+                          <Spinner size="md" />
+                        </div>
+                      ) : null}
+                    </div>
+                    {/* Notion-style child page links */}
+                    {(() => {
+                      const children = pages.filter((p) => p.parentId === activePage.id)
+                      if (children.length === 0) return null
+                      return (
+                        <div className={styles.childPages}>
+                          {children.map((child) => (
+                            <button
+                              key={child.id}
+                              className={styles.childPageLink}
+                              onMouseEnter={() => prefetchPage(child)}
+                              onFocus={() => prefetchPage(child)}
+                              onClick={() => selectPage(child)}
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
+                              {child.title}
+                            </button>
+                          ))}
+                        </div>
                       )
-                    ) : contentLoading ? (
-                      <div style={{ padding: 'var(--space-xl) 0', display: 'flex', justifyContent: 'center' }}>
-                        <Spinner size="md" />
-                      </div>
-                    ) : null}
-                  </div>
-                  {/* Notion-style child page links */}
-                  {(() => {
-                    const children = pages.filter((p) => p.parentId === activePage.id)
-                    if (children.length === 0) return null
-                    return (
-                      <div className={styles.childPages}>
-                        {children.map((child) => (
-                          <button
-                            key={child.id}
-                            className={styles.childPageLink}
-                            onMouseEnter={() => prefetchPage(child)}
-                            onFocus={() => prefetchPage(child)}
-                            onClick={() => selectPage(child)}
-                          >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8.342a2 2 0 0 0-.602-1.43l-4.44-4.342A2 2 0 0 0 13.56 2H6a2 2 0 0 0-2 2z" /><path d="M14 2v4a2 2 0 0 0 2 2h4" /></svg>
-                            {child.title}
-                          </button>
-                        ))}
-                      </div>
-                    )
-                  })()}
-                </>
-              )
-            })()}
+                    })()}
+
+                    {/* Sticky chat bar at the bottom of the article. Lives
+                        inside the content column so it scrolls with the doc
+                        but pins to the viewport while there's content below.
+                        Hidden when the panel is already open. */}
+                    {chatEnabled && !docsChat.open && (
+                      <StickyChatBar
+                        onSubmit={(msg) => docsChat.openChat(msg)}
+                        onFocus={() => { /* opening on focus would steal the input — only on submit */ }}
+                      />
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+
+            {/* TOC column — lives INSIDE the scroll container so the
+                doc scrollbar sits flush with the right edge of the
+                window, not between content and TOC. `position: sticky`
+                pins it to the top while the article scrolls. */}
+            {activePage && pageContents.get(cacheKeyFor(activePage))?.content && (
+              <div className={styles.tocColumn}>
+                <TableOfContents
+                  mode="sticky"
+                  content={pageContents.get(cacheKeyFor(activePage))!.content!}
+                  scrollContainer={contentRef.current}
+                />
+              </div>
+            )}
           </div>
-          )}
-          {!inChatMode && activePage && pageContents.get(activePage.slug)?.content && (
-            <TableOfContents content={pageContents.get(activePage.slug)!.content!} scrollContainer={contentRef.current} />
           )}
         </div>
       </div>
 
-      {chatEnabled && !inChatMode && (
-        <button
-          className={styles.chatLauncher}
-          onClick={() => navigate(`/docs/${project.id}/chat`)}
-          aria-label="Chat with the documentation"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-          </svg>
-          Chat with docs
-        </button>
+      {chatEnabled && !inChatMode && projectId && (
+        <DocsChatPanel
+          open={docsChat.open}
+          onClose={docsChat.closeChat}
+          onExpand={() => {
+            docsChat.closeChat()
+            navigate(`/docs/${projectId}/chat`)
+          }}
+          projectId={project.id}
+          projectName={project.name}
+          api={chatApiRef.current}
+          messages={docsChat.messages}
+          onMessagesChange={docsChat.setMessages}
+          pendingMessage={docsChat.pendingMessage}
+          onPendingMessageConsumed={docsChat.consumePendingMessage}
+          onSourceClick={handleSourceClick}
+          onReset={docsChat.reset}
+          resolveSourceMedia={resolveSourceMedia}
+        />
       )}
     </div>
   )

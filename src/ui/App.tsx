@@ -40,6 +40,10 @@ export function App(): React.ReactElement {
         {/* Public — no auth */}
         <Route path="/docs/:projectId" element={<PublicDocs />} />
         <Route path="/docs/:projectId/chat" element={<PublicDocs />} />
+        {/* Tab-aware canonical paths (post-tabs migration). */}
+        <Route path="/docs/:projectId/:tabSlug/:slug" element={<PublicDocs />} />
+        {/* Legacy flat path — PublicDocs detects the missing tab segment
+            and 301-redirects to the canonical /docs/:projectId/:tabSlug/:slug. */}
         <Route path="/docs/:projectId/:slug" element={<PublicDocs />} />
         <Route path="/auth/forgot" element={<ForgotPassword />} />
         <Route path="/auth/reset" element={<ResetPassword />} />

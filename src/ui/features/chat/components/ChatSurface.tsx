@@ -3,7 +3,7 @@ import { Spinner, MarkdownRenderer } from '../../../design-system/components/ind
 import type { ChatResponseDTO } from '../../../shared/api/client.js'
 import styles from './ChatSurface.module.css'
 
-interface ChatMessage {
+export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   sources?: { pageId: string; pageTitle: string; pageSlug: string }[]
@@ -81,6 +81,22 @@ interface ChatSurfaceProps {
    *  under the answer. Called per assistant message; return undefined
    *  or null when no media is available for that source. */
   resolveSourceMedia?: (source: { pageId: string; pageSlug: string }) => SourceMedia | null | undefined
+  /** Controlled messages array. When provided together with
+   *  `onMessagesChange`, the surface defers conversation state to the
+   *  parent — used by the public docs side panel to persist the
+   *  conversation in sessionStorage across page navigation. When
+   *  omitted, the surface keeps its own internal state (admin uses). */
+  messages?: ChatMessage[]
+  onMessagesChange?: (next: ChatMessage[]) => void
+  /** Visual variant. `fullpage` (default) is the standalone chat view.
+   *  `sidepanel` strips the welcome header padding so it fits the
+   *  narrower right-side panel on public docs. */
+  variant?: 'fullpage' | 'sidepanel'
+  /** When set to a non-empty string, the surface auto-sends it on next
+   *  render and calls `onPendingMessageConsumed`. Used to forward a
+   *  message typed in the sticky bar into the panel. */
+  pendingMessage?: string | null
+  onPendingMessageConsumed?: () => void
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -205,8 +221,30 @@ export function ChatSurface({
   sessionToken,
   fallbackSuggestions = DEFAULT_SUGGESTIONS,
   resolveSourceMedia,
+  messages: controlledMessages,
+  onMessagesChange,
+  variant = 'fullpage',
+  pendingMessage,
+  onPendingMessageConsumed,
 }: ChatSurfaceProps): React.ReactElement {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  // Controlled vs. uncontrolled: when the parent passes a messages array
+  // AND a change handler, the surface defers state to the parent (used
+  // by the public docs side panel for sessionStorage persistence).
+  // Otherwise we keep an internal useState so existing admin callers
+  // continue to work without any changes.
+  const [internalMessages, setInternalMessages] = useState<ChatMessage[]>([])
+  const isControlled = controlledMessages !== undefined && typeof onMessagesChange === 'function'
+  const messages = isControlled ? controlledMessages : internalMessages
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+  const setMessages = useCallback((value: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])): void => {
+    if (isControlled) {
+      const next = typeof value === 'function' ? value(messagesRef.current) : value
+      onMessagesChange!(next)
+    } else {
+      setInternalMessages(value)
+    }
+  }, [isControlled, onMessagesChange])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [indexing, setIndexing] = useState(Boolean(api.index || api.status))
@@ -215,6 +253,9 @@ export function ChatSurface({
   const [suggestions, setSuggestions] = useState<string[]>(fallbackSuggestions)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // Forward ref to sendMessage so the pending-message effect can call it
+  // without depending on the (later-declared) memoized callback.
+  const sendMessageRef = useRef<((text: string) => Promise<void>) | null>(null)
 
   const { scrollerRef, endRef } = useAutoScroll([messages.length, messages[messages.length - 1]?.content])
 
@@ -230,6 +271,21 @@ export function ChatSurface({
   // Cancel any in-flight stream when unmounting so the SSE connection
   // closes cleanly instead of leaking.
   useEffect(() => () => abortRef.current?.abort(), [])
+
+  // When the parent hands us a pending message (e.g. user typed in the
+  // sticky bar then opened the panel), auto-send it once the chat is
+  // ready. Consume the value immediately so a re-render doesn't fire it
+  // twice — the parent clears its side via onPendingMessageConsumed.
+  const pendingSentRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!pendingMessage) return
+    if (indexing || indexed === false) return
+    if (pendingSentRef.current === pendingMessage) return
+    pendingSentRef.current = pendingMessage
+    void sendMessageRef.current?.(pendingMessage)
+    onPendingMessageConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingMessage, indexing, indexed])
 
   const checkAndIndex = async (): Promise<void> => {
     if (!api.status && !api.index) {
@@ -358,6 +414,10 @@ export function ChatSurface({
     }
   }, [messages, sending, projectId, api, sessionToken, patchLastAssistant])
 
+  // Keep the ref in sync so the pending-message effect always calls the
+  // latest version. Avoids capturing a stale closure.
+  sendMessageRef.current = sendMessage
+
   const handleKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -371,9 +431,11 @@ export function ChatSurface({
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
   }
 
+  const rootClass = `${styles.page} ${variant === 'sidepanel' ? styles.pageSidePanel : ''}`
+
   if (indexing) {
     return (
-      <div className={styles.page}>
+      <div className={rootClass}>
         <div className={styles.centerState}>
           <Spinner size="sm" />
           <span className={styles.stateText}>Loading chat…</span>
@@ -384,7 +446,7 @@ export function ChatSurface({
 
   if (indexed === false) {
     return (
-      <div className={styles.page}>
+      <div className={rootClass}>
         <div className={styles.centerState}>
           <div className={styles.stateIcon}>
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -418,7 +480,7 @@ export function ChatSurface({
   })()
 
   return (
-    <div className={styles.page}>
+    <div className={rootClass}>
       <div className={styles.chat}>
         <div className={styles.messages} ref={scrollerRef}>
           {messages.length === 0 ? (

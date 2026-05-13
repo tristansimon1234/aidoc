@@ -6,6 +6,7 @@ import { profileRouter } from '../../features/profile/profile.routes.js'
 import { billingRouter } from '../../features/billing/billing.routes.js'
 import { adminRouter } from '../../features/admin/admin.routes.js'
 import { pageRouter } from '../../features/page/page.routes.js'
+import { tabRouter } from '../../features/tab/tab.routes.js'
 import { runRouter } from '../../features/run/run.routes.js'
 import { questionsRouter } from '../../features/questions/questions.routes.js'
 import { documentationRouter } from '../../features/documentation/documentation.routes.js'
@@ -66,6 +67,7 @@ export function mountRouters(app: Express, options: MountOptions): void {
   // the page CRUD routes (which would 404 on a non-UUID "import" segment).
   app.use(`${p}/projects/:projectId`, authMiddleware, exportRouter)
   app.use(`${p}/projects/:projectId/pages`, authMiddleware, pageRouter)
+  app.use(`${p}/projects/:projectId/tabs`, authMiddleware, tabRouter)
   app.use(`${p}/projects/:projectId/chat`, authMiddleware, chatRouter)
   app.use(`${p}/projects/:projectId/analytics`, authMiddleware, analyticsRouter)
   app.use(`${p}/runs`, authMiddleware, runRouter)

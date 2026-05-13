@@ -1,0 +1,87 @@
+/* Sticky pill at the bottom of the doc article. Lives inside the
+ * scrolling content column.
+ *
+ * - `margin-top: auto` pushes the bar to the bottom of the parent flex
+ *   column on short pages where there's nothing to scroll. The parent
+ *   (.content) is forced to fill at least the viewport height via the
+ *   grid stretch on .rightInner.
+ * - `position: sticky` then pins the bar to the viewport bottom when
+ *   the doc IS long enough to scroll. */
+.wrap {
+  position: sticky;
+  bottom: 16px;
+  z-index: 30;
+  margin-top: auto;
+  padding: 24px 0 0;
+  pointer-events: none;
+  /* Fade-mask above the bar so the content peeking from beneath gets a
+   * soft transition instead of clipping abruptly. */
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--color-bg, #fff) 0%, transparent) 0%,
+    color-mix(in srgb, var(--color-bg, #fff) 60%, transparent) 40%,
+    var(--color-bg, #fff) 90%
+  );
+}
+
+.bar {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 14px;
+  background: var(--color-card, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.bar:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.1), 0 0 0 3px color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.icon {
+  flex-shrink: 0;
+  color: var(--color-muted-fg);
+}
+
+.input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--color-fg);
+  outline: none;
+  padding: 6px 0;
+}
+
+.input::placeholder {
+  color: var(--color-muted-fg);
+}
+
+.submit {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: var(--color-primary);
+  color: var(--color-primary-fg, #fff);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.submit:not(:disabled):hover {
+  transform: scale(1.05);
+}

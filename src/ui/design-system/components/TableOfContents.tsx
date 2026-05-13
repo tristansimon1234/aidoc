@@ -12,6 +12,16 @@ interface TableOfContentsProps {
   content: string
   /** The scrollable container to observe and scroll within */
   scrollContainer?: HTMLElement | null
+  /**
+   * Layout mode.
+   * - `floating` (default): fixed right-edge indicator that expands on
+   *   hover. Used inside the admin PageView where the surrounding chrome
+   *   is dense and a permanent TOC would compete for attention.
+   * - `sticky`: permanently visible TOC, sized to its container, scrolls
+   *   with the page but stays pinned to the top. Used on the public docs
+   *   so readers always see where they are in the article.
+   */
+  mode?: 'floating' | 'sticky'
 }
 
 function extractHeadings(markdown: string): TocItem[] {
@@ -46,7 +56,7 @@ function findHeadingElements(container: Element): Element[] {
   })
 }
 
-export function TableOfContents({ content, scrollContainer }: TableOfContentsProps): React.ReactElement | null {
+export function TableOfContents({ content, scrollContainer, mode = 'floating' }: TableOfContentsProps): React.ReactElement | null {
   const [activeIndex, setActiveIndex] = useState<number | null>(null)
   const [hovered, setHovered] = useState(false)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -106,6 +116,28 @@ export function TableOfContents({ content, scrollContainer }: TableOfContentsPro
   }, [])
 
   if (headings.length < 2) return null
+
+  // Sticky mode: permanent right-column TOC. No hover/collapse, no
+  // fixed positioning — the parent decides where to put it.
+  if (mode === 'sticky') {
+    return (
+      <aside className={styles.stickyWrapper} aria-label="On this page">
+        <div className={styles.stickyHeader}>On this page</div>
+        <nav className={styles.stickyNav}>
+          {headings.map((h) => (
+            <button
+              key={h.index}
+              className={`${styles.stickyItem} ${activeIndex === h.index ? styles.stickyItemActive : ''}`}
+              style={{ paddingLeft: `${(h.level - 1) * 12 + 10}px` }}
+              onClick={() => handleClick(h.index)}
+            >
+              {h.text}
+            </button>
+          ))}
+        </nav>
+      </aside>
+    )
+  }
 
   return (
     <div

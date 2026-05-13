@@ -1,10 +1,15 @@
 import { useState } from 'react'
-import { useParams, useNavigate, useOutletContext } from 'react-router-dom'
+import { useParams, useNavigate, useOutletContext, useSearchParams } from 'react-router-dom'
 import { Button } from '../../../design-system/components/index.js'
 import { createPage } from '../../../shared/api/db.js'
 
 export function NewPage(): React.ReactElement {
   const { projectId } = useParams<{ projectId: string }>()
+  const [searchParams] = useSearchParams()
+  // The active tab is forwarded via `?tab=<uuid>` from ProjectDetail's
+  // "+ new page" button so a page lands in the tab the user is on,
+  // not in the project's default "main" tab.
+  const tabId = searchParams.get('tab') ?? undefined
   const navigate = useNavigate()
   const { refetchPages } = useOutletContext<{ refetchPages: () => Promise<void> }>()
   const [title, setTitle] = useState('')
@@ -24,7 +29,7 @@ export function NewPage(): React.ReactElement {
     setSubmitting(true)
     setError(null)
 
-    createPage(projectId, { title, slug })
+    createPage(projectId, { title, slug, tabId })
       .then(async (page) => {
         await refetchPages()
         if (mode === 'record') {

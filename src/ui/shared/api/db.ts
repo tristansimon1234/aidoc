@@ -198,14 +198,33 @@ export async function deleteProject(id: string): Promise<void> {
 
 export async function createPage(
   projectId: string,
-  body: { title: string; slug: string; parentId?: string; startUrl?: string; goal?: string },
+  body: { title: string; slug: string; parentId?: string; startUrl?: string; goal?: string; tabId?: string },
 ): Promise<DocPageDTO> {
   const { data: authData } = await supabase.auth.getUser()
   const createdBy = authData.user?.id ?? null
+
+  // tab_id is NOT NULL on doc_pages — resolve the project's "main" tab
+  // when the caller didn't pick one. Cheaper than a round-trip to
+  // ensureMainTab on the server because the migration seeded a main
+  // tab for every existing project.
+  let tabId = body.tabId
+  if (!tabId) {
+    const { data: mainTab, error: tabErr } = await supabase
+      .from('doc_tabs')
+      .select('id')
+      .eq('project_id', projectId)
+      .eq('slug', 'main')
+      .maybeSingle()
+    if (tabErr) throw new Error(tabErr.message)
+    if (!mainTab) throw new Error('Project has no "main" tab — create one first via the tab bar.')
+    tabId = (mainTab as { id: string }).id
+  }
+
   const { data, error } = await supabase
     .from('doc_pages')
     .insert({
       project_id: projectId,
+      tab_id: tabId,
       title: body.title,
       slug: body.slug,
       parent_id: body.parentId ?? null,
@@ -231,6 +250,7 @@ export async function updatePage(
   if (body.startUrl !== undefined) updates.start_url = body.startUrl
   if (body.goal !== undefined) updates.goal = body.goal
   if (body.parentId !== undefined) updates.parent_id = body.parentId
+  if (body.tabId !== undefined) updates.tab_id = body.tabId
   if (body.sortOrder !== undefined) updates.sort_order = body.sortOrder
   if (body.status !== undefined) updates.status = body.status
   if (body.content !== undefined) updates.content = body.content
@@ -384,6 +404,7 @@ function mapPage(row: Record<string, unknown>): DocPageDTO {
   return {
     id: row.id as string,
     projectId: row.project_id as string,
+    tabId: row.tab_id as string,
     parentId: (row.parent_id as string) ?? null,
     title: row.title as string,
     slug: row.slug as string,

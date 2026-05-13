@@ -4,7 +4,17 @@ import * as pageRepo from './page.repository.js'
 import { findProfileById } from '../profile/profile.repository.js'
 
 export async function createPage(input: CreatePageInput): Promise<DocPage> {
-  return pageRepo.createPage(input)
+  // Resolve the target tab. Callers can pass either an explicit tabId
+  // (preferred — the UI picks the active tab) or omit it, in which case
+  // we fall back to the project's "main" tab. Lazy-loaded to avoid a
+  // circular dep when chat.service imports page.service.
+  let tabId = input.tabId
+  if (!tabId) {
+    const { ensureMainTab } = await import('../tab/tab.repository.js')
+    const main = await ensureMainTab(input.projectId)
+    tabId = main.id
+  }
+  return pageRepo.createPage({ ...input, tabId })
 }
 
 export async function getPage(id: string): Promise<DocPage> {
@@ -19,8 +29,8 @@ export async function getPage(id: string): Promise<DocPage> {
   return page
 }
 
-export async function getPageTree(projectId: string): Promise<DocPageTreeNode[]> {
-  const pages = await pageRepo.findPagesByProjectId(projectId)
+export async function getPageTree(projectId: string, tabId?: string): Promise<DocPageTreeNode[]> {
+  const pages = await pageRepo.findPagesByProjectId(projectId, tabId)
   return pageRepo.buildTree(pages)
 }
 

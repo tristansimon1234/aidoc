@@ -28,13 +28,65 @@ export const CreateProjectToolArgsSchema = z.object({
   description: z.string().max(2000).optional(),
 })
 
+const TabSlugField = z.string().min(1).max(40).regex(/^[a-z0-9-]+$/, 'Tab slug must be lowercase with hyphens')
+
 export const ListPagesToolArgsSchema = z.object({
   projectId: UuidField,
+  /** Optional filter: only list pages of this tab. Omitted = every tab. */
+  tabSlug: TabSlugField.optional(),
 })
 
 export const GetPageToolArgsSchema = z.object({
   projectId: UuidField,
   slug: z.string().min(1).max(200),
+  /** Disambiguate when the same slug exists in multiple tabs. Defaults
+   *  to 'main' server-side for backwards-compat with pre-tabs callers. */
+  tabSlug: TabSlugField.optional(),
+})
+
+// --- Tab tool args -----------------------------------------------------
+
+export const ListTabsToolArgsSchema = z.object({
+  projectId: UuidField,
+})
+
+export const CreateTabToolArgsSchema = z.object({
+  projectId: UuidField,
+  name: z.string().min(1).max(40),
+  slug: TabSlugField.optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+})
+
+export const UpdateTabToolArgsSchema = z
+  .object({
+    projectId: UuidField,
+    /** Caller can reference the tab by id or by current slug. */
+    tabId: UuidField.optional(),
+    tabSlug: TabSlugField.optional(),
+    name: z.string().min(1).max(40).optional(),
+    newSlug: TabSlugField.optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+  })
+  .refine((d) => d.tabId || d.tabSlug, { message: 'Provide tabId or tabSlug.' })
+  .refine((d) => d.name !== undefined || d.newSlug !== undefined || d.sortOrder !== undefined, {
+    message: 'Provide at least one of: name, newSlug, sortOrder.',
+  })
+
+export const DeleteTabToolArgsSchema = z
+  .object({
+    projectId: UuidField,
+    tabId: UuidField.optional(),
+    tabSlug: TabSlugField.optional(),
+    /** Required when the tab contains pages. Pages are moved to this
+     *  target tab before the source tab is deleted. */
+    moveToTabId: UuidField.optional(),
+    moveToTabSlug: TabSlugField.optional(),
+  })
+  .refine((d) => d.tabId || d.tabSlug, { message: 'Provide tabId or tabSlug.' })
+
+export const ReorderTabsToolArgsSchema = z.object({
+  projectId: UuidField,
+  tabIds: z.array(UuidField).min(1).max(50),
 })
 
 /** Briefing shape accepted by create_page / update_page. Keeps the loose
@@ -72,6 +124,9 @@ export const CreatePageToolArgsSchema = z.object({
     .max(200)
     .regex(/^[a-z0-9-]+$/, 'Slug must be lowercase with hyphens')
     .optional(),
+  /** Tab the page belongs to. Defaults to 'main' server-side, which
+   *  keeps existing MCP scripts working without code change. */
+  tabSlug: TabSlugField.optional(),
   parentSlug: z.string().min(1).max(200).optional(),
   content: z.string().max(200_000).optional(),
   /** Lifecycle status — defaults to 'draft' server-side when omitted. */
@@ -87,6 +142,8 @@ export const UpdatePageToolArgsSchema = z
   .object({
     projectId: UuidField,
     slug: z.string().min(1).max(200),
+    /** Disambiguate the source page. Defaults to 'main'. */
+    tabSlug: TabSlugField.optional(),
     title: z.string().min(1).max(200).optional(),
     newSlug: z
       .string()
@@ -94,6 +151,8 @@ export const UpdatePageToolArgsSchema = z
       .max(200)
       .regex(/^[a-z0-9-]+$/, 'Slug must be lowercase with hyphens')
       .optional(),
+    /** Move the page to a different tab. */
+    newTabSlug: TabSlugField.optional(),
     /** Full markdown body — replaces the existing content entirely. */
     content: z.string().max(200_000).optional(),
     /** Markdown to append at the end of the existing content. Useful for
@@ -112,6 +171,8 @@ export const UpdatePageToolArgsSchema = z
 export const DeletePageToolArgsSchema = z.object({
   projectId: UuidField,
   slug: z.string().min(1).max(200),
+  /** Disambiguate when the slug exists in multiple tabs. Defaults to 'main'. */
+  tabSlug: TabSlugField.optional(),
 })
 
 /** Args for generate_voiceover — runs ElevenLabs TTS over the page's

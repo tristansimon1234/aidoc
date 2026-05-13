@@ -165,11 +165,74 @@
   text-overflow: ellipsis;
 }
 
-/* --- Layout --- */
+/* --- Topbar Ask AI button --- */
+.askAi {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  margin-left: 8px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-fg);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.askAi:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.askAi svg {
+  color: var(--color-primary);
+}
+
+/* --- Layout: 2-col grid (sidebar / right area).
+ *
+ * The right area is the single scroll container for content + TOC, so
+ * its scrollbar lands on the far-right edge of the window instead of
+ * the seam between content and TOC. The TOC itself is `position: sticky`
+ * inside that scroll container and tracks the doc as you scroll. */
 .layout {
-  display: flex;
   flex: 1;
   min-height: 0;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 0;
+}
+
+/* Inner grid: content on the left, TOC pinned on the right.
+ * Lives INSIDE .contentWrapper (the scroll container) so the scrollbar
+ * stays at the window edge. We *don't* set align-items: start here:
+ * the default `stretch` makes .tocColumn span the full row height
+ * (which equals the article column height), giving `position: sticky`
+ * inside the TOC the runway it needs to actually pin to the top while
+ * the doc scrolls. With `align-items: start` the column collapses to
+ * the TOC's own height and sticky becomes a no-op.
+ *
+ * `min-height: 100%` ensures the grid row is at least the full scroll
+ * container height even when the article is short. Without it, the
+ * `position: sticky` chat bar at the bottom of .content has no slack
+ * and pins to the end of the article instead of the viewport bottom. */
+.rightInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  min-height: 100%;
+}
+
+@media (max-width: 1200px) {
+  .rightInner {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tocColumn {
+    display: none;
+  }
 }
 
 .sidebar {
@@ -190,6 +253,49 @@
   flex-direction: column;
   gap: 1px;
   flex: 1;
+}
+
+/* Full-width horizontal tab bar — Claude Code Docs style. Sits
+ * between the topbar and the 3-col layout. Only renders when the
+ * project has more than one tab; single-tab projects stay flat. */
+.tabRow {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 var(--space-lg);
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  flex-shrink: 0;
+}
+
+.tabRowItem {
+  display: inline-flex;
+  align-items: center;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-muted-fg);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-bottom: -1px; /* overlap the row's bottom border with the
+                          item's own border so the active underline
+                          lands flush with the row separator. */
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.tabRowItem:hover {
+  color: var(--color-fg);
+}
+
+.tabRowItemActive {
+  color: var(--color-fg);
+  border-bottom-color: var(--color-primary);
 }
 
 .poweredBy {
@@ -291,6 +397,55 @@
   font-weight: 500;
 }
 
+/* --- Section header style: top-level page with children. Reads as a
+       category header rather than a clickable nav row. Hover bg stays
+       off so it doesn't look interactive in the same way as pages. --- */
+.navRowSection {
+  margin-top: var(--space-md);
+  height: auto;
+}
+
+.navRowSection:hover {
+  background: none;
+}
+
+.navRowSection .navItem,
+.navRowSection .navItem:hover {
+  background: none;
+  color: var(--color-muted-fg);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 8px 4px;
+}
+
+/* The first section header doesn't need the extra top margin — the
+   sidebar already has its own padding. */
+.nav > div:first-child .navRowSection {
+  margin-top: 0;
+}
+
+/* --- Sub-pages under a section: vertical guide line on the left,
+       smaller font, lighter color. Pattern shared by Stripe / Linear
+       /  Claude Code docs. --- */
+.navSubGroup {
+  position: relative;
+  margin: 2px 0 6px 14px;
+  padding-left: 4px;
+  border-left: 1px solid var(--color-border);
+}
+
+.navSubGroup .navItem {
+  font-size: 13px;
+}
+
+/* --- TOC column wrapper --- */
+.tocColumn {
+  padding: 0 var(--space-sm) 0 var(--space-xs);
+  min-width: 0;
+}
+
 /* --- Content centered --- */
 .contentWrapper {
   flex: 1;
@@ -305,6 +460,12 @@
   max-width: 820px;
   margin: 0 auto;
   padding: var(--space-xl) var(--space-lg) 6rem;
+  /* Flex column so the sticky chat bar can use `margin-top: auto` to
+   * pin itself to the bottom of the content area on short pages.
+   * Without this, the bar would just sit under the last paragraph
+   * because there's no scroll to drive `position: sticky`. */
+  display: flex;
+  flex-direction: column;
 }
 
 .pageTitle {

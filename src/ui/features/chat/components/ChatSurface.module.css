@@ -17,6 +17,26 @@
   background: var(--color-bg);
 }
 
+/* Variant: side panel on public docs. Tighter padding, smaller welcome,
+ * full-width messages (no 720px cap) so the narrow column doesn't waste
+ * horizontal space. */
+.pageSidePanel .messages {
+  padding: 16px 16px 12px;
+}
+.pageSidePanel .messages > * {
+  max-width: none;
+}
+.pageSidePanel .welcome {
+  margin-top: 24px;
+  gap: 12px;
+}
+.pageSidePanel .welcomeTitle {
+  font-size: 16px;
+}
+.pageSidePanel .inputBar {
+  padding: 8px 12px 14px;
+}
+
 .chat {
   display: flex;
   flex-direction: column;
