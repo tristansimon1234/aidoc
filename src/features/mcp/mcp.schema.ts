@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { DesignSchema } from '../project/project.schema.js'
 
 /** Token capability scope. `read` = read-only (list/get/search), `write` =
  *  read + create/update/reorder, `admin` = everything including delete. */
@@ -26,6 +27,16 @@ export const CreateProjectToolArgsSchema = z.object({
   name: z.string().min(1).max(120),
   baseUrl: z.string().url(),
   description: z.string().max(2000).optional(),
+  /** Optional brand design — same shape as the admin UI's PATCH
+   *  /projects/:id payload (accentColor, bgColor, textColor, font + a
+   *  few optional brand-kit fields). Omitted = the project is created
+   *  with design=null and the public docs / chat widget fall back to
+   *  the shared design-system defaults. Hex colors are normalized
+   *  (`#fff` → `#FFFFFF`); unknown font families coerce to the system
+   *  stack. logoUrl is restricted to the project's own Supabase storage
+   *  bucket, so an MCP caller that uploaded a logo via the admin UI
+   *  can reuse the URL, but can't point at an arbitrary domain. */
+  design: DesignSchema.optional(),
 })
 
 const TabSlugField = z.string().min(1).max(40).regex(/^[a-z0-9-]+$/, 'Tab slug must be lowercase with hyphens')

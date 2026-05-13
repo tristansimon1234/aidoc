@@ -75,7 +75,7 @@ const LogoUrlSchema = z
     { message: 'Logo URL must be an https Supabase storage URL' },
   )
 
-const DesignSchema = z.object({
+export const DesignSchema = z.object({
   accentColor: LenientHexColorSchema,
   bgColor: LenientHexColorSchema,
   textColor: LenientHexColorSchema,

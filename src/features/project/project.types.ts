@@ -71,6 +71,7 @@ export interface CreateProjectInput {
   description?: string
   context?: ProjectContext
   credentials?: ProjectCredential[]
+  design?: ProjectDesign
 }
 
 export interface UpdateProjectInput {
