@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useNavigate } from 'react-router-dom'
 import { useImageLightbox } from './ImageLightbox.js'
 import { CodeBlock } from './CodeBlock.js'
@@ -79,6 +80,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.Reac
   return (
     <div className={styles.article}>
       <Markdown
+        remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children, ...props }) => <h1 id={headingId(children)} {...props}>{children}</h1>,
           h2: ({ children, ...props }) => <h2 id={headingId(children)} {...props}>{children}</h2>,
