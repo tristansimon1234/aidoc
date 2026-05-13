@@ -138,8 +138,27 @@
   padding: var(--space-md);
   border-left: 3px solid var(--callout-accent, var(--color-primary));
   border-radius: var(--radius-lg);
-  color: var(--color-fg);
+  /* Pinned to a dark grey to stay readable on the pastel callout
+   * backgrounds (which are themselves hex-pinned). var(--color-fg)
+   * would be white in dark theme, producing white-on-pastel. */
+  color: #1A1A1A;
   margin: 0 0 var(--space-md);
+}
+
+/* Links inside callouts: use the callout accent so they're visible on
+ * the pastel background regardless of the page theme. Falls back to
+ * --color-primary for plain blockquotes. */
+.article blockquote[data-callout-type] a {
+  color: var(--callout-accent, var(--color-primary));
+  text-decoration: underline;
+}
+
+/* Inline code in callouts: keep the inline-code chip readable on the
+ * pastel background — pin its background to white and text to dark. */
+.article blockquote[data-callout-type] :not(pre) > code {
+  background-color: #FFFFFF;
+  color: #1A1A1A;
+  border-color: rgba(0, 0, 0, 0.08);
 }
 
 .article blockquote[data-callout-type]::before {
