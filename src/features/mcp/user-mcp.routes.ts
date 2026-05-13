@@ -1413,6 +1413,32 @@ async function handleUpdatePage(
   if (parsed.data.briefing !== undefined) input.briefing = parsed.data.briefing
   const updated = await updatePage(page.id, input, ctx.userId)
 
+  // When the page moves to another tab, cascade the new tab_id to
+  // every descendant so the sub-tree stays consistent — otherwise the
+  // parent ends up in tab B while its children still report tab A,
+  // and the public docs nav buckets them under the wrong section.
+  let movedDescendantCount = 0
+  if (newTabId !== undefined && newTabId !== page.tabId) {
+    const descendantIds = new Set<string>()
+    const stack = [page.id]
+    while (stack.length > 0) {
+      const id = stack.pop()!
+      for (const p of pages) {
+        if (p.parentId === id && !descendantIds.has(p.id)) {
+          descendantIds.add(p.id)
+          stack.push(p.id)
+        }
+      }
+    }
+    if (descendantIds.size > 0) {
+      const { updatePage: rawUpdatePage } = await import('../page/page.repository.js')
+      await Promise.all(
+        Array.from(descendantIds).map((id) => rawUpdatePage(id, { tabId: newTabId })),
+      )
+      movedDescendantCount = descendantIds.size
+    }
+  }
+
   const mode = parsed.data.content !== undefined ? 'replaced' : parsed.data.contentAppend !== undefined ? 'appended to' : 'updated'
   const notes: string[] = []
   if (h1Processing?.stripped) {
@@ -1421,6 +1447,9 @@ async function handleUpdatePage(
     )
   }
   if (h1Processing?.warning) notes.push(`⚠️ ${h1Processing.warning}`)
+  if (movedDescendantCount > 0) {
+    notes.push(`ℹ️ Moved ${movedDescendantCount} descendant page${movedDescendantCount === 1 ? '' : 's'} along with this one to the new tab.`)
+  }
 
   const summary = `Updated page **${updated.title}** (slug: ${updated.slug}, ${mode}).`
   return toolText(notes.length > 0 ? `${summary}\n\n${notes.join('\n')}` : summary)

@@ -250,6 +250,7 @@ export async function updatePage(
   if (body.startUrl !== undefined) updates.start_url = body.startUrl
   if (body.goal !== undefined) updates.goal = body.goal
   if (body.parentId !== undefined) updates.parent_id = body.parentId
+  if (body.tabId !== undefined) updates.tab_id = body.tabId
   if (body.sortOrder !== undefined) updates.sort_order = body.sortOrder
   if (body.status !== undefined) updates.status = body.status
   if (body.content !== undefined) updates.content = body.content

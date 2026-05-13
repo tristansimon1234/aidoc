@@ -311,7 +311,7 @@ export function ProjectDetail(): React.ReactElement {
           </div>
           <div className={styles.pageList}>
             {visiblePages.length > 0 ? (
-              <PageTree pages={visiblePages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} />
+              <PageTree pages={visiblePages} projectId={projectId!} activePageId={pageId} onRefresh={fetchData} tabs={tabs} />
             ) : (
               <div className={styles.emptyPages}>
                 <span>{pages.length === 0 ? 'No pages yet' : 'No pages in this tab'}</span>

@@ -615,23 +615,24 @@ export function PublicDocs(): React.ReactElement {
         )}
       </header>
 
+      {tabs.length > 1 && (
+        <div className={styles.tabRow} role="tablist" aria-label="Documentation sections">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={activeTab?.id === t.id}
+              className={`${styles.tabRowItem} ${activeTab?.id === t.id ? styles.tabRowItemActive : ''}`}
+              onClick={() => selectTab(t)}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className={styles.layout}>
         <aside className={styles.sidebar}>
-          {tabs.length > 1 && (
-            <div className={styles.tabNav} role="tablist" aria-label="Documentation sections">
-              {tabs.map((t) => (
-                <button
-                  key={t.id}
-                  role="tab"
-                  aria-selected={activeTab?.id === t.id}
-                  className={`${styles.tabNavItem} ${activeTab?.id === t.id ? styles.tabNavItemActive : ''}`}
-                  onClick={() => selectTab(t)}
-                >
-                  {t.name}
-                </button>
-              ))}
-            </div>
-          )}
           <nav className={styles.nav}>
             <NavTree
               items={buildPageTree(activeTab ? pages.filter((p) => p.tabId === activeTab.id) : pages)}

@@ -14,8 +14,8 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { DocPageDTO } from '../../../shared/api/client.js'
-import { reorderPages, deletePage } from '../../../shared/api/db.js'
+import type { DocPageDTO, TabWithCountDTO } from '../../../shared/api/client.js'
+import { reorderPages, deletePage, updatePage } from '../../../shared/api/db.js'
 import styles from './PageTree.module.css'
 
 interface PageTreeProps {
@@ -24,6 +24,9 @@ interface PageTreeProps {
   activePageId?: string
   onRefresh: () => Promise<void>
   searchQuery?: string
+  /** Tabs in the project — used by the per-page "Move to tab" sub-menu.
+   *  When undefined or empty, that menu entry is hidden. */
+  tabs?: TabWithCountDTO[]
 }
 
 function buildTree(pages: DocPageDTO[]): DocPageDTO[] {
@@ -86,7 +89,7 @@ function isDescendantOf(pages: DocPageDTO[], candidateChildId: string, parentId:
   return false
 }
 
-export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuery = '' }: PageTreeProps): React.ReactElement {
+export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuery = '', tabs = [] }: PageTreeProps): React.ReactElement {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [dragId, setDragId] = useState<string | null>(null)
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
@@ -233,6 +236,56 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
       })
   }
 
+  /** Move a page (and all its descendants) into a different tab.
+   *  We rewrite tab_id on the moved page + every descendant in one
+   *  Promise.all so the sub-tree stays consistent and doesn't leave
+   *  orphans straddling two tabs after the parent moves. New top-level
+   *  position: end of the destination tab. */
+  const handleMoveToTab = async (pageId: string, newTabId: string): Promise<void> => {
+    const page = effectivePages.find((p) => p.id === pageId)
+    if (!page || page.tabId === newTabId) return
+
+    const descendantIds = new Set<string>()
+    const stack = [pageId]
+    while (stack.length > 0) {
+      const id = stack.pop()!
+      for (const p of effectivePages) {
+        if (p.parentId === id && !descendantIds.has(p.id)) {
+          descendantIds.add(p.id)
+          stack.push(p.id)
+        }
+      }
+    }
+
+    const siblingsInDest = effectivePages.filter((p) => p.tabId === newTabId && !p.parentId)
+    const maxSort = siblingsInDest.reduce((max, p) => Math.max(max, p.sortOrder), -1)
+    const newSortOrder = maxSort + 1
+
+    // Optimistic update — the moved page becomes a top-level page of
+    // the destination tab. Descendants keep their relative structure.
+    const updatedPages = effectivePages.map((p) => {
+      if (p.id === pageId) return { ...p, tabId: newTabId, parentId: null, sortOrder: newSortOrder }
+      if (descendantIds.has(p.id)) return { ...p, tabId: newTabId }
+      return p
+    })
+    setLocalPages(updatedPages)
+
+    pendingReordersRef.current++
+    try {
+      await Promise.all([
+        updatePage(projectId, pageId, { tabId: newTabId, parentId: null, sortOrder: newSortOrder }),
+        ...Array.from(descendantIds).map((id) => updatePage(projectId, id, { tabId: newTabId })),
+      ])
+      pendingReordersRef.current--
+    } catch {
+      pendingReordersRef.current--
+      if (pendingReordersRef.current === 0) {
+        setLocalPages(null)
+        void onRefresh()
+      }
+    }
+  }
+
   const handleMove = async (pageId: string, newParentId: string | null): Promise<void> => {
     // Compute sort order BEFORE we mutate so the new sibling list is
     // accurate at this moment.
@@ -300,6 +353,8 @@ export function PageTree({ pages, projectId, activePageId, onRefresh, searchQuer
               onRefresh={onRefresh}
               onMenuClose={() => setMenuOpenId(null)}
               onMove={handleMove}
+              tabs={tabs}
+              onMoveToTab={handleMoveToTab}
             />
           ))}
         </div>
@@ -324,6 +379,8 @@ function SortablePageNode({
   onRefresh,
   onMenuClose,
   onMove,
+  tabs,
+  onMoveToTab,
 }: {
   page: DocPageDTO
   allPages: DocPageDTO[]
@@ -340,9 +397,15 @@ function SortablePageNode({
   onRefresh: () => Promise<void>
   onMenuClose: () => void
   onMove: (pageId: string, newParentId: string | null) => Promise<void>
+  tabs: TabWithCountDTO[]
+  onMoveToTab: (pageId: string, newTabId: string) => Promise<void>
 }): React.ReactElement {
   const navigate = useNavigate()
   const [showMoveList, setShowMoveList] = useState(false)
+  // Sub-menu state for "Move to tab": independent of showMoveList
+  // (which is the "Move inside another page" picker) so the two can't
+  // open simultaneously and confuse the user.
+  const [showTabList, setShowTabList] = useState(false)
 
   const {
     attributes,
@@ -387,6 +450,16 @@ function SortablePageNode({
     setShowMoveList(false)
     await onMove(page.id, null)
   }
+
+  const handleMoveToTabClick = async (targetTabId: string): Promise<void> => {
+    onMenuClose()
+    setShowTabList(false)
+    await onMoveToTab(page.id, targetTabId)
+  }
+
+  // Tabs the page can be moved to — exclude its current tab. When only
+  // one tab exists in the project, the menu item is hidden entirely.
+  const otherTabs = tabs.filter((t) => t.id !== page.tabId)
 
   // Build list of valid move targets (exclude self and descendants)
   const moveTargets = allPages.filter((p) => {
@@ -446,7 +519,7 @@ function SortablePageNode({
       {/* Context menu */}
       {menuOpen && (
         <div className={styles.menu} ref={menuRef as React.RefObject<HTMLDivElement>}>
-          {!showMoveList ? (
+          {!showMoveList && !showTabList ? (
             <>
               {/* Move inside */}
               {moveTargets.length > 0 && (
@@ -464,6 +537,14 @@ function SortablePageNode({
                 </button>
               )}
 
+              {/* Move to a different tab */}
+              {otherTabs.length > 0 && (
+                <button className={styles.menuItem} onClick={() => setShowTabList(true)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /></svg>
+                  Move to tab...
+                </button>
+              )}
+
               {/* Separator */}
               <div className={styles.menuSep} />
 
@@ -473,6 +554,23 @@ function SortablePageNode({
                 Delete
               </button>
             </>
+          ) : showTabList ? (
+            <div className={styles.menuSubList}>
+              <button className={styles.menuItem} onClick={() => setShowTabList(false)}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+                Back
+              </button>
+              <div className={styles.menuSep} />
+              {otherTabs.map((t) => (
+                <button
+                  key={t.id}
+                  className={`${styles.menuItem} ${styles.menuSubItem}`}
+                  onClick={() => void handleMoveToTabClick(t.id)}
+                >
+                  <span className={styles.menuSubLabel}>{t.name}</span>
+                </button>
+              ))}
+            </div>
           ) : (
             <div className={styles.menuSubList}>
               <button className={styles.menuItem} onClick={() => setShowMoveList(false)}>

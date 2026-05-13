@@ -249,41 +249,47 @@
   flex: 1;
 }
 
-/* Top-level tab nav (only renders when the project has >1 tab). Sits
- * above the page tree inside the sidebar. */
-.tabNav {
+/* Full-width horizontal tab bar — Claude Code Docs style. Sits
+ * between the topbar and the 3-col layout. Only renders when the
+ * project has more than one tab; single-tab projects stay flat. */
+.tabRow {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0 calc(var(--space-sm) * -1) var(--space-sm);
-  padding: 0 var(--space-sm) var(--space-sm);
+  align-items: stretch;
+  gap: 4px;
+  padding: 0 var(--space-lg);
+  background: var(--color-card);
   border-bottom: 1px solid var(--color-border);
+  overflow-x: auto;
+  scrollbar-width: thin;
+  flex-shrink: 0;
 }
 
-.tabNavItem {
-  display: flex;
+.tabRowItem {
+  display: inline-flex;
   align-items: center;
-  padding: 6px 10px;
+  padding: 12px 14px;
   border: none;
-  border-radius: 6px;
+  border-bottom: 2px solid transparent;
   background: none;
   color: var(--color-muted-fg);
   font-family: inherit;
   font-size: var(--text-sm);
   font-weight: 500;
   cursor: pointer;
-  text-align: left;
-  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+  margin-bottom: -1px; /* overlap the row's bottom border with the
+                          item's own border so the active underline
+                          lands flush with the row separator. */
+  transition: color 0.1s, border-color 0.1s;
 }
 
-.tabNavItem:hover {
-  background: var(--color-secondary);
+.tabRowItem:hover {
   color: var(--color-fg);
 }
 
-.tabNavItemActive {
-  background: var(--color-accent);
-  color: var(--color-primary);
+.tabRowItemActive {
+  color: var(--color-fg);
+  border-bottom-color: var(--color-primary);
 }
 
 .poweredBy {
