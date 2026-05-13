@@ -145,6 +145,19 @@
   margin: 0 0 var(--space-md);
 }
 
+/* Inline elements inside callouts need their color pinned too — the
+ * dedicated .article strong / em / a rules above set their own color
+ * to var(--color-fg) / --color-muted-fg / --color-primary, which all
+ * resolve to a light hue in dark theme and become unreadable on the
+ * pastel callout background. */
+.article blockquote[data-callout-type] strong {
+  color: #1A1A1A;
+}
+
+.article blockquote[data-callout-type] em {
+  color: #4A4A4A;
+}
+
 /* Links inside callouts: use the callout accent so they're visible on
  * the pastel background regardless of the page theme. Falls back to
  * --color-primary for plain blockquotes. */
