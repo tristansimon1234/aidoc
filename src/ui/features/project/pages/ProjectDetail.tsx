@@ -286,9 +286,12 @@ export function ProjectDetail(): React.ReactElement {
       }
       navBar={switchBar}
     >
-      <div className={styles.layout}>
-        <aside className={styles.sidebar}>
-          {tabs.length > 0 && projectId && (
+      <div className={styles.shellInner}>
+        {/* Full-width tab bar above the project layout — same horizontal
+            footprint as the topbar so tabs read as a top-level section
+            switcher (style Claude Code Docs), not a sidebar widget. */}
+        {tabs.length > 0 && projectId && (
+          <div className={styles.tabBarWrap}>
             <TabBar
               projectId={projectId}
               tabs={tabs}
@@ -296,7 +299,10 @@ export function ProjectDetail(): React.ReactElement {
               onActiveTabChange={setActiveTabId}
               onTabsChange={setTabs}
             />
-          )}
+          </div>
+        )}
+        <div className={styles.layout}>
+        <aside className={styles.sidebar}>
           <div className={styles.sidebarHeader}>
             <span className={styles.sidebarTitle}>Pages</span>
             <button className={styles.newPageBtn} onClick={() => navigate(`/projects/${projectId}/pages/new${activeTabId ? `?tab=${activeTabId}` : ''}`)} title="New page">
@@ -332,6 +338,7 @@ export function ProjectDetail(): React.ReactElement {
             )}
           </div>
         </div>
+      </div>
       </div>
     </Shell>
   )

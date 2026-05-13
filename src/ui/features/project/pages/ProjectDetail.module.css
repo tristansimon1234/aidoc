@@ -1,8 +1,26 @@
 /* Theme vars are set inline via computeThemeVars() */
 
+/* Column wrapper that lets the tab bar (auto height) sit above the
+ * page layout (flex: 1) without either overflowing the Shell. */
+.shellInner {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+  min-height: 0;
+}
+
+/* Full-width tab bar. Sits between the Shell's navBar and the project
+ * layout so tabs span the whole viewport, not just the sidebar. The
+ * TabBar component supplies its own bottom border + sticky behavior. */
+.tabBarWrap {
+  flex-shrink: 0;
+  background: var(--color-card);
+}
+
 .layout {
   display: flex;
-  height: calc(100vh - 56px);
+  flex: 1;
+  min-height: 0;
 }
 
 /* Topbar */

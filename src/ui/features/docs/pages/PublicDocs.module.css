@@ -209,11 +209,15 @@
 
 /* Inner grid: content on the left, TOC pinned on the right.
  * Lives INSIDE .contentWrapper (the scroll container) so the scrollbar
- * stays at the window edge. */
+ * stays at the window edge. We *don't* set align-items: start here:
+ * the default `stretch` makes .tocColumn span the full row height
+ * (which equals the article column height), giving `position: sticky`
+ * inside the TOC the runway it needs to actually pin to the top while
+ * the doc scrolls. With `align-items: start` the column collapses to
+ * the TOC's own height and sticky becomes a no-op. */
 .rightInner {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
-  align-items: start;
 }
 
 @media (max-width: 1200px) {
