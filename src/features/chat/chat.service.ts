@@ -151,7 +151,10 @@ const PRONOUN_RE = /\b(it|its|that|this|these|those|they|them|their|le|la|les|le
 
 function needsQueryRewrite(message: string, history: ChatMessage[]): boolean {
   const trimmed = message.trim()
-  if (trimmed.length < 15) return true
+  // Short queries embed poorly on their own — "publish?", "what's the price?",
+  // "set up domain?" all carry too little signal for cosine similarity.
+  // Expanding them via Gemini (~400ms) materially lifts retrieval quality.
+  if (trimmed.length < 20) return true
   // Even a long follow-up only needs a rewrite when it actually refers
   // back to something. "How do I publish a doc?" sent after 5 turns is
   // self-contained — no rewrite needed.
@@ -186,11 +189,13 @@ export async function chat(
     const queryEmbedding = await embedText(effectiveQuery)
     const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
 
-    // Rerank only when the pool is large enough that the top-5 cosine
-    // ranking is genuinely noisy. The Gemini-as-judge call is ~300ms,
-    // not worth it when the embedding already produced a tight pool.
+    // Rerank as soon as the candidate pool is non-trivial. The Gemini-as-judge
+    // call is ~300ms but lifts relevance materially on ambiguous queries.
+    // Threshold was briefly raised to 15 for latency on the sidebar chat, but
+    // that left most queries un-reranked and degraded retrieval quality —
+    // restored to 10 so reranking fires on the typical (10-20 candidates) pool.
     chunks = candidates.length > 0
-      ? (candidates.length >= 15
+      ? (candidates.length >= 10
           ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
           : candidates.slice(0, 8))
       : []
@@ -355,7 +360,7 @@ export async function* chatStream(
     const queryEmbedding = await embedText(effectiveQuery)
     const candidates = await chatRepo.searchChunks(projectId, queryEmbedding, 20, 0.15)
     chunks = candidates.length > 0
-      ? (candidates.length >= 15
+      ? (candidates.length >= 10
           ? await rerankChunks(effectiveQuery, candidates, 5).catch(() => candidates.slice(0, 8))
           : candidates.slice(0, 8))
       : []
