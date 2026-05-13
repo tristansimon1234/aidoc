@@ -1,11 +1,17 @@
 /* Sticky pill at the bottom of the doc article. Lives inside the
- * scrolling content column and uses `position: sticky` so it pins to
- * the viewport bottom while there's content below. */
+ * scrolling content column.
+ *
+ * - `margin-top: auto` pushes the bar to the bottom of the parent flex
+ *   column on short pages where there's nothing to scroll. The parent
+ *   (.content) is forced to fill at least the viewport height via the
+ *   grid stretch on .rightInner.
+ * - `position: sticky` then pins the bar to the viewport bottom when
+ *   the doc IS long enough to scroll. */
 .wrap {
   position: sticky;
   bottom: 16px;
   z-index: 30;
-  margin-top: var(--space-xl, 32px);
+  margin-top: auto;
   padding: 24px 0 0;
   pointer-events: none;
   /* Fade-mask above the bar so the content peeking from beneath gets a

@@ -214,10 +214,16 @@
  * (which equals the article column height), giving `position: sticky`
  * inside the TOC the runway it needs to actually pin to the top while
  * the doc scrolls. With `align-items: start` the column collapses to
- * the TOC's own height and sticky becomes a no-op. */
+ * the TOC's own height and sticky becomes a no-op.
+ *
+ * `min-height: 100%` ensures the grid row is at least the full scroll
+ * container height even when the article is short. Without it, the
+ * `position: sticky` chat bar at the bottom of .content has no slack
+ * and pins to the end of the article instead of the viewport bottom. */
 .rightInner {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
+  min-height: 100%;
 }
 
 @media (max-width: 1200px) {
@@ -454,6 +460,12 @@
   max-width: 820px;
   margin: 0 auto;
   padding: var(--space-xl) var(--space-lg) 6rem;
+  /* Flex column so the sticky chat bar can use `margin-top: auto` to
+   * pin itself to the bottom of the content area on short pages.
+   * Without this, the bar would just sit under the last paragraph
+   * because there's no scroll to drive `position: sticky`. */
+  display: flex;
+  flex-direction: column;
 }
 
 .pageTitle {
