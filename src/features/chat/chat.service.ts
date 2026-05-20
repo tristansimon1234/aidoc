@@ -1,5 +1,6 @@
-import { embedText, embedTexts, generateText, generateTextStream, callWithToolsAndStream } from '../../shared/ai/gemini.client.js'
+import { embedText, embedTexts, generateText, generateTextStream } from '../../shared/ai/gemini.client.js'
 import type { FunctionDeclaration } from '../../shared/ai/gemini.client.js'
+import { callWithToolsAndStreamAnthropic } from '../../shared/ai/anthropic.client.js'
 import { SchemaType } from '@google/generative-ai'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
 import { env } from '../../shared/config/env.js'
@@ -774,11 +775,11 @@ export async function* chatStream(
 
   try {
     if (assistantMode) {
-      // Tool-augmented path: let Gemini call list_pages / create_page /
-      // update_page / search_docs before composing the final answer.
+      // Tool-augmented path via Claude Sonnet 4.6.
+      // Better instruction-following, tool reliability, and French than Gemini Flash.
       const { declarations, executor } = buildProjectToolDefs(projectId)
 
-      for await (const event of callWithToolsAndStream({
+      for await (const event of callWithToolsAndStreamAnthropic({
         systemPrompt,
         history: history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
         userMessage: userPrompt,
@@ -810,7 +811,7 @@ export async function* chatStream(
           yield { type: 'error', message: event.message }
           return
         }
-        // 'done' from callWithToolsAndStream is handled below after the loop
+        // 'done' from callWithToolsAndStreamAnthropic handled below
       }
     } else {
       // Standard streaming path — no tool calls

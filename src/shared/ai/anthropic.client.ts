@@ -169,3 +169,171 @@ export async function generateSonnetText(opts: {
 
   return { text, usage }
 }
+
+// --- Chat assistant streaming with tool calling ---
+
+/** Minimal tool declaration shape shared with the Gemini client. */
+export interface AssistantToolDeclaration {
+  name: string
+  description?: string
+  parameters?: {
+    properties?: Record<string, { type?: string; description?: string }>
+    required?: string[]
+  }
+}
+
+export type AssistantToolEvent =
+  | { type: 'tool_start'; id: string; name: string; label: string; args: Record<string, unknown> }
+  | { type: 'tool_call'; id: string; name: string; label: string; args: Record<string, unknown>; result: unknown }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; fullText: string }
+  | { type: 'error'; message: string }
+
+function geminiTypeToJson(t?: string): string {
+  switch ((t ?? '').toUpperCase()) {
+    case 'BOOLEAN': return 'boolean'
+    case 'NUMBER': return 'number'
+    case 'INTEGER': return 'integer'
+    case 'ARRAY': return 'array'
+    case 'OBJECT': return 'object'
+    default: return 'string'
+  }
+}
+
+/**
+ * Claude Sonnet 4.6 assistant turn with tool calling and streaming.
+ *
+ * Flow:
+ *  1. Stream initial response — yield delta events for any inline text.
+ *  2. After stream, collect tool_use blocks from the final message.
+ *  3. Execute each tool; yield tool_start (before) + tool_call (after).
+ *  4. If tools were called: stream a second response with tool results →
+ *     yield delta events + done.
+ *  5. If no tools called: yield done with the buffered text from step 1.
+ */
+export async function* callWithToolsAndStreamAnthropic(opts: {
+  systemPrompt: string
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+  userMessage: string
+  toolDeclarations: AssistantToolDeclaration[]
+  executor: (name: string, args: Record<string, unknown>) => Promise<unknown>
+  maxTokens?: number
+  temperature?: number
+  model?: string
+}): AsyncGenerator<AssistantToolEvent> {
+  if (!anthropic) {
+    yield { type: 'error', message: 'ANTHROPIC_API_KEY is not configured' }
+    return
+  }
+
+  const model = opts.model ?? SONNET_MODEL
+  const maxTokens = opts.maxTokens ?? 8192
+
+  // Convert declarations to Anthropic tool format
+  const tools: Anthropic.Tool[] = opts.toolDeclarations.map((decl) => ({
+    name: decl.name,
+    description: decl.description ?? '',
+    input_schema: {
+      type: 'object' as const,
+      properties: Object.fromEntries(
+        Object.entries(decl.parameters?.properties ?? {}).map(([k, v]) => [
+          k,
+          { type: geminiTypeToJson(v.type), description: v.description },
+        ]),
+      ),
+      required: decl.parameters?.required ?? [],
+    },
+  }))
+
+  const messages: Anthropic.MessageParam[] = [
+    ...opts.history.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    { role: 'user', content: opts.userMessage },
+  ]
+
+  // Phase 1: stream initial response (may contain text, tool_use, or both)
+  const phase1Stream = anthropic.messages.stream({
+    model,
+    max_tokens: maxTokens,
+    temperature: opts.temperature ?? 0.3,
+    system: opts.systemPrompt,
+    tools,
+    messages,
+  })
+
+  let phase1Text = ''
+  try {
+    for await (const event of phase1Stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        yield { type: 'delta', text: event.delta.text }
+        phase1Text += event.delta.text
+      }
+    }
+  } catch (err) {
+    yield { type: 'error', message: (err as Error).message }
+    return
+  }
+
+  const phase1Msg = await phase1Stream.finalMessage()
+  const toolUseBlocks = phase1Msg.content.filter(
+    (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+  )
+
+  if (phase1Msg.stop_reason === 'max_tokens') {
+    console.warn(
+      `[claude] Truncated response: stop_reason=max_tokens ` +
+        `inputTokens=${phase1Msg.usage.input_tokens} outputTokens=${phase1Msg.usage.output_tokens} ` +
+        `(consider raising maxTokens above ${maxTokens})`,
+    )
+  }
+
+  if (toolUseBlocks.length === 0) {
+    // Pure text answer — already streamed
+    yield { type: 'done', fullText: phase1Text }
+    return
+  }
+
+  // Phase 2: execute tools
+  const toolResults: Anthropic.ToolResultBlockParam[] = []
+  for (const block of toolUseBlocks) {
+    const fnArgs = block.input as Record<string, unknown>
+    yield { type: 'tool_start', id: block.id, name: block.name, label: block.name, args: fnArgs }
+    let fnResult: unknown
+    try {
+      fnResult = await opts.executor(block.name, fnArgs)
+    } catch (err) {
+      fnResult = { error: (err as Error).message }
+    }
+    yield { type: 'tool_call', id: block.id, name: block.name, label: block.name, args: fnArgs, result: fnResult }
+    toolResults.push({ type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(fnResult) })
+  }
+
+  // Phase 3: stream final response after tool results (no tools in this call)
+  const phase2Messages: Anthropic.MessageParam[] = [
+    ...messages,
+    { role: 'assistant', content: phase1Msg.content },
+    { role: 'user', content: toolResults },
+  ]
+
+  const phase2Stream = anthropic.messages.stream({
+    model,
+    max_tokens: maxTokens,
+    temperature: opts.temperature ?? 0.3,
+    system: opts.systemPrompt,
+    // No tools — prevent further tool-call loops
+    messages: phase2Messages,
+  })
+
+  let fullText = ''
+  try {
+    for await (const event of phase2Stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        yield { type: 'delta', text: event.delta.text }
+        fullText += event.delta.text
+      }
+    }
+  } catch (err) {
+    yield { type: 'error', message: (err as Error).message }
+    return
+  }
+  yield { type: 'done', fullText }
+}
