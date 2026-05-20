@@ -432,11 +432,15 @@ export function ChatSurface({
   const [internalMessages, setInternalMessages] = useState<ChatMessage[]>([])
   const isControlled = controlledMessages !== undefined && typeof onMessagesChange === 'function'
   const messages = isControlled ? controlledMessages : internalMessages
-  const messagesRef = useRef(messages)
-  messagesRef.current = messages
+  // liveRef tracks the most recent logical messages value, updated synchronously
+  // inside setMessages so that rapid sequential calls (e.g. streaming deltas
+  // arriving before the parent re-renders) always operate on the latest array.
+  const liveRef = useRef(messages)
+  liveRef.current = messages
   const setMessages = useCallback((value: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])): void => {
     if (isControlled) {
-      const next = typeof value === 'function' ? value(messagesRef.current) : value
+      const next = typeof value === 'function' ? value(liveRef.current) : value
+      liveRef.current = next  // update immediately so the next call sees fresh state
       onMessagesChange!(next)
     } else {
       setInternalMessages(value)
