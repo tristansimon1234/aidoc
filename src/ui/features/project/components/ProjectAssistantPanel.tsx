@@ -153,8 +153,9 @@ export function ProjectAssistantPanel({
     }
   }, [onProjectMutation, projectId])
 
-  const handleAutoNavigate = useCallback((info: { pageId: string; pageSlug: string }): void => {
-    navigate(`/projects/${projectId}/pages/${info.pageId}`)
+  const handleAutoNavigate = useCallback((info: { pageId: string; pageSlug: string; tab?: string }): void => {
+    const url = `/projects/${projectId}/pages/${info.pageId}${info.tab ? `?tab=${info.tab}` : ''}`
+    navigate(url)
     onClose()
   }, [navigate, projectId, onClose])
 

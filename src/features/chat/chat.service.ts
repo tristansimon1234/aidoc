@@ -740,7 +740,7 @@ export async function* chatStream(
   // Gemini emits `---FOLLOWUPS---` and `---WALKTHROUGH---` as trailers on
   // their own lines. We hold back a small tail buffer so we can detect those
   // markers before flushing them to the client.
-  const TAIL_HOLD = 30
+  const TAIL_HOLD = assistantMode ? 0 : 30
   let visible = ''          // accumulated text we've emitted as deltas
   let pending = ''          // accumulated text NOT yet emitted
   let markerHit = false     // true once we've seen a trailer marker

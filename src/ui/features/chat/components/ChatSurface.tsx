@@ -114,9 +114,9 @@ interface ChatSurfaceProps {
    *  prepare_doc_generation, publish_page). The host uses this to refetch
    *  the page tree so the sidebar/nav reflect the AI's actions. */
   onProjectMutation?: (info: { tool: string; pageId?: string; pageSlug?: string; pageTitle?: string; previousContent?: string | null }) => void
-  /** Fired when a `navigate_to_page` tool resolves — used by the host
-   *  to auto-route the user to the destination page (chat-first UX). */
-  onAutoNavigate?: (info: { pageId: string; pageTitle: string; pageSlug: string }) => void
+  /** Fired when a `navigate_to_page` or `generate_marketing_video` tool resolves — used by the host
+   *  to auto-route the user to the destination page (chat-first UX). Optional `tab` deep-links to a specific tab. */
+  onAutoNavigate?: (info: { pageId: string; pageTitle: string; pageSlug: string; tab?: string }) => void
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -499,6 +499,16 @@ export function ChatSurface({
             continue
           }
         }
+        if (tc.name === 'generate_marketing_video' && onAutoNavigate) {
+          const pageId = typeof r.pageId === 'string' ? r.pageId : null
+          const pageSlug = typeof r.pageSlug === 'string' ? r.pageSlug : null
+          const pageTitle = typeof r.pageTitle === 'string' ? r.pageTitle : ''
+          if (pageId && pageSlug) {
+            consumedToolCallIds.current.add(tc.id)
+            onAutoNavigate({ pageId, pageTitle, pageSlug, tab: 'marketing' })
+            continue
+          }
+        }
         if (MUTATING_TOOLS.includes(tc.name) && onProjectMutation) {
           consumedToolCallIds.current.add(tc.id)
           const pageId = typeof r.pageId === 'string' ? r.pageId : (typeof r.id === 'string' ? r.id : undefined)
@@ -824,10 +834,12 @@ export function ChatSurface({
                           })}
                         </div>
                       )}
-                      {/* Empty + streaming = shimmer "Thinking…" with brain icon
-                       *  (Claude / Vercel AI pattern). The text gradient sweeps
-                       *  across the letters while we wait for the first delta. */}
-                      {msg.content === '' && msg.streaming ? (
+                      {/* Thinking / streaming state machine.
+                       *  - No tool calls + empty + streaming → big "Thinking…" brain shimmer
+                       *  - Tool calls present + any pending → tool cards communicate state; no shimmer
+                       *  - Tool calls all done + streaming + empty content → small "…" pulse indicator
+                       *  - Content available → render markdown (with streaming caret when still streaming) */}
+                      {msg.content === '' && msg.streaming && !(msg.toolCalls && msg.toolCalls.length > 0) ? (
                         <div className={styles.thinking} aria-label="Thinking">
                           {/* Lucide "brain" — anatomical two-hemisphere
                            *  outline. The earlier sparkle felt generic;
@@ -846,11 +858,13 @@ export function ChatSurface({
                           </svg>
                           <span className={styles.thinkingText}>Thinking…</span>
                         </div>
-                      ) : (
+                      ) : msg.content === '' && msg.streaming && msg.toolCalls && msg.toolCalls.every((tc) => tc.status === 'done') ? (
+                        <span className={styles.toolsDoneWaiting} aria-label="Processing">…</span>
+                      ) : msg.content !== '' ? (
                         <div className={`${styles.assistantText} ${msg.streaming ? styles.assistantStreaming : ''}`}>
                           <MarkdownRenderer content={msg.content} />
                         </div>
-                      )}
+                      ) : null}
 
                       {/* Suggested narrated walkthrough (when the answer cites a page that has one) */}
                       {!msg.streaming && resolveSourceMedia && msg.content && (() => {
