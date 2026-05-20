@@ -887,7 +887,7 @@ Documentation pages: ${pageTitles}
 ${features ? `Key features: ${features}` : ''}
 
 Generate 6 highly specific questions that users of THIS product would actually ask.`,
-    maxTokens: 512,
+    maxTokens: 4096,
   })
 
   try {
