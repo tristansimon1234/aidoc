@@ -270,6 +270,47 @@ ${blockersSection}`
 // --- RAG Chat (widget / in-app / public docs) ---
 
 /**
+ * Static Doclee platform knowledge injected when assistantMode=true.
+ * Gives the in-app project assistant enough context to answer platform
+ * questions (how to generate docs, use Try Doc, embed the widget, etc.)
+ * in addition to the project's own RAG context.
+ */
+const DOCLEE_PLATFORM_KNOWLEDGE = `
+## About Doclee (the documentation platform the user is currently using)
+Doclee turns screen recordings into polished product documentation with AI-generated screenshots, voice-over narration, a RAG chat widget, and quality-testing via an AI agent.
+
+### Core workflow
+1. Record your screen or upload a video in the **Generate** tab of any page
+2. Doclee (Gemini AI) analyzes every action and extracts screenshots at key moments
+3. Documentation is generated automatically — the user reviews and edits it in the **Documentation** tab
+4. Voice-over narration can be generated from the **Walkthrough** tab (ElevenLabs TTS)
+5. The **Test** tab runs an AI agent (Try Doc) that follows the steps on the live product and produces a quality report
+6. Embed a chat widget on any client app with a single <script> tag — enabled from **Project Settings → Widget**
+
+### Key features
+- **Generate tab** — Record screen or upload video → AI generates doc with screenshots. The briefing form (Goal, What the agent can't see) helps the AI understand the page's purpose.
+- **Documentation tab** — Block editor (like Notion) for reviewing and refining AI-generated content. Supports images, callouts, code blocks.
+- **Walkthrough tab** — Timeline of voice-over segments, tone/voice picker, segment-level editing. Public toggle shows/hides the narrated video on the public docs page.
+- **Test tab** — Try Doc: AI agent follows the doc steps on the live URL and reports which steps pass/fail. Requires a test URL.
+- **Marketing tab** — Generates a 45-second promo video from the page content.
+- **Chat widget** — RAG-powered chat embedded on any app. One <script> tag, configured with a widget key from Project Settings.
+- **Public docs** — Every project gets a public docs page at /docs/:projectId. Individual pages can be made public from the Documentation tab.
+- **Analytics tab** — Chat interactions, page views, and Gemini-generated AI insights about user pain points, sentiment, and content gaps.
+- **Teams** — Invite team members, manage roles (owner/admin/member). Each project belongs to a team workspace.
+- **MCP server** — Personal access tokens for IDE integrations (Claude, Cursor, etc.). Manage tokens from Account Settings → MCP.
+- **Plans** — Free (3 000 tokens/mo), Founder 19€ (30 000), Team 59€ (100 000), Agency 149€ (500 000). Token cost per op: Generate 100, Voice-over 300, Try Doc 400, Chat session 20, Marketing video 600.
+
+### Common questions and answers
+- **"How do I create documentation?"** → Create a page (+ in sidebar), go to the Generate tab, record your screen or upload a video.
+- **"How do I add chat to my app?"** → Go to Project Settings, scroll to Widget, click Enable and copy the <script> tag.
+- **"What is Try Doc?"** → An AI agent that follows your doc steps on the live product and tells you which steps are clear vs unclear. Run it from the Test tab.
+- **"How do I invite a team member?"** → Top-left avatar → Settings, or go to the Team section in Account Settings.
+- **"How do I change the voice?"** → Walkthrough tab → Voice selector → choose tone and language.
+- **"What's the difference between Documentation and Walkthrough?"** → Documentation is the written guide (text + screenshots). Walkthrough is the narrated video version of the same content.
+- **"How do I make a page public?"** → Open the page → Documentation tab → toggle Public at the top.
+`
+
+/**
  * Build the system prompt for the product-support RAG chat. Takes the
  * retrieved product knowledge (doc chunks already formatted into lines) and
  * the optional caller context (name / email / plan / currentUrl) so the
@@ -279,8 +320,9 @@ ${blockersSection}`
 export function buildChatSystemPrompt(input: {
   productContext: string[]
   userContext?: { name?: string | null; email?: string | null; plan?: string | null; currentUrl?: string | null; extra?: string | null } | null
+  assistantMode?: boolean
 }): string {
-  const { productContext, userContext } = input
+  const { productContext, userContext, assistantMode } = input
   const userInfo: string[] = []
   if (userContext?.name) userInfo.push(`Name: ${userContext.name}`)
   if (userContext?.email) userInfo.push(`Email: ${userContext.email}`)
@@ -296,7 +338,9 @@ export function buildChatSystemPrompt(input: {
     ? `\n\n## Product Knowledge\n${productContext.join('\n')}`
     : ''
 
-  return `You are a friendly, knowledgeable support assistant for a software product.${productBlock}${userContextBlock}
+  const platformBlock = assistantMode ? DOCLEE_PLATFORM_KNOWLEDGE : ''
+
+  return `You are a friendly, knowledgeable support assistant for a software product.${platformBlock}${productBlock}${userContextBlock}
 
 ## Your personality
 - Warm, natural, conversational — like a smart colleague helping out

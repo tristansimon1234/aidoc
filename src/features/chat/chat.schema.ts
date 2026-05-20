@@ -17,6 +17,11 @@ export const ChatRequestSchema = z.object({
   message: z.string().min(1).max(2000),
   history: z.array(ChatMessageSchema).max(50).default([]),
   userContext: UserContextSchema,
+  /** When true the system prompt is enriched with Doclee platform knowledge
+   *  so the assistant can answer questions about the platform itself (how to
+   *  generate docs, use Try Doc, enable the widget, etc.) in addition to the
+   *  project's own RAG context. Used by the in-app project assistant panel. */
+  assistantMode: z.boolean().optional(),
 })
 
 export type ChatRequestInput = z.infer<typeof ChatRequestSchema>

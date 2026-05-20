@@ -70,6 +70,7 @@ chatRouter.post('/', (req: Request, res: Response, next: NextFunction) => {
         body.data.message,
         body.data.history,
         body.data.userContext,
+        body.data.assistantMode,
       )
 
       if (sessionToken) {
@@ -128,6 +129,7 @@ chatRouter.post('/stream', (req: Request, res: Response, next: NextFunction) => 
         body.data.message,
         body.data.history,
         body.data.userContext,
+        body.data.assistantMode,
       )
       let assistantText = ''
       try {

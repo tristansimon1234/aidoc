@@ -7,6 +7,10 @@ import { api, type ProjectDTO, type DocPageDTO, type TabWithCountDTO } from '../
 import { fetchProject, fetchPageTree } from '../../../shared/api/db.js'
 import { PageTree } from '../../page/components/PageTree.js'
 import { TabBar } from '../../page/components/TabBar.js'
+import { getChatSessionToken } from '../../../shared/hooks/useChatSessionToken.js'
+import { ProjectChatBar } from '../components/ProjectChatBar.js'
+import { ProjectAssistantPanel } from '../components/ProjectAssistantPanel.js'
+import type { ChatMessage } from '../../chat/components/ChatSurface.js'
 import styles from './ProjectDetail.module.css'
 
 type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'analytics' | 'activity' | 'settings'
@@ -127,6 +131,12 @@ export function ProjectDetail(): React.ReactElement {
   const [search, setSearch] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
+
+  // Assistant panel state
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([])
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null)
+  const sessionToken = projectId ? getChatSessionToken(projectId) : undefined
 
   // Restore running jobs from DB (survives browser refresh)
   useLoadJobsFromDB(projectId)
@@ -337,9 +347,28 @@ export function ProjectDetail(): React.ReactElement {
               />
             )}
           </div>
+          <div className={styles.chatBarWrap}>
+            <ProjectChatBar
+              projectName={project.name}
+              onFocus={() => setAssistantOpen(true)}
+              onSubmit={(msg) => { setAssistantOpen(true); setPendingMessage(msg) }}
+            />
+          </div>
         </div>
       </div>
       </div>
+
+      <ProjectAssistantPanel
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        projectId={projectId!}
+        projectName={project.name}
+        messages={assistantMessages}
+        onMessagesChange={setAssistantMessages}
+        pendingMessage={pendingMessage}
+        onPendingMessageConsumed={() => setPendingMessage(null)}
+        sessionToken={sessionToken}
+      />
     </Shell>
   )
 }

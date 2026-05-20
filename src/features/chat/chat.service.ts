@@ -169,6 +169,7 @@ export async function chat(
   message: string,
   history: ChatMessage[],
   userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
+  assistantMode?: boolean,
 ): Promise<ChatResponse> {
   // 1. Embed the user query and search — skip for greetings/small talk.
   //    Rewrite the query to be self-contained when there's history: "and
@@ -246,7 +247,7 @@ export async function chat(
     .join('\n\n')
 
   const { buildChatSystemPrompt, buildChatUserPrompt } = await import('../../shared/ai/prompt.builder.js')
-  const systemPrompt = buildChatSystemPrompt({ productContext, userContext })
+  const systemPrompt = buildChatSystemPrompt({ productContext, userContext, assistantMode })
   const userPrompt = buildChatUserPrompt({ context, conversationHistory, message })
 
   // Flash for everything — Pro routing doubled latency on complex
@@ -346,6 +347,7 @@ export async function* chatStream(
   message: string,
   history: ChatMessage[],
   userContext?: { name?: string; email?: string; plan?: string; extra?: string; currentUrl?: string },
+  assistantMode?: boolean,
 ): AsyncGenerator<ChatStreamEvent> {
   yield { type: 'start' }
 
@@ -406,7 +408,7 @@ export async function* chatStream(
     .join('\n\n')
 
   const { buildChatSystemPrompt, buildChatUserPrompt } = await import('../../shared/ai/prompt.builder.js')
-  const systemPrompt = buildChatSystemPrompt({ productContext, userContext })
+  const systemPrompt = buildChatSystemPrompt({ productContext, userContext, assistantMode })
   const userPrompt = buildChatUserPrompt({ context, conversationHistory, message })
 
   const stream = await generateTextStream({

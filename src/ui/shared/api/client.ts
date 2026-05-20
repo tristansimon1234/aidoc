@@ -779,6 +779,11 @@ export const api = {
   chat: {
     send: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string): Promise<ChatResponseDTO> =>
       request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history, sessionToken }) }),
+    /** Assistant-mode variant — same as send but enriches the system prompt
+     *  with Doclee platform knowledge so the AI can answer platform questions
+     *  in addition to the project's own RAG context. Used by the in-app panel. */
+    sendAssistant: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string): Promise<ChatResponseDTO> =>
+      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history, sessionToken, assistantMode: true }) }),
     /** Streaming variant — yields ChatStreamEvent objects parsed from SSE
      *  frames as the backend emits them. Caller consumes via for-await-of. */
     sendStream: async function* (
@@ -819,6 +824,47 @@ export const api = {
             try {
               yield JSON.parse(payload) as ChatStreamEventDTO
             } catch { /* skip malformed frame, keep streaming */ }
+          }
+        }
+      }
+    },
+    /** Assistant-mode streaming — same as sendStream but with assistantMode:true. */
+    sendAssistantStream: async function* (
+      projectId: string,
+      message: string,
+      history: { role: 'user' | 'assistant'; content: string }[],
+      sessionToken?: string,
+      signal?: AbortSignal,
+    ): AsyncGenerator<ChatStreamEventDTO> {
+      const headers = await getAuthHeaders()
+      const res = await fetch(`${API_BASE}/projects/${projectId}/chat/stream`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message, history, sessionToken, assistantMode: true }),
+        signal,
+      })
+      if (!res.ok || !res.body) {
+        const body = (await res.json().catch(() => null)) as { error?: string; code?: string; details?: unknown } | null
+        throw new ApiError(body?.error ?? `Chat stream failed: ${res.status}`, body?.code ?? null, res.status, body?.details)
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let sep: number
+        while ((sep = buffer.indexOf('\n\n')) >= 0) {
+          const frame = buffer.slice(0, sep)
+          buffer = buffer.slice(sep + 2)
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data: ')) continue
+            const payload = line.slice(6).trim()
+            if (payload === '[DONE]') return
+            try {
+              yield JSON.parse(payload) as ChatStreamEventDTO
+            } catch { /* skip malformed frame */ }
           }
         }
       }

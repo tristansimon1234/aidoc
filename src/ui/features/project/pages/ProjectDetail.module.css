@@ -333,11 +333,12 @@
 .contentArea {
   flex: 1;
   overflow: hidden;
-  padding-bottom: var(--space-lg);
+  display: flex;
+  flex-direction: column;
 }
 
 .content {
-  height: 100%;
+  flex: 1;
   overflow-y: auto;
   display: flex;
   justify-content: center;
@@ -354,10 +355,17 @@
 }
 
 .emptyContent {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
+}
+
+/* Persistent assistant chat bar — sits below the scrollable content */
+.chatBarWrap {
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
 }
 
 .loadingState {
