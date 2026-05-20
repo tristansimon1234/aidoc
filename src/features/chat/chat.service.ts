@@ -258,7 +258,7 @@ export async function chat(
   const response = await generateText({
     systemPrompt,
     userPrompt,
-    maxTokens: 2048,
+    maxTokens: 8192,
     // Lower temperature = tighter, more factual answers. 0.3 is the
     // sweet spot for support-style Q&A: still natural, rarely invents.
     temperature: 0.3,
@@ -756,7 +756,7 @@ export async function* chatStream(
         userMessage: userPrompt,
         toolDeclarations: declarations,
         executor,
-        maxTokens: 2048,
+        maxTokens: 8192,
         temperature: 0.3,
       })) {
         if (event.type === 'tool_start') {
@@ -789,7 +789,7 @@ export async function* chatStream(
       const stream = await generateTextStream({
         systemPrompt,
         userPrompt,
-        maxTokens: 2048,
+        maxTokens: 8192,
         temperature: 0.3,
       })
 
@@ -1181,12 +1181,11 @@ Passages:
 ${numbered}`
   const { text } = await generateText({
     userPrompt: prompt,
-    // Rerank is a pure JSON-scoring task — Gemini 2.5's internal "thinking"
-    // adds zero quality here and silently consumes the output budget
-    // (saw real MAX_TOKENS truncations even at 2048). Disable it so the
-    // full budget goes to the actual JSON output.
-    thinkingBudget: 0,
-    maxTokens: 1024,
+    // Gemini 2.5 Flash silently spends a chunk of maxOutputTokens on
+    // internal "thinking" before emitting JSON. Saw real MAX_TOKENS
+    // truncations at 2048; bumping to 8192 leaves enough headroom for
+    // thinking + the actual ~200-token JSON output.
+    maxTokens: 8192,
     temperature: 0,
     json: true,
   })
@@ -1225,9 +1224,9 @@ User query: ${message}
 Rewritten:`
   const { text } = await generateText({
     userPrompt: prompt,
-    // Query rewriting is a template fill — no thinking needed.
-    thinkingBudget: 0,
-    maxTokens: 256,
+    // Same MAX_TOKENS issue as rerank — Gemini 2.5 thinking eats the
+    // budget. Bump high so thinking + the short rewrite both fit.
+    maxTokens: 4096,
     temperature: 0.1,
   })
   const cleaned = text.trim().replace(/^["']|["']$/g, '')
