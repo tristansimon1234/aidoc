@@ -3,7 +3,6 @@ import styles from './ProjectChatBar.module.css'
 
 interface ProjectChatBarProps {
   onSubmit: (message: string) => void
-  onFocus?: () => void
   projectName: string
 }
 
@@ -13,7 +12,7 @@ const QUICK_PROMPTS = [
   'How do I embed the chat widget?',
 ]
 
-export function ProjectChatBar({ onSubmit, onFocus, projectName }: ProjectChatBarProps): React.ReactElement {
+export function ProjectChatBar({ onSubmit, projectName }: ProjectChatBarProps): React.ReactElement {
   const [value, setValue] = useState('')
 
   const submit = (): void => {
@@ -52,7 +51,6 @@ export function ProjectChatBar({ onSubmit, onFocus, projectName }: ProjectChatBa
           placeholder={`Ask about ${projectName} or Doclee…`}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          onFocus={onFocus}
           onKeyDown={handleKey}
           aria-label="Ask the assistant"
         />

@@ -350,7 +350,6 @@ export function ProjectDetail(): React.ReactElement {
           <div className={styles.chatBarWrap}>
             <ProjectChatBar
               projectName={project.name}
-              onFocus={() => setAssistantOpen(true)}
               onSubmit={(msg) => { setAssistantOpen(true); setPendingMessage(msg) }}
             />
           </div>
