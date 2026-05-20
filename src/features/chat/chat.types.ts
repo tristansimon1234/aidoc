@@ -32,4 +32,20 @@ export interface ChatResponse {
   sources: { pageId: string; pageTitle: string; pageSlug: string }[]
   followUps: string[]
   walkthroughAvailable?: boolean
+  toolCalls?: { name: string; label: string; args: Record<string, unknown>; result: unknown }[]
 }
+
+/**
+ * Streaming event shape emitted by chatStream() — mirrors the frontend's
+ * ChatStreamEvent in ChatSurface.tsx. Exported here so backend (service)
+ * and frontend (UI) share the same contract without circular imports.
+ */
+export type ChatStreamEvent =
+  | { type: 'start' }
+  | { type: 'delta'; text: string }
+  | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
+  | { type: 'followups'; items: string[] }
+  | { type: 'walkthrough'; available: boolean }
+  | { type: 'tool_call'; name: string; label: string; args: Record<string, unknown>; result: unknown }
+  | { type: 'done'; fullText: string }
+  | { type: 'error'; message: string }

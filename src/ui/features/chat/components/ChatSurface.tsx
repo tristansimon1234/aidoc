@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Spinner, MarkdownRenderer } from '../../../design-system/components/index.js'
 import type { ChatResponseDTO } from '../../../shared/api/client.js'
+import { VideoUploadBlock } from '../../project/components/VideoUploadBlock.js'
 import styles from './ChatSurface.module.css'
 
 export interface ChatMessage {
@@ -16,6 +17,9 @@ export interface ChatMessage {
   /** Whether the user clicked "watch walkthrough" — expands the inline
    *  narrated player only when they opt in, not automatically. */
   videoExpanded?: boolean
+  /** Tool calls that the assistant executed during this turn — rendered
+   *  as compact action cards above the answer text. */
+  toolCalls?: { name: string; label: string; args: Record<string, unknown>; result: unknown }[]
 }
 
 /** Streaming event shape emitted by sendStream — mirrors the backend's
@@ -27,6 +31,7 @@ export type ChatStreamEvent =
   | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
   | { type: 'followups'; items: string[] }
   | { type: 'walkthrough'; available: boolean }
+  | { type: 'tool_call'; name: string; label: string; args: Record<string, unknown>; result: unknown }
   | { type: 'done'; fullText: string }
   | { type: 'error'; message: string }
 
@@ -168,6 +173,108 @@ function ChatNarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?
         onVolumeChange={handleVolumeChange}
       />
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
+    </div>
+  )
+}
+
+// --- Tool call rendering ---
+
+interface ToolCallResult {
+  id?: string
+  title?: string
+  slug?: string
+  status?: string
+  hasContent?: boolean
+  count?: number
+  [key: string]: unknown
+}
+
+function extractResultCount(result: unknown): number {
+  if (Array.isArray(result)) return result.length
+  if (typeof result === 'object' && result !== null) {
+    const r = result as Record<string, unknown>
+    if (typeof r.count === 'number') return r.count
+  }
+  return 0
+}
+
+function extractResultTitle(result: unknown): string | null {
+  if (typeof result === 'object' && result !== null) {
+    const r = result as ToolCallResult
+    if (typeof r.title === 'string') return r.title
+  }
+  return null
+}
+
+/** Compact card shown above assistant text for each tool call the AI executed. */
+function ToolCallCard({
+  toolCall,
+  onSourceClick,
+}: {
+  toolCall: { name: string; label: string; args: Record<string, unknown>; result: unknown }
+  onSourceClick: (source: { pageId: string; pageTitle: string; pageSlug: string }) => void
+}): React.ReactElement {
+  const { name, label, args, result } = toolCall
+
+  const pageTitle = extractResultTitle(result)
+  const count = extractResultCount(result)
+
+  const handlePageClick = (): void => {
+    if (typeof result === 'object' && result !== null) {
+      const r = result as ToolCallResult
+      if (typeof r.id === 'string' && typeof r.slug === 'string') {
+        onSourceClick({ pageId: r.id, pageTitle: pageTitle ?? '', pageSlug: r.slug })
+      }
+    }
+  }
+
+  return (
+    <div className={styles.toolCallCard}>
+      <span className={styles.toolCallIcon} aria-hidden="true">
+        {name === 'create_page' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 5v14" /><path d="M5 12h14" />
+          </svg>
+        )}
+        {name === 'update_page' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+          </svg>
+        )}
+        {name === 'list_pages' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M8 6h13" /><path d="M8 12h13" /><path d="M8 18h13" /><path d="M3 6h.01" /><path d="M3 12h.01" /><path d="M3 18h.01" />
+          </svg>
+        )}
+        {name === 'search_docs' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
+          </svg>
+        )}
+        {name === 'prepare_doc_generation' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          </svg>
+        )}
+      </span>
+      <span className={styles.toolCallLabel}>{label}</span>
+      {name === 'create_page' && pageTitle && (
+        <button className={styles.toolCallAction} onClick={handlePageClick}>
+          {pageTitle} →
+        </button>
+      )}
+      {name === 'update_page' && pageTitle && (
+        <span className={styles.toolCallMeta}>{pageTitle}</span>
+      )}
+      {name === 'list_pages' && count > 0 && (
+        <span className={styles.toolCallMeta}>{count} page{count !== 1 ? 's' : ''}</span>
+      )}
+      {name === 'search_docs' && (
+        <span className={styles.toolCallMeta}>
+          {typeof args.query === 'string' ? `"${args.query}"` : ''}
+          {count > 0 ? ` · ${count} result${count !== 1 ? 's' : ''}` : ''}
+        </span>
+      )}
     </div>
   )
 }
@@ -379,6 +486,13 @@ export function ChatSurface({
             patchLastAssistant({ followUps: event.items })
           } else if (event.type === 'walkthrough') {
             patchLastAssistant({ walkthroughAvailable: event.available })
+          } else if (event.type === 'tool_call') {
+            // Accumulate tool calls on the in-progress assistant message.
+            // They render as action cards above the answer text once done.
+            patchLastAssistant((m) => ({
+              ...m,
+              toolCalls: [...(m.toolCalls ?? []), { name: event.name, label: event.label, args: event.args, result: event.result }],
+            }))
           } else if (event.type === 'done') {
             // Replace with the post-processed full text (link rewriting,
             // image URL normalization). May be identical to fullText for
@@ -516,6 +630,30 @@ export function ChatSurface({
                     <div className={styles.bubbleUser}>{msg.content}</div>
                   ) : (
                     <div className={styles.bubbleAssistant}>
+                      {/* Tool call action cards — rendered above the answer text.
+                       *  prepare_doc_generation gets an inline video upload block;
+                       *  all other tools get the compact action card. */}
+                      {msg.toolCalls && msg.toolCalls.length > 0 && (
+                        <div className={styles.toolCallList}>
+                          {msg.toolCalls.map((tc, tcIdx) => {
+                            if (tc.name === 'prepare_doc_generation') {
+                              const r = tc.result as { pageId?: string; pageTitle?: string; pageSlug?: string } | null
+                              if (r?.pageId && r.pageSlug) {
+                                return (
+                                  <VideoUploadBlock
+                                    key={tcIdx}
+                                    projectId={projectId}
+                                    pageId={r.pageId}
+                                    pageTitle={r.pageTitle ?? tc.args.pageTitle as string ?? 'Documentation'}
+                                    pageSlug={r.pageSlug}
+                                  />
+                                )
+                              }
+                            }
+                            return <ToolCallCard key={tcIdx} toolCall={tc} onSourceClick={onSourceClick} />
+                          })}
+                        </div>
+                      )}
                       {/* Empty + streaming = shimmer "Thinking…" with brain icon
                        *  (Claude / Vercel AI pattern). The text gradient sweeps
                        *  across the letters while we wait for the first delta. */}

@@ -1,5 +1,5 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
-import type { ResponseSchema } from '@google/generative-ai'
+import { GoogleGenerativeAI, FunctionCallingMode } from '@google/generative-ai'
+import type { ResponseSchema, FunctionDeclaration, Content, Part, ToolConfig } from '@google/generative-ai'
 import { GoogleAIFileManager } from '@google/generative-ai/server'
 import { z } from 'zod'
 import { env } from '../config/env.js'
@@ -368,6 +368,150 @@ export function correctTimestamps(steps: VideoStep[], videoDurationSeconds: numb
 
 export function isGeminiAvailable(): boolean {
   return !!env.GEMINI_API_KEY
+}
+
+// Re-export for callers that only need the type
+export type { FunctionDeclaration }
+
+export type AssistantToolEvent =
+  | { type: 'tool_call'; name: string; label: string; args: Record<string, unknown>; result: unknown }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; fullText: string }
+  | { type: 'error'; message: string }
+
+/**
+ * One-shot assistant turn with optional Gemini function calling.
+ *
+ * Flow:
+ *   1. Call Gemini with tool declarations (non-streaming) — may trigger 0-N function calls.
+ *   2. Execute each function call, yield a `tool_call` event.
+ *   3. If tools were called: run a second Gemini call (streaming) with tool results in the
+ *      conversation. If no tools: stream the text from step 1 (already buffered).
+ *   4. Yield `delta` events as text arrives, then `done`.
+ *
+ * Keeps tool resolution fast (single-shot) while preserving the streaming feel for the
+ * final answer.
+ */
+export async function* callWithToolsAndStream(opts: {
+  systemPrompt: string
+  history: Array<{ role: 'user' | 'assistant'; content: string }>
+  userMessage: string
+  toolDeclarations: FunctionDeclaration[]
+  executor: (name: string, args: Record<string, unknown>) => Promise<unknown>
+  maxTokens?: number
+  temperature?: number
+}): AsyncGenerator<AssistantToolEvent> {
+  const genAI = getGenAI()
+
+  // Build conversation history as Content[]
+  const contents: Content[] = [
+    ...opts.history.map((m) => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.content }] as Part[],
+    })),
+    { role: 'user', parts: [{ text: opts.userMessage }] as Part[] },
+  ]
+
+  // Step 1: non-streaming call with tools so Gemini can choose to invoke them
+  const modelWithTools = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    systemInstruction: opts.systemPrompt,
+    tools: [{ functionDeclarations: opts.toolDeclarations }],
+    toolConfig: { functionCallingConfig: { mode: FunctionCallingMode.AUTO } } as ToolConfig,
+  })
+
+  const result = await withRetry(() =>
+    modelWithTools.generateContent({
+      contents,
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens ?? 2048,
+        temperature: opts.temperature ?? 0.3,
+      },
+    }),
+  )
+
+  const parts: Part[] = result.response.candidates?.[0]?.content?.parts ?? []
+  const funcCalls = parts.filter(
+    (p): p is Part & { functionCall: NonNullable<Part['functionCall']> } => !!p.functionCall,
+  )
+  const textContent = parts
+    .filter((p) => p.text)
+    .map((p) => p.text)
+    .join('')
+
+  if (funcCalls.length === 0) {
+    // No tools called — emit the buffered text directly
+    if (textContent) {
+      yield { type: 'delta', text: textContent }
+    }
+    yield { type: 'done', fullText: textContent }
+    return
+  }
+
+  // Step 2: execute each tool call and yield tool_call events
+  const toolResultParts: Part[] = []
+  for (const fc of funcCalls) {
+    let fnResult: unknown
+    try {
+      fnResult = await opts.executor(fc.functionCall.name, fc.functionCall.args as Record<string, unknown>)
+    } catch (execErr) {
+      fnResult = { error: (execErr as Error).message }
+    }
+    yield {
+      type: 'tool_call',
+      name: fc.functionCall.name,
+      label: fc.functionCall.name,
+      args: fc.functionCall.args as Record<string, unknown>,
+      result: fnResult,
+    }
+    toolResultParts.push({
+      functionResponse: {
+        name: fc.functionCall.name,
+        response: { content: JSON.stringify(fnResult) },
+      },
+    })
+  }
+
+  // Step 3: stream the final answer with tool results appended to the conversation
+  const updatedContents: Content[] = [
+    ...contents,
+    {
+      role: 'model',
+      parts: funcCalls.map((fc) => ({ functionCall: fc.functionCall })) as Part[],
+    },
+    { role: 'user', parts: toolResultParts },
+  ]
+
+  // Use a clean model (no tools) to avoid another tool-call loop
+  const modelClean = genAI.getGenerativeModel({
+    model: GEMINI_MODEL,
+    systemInstruction: opts.systemPrompt,
+  })
+
+  const streamResult = await withRetry(() =>
+    modelClean.generateContentStream({
+      contents: updatedContents,
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens ?? 2048,
+        temperature: opts.temperature ?? 0.3,
+      },
+    }),
+  )
+
+  let fullText = ''
+  try {
+    for await (const chunk of streamResult.stream) {
+      const text = chunk.text()
+      if (text) {
+        fullText += text
+        yield { type: 'delta', text }
+      }
+    }
+  } catch (err) {
+    yield { type: 'error', message: (err as Error).message }
+    return
+  }
+  yield { type: 'done', fullText }
 }
 
 export async function analyzeVideoWithGemini(

@@ -22,7 +22,6 @@ import { useJobs } from '../../../shared/jobs/JobContext.js'
 import { useQuotaStatus } from '../../../shared/hooks/useQuotaStatus.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { VideoTimeline } from '../components/VideoTimeline.js'
-import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
 import { PreflightPanel } from '../components/PreflightPanel.js'
 import { MarketingVideoPanel } from '../components/MarketingVideoPanel.js'
@@ -67,8 +66,7 @@ function PageViewInner(): React.ReactElement {
   const abortRef = useRef<AbortController | null>(null)
   const [liveUrl, setLiveUrl] = useState<string | null>(hasRunningTest ? (initialTestJob.liveUrl ?? null) : null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test' | 'marketing'>(hasRunningTest ? 'test' : 'doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'video' | 'test' | 'marketing'>(hasRunningTest ? 'test' : 'doc')
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
@@ -165,7 +163,7 @@ function PageViewInner(): React.ReactElement {
         setExternalRev((n) => n + 1)
       }
     } catch (err) {
-      setError((err as Error).message)
+      console.error('[PageView] fetchData failed:', (err as Error).message)
     } finally {
       setLoading(false)
     }
@@ -213,12 +211,11 @@ function PageViewInner(): React.ReactElement {
     if (!projectId || !pageId || !page?.content) return
     setPreflightLoading(true)
     setPreflightResult(null)
-    setError(null)
     try {
       const result = await api.pages.preflight(projectId, pageId)
       setPreflightResult(result)
     } catch (err) {
-      setError((err as Error).message)
+      console.error('[PageView] Preflight failed:', (err as Error).message)
     } finally {
       setPreflightLoading(false)
     }
@@ -300,7 +297,7 @@ function PageViewInner(): React.ReactElement {
           // on this page — surface the notice instead of a generic error.
           setAlreadyRunning(err.details)
         } else if (e.name !== 'AbortError') {
-          setError(e.message)
+          console.error('[PageView] Try Doc failed:', e.message)
         }
         if (runId) failJob(runId, e.message, e.code ?? null)
       } finally {
@@ -370,7 +367,6 @@ function PageViewInner(): React.ReactElement {
       <div className={styles.pageHeader}>
         <div className={styles.tabBar}>
           <button className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`} onClick={() => setActiveTab('doc')}>Documentation</button>
-          <button className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`} onClick={() => setActiveTab('exploration')}>Generate</button>
           <button
             className={`${styles.tab} ${activeTab === 'video' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('video')}
@@ -873,100 +869,11 @@ function PageViewInner(): React.ReactElement {
                   />
                 </label>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>
-                  Need an AI-written doc from your recording instead? Use the <strong>Generate</strong> tab.
+                  Ask the assistant to &ldquo;generate documentation from a video&rdquo; to auto-generate docs from a recording.
                 </div>
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ===== GENERATE TAB ===== */}
-      {activeTab === 'exploration' && (
-        <div className={styles.tabContent}>
-          {/* Explanation */}
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-sm)', lineHeight: 1.6 }}>
-            Record your screen or upload a video — the AI analyzes every action, extracts key screenshots, and generates structured documentation automatically.
-          </p>
-          <div style={{
-            display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)',
-            padding: 'var(--space-sm) var(--space-md)',
-            background: 'var(--color-status-running-bg)',
-            border: '1px solid var(--color-status-running-border)',
-            borderRadius: 'var(--radius-lg)',
-            marginBottom: 'var(--space-lg)',
-            fontSize: 'var(--text-xs)', color: 'var(--color-status-running-text)', lineHeight: 1.5,
-          }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
-            <span>
-              <strong>Tip:</strong> For best results, narrate your actions while recording — describe what you&apos;re doing and why. The AI uses your voice to understand the context and generate better documentation.
-            </span>
-          </div>
-
-          {/* Two-column layout: briefing + actions */}
-          <div className={styles.generateGrid}>
-            {/* Left — Briefing */}
-            <div className={styles.section} style={{ margin: 0 }}>
-              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
-                Briefing
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                <div>
-                  <label className={styles.briefingFieldLabel}>Goal</label>
-                  <input type="text" value={page.goal ?? ''} onChange={(e) => {
-                    setPage({ ...page, goal: e.target.value })
-                    void debouncedPageUpdate({ goal: e.target.value })
-                  }} placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
-                </div>
-
-                <div>
-                  <label className={styles.briefingFieldLabel}>What to document</label>
-                  <textarea
-                    value={(page.briefing as Record<string, unknown> | null)?.objective as string ?? ''}
-                    onChange={(e) => {
-                      const newBriefing = { ...(page.briefing ?? {}), objective: e.target.value } as typeof page.briefing
-                      setPage({ ...page, briefing: newBriefing })
-                      void debouncedPageUpdate({ briefing: newBriefing })
-                    }}
-                    placeholder="e.g. Document how a new user creates an account and completes onboarding"
-                    rows={2} className={styles.briefingTextarea}
-                  />
-                </div>
-
-                <div>
-                  <label className={styles.briefingFieldLabel}>What the agent can&apos;t see</label>
-                  <textarea
-                    value={(page.briefing as Record<string, unknown> | null)?.knowledge as string ?? ''}
-                    onChange={(e) => {
-                      const newBriefing = { ...(page.briefing ?? {}), knowledge: e.target.value } as typeof page.briefing
-                      setPage({ ...page, briefing: newBriefing })
-                      void debouncedPageUpdate({ briefing: newBriefing })
-                    }}
-                    placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries."
-                    rows={2} className={styles.briefingTextarea}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Right — Record / Upload */}
-            <div>
-              <ScreenRecorder
-                projectId={projectId!}
-                pageId={pageId!}
-                page={page}
-                hasExistingVoiceover={!!voiceoverUrl}
-                onComplete={async () => {
-                  await fetchData()
-                  await context.refetchPages()
-                  setActiveTab('doc')
-                }}
-              />
-            </div>
-          </div>
-
-          {error && <EmptyState title="Error" description={error} />}
         </div>
       )}
 

@@ -279,16 +279,16 @@ const DOCLEE_PLATFORM_KNOWLEDGE = `
 ## About Doclee (the documentation platform the user is currently using)
 Doclee turns screen recordings into polished product documentation with AI-generated screenshots, voice-over narration, a RAG chat widget, and quality-testing via an AI agent.
 
-### Core workflow
-1. Record your screen or upload a video in the **Generate** tab of any page
-2. Doclee (Gemini AI) analyzes every action and extracts screenshots at key moments
-3. Documentation is generated automatically — the user reviews and edits it in the **Documentation** tab
-4. Voice-over narration can be generated from the **Walkthrough** tab (ElevenLabs TTS)
-5. The **Test** tab runs an AI agent (Try Doc) that follows the steps on the live product and produces a quality report
-6. Embed a chat widget on any client app with a single <script> tag — enabled from **Project Settings → Widget**
+### Core workflow — chat-first
+Doclee is a **chat-first** platform. Everything is accessible from the assistant chat bar at the bottom of every project page:
+1. Ask the assistant to create a page, generate documentation, run a test, or update content
+2. To generate docs: say "generate documentation for [feature name]" — the assistant creates the page and shows an **inline video upload block** right in the chat
+3. Drop your screen recording into the block — Doclee (Gemini AI) analyzes it and auto-generates the doc
+4. The generated documentation is editable in the **Documentation** tab of the page
 
 ### Key features
-- **Generate tab** — Record screen or upload video → AI generates doc with screenshots. The briefing form (Goal, What the agent can't see) helps the AI understand the page's purpose.
+- **Chat assistant** — Type anything: create pages, generate docs from video, search, update content. All project actions are available via chat. Use it! It's the primary way to work in Doclee.
+- **Generate docs from video (via chat)** — Ask "generate documentation from a video" or "document the checkout flow". The assistant shows an upload block directly in the chat — drop your recording and AI does the rest.
 - **Documentation tab** — Block editor (like Notion) for reviewing and refining AI-generated content. Supports images, callouts, code blocks.
 - **Walkthrough tab** — Timeline of voice-over segments, tone/voice picker, segment-level editing. Public toggle shows/hides the narrated video on the public docs page.
 - **Test tab** — Try Doc: AI agent follows the doc steps on the live URL and reports which steps pass/fail. Requires a test URL.
@@ -301,7 +301,8 @@ Doclee turns screen recordings into polished product documentation with AI-gener
 - **Plans** — Free (3 000 tokens/mo), Founder 19€ (30 000), Team 59€ (100 000), Agency 149€ (500 000). Token cost per op: Generate 100, Voice-over 300, Try Doc 400, Chat session 20, Marketing video 600.
 
 ### Common questions and answers
-- **"How do I create documentation?"** → Create a page (+ in sidebar), go to the Generate tab, record your screen or upload a video.
+- **"How do I create documentation?"** → Just ask the assistant: "create a page for [feature]" or "generate documentation from a video". The assistant sets everything up and shows the upload block inline.
+- **"How do I generate docs from a recording?"** → Ask "generate documentation for [feature name]" in the chat. An upload block appears — drop your video and Doclee does the rest.
 - **"How do I add chat to my app?"** → Go to Project Settings, scroll to Widget, click Enable and copy the <script> tag.
 - **"What is Try Doc?"** → An AI agent that follows your doc steps on the live product and tells you which steps are clear vs unclear. Run it from the Test tab.
 - **"How do I invite a team member?"** → Top-left avatar → Settings, or go to the Team section in Account Settings.
@@ -378,6 +379,16 @@ export function buildChatSystemPrompt(input: {
 - If your answer describes steps the user could perform in their app's UI (clicking buttons, filling forms, navigating pages), add "---WALKTHROUGH---" on its own line BEFORE the ---FOLLOWUPS--- line
 - ONLY add this flag when the answer contains concrete UI actions (click, type, select, navigate). Do NOT add it for conceptual explanations, FAQs, or answers that don't involve interacting with the UI
 - This flag enables a "Guide me" button that highlights UI elements on the user's screen
+
+## Using tools (assistantMode only)
+When assistantMode is active you have access to project tools. Use them proactively:
+- **list_pages** — when the user asks what pages exist or wants an overview
+- **create_page** — when the user wants to create a new documentation page
+- **update_page** — when the user wants to edit or rewrite a page's content
+- **search_docs** — when you need to find specific content within the project
+- **prepare_doc_generation** — when the user wants to generate documentation from a screen recording or video. This creates the page and shows an inline upload block in the chat. Use whenever the user says "generate docs", "document [feature]", "record a video", or similar.
+
+When calling prepare_doc_generation, always call it — don't just explain what they should do. The inline upload block will appear automatically in the chat after the tool runs.
 
 ## Boundaries
 - Base your answers on the documentation context — don't invent features

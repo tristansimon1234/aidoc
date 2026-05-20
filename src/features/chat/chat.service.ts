@@ -1,9 +1,11 @@
-import { embedText, embedTexts, generateText, generateTextStream } from '../../shared/ai/gemini.client.js'
+import { embedText, embedTexts, generateText, generateTextStream, callWithToolsAndStream } from '../../shared/ai/gemini.client.js'
+import type { FunctionDeclaration } from '../../shared/ai/gemini.client.js'
+import { SchemaType } from '@google/generative-ai'
 import { buildWalkthroughPrompt, WALKTHROUGH_SYSTEM_PROMPT } from '../../shared/ai/prompt.builder.js'
 import { env } from '../../shared/config/env.js'
 import { WalkthroughResponseSchema } from './chat.schema.js'
 import * as chatRepo from './chat.repository.js'
-import type { ChatMessage, ChatResponse, DocChunk } from './chat.types.js'
+import type { ChatMessage, ChatResponse, ChatStreamEvent, DocChunk } from './chat.types.js'
 import type { WalkthroughRequest, WalkthroughResponse } from './walkthrough.types.js'
 
 // --- Chunking ---
@@ -313,16 +315,199 @@ export async function chat(
   }
 }
 
+// --- Tool-augmented assistant mode ---
+
+/** Human-readable labels for each tool name. */
+function humanLabel(toolName: string): string {
+  const labels: Record<string, string> = {
+    list_pages: 'Listed pages',
+    create_page: 'Created page',
+    update_page: 'Updated page',
+    search_docs: 'Searched docs',
+  }
+  return labels[toolName] ?? toolName
+}
+
+/**
+ * Build Gemini function declarations + an executor for the 4 project tools
+ * available to the assistant. Declarations follow the Gemini FunctionDeclaration
+ * schema (OBJECT with properties); executor dispatches by name.
+ *
+ * Uses dynamic imports for repository/service functions — consistent with the
+ * rest of chat.service.ts — to avoid circular-dependency issues at module load.
+ */
+function buildProjectToolDefs(projectId: string): {
+  declarations: FunctionDeclaration[]
+  executor: (name: string, args: Record<string, unknown>) => Promise<unknown>
+} {
+  const declarations: FunctionDeclaration[] = [
+    {
+      name: 'list_pages',
+      description: 'List all documentation pages in this project',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {},
+        required: [],
+      },
+    },
+    {
+      name: 'create_page',
+      description: 'Create a new documentation page in this project',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          title: { type: SchemaType.STRING, description: 'The title of the new page' },
+          content: { type: SchemaType.STRING, description: 'Optional initial markdown content for the page' },
+        },
+        required: ['title'],
+      },
+    },
+    {
+      name: 'update_page',
+      description: 'Update the content or title of an existing documentation page',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          pageSlug: { type: SchemaType.STRING, description: 'The slug of the page to update' },
+          content: { type: SchemaType.STRING, description: 'New markdown content for the page' },
+          title: { type: SchemaType.STRING, description: 'New title for the page' },
+        },
+        required: ['pageSlug'],
+      },
+    },
+    {
+      name: 'search_docs',
+      description: 'Search the project documentation for relevant content',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          query: { type: SchemaType.STRING, description: 'The search query' },
+        },
+        required: ['query'],
+      },
+    },
+    {
+      name: 'prepare_doc_generation',
+      description:
+        'Set up a documentation page for video-based generation. Creates a new page (or finds an existing one) and returns the upload target so the user can upload a screen recording directly in the chat.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          pageTitle: { type: SchemaType.STRING, description: 'Title of the documentation page to create or use' },
+          existingPageSlug: {
+            type: SchemaType.STRING,
+            description: 'Slug of an existing page to generate docs for — omit to create a new page',
+          },
+        },
+        required: ['pageTitle'],
+      },
+    },
+  ]
+
+  const executor = async (name: string, args: Record<string, unknown>): Promise<unknown> => {
+    switch (name) {
+      case 'list_pages': {
+        const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const pages = await findPagesByProjectId(projectId)
+        return pages.map((p) => ({
+          id: p.id,
+          title: p.title,
+          slug: p.slug,
+          status: p.status,
+          hasContent: !!(p.content?.trim()),
+        }))
+      }
+
+      case 'create_page': {
+        const { createPage } = await import('../page/page.service.js')
+        // Generate a slug from the title
+        const rawTitle = String(args.title ?? 'Untitled')
+        const slug = rawTitle
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 80) || 'untitled'
+        const page = await createPage({
+          projectId,
+          // tabId omitted → page.service.createPage resolves the default tab
+          title: rawTitle,
+          slug,
+        })
+        // If content was provided, update the page content immediately
+        if (typeof args.content === 'string' && args.content.trim()) {
+          const { updatePage } = await import('../page/page.service.js')
+          await updatePage(page.id, { content: args.content })
+        }
+        return { id: page.id, slug: page.slug, title: page.title }
+      }
+
+      case 'update_page': {
+        const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const { updatePage } = await import('../page/page.service.js')
+        const pages = await findPagesByProjectId(projectId)
+        const page = pages.find((p) => p.slug === args.pageSlug)
+        if (!page) return { error: `Page with slug "${String(args.pageSlug)}" not found` }
+        const updated = await updatePage(page.id, {
+          ...(typeof args.content === 'string' ? { content: args.content } : {}),
+          ...(typeof args.title === 'string' ? { title: args.title } : {}),
+        })
+        return { id: updated.id, slug: updated.slug, title: updated.title }
+      }
+
+      case 'search_docs': {
+        const queryText = String(args.query ?? '')
+        if (!queryText) return []
+        const queryEmbedding = await embedText(queryText)
+        const results = await chatRepo.searchChunks(projectId, queryEmbedding, 5, 0.2)
+        return results.map((r) => ({
+          pageTitle: r.pageTitle,
+          pageSlug: r.pageSlug,
+          excerpt: r.chunkText.slice(0, 200),
+          similarity: r.similarity,
+        }))
+      }
+
+      case 'prepare_doc_generation': {
+        const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const { createPage } = await import('../page/page.service.js')
+
+        // Try to reuse an existing page by slug when the caller provides one
+        if (typeof args.existingPageSlug === 'string') {
+          const pages = await findPagesByProjectId(projectId)
+          const existing = pages.find((p) => p.slug === args.existingPageSlug)
+          if (existing) {
+            return { pageId: existing.id, pageTitle: existing.title, pageSlug: existing.slug, action: 'existing' }
+          }
+        }
+
+        // Create a new page
+        const rawTitle = String(args.pageTitle ?? 'New documentation')
+        const slug = rawTitle
+          .toLowerCase()
+          .replace(/[^a-z0-9\s-]/g, '')
+          .replace(/\s+/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '')
+          .slice(0, 80) || 'untitled'
+        const page = await createPage({ projectId, title: rawTitle, slug })
+        return { pageId: page.id, pageTitle: page.title, pageSlug: page.slug, action: 'created' }
+      }
+
+      default:
+        return { error: `Unknown tool: ${name}` }
+    }
+  }
+
+  return { declarations, executor }
+}
+
 // --- Streaming chat ---
 
-export type ChatStreamEvent =
-  | { type: 'start' }
-  | { type: 'delta'; text: string }
-  | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
-  | { type: 'followups'; items: string[] }
-  | { type: 'walkthrough'; available: boolean }
-  | { type: 'done'; fullText: string }
-  | { type: 'error'; message: string }
+// ChatStreamEvent is defined in chat.types.ts and imported above.
+// Re-export for callers that import it from this module.
+export type { ChatStreamEvent }
 
 /**
  * Streaming variant of chat() — yields incremental text deltas as Gemini
@@ -411,49 +596,88 @@ export async function* chatStream(
   const systemPrompt = buildChatSystemPrompt({ productContext, userContext, assistantMode })
   const userPrompt = buildChatUserPrompt({ context, conversationHistory, message })
 
-  const stream = await generateTextStream({
-    systemPrompt,
-    userPrompt,
-    maxTokens: 2048,
-    temperature: 0.3,
-  })
-
-  // Marker detection. Gemini emits `---FOLLOWUPS---` and `---WALKTHROUGH---`
-  // as trailers on its own lines. We hold back a small tail buffer so we
-  // can detect those markers before flushing them to the client.
+  // Marker detection state — shared across both streaming paths.
+  // Gemini emits `---FOLLOWUPS---` and `---WALKTHROUGH---` as trailers on
+  // their own lines. We hold back a small tail buffer so we can detect those
+  // markers before flushing them to the client.
   const TAIL_HOLD = 30
-  let visible = ''            // accumulated text we've emitted as deltas
-  let pending = ''            // accumulated text NOT yet emitted (last TAIL_HOLD chars OR everything after a marker hit)
-  let markerHit = false       // true once we've seen a trailer marker; stop streaming further text
+  let visible = ''          // accumulated text we've emitted as deltas
+  let pending = ''          // accumulated text NOT yet emitted
+  let markerHit = false     // true once we've seen a trailer marker
 
   const MARKER_RE = /\n?---\s*(?:FOLLOWUPS|WALKTHROUGH)/i
 
-  try {
-    for await (const delta of stream.deltas) {
-      pending += delta
-      if (markerHit) continue
-      // Check if pending now contains a marker
-      const m = MARKER_RE.exec(pending)
-      if (m && m.index !== undefined) {
-        const safeText = pending.slice(0, m.index)
-        if (safeText) {
-          yield { type: 'delta', text: safeText }
-          visible += safeText
-        }
-        // Keep everything from the marker onwards in `pending` for parsing
-        pending = pending.slice(m.index)
-        markerHit = true
-        continue
-      }
-      // Flush all but the trailing TAIL_HOLD chars (in case marker spans the chunk boundary)
-      if (pending.length > TAIL_HOLD) {
-        const safeEnd = pending.length - TAIL_HOLD
-        const safeText = pending.slice(0, safeEnd)
+  /** Flush `delta` through the marker-detection window. Yields `delta` events
+   *  and accumulates `visible` / `pending`. Returns false when a marker was
+   *  detected mid-chunk (caller should stop sending further text). */
+  async function* flushDelta(delta: string): AsyncGenerator<ChatStreamEvent> {
+    pending += delta
+    if (markerHit) return
+    const m = MARKER_RE.exec(pending)
+    if (m && m.index !== undefined) {
+      const safeText = pending.slice(0, m.index)
+      if (safeText) {
         yield { type: 'delta', text: safeText }
         visible += safeText
-        pending = pending.slice(safeEnd)
+      }
+      pending = pending.slice(m.index)
+      markerHit = true
+      return
+    }
+    if (pending.length > TAIL_HOLD) {
+      const safeEnd = pending.length - TAIL_HOLD
+      const safeText = pending.slice(0, safeEnd)
+      yield { type: 'delta', text: safeText }
+      visible += safeText
+      pending = pending.slice(safeEnd)
+    }
+  }
+
+  try {
+    if (assistantMode) {
+      // Tool-augmented path: let Gemini call list_pages / create_page /
+      // update_page / search_docs before composing the final answer.
+      const { declarations, executor } = buildProjectToolDefs(projectId)
+
+      for await (const event of callWithToolsAndStream({
+        systemPrompt,
+        history: history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+        userMessage: userPrompt,
+        toolDeclarations: declarations,
+        executor,
+        maxTokens: 2048,
+        temperature: 0.3,
+      })) {
+        if (event.type === 'tool_call') {
+          yield {
+            type: 'tool_call',
+            name: event.name,
+            label: humanLabel(event.name),
+            args: event.args,
+            result: event.result,
+          }
+        } else if (event.type === 'delta') {
+          yield* flushDelta(event.text)
+        } else if (event.type === 'error') {
+          yield { type: 'error', message: event.message }
+          return
+        }
+        // 'done' from callWithToolsAndStream is handled below after the loop
+      }
+    } else {
+      // Standard streaming path — no tool calls
+      const stream = await generateTextStream({
+        systemPrompt,
+        userPrompt,
+        maxTokens: 2048,
+        temperature: 0.3,
+      })
+
+      for await (const delta of stream.deltas) {
+        yield* flushDelta(delta)
       }
     }
+
     // Stream ended. Flush remaining pending text if no marker was hit.
     if (!markerHit && pending) {
       yield { type: 'delta', text: pending }
