@@ -782,8 +782,8 @@ export const api = {
     /** Assistant-mode variant — same as send but enriches the system prompt
      *  with Doclee platform knowledge so the AI can answer platform questions
      *  in addition to the project's own RAG context. Used by the in-app panel. */
-    sendAssistant: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string): Promise<ChatResponseDTO> =>
-      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history, sessionToken, assistantMode: true }) }),
+    sendAssistant: (projectId: string, message: string, history: { role: 'user' | 'assistant'; content: string }[], sessionToken?: string, userContext?: Record<string, string>): Promise<ChatResponseDTO> =>
+      request(`/projects/${projectId}/chat`, { method: 'POST', body: JSON.stringify({ message, history, sessionToken, assistantMode: true, ...(userContext ? { userContext } : {}) }) }),
     /** Streaming variant — yields ChatStreamEvent objects parsed from SSE
      *  frames as the backend emits them. Caller consumes via for-await-of. */
     sendStream: async function* (
@@ -835,12 +835,13 @@ export const api = {
       history: { role: 'user' | 'assistant'; content: string }[],
       sessionToken?: string,
       signal?: AbortSignal,
+      userContext?: Record<string, string>,
     ): AsyncGenerator<ChatStreamEventDTO> {
       const headers = await getAuthHeaders()
       const res = await fetch(`${API_BASE}/projects/${projectId}/chat/stream`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ message, history, sessionToken, assistantMode: true }),
+        body: JSON.stringify({ message, history, sessionToken, assistantMode: true, ...(userContext ? { userContext } : {}) }),
         signal,
       })
       if (!res.ok || !res.body) {

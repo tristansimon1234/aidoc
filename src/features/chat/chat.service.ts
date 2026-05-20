@@ -1181,7 +1181,11 @@ Passages:
 ${numbered}`
   const { text } = await generateText({
     userPrompt: prompt,
-    maxTokens: 512,
+    // Gemini 2.5 Flash uses some of its output budget for "thinking" tokens
+    // before emitting the JSON. 512 was too tight — saw real MAX_TOKENS
+    // truncations at 8 output tokens with 1.8k input. 2048 gives it headroom
+    // (typical rerank JSON is ~200 tokens of actual output).
+    maxTokens: 2048,
     temperature: 0,
     json: true,
   })

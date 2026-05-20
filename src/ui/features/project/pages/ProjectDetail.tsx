@@ -397,6 +397,7 @@ export function ProjectDetail(): React.ReactElement {
         onClose={() => setAssistantOpen(false)}
         projectId={projectId!}
         projectName={project.name}
+        pages={pages}
         messages={assistantMessages}
         onMessagesChange={setAssistantMessages}
         pendingMessage={pendingMessage}

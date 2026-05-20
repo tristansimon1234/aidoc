@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { Tooltip } from '../../../design-system/components/index.js'
 import { ChatSurface, type ChatSurfaceApi, type ChatMessage } from '../../chat/components/ChatSurface.js'
-import { api } from '../../../shared/api/client.js'
+import { api, type DocPageDTO } from '../../../shared/api/client.js'
 import { AssistantToast, type AssistantToastData } from './AssistantToast.js'
 import styles from './ProjectAssistantPanel.module.css'
 
@@ -11,6 +11,10 @@ interface ProjectAssistantPanelProps {
   onClose: () => void
   projectId: string
   projectName: string
+  /** Flat list of project pages — used so the assistant can mention the
+   *  user's currently-viewed page by name. Optional; the panel just sends
+   *  the URL path when not provided. */
+  pages?: DocPageDTO[]
   messages: ChatMessage[]
   onMessagesChange: (next: ChatMessage[]) => void
   pendingMessage: string | null
@@ -34,13 +38,18 @@ const ASSISTANT_SUGGESTIONS = [
 ]
 
 /** Build a ChatSurfaceApi adapter that routes through the assistant-mode
- *  endpoint so every turn benefits from Doclee platform context. */
-function buildAssistantApi(projectId: string): ChatSurfaceApi {
+ *  endpoint so every turn benefits from Doclee platform context. Accepts
+ *  a `getUserContext` callback read at send-time so the AI always knows
+ *  the user's current location (page + URL) when they ask. */
+function buildAssistantApi(
+  projectId: string,
+  getUserContext: () => Record<string, string>,
+): ChatSurfaceApi {
   return {
     send: (_pid, message, history, sessionToken) =>
-      api.chat.sendAssistant(projectId, message, history, sessionToken),
+      api.chat.sendAssistant(projectId, message, history, sessionToken, getUserContext()),
     sendStream: (_pid, message, history, sessionToken, signal) =>
-      api.chat.sendAssistantStream(projectId, message, history, sessionToken, signal),
+      api.chat.sendAssistantStream(projectId, message, history, sessionToken, signal, getUserContext()),
     suggestions: () => api.chat.suggestions(projectId),
   }
 }
@@ -50,6 +59,7 @@ export function ProjectAssistantPanel({
   onClose,
   projectId,
   projectName,
+  pages,
   messages,
   onMessagesChange,
   pendingMessage,
@@ -60,9 +70,46 @@ export function ProjectAssistantPanel({
   sessionToken,
 }: ProjectAssistantPanelProps): React.ReactElement {
   const navigate = useNavigate()
+  const location = useLocation()
   const [toast, setToast] = useState<AssistantToastData | null>(null)
 
-  const assistantApi = useMemo(() => buildAssistantApi(projectId), [projectId])
+  // Keep current location info in a ref so the API closure reads the
+  // freshest values without needing to be rebuilt on every navigation.
+  const locationContextRef = useRef<{ path: string; pageTitle: string | null; pageSlug: string | null }>({
+    path: location.pathname,
+    pageTitle: null,
+    pageSlug: null,
+  })
+
+  useEffect(() => {
+    // Detect /projects/:pid/pages/:pageId in the path and resolve the page title
+    const m = location.pathname.match(/\/projects\/[^/]+\/pages\/([^/?#]+)/)
+    const pageIdOrSlug = m ? m[1] : null
+    const page = pageIdOrSlug && pages
+      ? pages.find((p) => p.id === pageIdOrSlug || p.slug === pageIdOrSlug)
+      : undefined
+    locationContextRef.current = {
+      path: location.pathname,
+      pageTitle: page?.title ?? null,
+      pageSlug: page?.slug ?? null,
+    }
+  }, [location.pathname, pages])
+
+  const assistantApi = useMemo(
+    () => buildAssistantApi(projectId, () => {
+      const { path, pageTitle, pageSlug } = locationContextRef.current
+      const ctx: Record<string, string> = {
+        currentUrl: typeof window !== 'undefined' ? `${window.location.origin}${path}` : path,
+      }
+      if (pageTitle && pageSlug) {
+        ctx.extra = `Currently viewing page: "${pageTitle}" (slug: ${pageSlug}). If the user says "this page" or "here", they mean this one.`
+      } else if (path.includes('/projects/') && !path.includes('/pages/')) {
+        ctx.extra = `Currently on the project overview (no specific page open). The user may ask about creating or finding pages.`
+      }
+      return ctx
+    }),
+    [projectId],
+  )
 
   // Handler for any tool-driven mutation. update_page also wires an Undo
   // toast that restores the previous content.
