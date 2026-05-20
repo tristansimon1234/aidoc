@@ -863,11 +863,15 @@ export async function* chatStream(
     } catch { /* keep empty */ }
   }
 
-  // Sources (deduped by slug)
+  // Sources (deduped by slug). In assistantMode the chunks are ambient RAG
+  // context the AI used to understand the workspace — they're not meaningful
+  // citations for the user and look confusing alongside tool-call cards.
   const sourceMap = new Map<string, { pageId: string; pageTitle: string; pageSlug: string }>()
-  for (const chunk of chunks) {
-    if (!sourceMap.has(chunk.pageSlug)) {
-      sourceMap.set(chunk.pageSlug, { pageId: chunk.pageId, pageTitle: chunk.pageTitle, pageSlug: chunk.pageSlug })
+  if (!assistantMode) {
+    for (const chunk of chunks) {
+      if (!sourceMap.has(chunk.pageSlug)) {
+        sourceMap.set(chunk.pageSlug, { pageId: chunk.pageId, pageTitle: chunk.pageTitle, pageSlug: chunk.pageSlug })
+      }
     }
   }
 

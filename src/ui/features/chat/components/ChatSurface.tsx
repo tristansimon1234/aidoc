@@ -915,8 +915,11 @@ export function ChatSurface({
                 </div>
               ))}
 
-              {/* Follow-ups under the last assistant message, only after streaming completes */}
-              {lastAssistant && !lastAssistant.streaming && lastAssistant.followUps && lastAssistant.followUps.length > 0 && (
+              {/* Follow-ups under the last assistant message, only after streaming completes.
+                  Hide when tool calls are present — the follow-ups are RAG-based and
+                  not contextual to tool actions (e.g. "Pour quelle page?" followed by
+                  generic doc questions looks wrong). */}
+              {lastAssistant && !lastAssistant.streaming && lastAssistant.followUps && lastAssistant.followUps.length > 0 && !lastAssistant.toolCalls?.length && (
                 <div className={styles.followUps}>
                   {lastAssistant.followUps.map((q) => (
                     <button key={q} className={styles.followUp} onClick={() => void sendMessage(q)}>
