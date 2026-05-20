@@ -1181,11 +1181,12 @@ Passages:
 ${numbered}`
   const { text } = await generateText({
     userPrompt: prompt,
-    // Gemini 2.5 Flash uses some of its output budget for "thinking" tokens
-    // before emitting the JSON. 512 was too tight — saw real MAX_TOKENS
-    // truncations at 8 output tokens with 1.8k input. 2048 gives it headroom
-    // (typical rerank JSON is ~200 tokens of actual output).
-    maxTokens: 2048,
+    // Rerank is a pure JSON-scoring task — Gemini 2.5's internal "thinking"
+    // adds zero quality here and silently consumes the output budget
+    // (saw real MAX_TOKENS truncations even at 2048). Disable it so the
+    // full budget goes to the actual JSON output.
+    thinkingBudget: 0,
+    maxTokens: 1024,
     temperature: 0,
     json: true,
   })
@@ -1224,7 +1225,9 @@ User query: ${message}
 Rewritten:`
   const { text } = await generateText({
     userPrompt: prompt,
-    maxTokens: 128,
+    // Query rewriting is a template fill — no thinking needed.
+    thinkingBudget: 0,
+    maxTokens: 256,
     temperature: 0.1,
   })
   const cleaned = text.trim().replace(/^["']|["']$/g, '')
