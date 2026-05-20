@@ -456,11 +456,15 @@ function buildProjectToolDefs(projectId: string): {
     },
     {
       name: 'generate_marketing_video',
-      description: 'Generate a 60-second marketing video for a documentation page. Turns the page content into a scripted video with voice-over narration, animated mock scenes, and branding. Use when the user asks for a promo, demo video, product video, or marketing clip.',
+      description: 'Generate a 60-second marketing video for a documentation page. IMPORTANT: Before calling this tool you MUST ask the user for their preferences in the conversation — do NOT call with defaults. Ask: (1) angle/brief: what message should the video convey? (2) visual style: real product screenshots, or polished animated mock-ups? (3) voice tone: punchy, calm, playful, serious, confident, inspirational, or conversational? (4) background music: none, or an AI-generated style (cinematic, upbeat, lo-fi, ambient)? Once you have their answers, call this tool. Use when the user asks for a promo, demo video, marketing video, product video, or marketing clip.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
-          pageSlug: { type: SchemaType.STRING, description: 'Slug of the page to turn into a marketing video' },
+          pageSlug: { type: SchemaType.STRING, description: 'Slug of the page to generate the marketing video for' },
+          userPrompt: { type: SchemaType.STRING, description: "User's brief/angle for the video — the core message or value prop to convey" },
+          visualMode: { type: SchemaType.STRING, description: "Visual style: 'screenshots' (real product screenshots) or 'mocks' (polished animated mock-ups)" },
+          voiceTone: { type: SchemaType.STRING, description: "Voice-over tone: 'punchy', 'calm', 'playful', 'serious', 'confident', 'inspirational', or 'conversational'" },
+          musicTrackId: { type: SchemaType.STRING, description: "Background music: 'none', 'ai-cinematic', 'ai-upbeat', 'ai-lofi', 'ai-ambient', or 'ai-synthwave'. Use 'none' if the user doesn't want music." },
         },
         required: ['pageSlug'],
       },
@@ -621,17 +625,37 @@ function buildProjectToolDefs(projectId: string): {
 
       case 'generate_marketing_video': {
         const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const { findLatestRunByPageId, createRun } = await import('../run/run.repository.js')
         const pages = await findPagesByProjectId(projectId)
         const page = pages.find((p) => p.slug === args.pageSlug)
         if (!page) return { error: `Page "${String(args.pageSlug)}" not found` }
         if (!page.content?.trim()) {
-          return { error: `Page "${page.title}" has no documentation yet — generate the doc first, then create the marketing video.` }
+          return { error: `Page "${page.title}" has no documentation yet. Generate the docs first, then create the marketing video.` }
         }
+        // Find or create a run so the marketing video pipeline has a home
+        let run = await findLatestRunByPageId(page.id)
+        if (!run) {
+          run = await createRun({
+            featureName: page.title,
+            startUrl: '',
+            goal: `Marketing video for ${page.title}`,
+            docPageId: page.id,
+          })
+        }
+        // Gather generation options from the tool arguments
+        const opts: Record<string, unknown> = {}
+        if (typeof args.userPrompt === 'string' && args.userPrompt.trim()) opts.userPrompt = args.userPrompt.trim()
+        if (args.visualMode === 'screenshots' || args.visualMode === 'mocks') opts.visualMode = args.visualMode
+        const validTones = ['punchy', 'calm', 'playful', 'serious', 'confident', 'inspirational', 'conversational']
+        if (typeof args.voiceTone === 'string' && validTones.includes(args.voiceTone)) opts.tone = args.voiceTone
+        if (typeof args.musicTrackId === 'string' && args.musicTrackId !== 'none') opts.musicTrackId = args.musicTrackId
         return {
-          action: 'open_marketing_video',
+          action: 'trigger_marketing_video',
           pageId: page.id,
           pageTitle: page.title,
           pageSlug: page.slug,
+          runId: run.id,
+          options: opts,
         }
       }
 

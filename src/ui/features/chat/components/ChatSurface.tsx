@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Spinner, MarkdownRenderer } from '../../../design-system/components/index.js'
 import type { ChatResponseDTO } from '../../../shared/api/client.js'
+import { api as apiClient } from '../../../shared/api/client.js'
 import { VideoUploadBlock } from '../../project/components/VideoUploadBlock.js'
 import styles from './ChatSurface.module.css'
 
@@ -352,9 +353,14 @@ function ToolCallCard({
         </span>
       )}
       {!isPending && name === 'generate_marketing_video' && pageTitle && (
-        <button className={styles.toolCallAction} onClick={() => handlePageClick('marketing')}>
-          {pageTitle} · open Marketing →
-        </button>
+        <>
+          <button className={styles.toolCallAction} onClick={() => handlePageClick('marketing')}>
+            {pageTitle} · open Marketing →
+          </button>
+          {typeof args.voiceTone === 'string' && (
+            <span className={styles.toolCallMeta}>{args.voiceTone}{typeof args.visualMode === 'string' ? ` · ${args.visualMode}` : ''}</span>
+          )}
+        </>
       )}
     </div>
   )
@@ -499,13 +505,21 @@ export function ChatSurface({
             continue
           }
         }
-        if (tc.name === 'generate_marketing_video' && onAutoNavigate) {
+        if (tc.name === 'generate_marketing_video') {
           const pageId = typeof r.pageId === 'string' ? r.pageId : null
           const pageSlug = typeof r.pageSlug === 'string' ? r.pageSlug : null
           const pageTitle = typeof r.pageTitle === 'string' ? r.pageTitle : ''
+          const runId = typeof r.runId === 'string' ? r.runId : null
           if (pageId && pageSlug) {
             consumedToolCallIds.current.add(tc.id)
-            onAutoNavigate({ pageId, pageTitle, pageSlug, tab: 'marketing' })
+            // Kick off actual generation if we have a runId and options
+            if (runId && r.action === 'trigger_marketing_video') {
+              const opts = (r.options && typeof r.options === 'object') ? r.options as Record<string, unknown> : {}
+              void apiClient.runs.marketingVideo.generate(runId, opts as Parameters<typeof apiClient.runs.marketingVideo.generate>[1])
+            }
+            if (onAutoNavigate) {
+              onAutoNavigate({ pageId, pageTitle, pageSlug, tab: 'marketing' })
+            }
             continue
           }
         }
