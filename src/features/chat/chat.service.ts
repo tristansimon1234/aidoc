@@ -324,6 +324,11 @@ function humanLabel(toolName: string): string {
     create_page: 'Created page',
     update_page: 'Updated page',
     search_docs: 'Searched docs',
+    prepare_doc_generation: 'Prepared doc generation',
+    navigate_to_page: 'Opening page',
+    generate_voiceover: 'Voice-over',
+    run_try_doc: 'Try Doc',
+    publish_page: 'Updated visibility',
   }
   return labels[toolName] ?? toolName
 }
@@ -400,6 +405,51 @@ function buildProjectToolDefs(projectId: string): {
           },
         },
         required: ['pageTitle'],
+      },
+    },
+    {
+      name: 'navigate_to_page',
+      description: 'Open a documentation page in the main view so the user lands on it.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          pageSlug: { type: SchemaType.STRING, description: 'Slug of the page to open' },
+        },
+        required: ['pageSlug'],
+      },
+    },
+    {
+      name: 'generate_voiceover',
+      description: 'Kick off ElevenLabs voice-over narration generation for a documentation page. Use when the user asks for narration, audio, or to read the doc aloud.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          pageSlug: { type: SchemaType.STRING, description: 'Slug of the page to narrate' },
+        },
+        required: ['pageSlug'],
+      },
+    },
+    {
+      name: 'run_try_doc',
+      description: 'Run a Try Doc test — an AI agent follows the documentation steps on the live product and produces a quality report. Use when the user wants to test, verify, or audit a page.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          pageSlug: { type: SchemaType.STRING, description: 'Slug of the page to test' },
+        },
+        required: ['pageSlug'],
+      },
+    },
+    {
+      name: 'publish_page',
+      description: 'Toggle the public-visibility flag on a page. Use when the user wants to publish or unpublish a page on the public docs site.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          pageSlug: { type: SchemaType.STRING, description: 'Slug of the page to publish/unpublish' },
+          isPublic: { type: SchemaType.BOOLEAN, description: 'Target visibility (true = published, false = unpublished)' },
+        },
+        required: ['pageSlug', 'isPublic'],
       },
     },
   ]
@@ -493,6 +543,65 @@ function buildProjectToolDefs(projectId: string): {
           .slice(0, 80) || 'untitled'
         const page = await createPage({ projectId, title: rawTitle, slug })
         return { pageId: page.id, pageTitle: page.title, pageSlug: page.slug, action: 'created' }
+      }
+
+      case 'navigate_to_page': {
+        // Pure client-side action — executor just resolves the page so the
+        // ChatSurface renderer can wire a navigation button.
+        const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const pages = await findPagesByProjectId(projectId)
+        const page = pages.find((p) => p.slug === args.pageSlug)
+        if (!page) return { error: `Page "${String(args.pageSlug)}" not found` }
+        return { pageId: page.id, pageTitle: page.title, pageSlug: page.slug }
+      }
+
+      case 'generate_voiceover': {
+        const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const pages = await findPagesByProjectId(projectId)
+        const page = pages.find((p) => p.slug === args.pageSlug)
+        if (!page) return { error: `Page "${String(args.pageSlug)}" not found` }
+        if (!page.content?.trim()) {
+          return { error: `Page "${page.title}" has no documentation yet — generate or write the doc first.` }
+        }
+        // Return the action target; the frontend kicks off the actual API
+        // call (which needs the user's JWT). Keeps the tool fast + auth
+        // boundary clean.
+        return {
+          action: 'open_voiceover',
+          pageId: page.id,
+          pageTitle: page.title,
+          pageSlug: page.slug,
+        }
+      }
+
+      case 'run_try_doc': {
+        const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const pages = await findPagesByProjectId(projectId)
+        const page = pages.find((p) => p.slug === args.pageSlug)
+        if (!page) return { error: `Page "${String(args.pageSlug)}" not found` }
+        if (!page.content?.trim()) {
+          return { error: `Page "${page.title}" has no documentation to test yet.` }
+        }
+        return {
+          action: 'open_try_doc',
+          pageId: page.id,
+          pageTitle: page.title,
+          pageSlug: page.slug,
+        }
+      }
+
+      case 'publish_page': {
+        const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const { updatePage } = await import('../page/page.service.js')
+        const pages = await findPagesByProjectId(projectId)
+        const page = pages.find((p) => p.slug === args.pageSlug)
+        if (!page) return { error: `Page "${String(args.pageSlug)}" not found` }
+        const targetPublic = args.isPublic === true || args.isPublic === 'true'
+        if (page.isPublic === targetPublic) {
+          return { pageId: page.id, pageTitle: page.title, pageSlug: page.slug, isPublic: page.isPublic, noop: true }
+        }
+        const updated = await updatePage(page.id, { isPublic: targetPublic })
+        return { pageId: updated.id, pageTitle: updated.title, pageSlug: updated.slug, isPublic: updated.isPublic }
       }
 
       default:
@@ -648,9 +757,18 @@ export async function* chatStream(
         maxTokens: 2048,
         temperature: 0.3,
       })) {
-        if (event.type === 'tool_call') {
+        if (event.type === 'tool_start') {
+          yield {
+            type: 'tool_start',
+            id: event.id,
+            name: event.name,
+            label: humanLabel(event.name),
+            args: event.args,
+          }
+        } else if (event.type === 'tool_call') {
           yield {
             type: 'tool_call',
+            id: event.id,
             name: event.name,
             label: humanLabel(event.name),
             args: event.args,

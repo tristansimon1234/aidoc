@@ -374,7 +374,8 @@ export function isGeminiAvailable(): boolean {
 export type { FunctionDeclaration }
 
 export type AssistantToolEvent =
-  | { type: 'tool_call'; name: string; label: string; args: Record<string, unknown>; result: unknown }
+  | { type: 'tool_start'; id: string; name: string; label: string; args: Record<string, unknown> }
+  | { type: 'tool_call'; id: string; name: string; label: string; args: Record<string, unknown>; result: unknown }
   | { type: 'delta'; text: string }
   | { type: 'done'; fullText: string }
   | { type: 'error'; message: string }
@@ -448,25 +449,40 @@ export async function* callWithToolsAndStream(opts: {
     return
   }
 
-  // Step 2: execute each tool call and yield tool_call events
+  // Step 2: execute each tool call and yield tool_start then tool_call events
   const toolResultParts: Part[] = []
-  for (const fc of funcCalls) {
+  for (let i = 0; i < funcCalls.length; i++) {
+    const fc = funcCalls[i]!
+    const callId = `tc_${Date.now()}_${i}`
+    const fnName = fc.functionCall.name
+    const fnArgs = fc.functionCall.args as Record<string, unknown>
+
+    // Emit start event before execution so the UI can show a pending state
+    yield {
+      type: 'tool_start',
+      id: callId,
+      name: fnName,
+      label: fnName,
+      args: fnArgs,
+    }
+
     let fnResult: unknown
     try {
-      fnResult = await opts.executor(fc.functionCall.name, fc.functionCall.args as Record<string, unknown>)
+      fnResult = await opts.executor(fnName, fnArgs)
     } catch (execErr) {
       fnResult = { error: (execErr as Error).message }
     }
     yield {
       type: 'tool_call',
-      name: fc.functionCall.name,
-      label: fc.functionCall.name,
-      args: fc.functionCall.args as Record<string, unknown>,
+      id: callId,
+      name: fnName,
+      label: fnName,
+      args: fnArgs,
       result: fnResult,
     }
     toolResultParts.push({
       functionResponse: {
-        name: fc.functionCall.name,
+        name: fnName,
         response: { content: JSON.stringify(fnResult) },
       },
     })

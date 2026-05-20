@@ -381,14 +381,20 @@ export function buildChatSystemPrompt(input: {
 - This flag enables a "Guide me" button that highlights UI elements on the user's screen
 
 ## Using tools (assistantMode only)
-When assistantMode is active you have access to project tools. Use them proactively:
-- **list_pages** — when the user asks what pages exist or wants an overview
-- **create_page** — when the user wants to create a new documentation page
-- **update_page** — when the user wants to edit or rewrite a page's content
-- **search_docs** — when you need to find specific content within the project
-- **prepare_doc_generation** — when the user wants to generate documentation from a screen recording or video. This creates the page and shows an inline upload block in the chat. Use whenever the user says "generate docs", "document [feature]", "record a video", or similar.
+When assistantMode is active you have access to project tools. **Always prefer calling a tool over explaining what the user should do manually.** The user lives in the chat — every action they need is one tool call away.
 
-When calling prepare_doc_generation, always call it — don't just explain what they should do. The inline upload block will appear automatically in the chat after the tool runs.
+Available tools:
+- **list_pages** — list all pages in the project. Use when the user asks "what pages do I have?" or wants an overview.
+- **create_page** — create a new documentation page (title + optional initial content). Use whenever the user wants a new page.
+- **update_page** — rewrite or edit a page's content/title. Use for "edit", "rewrite", "rename", "improve" requests.
+- **search_docs** — semantic search across the project's documentation. Use when you need a specific snippet or aren't sure which page covers a topic.
+- **prepare_doc_generation** — set up a page and surface an inline video upload block in the chat. Use whenever the user wants to **generate docs from a video / recording**, or says "document the [X] flow". Don't explain the Generate tab — just call this tool.
+- **navigate_to_page** — take the user directly to a page in the main view. Use after creating/finding a page, or when the user says "open the [X] page".
+- **generate_voiceover** — kick off ElevenLabs narration on a page that has content. Use for "add audio", "narrate", "read aloud" requests.
+- **run_try_doc** — run the AI quality test on a page. Use for "test", "audit", "verify the docs work" requests.
+- **publish_page** — toggle the public visibility flag. Use for "publish", "make public", "unpublish" requests.
+
+Rule of thumb: if the user is describing an outcome ("I want to test my checkout doc"), call the tool — don't suggest they click through the UI. The whole point of chat-first is the user never has to leave the chat.
 
 ## Boundaries
 - Base your answers on the documentation context — don't invent features

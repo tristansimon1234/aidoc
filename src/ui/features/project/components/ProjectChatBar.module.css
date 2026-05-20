@@ -1,8 +1,44 @@
+/* Outer container — premium feel with subtle gradient backdrop */
 .wrap {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 16px 12px;
+  gap: 10px;
+  padding: 14px 18px 16px;
+  background:
+    radial-gradient(ellipse 800px 120px at 50% 100%, color-mix(in srgb, var(--color-primary) 6%, transparent), transparent 70%),
+    var(--color-bg);
+  transition: background 0.2s ease;
+}
+
+.wrapDrag {
+  background:
+    radial-gradient(ellipse 800px 200px at 50% 100%, color-mix(in srgb, var(--color-primary) 16%, transparent), transparent 70%),
+    var(--color-accent);
+}
+
+/* Drag overlay — covers the whole bar when a video is being dragged */
+.dropOverlay {
+  position: absolute;
+  inset: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: var(--color-card);
+  border: 2px dashed var(--color-primary);
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-primary);
+  z-index: 5;
+  pointer-events: none;
+  animation: pulseDrop 1.4s ease-in-out infinite;
+}
+
+@keyframes pulseDrop {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary) 22%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-primary) 0%, transparent); }
 }
 
 /* Quick-action chips above the input */
@@ -13,19 +49,29 @@
   flex-wrap: wrap;
 }
 
+.chipsLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-muted-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 2px;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;
-  padding: 4px 10px;
+  padding: 5px 11px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: var(--color-secondary);
+  background: var(--color-card);
   color: var(--color-muted-fg);
-  font-size: var(--text-xs);
+  font-size: 12px;
   font-family: var(--font-sans);
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  transition: color 0.12s, border-color 0.12s, background 0.12s, transform 0.08s;
 }
 
 .chip:hover {
@@ -34,34 +80,47 @@
   background: var(--color-accent);
 }
 
-/* Input pill */
+.chip:active {
+  transform: scale(0.97);
+}
+
+/* Input pill — bigger, more prominent */
 .bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 8px 7px 12px;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
   background: var(--color-card);
-  border: 1px solid var(--color-border);
+  border: 1.5px solid var(--color-border);
   border-radius: var(--radius-full);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 12px rgba(0, 0, 0, 0.05);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .bar:focus-within {
   border-color: var(--color-primary);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08), 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    0 0 0 4px color-mix(in srgb, var(--color-primary) 12%, transparent);
 }
 
-.icon {
+.aiIcon {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--color-primary);
 }
 
 .input {
   flex: 1;
+  min-width: 0;
   border: none;
   background: transparent;
-  font-size: 13px;
+  font-size: 14px;
   font-family: var(--font-sans);
   color: var(--color-fg);
   outline: none;
@@ -70,6 +129,33 @@
 
 .input::placeholder {
   color: var(--color-muted-fg);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Keyboard shortcut badge — subtle, only visible when the bar is unfocused */
+.kbd {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 7px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--color-muted-fg);
+  background: var(--color-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  transition: opacity 0.15s;
+}
+
+.bar:focus-within .kbd {
+  opacity: 0;
 }
 
 .submit {
@@ -77,21 +163,38 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border: none;
   background: var(--color-primary);
   color: var(--color-primary-fg, #fff);
   border-radius: var(--radius-full);
   cursor: pointer;
-  transition: opacity 0.15s, transform 0.1s;
+  transition: opacity 0.15s, transform 0.1s, background 0.15s;
 }
 
 .submit:disabled {
-  opacity: 0.35;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
 .submit:not(:disabled):hover {
   transform: scale(1.06);
+  background: color-mix(in srgb, var(--color-primary) 90%, black);
+}
+
+.submit:not(:disabled):active {
+  transform: scale(0.95);
+}
+
+@media (max-width: 600px) {
+  .wrap {
+    padding: 10px 12px 12px;
+  }
+  .chipsLabel {
+    display: none;
+  }
+  .kbd {
+    display: none;
+  }
 }

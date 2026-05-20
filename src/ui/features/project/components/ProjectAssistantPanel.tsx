@@ -14,15 +14,19 @@ interface ProjectAssistantPanelProps {
   onMessagesChange: (next: ChatMessage[]) => void
   pendingMessage: string | null
   onPendingMessageConsumed: () => void
+  /** Video file dropped on the chat bar — forwarded to the next
+   *  prepare_doc_generation upload block as a preselected file. */
+  pendingVideo?: File | null
+  onPendingVideoConsumed?: () => void
   sessionToken?: string
 }
 
 const ASSISTANT_SUGGESTIONS = [
-  'How do I generate documentation from a video?',
-  'What is the Try Doc feature?',
-  'How do I add a chat widget to my app?',
-  'How do I make a page public?',
-  'Explain the plans and pricing',
+  'Generate documentation from a screen recording',
+  'Create a new page about onboarding',
+  'List all the pages in this project',
+  'Run a Try Doc test on my latest page',
+  'How do I embed the chat widget on my app?',
 ]
 
 /** Build a ChatSurfaceApi adapter that routes through the assistant-mode
@@ -46,11 +50,20 @@ export function ProjectAssistantPanel({
   onMessagesChange,
   pendingMessage,
   onPendingMessageConsumed,
+  pendingVideo,
+  onPendingVideoConsumed,
   sessionToken,
 }: ProjectAssistantPanelProps): React.ReactElement {
   const navigate = useNavigate()
 
   const assistantApi = useMemo(() => buildAssistantApi(projectId), [projectId])
+
+  // When a video is dropped on the chat bar, trigger a generation message
+  // so the AI calls prepare_doc_generation and the VideoUploadBlock appears
+  // pre-filled with the dropped file.
+  const effectivePendingMessage = pendingVideo && !pendingMessage
+    ? `Generate documentation for "${pendingVideo.name.replace(/\.[^.]+$/, '')}" — I just dropped a video.`
+    : pendingMessage
 
   useEffect(() => {
     if (!open) return
@@ -119,8 +132,14 @@ export function ProjectAssistantPanel({
             fallbackSuggestions={ASSISTANT_SUGGESTIONS}
             messages={messages}
             onMessagesChange={onMessagesChange}
-            pendingMessage={pendingMessage}
-            onPendingMessageConsumed={onPendingMessageConsumed}
+            pendingMessage={effectivePendingMessage}
+            onPendingMessageConsumed={() => {
+              onPendingMessageConsumed()
+              // Note: don't clear pendingVideo here — it's claimed by the
+              // first VideoUploadBlock that mounts (see ChatSurface).
+            }}
+            pendingVideo={pendingVideo ?? null}
+            onPendingVideoConsumed={onPendingVideoConsumed}
             variant="sidepanel"
           />
         </div>

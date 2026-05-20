@@ -132,11 +132,45 @@ export function ProjectDetail(): React.ReactElement {
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLDivElement>(null)
 
-  // Assistant panel state
+  // Assistant panel state — persisted per-project in sessionStorage so the
+  // conversation survives navigation between pages within the same tab.
+  const persistenceKey = projectId ? `aidoc_assistant_msgs_${projectId}` : null
   const [assistantOpen, setAssistantOpen] = useState(false)
-  const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>([])
+  const [assistantMessages, setAssistantMessages] = useState<ChatMessage[]>(() => {
+    if (!persistenceKey || typeof window === 'undefined') return []
+    try {
+      const raw = sessionStorage.getItem(persistenceKey)
+      if (!raw) return []
+      const parsed: unknown = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed as ChatMessage[] : []
+    } catch {
+      return []
+    }
+  })
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
+  const [pendingVideo, setPendingVideo] = useState<File | null>(null)
   const sessionToken = projectId ? getChatSessionToken(projectId) : undefined
+
+  // Persist assistant conversation to sessionStorage on every change
+  useEffect(() => {
+    if (!persistenceKey || typeof window === 'undefined') return
+    try {
+      if (assistantMessages.length === 0) sessionStorage.removeItem(persistenceKey)
+      else sessionStorage.setItem(persistenceKey, JSON.stringify(assistantMessages))
+    } catch { /* quota / privacy mode — ignore */ }
+  }, [assistantMessages, persistenceKey])
+
+  // Global Cmd/Ctrl+K opens the assistant panel
+  useEffect(() => {
+    const handler = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setAssistantOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   // Restore running jobs from DB (survives browser refresh)
   useLoadJobsFromDB(projectId)
@@ -351,6 +385,7 @@ export function ProjectDetail(): React.ReactElement {
             <ProjectChatBar
               projectName={project.name}
               onSubmit={(msg) => { setAssistantOpen(true); setPendingMessage(msg) }}
+              onVideoDrop={(file) => { setAssistantOpen(true); setPendingVideo(file) }}
             />
           </div>
         </div>
@@ -366,6 +401,8 @@ export function ProjectDetail(): React.ReactElement {
         onMessagesChange={setAssistantMessages}
         pendingMessage={pendingMessage}
         onPendingMessageConsumed={() => setPendingMessage(null)}
+        pendingVideo={pendingVideo}
+        onPendingVideoConsumed={() => setPendingVideo(null)}
         sessionToken={sessionToken}
       />
     </Shell>

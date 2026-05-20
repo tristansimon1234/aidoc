@@ -17,9 +17,11 @@ export interface ChatMessage {
   /** Whether the user clicked "watch walkthrough" — expands the inline
    *  narrated player only when they opt in, not automatically. */
   videoExpanded?: boolean
-  /** Tool calls that the assistant executed during this turn — rendered
-   *  as compact action cards above the answer text. */
-  toolCalls?: { name: string; label: string; args: Record<string, unknown>; result: unknown }[]
+  /** Tool calls the assistant executed during this turn — rendered as
+   *  compact action cards above the answer text. `status: 'pending'`
+   *  means the tool is mid-execution; `'done'` means we have the result.
+   *  `id` matches tool_start with its tool_call so the UI can swap state. */
+  toolCalls?: { id?: string; name: string; label: string; args: Record<string, unknown>; result: unknown; status?: 'pending' | 'done' }[]
 }
 
 /** Streaming event shape emitted by sendStream — mirrors the backend's
@@ -31,7 +33,8 @@ export type ChatStreamEvent =
   | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
   | { type: 'followups'; items: string[] }
   | { type: 'walkthrough'; available: boolean }
-  | { type: 'tool_call'; name: string; label: string; args: Record<string, unknown>; result: unknown }
+  | { type: 'tool_start'; id: string; name: string; label: string; args: Record<string, unknown> }
+  | { type: 'tool_call'; id: string; name: string; label: string; args: Record<string, unknown>; result: unknown }
   | { type: 'done'; fullText: string }
   | { type: 'error'; message: string }
 
@@ -102,6 +105,11 @@ interface ChatSurfaceProps {
    *  message typed in the sticky bar into the panel. */
   pendingMessage?: string | null
   onPendingMessageConsumed?: () => void
+  /** Optional video file pre-claimed by the next prepare_doc_generation
+   *  tool call — lets a drop on the chat bar feed straight into the
+   *  upload block without the user having to pick it again. */
+  pendingVideo?: File | null
+  onPendingVideoConsumed?: () => void
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -181,11 +189,15 @@ function ChatNarratedVideo({ videoUrl, audioUrl }: { videoUrl: string; audioUrl?
 
 interface ToolCallResult {
   id?: string
+  pageId?: string
   title?: string
+  pageTitle?: string
   slug?: string
+  pageSlug?: string
   status?: string
   hasContent?: boolean
   count?: number
+  isPublic?: boolean
   [key: string]: unknown
 }
 
@@ -202,6 +214,7 @@ function extractResultTitle(result: unknown): string | null {
   if (typeof result === 'object' && result !== null) {
     const r = result as ToolCallResult
     if (typeof r.title === 'string') return r.title
+    if (typeof r.pageTitle === 'string') return r.pageTitle
   }
   return null
 }
@@ -211,10 +224,11 @@ function ToolCallCard({
   toolCall,
   onSourceClick,
 }: {
-  toolCall: { name: string; label: string; args: Record<string, unknown>; result: unknown }
+  toolCall: { name: string; label: string; args: Record<string, unknown>; result: unknown; status?: 'pending' | 'done' }
   onSourceClick: (source: { pageId: string; pageTitle: string; pageSlug: string }) => void
 }): React.ReactElement {
-  const { name, label, args, result } = toolCall
+  const { name, label, args, result, status } = toolCall
+  const isPending = status === 'pending'
 
   const pageTitle = extractResultTitle(result)
   const count = extractResultCount(result)
@@ -222,15 +236,21 @@ function ToolCallCard({
   const handlePageClick = (): void => {
     if (typeof result === 'object' && result !== null) {
       const r = result as ToolCallResult
-      if (typeof r.id === 'string' && typeof r.slug === 'string') {
-        onSourceClick({ pageId: r.id, pageTitle: pageTitle ?? '', pageSlug: r.slug })
+      const id = typeof r.id === 'string' ? r.id : (typeof r.pageId === 'string' ? r.pageId : null)
+      const slug = typeof r.slug === 'string' ? r.slug : (typeof r.pageSlug === 'string' ? r.pageSlug : null)
+      if (id && slug) {
+        onSourceClick({ pageId: id, pageTitle: pageTitle ?? '', pageSlug: slug })
       }
     }
   }
 
   return (
-    <div className={styles.toolCallCard}>
+    <div className={`${styles.toolCallCard} ${isPending ? styles.toolCallPending : ''}`}>
       <span className={styles.toolCallIcon} aria-hidden="true">
+        {isPending ? (
+          <span className={styles.toolCallSpinner} />
+        ) : (
+          <>
         {name === 'create_page' && (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 5v14" /><path d="M5 12h14" />
@@ -256,23 +276,67 @@ function ToolCallCard({
             <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
           </svg>
         )}
+        {name === 'navigate_to_page' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14" /><path d="m12 5 7 7-7 7" />
+          </svg>
+        )}
+        {name === 'generate_voiceover' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" />
+          </svg>
+        )}
+        {name === 'run_try_doc' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+        {name === 'publish_page' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 11l18-9-9 18-2-8z" />
+          </svg>
+        )}
+          </>
+        )}
       </span>
-      <span className={styles.toolCallLabel}>{label}</span>
-      {name === 'create_page' && pageTitle && (
+      <span className={styles.toolCallLabel}>
+        {isPending ? `${label}…` : label}
+      </span>
+      {!isPending && name === 'create_page' && pageTitle && (
         <button className={styles.toolCallAction} onClick={handlePageClick}>
           {pageTitle} →
         </button>
       )}
-      {name === 'update_page' && pageTitle && (
+      {!isPending && name === 'update_page' && pageTitle && (
         <span className={styles.toolCallMeta}>{pageTitle}</span>
       )}
-      {name === 'list_pages' && count > 0 && (
+      {!isPending && name === 'list_pages' && count > 0 && (
         <span className={styles.toolCallMeta}>{count} page{count !== 1 ? 's' : ''}</span>
       )}
-      {name === 'search_docs' && (
+      {!isPending && name === 'search_docs' && (
         <span className={styles.toolCallMeta}>
           {typeof args.query === 'string' ? `"${args.query}"` : ''}
           {count > 0 ? ` · ${count} result${count !== 1 ? 's' : ''}` : ''}
+        </span>
+      )}
+      {!isPending && name === 'navigate_to_page' && pageTitle && (
+        <button className={styles.toolCallAction} onClick={handlePageClick}>
+          {pageTitle} →
+        </button>
+      )}
+      {!isPending && name === 'generate_voiceover' && pageTitle && (
+        <button className={styles.toolCallAction} onClick={handlePageClick}>
+          {pageTitle} · open Walkthrough →
+        </button>
+      )}
+      {!isPending && name === 'run_try_doc' && pageTitle && (
+        <button className={styles.toolCallAction} onClick={handlePageClick}>
+          {pageTitle} · open Test →
+        </button>
+      )}
+      {!isPending && name === 'publish_page' && pageTitle && (
+        <span className={styles.toolCallMeta}>
+          {pageTitle} {(result as { isPublic?: boolean })?.isPublic ? '· published' : '· unpublished'}
         </span>
       )}
     </div>
@@ -333,7 +397,14 @@ export function ChatSurface({
   variant = 'fullpage',
   pendingMessage,
   onPendingMessageConsumed,
+  pendingVideo,
+  onPendingVideoConsumed,
 }: ChatSurfaceProps): React.ReactElement {
+  // When a video is pre-claimed by a drop on the chat bar, this state
+  // tracks which tool-call id has claimed the file. The matching
+  // VideoUploadBlock receives the file as `preselectedFile`.
+  const [claimedVideoFile, setClaimedVideoFile] = useState<File | null>(null)
+  const [claimedVideoTcId, setClaimedVideoTcId] = useState<string | null>(null)
   // Controlled vs. uncontrolled: when the parent passes a messages array
   // AND a change handler, the surface defers state to the parent (used
   // by the public docs side panel for sessionStorage persistence).
@@ -378,6 +449,29 @@ export function ChatSurface({
   // Cancel any in-flight stream when unmounting so the SSE connection
   // closes cleanly instead of leaking.
   useEffect(() => () => abortRef.current?.abort(), [])
+
+  // Claim a pending video drop for the most recent `prepare_doc_generation`
+  // tool-call that has a resolved result and no file claimed yet. Done in
+  // an effect (not at render time) so we don't fire side effects during
+  // rendering and so re-entry from React 18 strict-mode is safe.
+  useEffect(() => {
+    if (!pendingVideo) return
+    if (claimedVideoFile) return
+    // Walk messages newest-first to find the first matching tool call
+    for (let mi = messages.length - 1; mi >= 0; mi--) {
+      const m = messages[mi]
+      if (!m || m.role !== 'assistant' || !m.toolCalls) continue
+      for (let ti = m.toolCalls.length - 1; ti >= 0; ti--) {
+        const tc = m.toolCalls[ti]
+        if (tc?.name === 'prepare_doc_generation' && tc.status !== 'pending' && tc.id) {
+          setClaimedVideoFile(pendingVideo)
+          setClaimedVideoTcId(tc.id)
+          onPendingVideoConsumed?.()
+          return
+        }
+      }
+    }
+  }, [messages, pendingVideo, claimedVideoFile, onPendingVideoConsumed])
 
   // When the parent hands us a pending message (e.g. user typed in the
   // sticky bar then opened the panel), auto-send it once the chat is
@@ -486,13 +580,26 @@ export function ChatSurface({
             patchLastAssistant({ followUps: event.items })
           } else if (event.type === 'walkthrough') {
             patchLastAssistant({ walkthroughAvailable: event.available })
-          } else if (event.type === 'tool_call') {
-            // Accumulate tool calls on the in-progress assistant message.
-            // They render as action cards above the answer text once done.
+          } else if (event.type === 'tool_start') {
+            // Push a pending tool call so the UI shows "calling…" immediately
             patchLastAssistant((m) => ({
               ...m,
-              toolCalls: [...(m.toolCalls ?? []), { name: event.name, label: event.label, args: event.args, result: event.result }],
+              toolCalls: [
+                ...(m.toolCalls ?? []),
+                { id: event.id, name: event.name, label: event.label, args: event.args, result: null, status: 'pending' },
+              ],
             }))
+          } else if (event.type === 'tool_call') {
+            // Replace the matching pending entry with the resolved result
+            patchLastAssistant((m) => {
+              const existing = m.toolCalls ?? []
+              const idx = existing.findIndex((t) => t.id === event.id)
+              const resolved = { id: event.id, name: event.name, label: event.label, args: event.args, result: event.result, status: 'done' as const }
+              const next = idx >= 0
+                ? existing.map((t, i) => (i === idx ? resolved : t))
+                : [...existing, resolved]
+              return { ...m, toolCalls: next }
+            })
           } else if (event.type === 'done') {
             // Replace with the post-processed full text (link rewriting,
             // image URL normalization). May be identical to fullText for
@@ -636,21 +743,23 @@ export function ChatSurface({
                       {msg.toolCalls && msg.toolCalls.length > 0 && (
                         <div className={styles.toolCallList}>
                           {msg.toolCalls.map((tc, tcIdx) => {
-                            if (tc.name === 'prepare_doc_generation') {
+                            if (tc.name === 'prepare_doc_generation' && tc.status !== 'pending') {
                               const r = tc.result as { pageId?: string; pageTitle?: string; pageSlug?: string } | null
                               if (r?.pageId && r.pageSlug) {
+                                const claimedFile = tc.id && tc.id === claimedVideoTcId ? claimedVideoFile : null
                                 return (
                                   <VideoUploadBlock
-                                    key={tcIdx}
+                                    key={tc.id ?? tcIdx}
                                     projectId={projectId}
                                     pageId={r.pageId}
                                     pageTitle={r.pageTitle ?? tc.args.pageTitle as string ?? 'Documentation'}
                                     pageSlug={r.pageSlug}
+                                    preselectedFile={claimedFile}
                                   />
                                 )
                               }
                             }
-                            return <ToolCallCard key={tcIdx} toolCall={tc} onSourceClick={onSourceClick} />
+                            return <ToolCallCard key={tc.id ?? tcIdx} toolCall={tc} onSourceClick={onSourceClick} />
                           })}
                         </div>
                       )}

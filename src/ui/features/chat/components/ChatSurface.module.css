@@ -613,6 +613,31 @@
   color: var(--color-accent-hover, var(--color-accent));
 }
 
+/* Pending state — small inline spinner while the tool is mid-execution */
+.toolCallPending {
+  opacity: 0.85;
+  border-color: var(--color-border);
+  background: var(--color-secondary);
+}
+
+.toolCallPending .toolCallLabel {
+  color: var(--color-muted-fg);
+}
+
+.toolCallSpinner {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: tcSpin 0.7s linear infinite;
+}
+
+@keyframes tcSpin {
+  to { transform: rotate(360deg); }
+}
+
 /* Reduced-motion: freeze the shimmer + slide-ins + blinking caret. */
 @media (prefers-reduced-motion: reduce) {
   .msgRow,

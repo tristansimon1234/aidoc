@@ -1069,7 +1069,8 @@ export type ChatStreamEventDTO =
   | { type: 'sources'; items: { pageId: string; pageTitle: string; pageSlug: string }[] }
   | { type: 'followups'; items: string[] }
   | { type: 'walkthrough'; available: boolean }
-  | { type: 'tool_call'; name: string; label: string; args: Record<string, unknown>; result: unknown }
+  | { type: 'tool_start'; id: string; name: string; label: string; args: Record<string, unknown> }
+  | { type: 'tool_call'; id: string; name: string; label: string; args: Record<string, unknown>; result: unknown }
   | { type: 'done'; fullText: string }
   | { type: 'error'; message: string }
 
