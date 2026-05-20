@@ -174,8 +174,9 @@ export function ProjectAssistantPanel({
     return () => window.removeEventListener('keydown', handler)
   }, [open, onClose])
 
-  const handleSourceClick = (source: { pageId: string }): void => {
-    navigate(`/projects/${projectId}/pages/${source.pageId}`)
+  const handleSourceClick = (source: { pageId: string; tab?: string }): void => {
+    const url = `/projects/${projectId}/pages/${source.pageId}${source.tab ? `?tab=${source.tab}` : ''}`
+    navigate(url)
     onClose()
   }
 

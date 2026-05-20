@@ -80,8 +80,8 @@ interface ChatSurfaceProps {
   projectId: string
   projectName: string
   api: ChatSurfaceApi
-  /** Called when a source tag is clicked — caller decides how to route. */
-  onSourceClick: (source: { pageId: string; pageTitle: string; pageSlug: string }) => void
+  /** Called when a source tag is clicked — caller decides how to route. Optional `tab` deep-links to a specific tab. */
+  onSourceClick: (source: { pageId: string; pageTitle: string; pageSlug: string; tab?: string }) => void
   /** Per-session token for anonymous usage analytics / dedup. */
   sessionToken?: string
   fallbackSuggestions?: string[]
@@ -232,7 +232,7 @@ function ToolCallCard({
   onSourceClick,
 }: {
   toolCall: { name: string; label: string; args: Record<string, unknown>; result: unknown; status?: 'pending' | 'done' }
-  onSourceClick: (source: { pageId: string; pageTitle: string; pageSlug: string }) => void
+  onSourceClick: (source: { pageId: string; pageTitle: string; pageSlug: string; tab?: string }) => void
 }): React.ReactElement {
   const { name, label, args, result, status } = toolCall
   const isPending = status === 'pending'
@@ -240,13 +240,13 @@ function ToolCallCard({
   const pageTitle = extractResultTitle(result)
   const count = extractResultCount(result)
 
-  const handlePageClick = (): void => {
+  const handlePageClick = (tab?: string): void => {
     if (typeof result === 'object' && result !== null) {
       const r = result as ToolCallResult
       const id = typeof r.id === 'string' ? r.id : (typeof r.pageId === 'string' ? r.pageId : null)
       const slug = typeof r.slug === 'string' ? r.slug : (typeof r.pageSlug === 'string' ? r.pageSlug : null)
       if (id && slug) {
-        onSourceClick({ pageId: id, pageTitle: pageTitle ?? '', pageSlug: slug })
+        onSourceClick({ pageId: id, pageTitle: pageTitle ?? '', pageSlug: slug, tab })
       }
     }
   }
@@ -303,6 +303,11 @@ function ToolCallCard({
             <path d="M3 11l18-9-9 18-2-8z" />
           </svg>
         )}
+        {name === 'generate_marketing_video' && (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2" y="7" width="20" height="15" rx="2" ry="2" /><polyline points="17 2 12 7 7 2" />
+          </svg>
+        )}
           </>
         )}
       </span>
@@ -310,7 +315,7 @@ function ToolCallCard({
         {isPending ? `${label}…` : label}
       </span>
       {!isPending && name === 'create_page' && pageTitle && (
-        <button className={styles.toolCallAction} onClick={handlePageClick}>
+        <button className={styles.toolCallAction} onClick={() => handlePageClick()}>
           {pageTitle} →
         </button>
       )}
@@ -327,17 +332,17 @@ function ToolCallCard({
         </span>
       )}
       {!isPending && name === 'navigate_to_page' && pageTitle && (
-        <button className={styles.toolCallAction} onClick={handlePageClick}>
+        <button className={styles.toolCallAction} onClick={() => handlePageClick()}>
           {pageTitle} →
         </button>
       )}
       {!isPending && name === 'generate_voiceover' && pageTitle && (
-        <button className={styles.toolCallAction} onClick={handlePageClick}>
+        <button className={styles.toolCallAction} onClick={() => handlePageClick()}>
           {pageTitle} · open Walkthrough →
         </button>
       )}
       {!isPending && name === 'run_try_doc' && pageTitle && (
-        <button className={styles.toolCallAction} onClick={handlePageClick}>
+        <button className={styles.toolCallAction} onClick={() => handlePageClick()}>
           {pageTitle} · open Test →
         </button>
       )}
@@ -345,6 +350,11 @@ function ToolCallCard({
         <span className={styles.toolCallMeta}>
           {pageTitle} {(result as { isPublic?: boolean })?.isPublic ? '· published' : '· unpublished'}
         </span>
+      )}
+      {!isPending && name === 'generate_marketing_video' && pageTitle && (
+        <button className={styles.toolCallAction} onClick={() => handlePageClick('marketing')}>
+          {pageTitle} · open Marketing →
+        </button>
       )}
     </div>
   )

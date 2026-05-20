@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
-import { useParams, useOutletContext, Link } from 'react-router-dom'
+import { useParams, useOutletContext, Link, useSearchParams } from 'react-router-dom'
 import { formatRelativeTime } from '../../../shared/util/relativeTime.js'
 import {
   Button,
@@ -66,7 +66,14 @@ function PageViewInner(): React.ReactElement {
   const abortRef = useRef<AbortController | null>(null)
   const [liveUrl, setLiveUrl] = useState<string | null>(hasRunningTest ? (initialTestJob.liveUrl ?? null) : null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'video' | 'test' | 'marketing'>(hasRunningTest ? 'test' : 'doc')
+  const [searchParams] = useSearchParams()
+  const initialTab = ((): 'doc' | 'video' | 'test' | 'marketing' => {
+    if (hasRunningTest) return 'test'
+    const t = searchParams.get('tab')
+    if (t === 'marketing' || t === 'video' || t === 'test') return t
+    return 'doc'
+  })()
+  const [activeTab, setActiveTab] = useState<'doc' | 'video' | 'test' | 'marketing'>(initialTab)
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)

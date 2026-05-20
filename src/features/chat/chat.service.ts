@@ -329,6 +329,7 @@ function humanLabel(toolName: string): string {
     generate_voiceover: 'Voice-over',
     run_try_doc: 'Try Doc',
     publish_page: 'Updated visibility',
+    generate_marketing_video: 'Marketing video',
   }
   return labels[toolName] ?? toolName
 }
@@ -450,6 +451,17 @@ function buildProjectToolDefs(projectId: string): {
           isPublic: { type: SchemaType.BOOLEAN, description: 'Target visibility (true = published, false = unpublished)' },
         },
         required: ['pageSlug', 'isPublic'],
+      },
+    },
+    {
+      name: 'generate_marketing_video',
+      description: 'Generate a 60-second marketing video for a documentation page. Turns the page content into a scripted video with voice-over narration, animated mock scenes, and branding. Use when the user asks for a promo, demo video, product video, or marketing clip.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          pageSlug: { type: SchemaType.STRING, description: 'Slug of the page to turn into a marketing video' },
+        },
+        required: ['pageSlug'],
       },
     },
   ]
@@ -604,6 +616,22 @@ function buildProjectToolDefs(projectId: string): {
         }
         const updated = await updatePage(page.id, { isPublic: targetPublic })
         return { pageId: updated.id, pageTitle: updated.title, pageSlug: updated.slug, isPublic: updated.isPublic }
+      }
+
+      case 'generate_marketing_video': {
+        const { findPagesByProjectId } = await import('../page/page.repository.js')
+        const pages = await findPagesByProjectId(projectId)
+        const page = pages.find((p) => p.slug === args.pageSlug)
+        if (!page) return { error: `Page "${String(args.pageSlug)}" not found` }
+        if (!page.content?.trim()) {
+          return { error: `Page "${page.title}" has no documentation yet — generate the doc first, then create the marketing video.` }
+        }
+        return {
+          action: 'open_marketing_video',
+          pageId: page.id,
+          pageTitle: page.title,
+          pageSlug: page.slug,
+        }
       }
 
       default:

@@ -2,7 +2,8 @@ import { z } from 'zod'
 
 export const ChatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
-  content: z.string().min(1),
+  // Assistant turns that only call tools may have no text — allow empty string
+  content: z.string(),
 })
 
 export const UserContextSchema = z.object({

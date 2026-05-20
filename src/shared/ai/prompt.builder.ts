@@ -396,6 +396,7 @@ Available tools:
 - **generate_voiceover** — kick off ElevenLabs narration on a page that has content. Use for "add audio", "narrate", "read aloud" requests.
 - **run_try_doc** — run the AI quality test on a page. Use for "test", "audit", "verify the docs work" requests.
 - **publish_page** — toggle the public visibility flag. Use for "publish", "make public", "unpublish" requests.
+- **generate_marketing_video** — open the marketing video panel for a page. Use for "promo video", "demo video", "marketing video", "product video", "create a video" requests.
 
 Rule of thumb: if the user is describing an outcome ("I want to test my checkout doc"), call the tool — don't suggest they click through the UI. The whole point of chat-first is the user never has to leave the chat.
 
