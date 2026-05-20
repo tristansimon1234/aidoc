@@ -403,6 +403,7 @@ export function ProjectDetail(): React.ReactElement {
         onPendingMessageConsumed={() => setPendingMessage(null)}
         pendingVideo={pendingVideo}
         onPendingVideoConsumed={() => setPendingVideo(null)}
+        onProjectMutation={fetchData}
         sessionToken={sessionToken}
       />
     </Shell>

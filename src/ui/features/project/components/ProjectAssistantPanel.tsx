@@ -1,8 +1,9 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Tooltip } from '../../../design-system/components/index.js'
 import { ChatSurface, type ChatSurfaceApi, type ChatMessage } from '../../chat/components/ChatSurface.js'
 import { api } from '../../../shared/api/client.js'
+import { AssistantToast, type AssistantToastData } from './AssistantToast.js'
 import styles from './ProjectAssistantPanel.module.css'
 
 interface ProjectAssistantPanelProps {
@@ -18,6 +19,9 @@ interface ProjectAssistantPanelProps {
    *  prepare_doc_generation upload block as a preselected file. */
   pendingVideo?: File | null
   onPendingVideoConsumed?: () => void
+  /** Called when the AI mutates the project (creates/updates/publishes a
+   *  page) — the host uses it to refresh the page tree / sidebar. */
+  onProjectMutation?: () => void | Promise<void>
   sessionToken?: string
 }
 
@@ -52,11 +56,60 @@ export function ProjectAssistantPanel({
   onPendingMessageConsumed,
   pendingVideo,
   onPendingVideoConsumed,
+  onProjectMutation,
   sessionToken,
 }: ProjectAssistantPanelProps): React.ReactElement {
   const navigate = useNavigate()
+  const [toast, setToast] = useState<AssistantToastData | null>(null)
 
   const assistantApi = useMemo(() => buildAssistantApi(projectId), [projectId])
+
+  // Handler for any tool-driven mutation. update_page also wires an Undo
+  // toast that restores the previous content.
+  const handleProjectMutation = useCallback((info: {
+    tool: string
+    pageId?: string
+    pageSlug?: string
+    pageTitle?: string
+    previousContent?: string | null
+  }): void => {
+    // Refetch the page tree so the sidebar reflects the AI's action
+    void onProjectMutation?.()
+
+    if (info.tool === 'update_page' && info.pageId && typeof info.previousContent === 'string') {
+      const pageId = info.pageId
+      const title = info.pageTitle ?? 'page'
+      setToast({
+        id: `undo_${pageId}_${Date.now()}`,
+        message: `Updated "${title}"`,
+        actionLabel: 'Undo',
+        durationMs: 10000,
+        onAction: async () => {
+          try {
+            await api.pages.restorePrevious(projectId, pageId)
+            await onProjectMutation?.()
+          } catch (err) {
+            console.error('[AssistantPanel] Undo failed:', (err as Error).message)
+          }
+        },
+      })
+    } else if (info.tool === 'create_page' && info.pageTitle) {
+      setToast({
+        id: `created_${info.pageId}_${Date.now()}`,
+        message: `Created "${info.pageTitle}"`,
+      })
+    } else if (info.tool === 'publish_page' && info.pageTitle) {
+      setToast({
+        id: `pub_${info.pageId}_${Date.now()}`,
+        message: `Visibility updated for "${info.pageTitle}"`,
+      })
+    }
+  }, [onProjectMutation, projectId])
+
+  const handleAutoNavigate = useCallback((info: { pageId: string; pageSlug: string }): void => {
+    navigate(`/projects/${projectId}/pages/${info.pageId}`)
+    onClose()
+  }, [navigate, projectId, onClose])
 
   // When a video is dropped on the chat bar, trigger a generation message
   // so the AI calls prepare_doc_generation and the VideoUploadBlock appears
@@ -140,8 +193,11 @@ export function ProjectAssistantPanel({
             }}
             pendingVideo={pendingVideo ?? null}
             onPendingVideoConsumed={onPendingVideoConsumed}
+            onProjectMutation={handleProjectMutation}
+            onAutoNavigate={handleAutoNavigate}
             variant="sidepanel"
           />
+          <AssistantToast toast={toast} onDismiss={() => setToast(null)} />
         </div>
       </aside>
     </>

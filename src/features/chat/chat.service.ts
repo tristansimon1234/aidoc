@@ -499,11 +499,13 @@ function buildProjectToolDefs(projectId: string): {
         const pages = await findPagesByProjectId(projectId)
         const page = pages.find((p) => p.slug === args.pageSlug)
         if (!page) return { error: `Page with slug "${String(args.pageSlug)}" not found` }
+        // Capture previous content so the UI can offer an Undo action.
+        const previousContent = page.content ?? null
         const updated = await updatePage(page.id, {
           ...(typeof args.content === 'string' ? { content: args.content } : {}),
           ...(typeof args.title === 'string' ? { title: args.title } : {}),
         })
-        return { id: updated.id, slug: updated.slug, title: updated.title }
+        return { id: updated.id, slug: updated.slug, title: updated.title, previousContent }
       }
 
       case 'search_docs': {

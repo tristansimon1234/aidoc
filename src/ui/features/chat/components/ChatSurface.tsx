@@ -110,6 +110,13 @@ interface ChatSurfaceProps {
    *  upload block without the user having to pick it again. */
   pendingVideo?: File | null
   onPendingVideoConsumed?: () => void
+  /** Fired once per resolved mutating tool call (create_page, update_page,
+   *  prepare_doc_generation, publish_page). The host uses this to refetch
+   *  the page tree so the sidebar/nav reflect the AI's actions. */
+  onProjectMutation?: (info: { tool: string; pageId?: string; pageSlug?: string; pageTitle?: string; previousContent?: string | null }) => void
+  /** Fired when a `navigate_to_page` tool resolves — used by the host
+   *  to auto-route the user to the destination page (chat-first UX). */
+  onAutoNavigate?: (info: { pageId: string; pageTitle: string; pageSlug: string }) => void
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -399,6 +406,8 @@ export function ChatSurface({
   onPendingMessageConsumed,
   pendingVideo,
   onPendingVideoConsumed,
+  onProjectMutation,
+  onAutoNavigate,
 }: ChatSurfaceProps): React.ReactElement {
   // When a video is pre-claimed by a drop on the chat bar, this state
   // tracks which tool-call id has claimed the file. The matching
@@ -449,6 +458,44 @@ export function ChatSurface({
   // Cancel any in-flight stream when unmounting so the SSE connection
   // closes cleanly instead of leaking.
   useEffect(() => () => abortRef.current?.abort(), [])
+
+  // Fire `onProjectMutation` and `onAutoNavigate` callbacks exactly once
+  // per resolved tool call. We track consumed ids in a ref so re-renders
+  // don't double-fire.
+  const consumedToolCallIds = useRef<Set<string>>(new Set())
+  const MUTATING_TOOLS = ['create_page', 'update_page', 'publish_page', 'prepare_doc_generation', 'generate_voiceover']
+  useEffect(() => {
+    for (const m of messages) {
+      if (m.role !== 'assistant' || !m.toolCalls) continue
+      for (const tc of m.toolCalls) {
+        if (!tc.id || tc.status !== 'done') continue
+        if (consumedToolCallIds.current.has(tc.id)) continue
+        const r = (tc.result ?? {}) as Record<string, unknown>
+        if (r.error) {
+          consumedToolCallIds.current.add(tc.id)
+          continue
+        }
+        if (tc.name === 'navigate_to_page' && onAutoNavigate) {
+          const pageId = typeof r.pageId === 'string' ? r.pageId : null
+          const pageSlug = typeof r.pageSlug === 'string' ? r.pageSlug : null
+          const pageTitle = typeof r.pageTitle === 'string' ? r.pageTitle : ''
+          if (pageId && pageSlug) {
+            consumedToolCallIds.current.add(tc.id)
+            onAutoNavigate({ pageId, pageTitle, pageSlug })
+            continue
+          }
+        }
+        if (MUTATING_TOOLS.includes(tc.name) && onProjectMutation) {
+          consumedToolCallIds.current.add(tc.id)
+          const pageId = typeof r.pageId === 'string' ? r.pageId : (typeof r.id === 'string' ? r.id : undefined)
+          const pageSlug = typeof r.pageSlug === 'string' ? r.pageSlug : (typeof r.slug === 'string' ? r.slug : undefined)
+          const pageTitle = typeof r.pageTitle === 'string' ? r.pageTitle : (typeof r.title === 'string' ? r.title : undefined)
+          const previousContent = typeof r.previousContent === 'string' ? r.previousContent : null
+          onProjectMutation({ tool: tc.name, pageId, pageSlug, pageTitle, previousContent })
+        }
+      }
+    }
+  }, [messages, onProjectMutation, onAutoNavigate])
 
   // Claim a pending video drop for the most recent `prepare_doc_generation`
   // tool-call that has a resolved result and no file claimed yet. Done in

@@ -107,8 +107,9 @@
   color: var(--color-fg);
 }
 
-/* Body holds ChatSurface */
+/* Body holds ChatSurface + anchors the absolute-positioned toast */
 .body {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
