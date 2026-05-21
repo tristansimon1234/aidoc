@@ -12,6 +12,7 @@
     "format": "prettier --write 'src/**/*.ts'"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@google/generative-ai": "^0.24.1",
     "@sentry/node": "^10.49.0",
     "@sentry/react": "^10.49.0",
@@ -43,7 +44,7 @@
     "@vitejs/plugin-react": "^5.0.0",
     "eslint": "^9.0.0",
     "prettier": "^3.0.0",
-    "ts-node": "^11.0.0",
+    "ts-node": "^10.9.2",
     "vite": "^8.0.0"
   }
 }

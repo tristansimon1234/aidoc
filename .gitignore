@@ -6,3 +6,4 @@ public/remotion-bundle/
 !.env.example
 *.log
 .vercel/
+standalone/saas-video/node_modules/
