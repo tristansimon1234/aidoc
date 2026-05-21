@@ -130,27 +130,27 @@ export function ProjectMarketing(): React.ReactElement {
     {
       title: 'Brief',
       message:
-        "Décris ton produit en quelques phrases — je m'en sers pour écrire le script du clip. Plus c'est concret (bénéfices, public cible), mieux c'est.",
+        "Describe your product in a few sentences — I'll use this to write the clip's script. The more concrete (benefits, target audience), the better.",
       validate: (s) => s.brief.trim().length >= 30,
-      hint: () => 'Au moins 30 caractères. Donne moi un angle clair.',
+      hint: () => 'At least 30 characters. Give me a clear angle.',
       render: (s, set) => (
         <div className={styles.fields}>
           <div className={styles.field}>
-            <label className={styles.label}>Titre (optionnel)</label>
+            <label className={styles.label}>Title (optional)</label>
             <input
               type="text"
               className={styles.input}
-              placeholder="ex. Lancement Doclee — pitch sales"
+              placeholder="e.g. Doclee launch — sales pitch"
               value={s.title}
               onChange={(e) => set({ title: e.target.value })}
             />
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Brief produit</label>
+            <label className={styles.label}>Product brief</label>
             <textarea
               className={styles.textarea}
               rows={8}
-              placeholder="ex. Doclee génère automatiquement de la documentation produit à partir d'enregistrements d'écran. Pour les Heads of Product / Support qui n'ont pas le temps d'écrire. Économise 4h par feature."
+              placeholder="e.g. Doclee auto-generates product documentation from screen recordings. For Heads of Product / Support who don't have time to write. Saves 4h per feature."
               value={s.brief}
               onChange={(e) => set({ brief: e.target.value })}
               autoFocus
@@ -161,9 +161,9 @@ export function ProjectMarketing(): React.ReactElement {
       ),
     },
     {
-      title: 'Voix',
+      title: 'Voice',
       message:
-        "Quelle voix doit porter ton pitch ? Le ton détermine à la fois la diction de la voix off et l'énergie générale du script.",
+        "Which voice should carry your pitch? The tone shapes both the voice-over delivery and the script's overall energy.",
       render: (s, set) => (
         <div className={styles.choiceGrid}>
           {VOICE_TONES.map((t) => (
@@ -180,9 +180,9 @@ export function ProjectMarketing(): React.ReactElement {
       ),
     },
     {
-      title: 'Musique',
+      title: 'Music',
       message:
-        "Et la musique de fond ? Elle est générée par IA en fonction du style choisi — calibrée pour rester sous la voix.",
+        "And the background music? It's AI-generated from the style you pick — tuned to sit under the voice.",
       render: (s, set) => (
         <div className={styles.choiceGrid}>
           {MUSIC_STYLES.map((m) => (
@@ -200,15 +200,15 @@ export function ProjectMarketing(): React.ReactElement {
       ),
     },
     {
-      title: 'Récap',
+      title: 'Review',
       message:
-        "Tout est prêt. Je vais écrire le script, synthétiser la voix, générer la musique et rendre la vidéo. Compte environ 2-3 minutes.",
+        "Everything's ready. I'll write the script, synthesize the voice, generate the music and render the video. Takes about 2-3 minutes.",
       render: (s) => (
         <div className={styles.summary}>
-          <SummaryRow label="Titre" value={s.title || `Marketing video ${new Date().toLocaleDateString()}`} />
+          <SummaryRow label="Title" value={s.title || `Marketing video ${new Date().toLocaleDateString()}`} />
           <SummaryRow label="Brief" value={s.brief.length > 200 ? `${s.brief.slice(0, 200)}…` : s.brief} multiline />
-          <SummaryRow label="Voix" value={VOICE_TONES.find((t) => t.id === s.tone)?.name ?? s.tone} />
-          <SummaryRow label="Musique" value={MUSIC_STYLES.find((m) => m.id === s.musicTrackId)?.name ?? s.musicTrackId} />
+          <SummaryRow label="Voice" value={VOICE_TONES.find((t) => t.id === s.tone)?.name ?? s.tone} />
+          <SummaryRow label="Music" value={MUSIC_STYLES.find((m) => m.id === s.musicTrackId)?.name ?? s.musicTrackId} />
           {error && <div className={styles.errorMsg}>{error}</div>}
         </div>
       ),

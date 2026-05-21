@@ -70,12 +70,12 @@ export function TryDocStepper({
     {
       title: 'URL',
       message:
-        "Donne-moi l'URL où je dois lancer le test. C'est l'écran sur lequel je vais suivre ta doc comme un nouvel utilisateur.",
+        "Give me the URL where I should run the test. That's the screen I'll follow your doc on, as a fresh user.",
       validate: () => looksLikeUrl,
-      hint: () => 'Une URL complète (https://…) — laisse vide pour reprendre l\'URL du projet.',
+      hint: () => 'A full URL (https://…) — leave blank to fall back to the project URL.',
       render: () => (
         <div className={styles.field}>
-          <label className={styles.label}>URL de test</label>
+          <label className={styles.label}>Test URL</label>
           <input
             type="text"
             className={styles.input}
@@ -89,25 +89,25 @@ export function TryDocStepper({
       ),
     },
     {
-      title: 'Contexte',
+      title: 'Context',
       message:
-        'Tu peux me donner du contexte que la doc ne dit pas — comportements attendus, comptes de test, edge cases. Optionnel.',
+        "You can give me context the doc doesn't spell out — expected behaviour, test accounts, edge cases. Optional.",
       validate: () => true,
       render: () => (
         <div className={styles.fields}>
           <div className={styles.field}>
-            <label className={styles.label}>Contexte additionnel</label>
+            <label className={styles.label}>Additional context</label>
             <textarea
               className={styles.textarea}
               rows={4}
               value={testNotes}
               onChange={(e) => update('testNotes', e.target.value)}
-              placeholder="ex. Tester avec une subscription expirée. Le bouton Reset doit afficher une confirmation."
+              placeholder="e.g. Test with an expired subscription. The Reset button should show a confirmation dialog."
             />
           </div>
           {projectResources.length > 0 && (
             <div className={styles.field}>
-              <label className={styles.label}>Resources à utiliser</label>
+              <label className={styles.label}>Resources to use</label>
               <div className={styles.resourceList}>
                 {projectResources.map((r, i) => (
                   <label key={i} className={`${styles.resourceItem} ${selectedResources.includes(i) ? styles.resourceItemActive : ''}`}>
@@ -125,26 +125,26 @@ export function TryDocStepper({
           )}
           {projectResources.length === 0 && (
             <p className={styles.muted}>
-              Aucune resource configurée. Tu peux en ajouter dans Project Settings (fichiers, URLs, notes).
+              No resources configured. Add files, URLs, or notes in Project Settings.
             </p>
           )}
         </div>
       ),
     },
     {
-      title: 'Pré-flight & test',
+      title: 'Pre-flight & run',
       message: preflightResult
-        ? "Voici ce que j'ai trouvé — corrige si nécessaire, puis je lance l'agent."
+        ? "Here's what I found — fix anything if needed, then I'll launch the agent."
         : preflightLoading
-          ? "Je vérifie que tout est prêt pour le test…"
-          : "Je vais d'abord faire un pré-flight (URL joignable, credentials OK), puis lancer l'agent qui suivra ta doc.",
+          ? "Checking that everything's ready for the test…"
+          : "I'll first run a pre-flight (URL reachable, credentials OK), then launch the agent that follows your doc.",
       validate: () => true,
       render: () => (
         <div className={styles.fields}>
           {preflightLoading && (
             <div className={styles.preflightLoading}>
               <Spinner size="sm" />
-              <span>Vérification en cours…</span>
+              <span>Checking…</span>
             </div>
           )}
           {preflightResult && (
@@ -156,7 +156,7 @@ export function TryDocStepper({
           )}
           {!preflightResult && !preflightLoading && (
             <p className={styles.muted}>
-              Cliquer sur <strong>Lancer le pré-flight</strong> ci-dessous pour démarrer. Le test commence après ta confirmation des résultats.
+              Click <strong>Run pre-flight</strong> below to start. The test runs after you confirm the results.
             </p>
           )}
         </div>
@@ -173,7 +173,7 @@ export function TryDocStepper({
         if (quotaBlocked) { onQuotaBlocked(); return }
         if (!preflightResult) void onRunPreflight()
       }}
-      finishLabel={preflightResult ? 'Test prêt — confirme ci-dessus' : 'Lancer le pré-flight'}
+      finishLabel={preflightResult ? 'Test ready — confirm above' : 'Run pre-flight'}
     />
   )
 }

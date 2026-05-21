@@ -485,8 +485,8 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
           {
             title: 'Brief',
             message: hasManifest
-              ? "Tu veux changer l'angle ? Mets à jour le brief, sinon enchaîne — tes anciens choix sont conservés."
-              : "Dis-moi en une phrase l'angle marketing. Sur quoi je dois insister ? Pour qui ?",
+              ? "Want to change the angle? Update the brief — otherwise just continue, your previous choices are kept."
+              : "In one sentence, what's the marketing angle? What should I emphasise, and for whom?",
             render: () => (
               <div className={styles.card}>
                 <div className={styles.cardHeader}>
@@ -509,10 +509,10 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             ),
           },
           {
-            title: 'Visuel',
+            title: 'Visual',
             message: runId
-              ? "Tu veux qu'on ancre la vidéo dans tes vraies captures, ou un rendu plus polished avec des mocks animés ?"
-              : "Pas de vidéo enregistrée sur cette page — je vais générer des mocks animés. Tu pourras passer en captures réelles après un enregistrement.",
+              ? "Do you want to ground the video in real screenshots, or go for the more polished animated-mock look?"
+              : "No recording on this page yet — I'll use animated mocks. You'll be able to switch to real screenshots after a recording.",
             render: () => (
               <div className={styles.card}>
                 <div className={styles.cardHeader}>
@@ -550,8 +550,8 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             ),
           },
           {
-            title: 'Voix',
-            message: "Qui doit porter la pitch ? Le ton règle à la fois la voix off et l'énergie du script.",
+            title: 'Voice',
+            message: "Who should carry the pitch? The tone shapes both the voice-over and the script's energy.",
             render: () => (
               <div className={styles.card}>
                 <div className={styles.cardHeader}>
@@ -609,10 +609,10 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
             ),
           },
           {
-            title: 'Musique',
-            message: "Dernière chose — la musique de fond. Génération IA en fonction du style, preset, upload, ou silence.",
+            title: 'Music',
+            message: "Last thing — background music. AI-generated from a style, a preset, an upload, or silence.",
             validate: () => !(musicChoice === 'upload' && !musicUploadPath),
-            hint: () => 'Upload un MP3 avant de continuer (ou change le choix de musique).',
+            hint: () => 'Upload an MP3 before continuing (or change the music choice).',
             render: () => (
               <>
                 <div className={styles.card}>

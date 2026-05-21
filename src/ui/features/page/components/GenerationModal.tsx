@@ -70,18 +70,18 @@ export function GenerationModal({
   const steps: StepperStep<BriefingState>[] = [
     {
       title: 'Brief',
-      message: "Dis-moi ce que tu veux documenter — je m'en servirai pour cadrer la doc générée.",
+      message: "Tell me what you want to document — I'll use this to frame the generated doc.",
       validate: (s) => s.objective.trim().length >= 8,
       hint: () =>
-        'Décris en une phrase ce que doit couvrir cette page (≥ 8 caractères).',
+        'Describe in one sentence what this page should cover (≥ 8 characters).',
       render: (s, set) => (
         <div className={styles.fields}>
           <div className={styles.field}>
-            <label className={styles.label}>Objectif (optionnel)</label>
+            <label className={styles.label}>Goal (optional)</label>
             <input
               type="text"
               className={styles.input}
-              placeholder="ex. Documenter le flow de pricing et d'upgrade"
+              placeholder="e.g. Document the pricing and upgrade flow"
               value={s.goal}
               onChange={(e) => {
                 set({ goal: e.target.value })
@@ -90,11 +90,11 @@ export function GenerationModal({
             />
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Que documenter</label>
+            <label className={styles.label}>What to document</label>
             <textarea
               rows={3}
               className={styles.textarea}
-              placeholder="ex. Comment un nouvel utilisateur crée un compte et complète l'onboarding"
+              placeholder="e.g. How a new user creates an account and completes onboarding"
               value={s.objective}
               onChange={(e) => {
                 set({ objective: e.target.value })
@@ -104,11 +104,11 @@ export function GenerationModal({
             />
           </div>
           <div className={styles.field}>
-            <label className={styles.label}>Ce que l&apos;IA ne peut pas deviner (optionnel)</label>
+            <label className={styles.label}>What the AI can&apos;t guess (optional)</label>
             <textarea
               rows={2}
               className={styles.textarea}
-              placeholder="ex. Les utilisateurs trial n'ont pas accès au billing. L'export n'apparaît qu'après 3 entrées."
+              placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries."
               value={s.knowledge}
               onChange={(e) => {
                 set({ knowledge: e.target.value })
@@ -120,9 +120,9 @@ export function GenerationModal({
       ),
     },
     {
-      title: 'Enregistrement',
+      title: 'Recording',
       message:
-        'Maintenant, enregistre ton écran ou upload une vidéo — j\'analyse chaque action, extrais les captures clés, et je rédige la doc.',
+        "Now record your screen or upload a video — I'll analyze each action, extract key screenshots, and write the doc.",
       validate: () => true,
       render: () => (
         <div className={styles.recorderWrap}>
@@ -140,8 +140,8 @@ export function GenerationModal({
 
   return (
     <Modal
-      title={page.content ? 'Régénérer la documentation' : 'Générer la documentation'}
-      subtitle={`Pour la page "${page.title}"`}
+      title={page.content ? 'Regenerate documentation' : 'Generate documentation'}
+      subtitle={`For the page "${page.title}"`}
       size="lg"
       dismissible={!submitting}
       onClose={onClose}
