@@ -1,0 +1,59 @@
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid;
+  line-height: 1.7;
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pending {
+  color: var(--color-status-pending-text);
+  background-color: var(--color-status-pending-bg);
+  border-color: var(--color-status-pending-border);
+}
+.pending .dot { background-color: var(--color-status-pending-text); }
+
+.running {
+  color: var(--color-status-running-text);
+  background-color: var(--color-status-running-bg);
+  border-color: var(--color-status-running-border);
+}
+.running .dot { background-color: var(--color-status-running-text); animation: pulse 1.5s ease-in-out infinite; }
+
+.blocked {
+  color: var(--color-status-blocked-text);
+  background-color: var(--color-status-blocked-bg);
+  border-color: var(--color-status-blocked-border);
+}
+.blocked .dot { background-color: var(--color-status-blocked-text); }
+
+.completed {
+  color: var(--color-status-completed-text);
+  background-color: var(--color-status-completed-bg);
+  border-color: var(--color-status-completed-border);
+}
+.completed .dot { background-color: var(--color-status-completed-text); }
+
+.failed {
+  color: var(--color-status-failed-text);
+  background-color: var(--color-status-failed-bg);
+  border-color: var(--color-status-failed-border);
+}
+.failed .dot { background-color: var(--color-status-failed-text); }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}

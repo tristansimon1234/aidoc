@@ -1,0 +1,240 @@
+/* Fonts: Inter (body + headings) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300..800&display=swap');
+
+/* ===== LIGHT MODE (default) ===== */
+:root {
+  /* background — clean white, like ElevenLabs */
+  --color-bg: #FFFFFF;
+  --color-card: #FFFFFF;
+  --color-secondary: #F7F7F8;                     /* very subtle warm gray */
+
+  /* foreground */
+  --color-fg: #1A1A1A;
+  --color-muted-fg: #6B7280;
+
+  /* primary — warm black (ElevenLabs style) */
+  --color-primary: #1A1A1A;
+  --color-primary-hover: #333333;
+
+  /* semantic */
+  --color-destructive: #EF4444;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+
+  /* border — very subtle */
+  --color-border: #E5E7EB;
+
+  /* accent bg */
+  --color-accent: #F3F4F6;
+
+  /* status (light mode) */
+  --color-status-pending-bg: #F3F4F6;
+  --color-status-pending-text: #6B7280;
+  --color-status-pending-border: #E5E7EB;
+  --color-status-running-bg: #EFF6FF;
+  --color-status-running-text: #2563EB;
+  --color-status-running-border: #BFDBFE;
+  --color-status-blocked-bg: #FFFBEB;
+  --color-status-blocked-text: #D97706;
+  --color-status-blocked-border: #FDE68A;
+  --color-status-completed-bg: #ECFDF5;
+  --color-status-completed-text: #059669;
+  --color-status-completed-border: #A7F3D0;
+  --color-status-failed-bg: #FEF2F2;
+  --color-status-failed-text: #DC2626;
+  --color-status-failed-border: #FECACA;
+
+  /* spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 40px;
+  --space-2xl: 64px;
+
+  /* radius — generous rounding (ElevenLabs style) */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* fonts */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-heading: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --heading-stretch: normal;
+  --heading-tracking: -0.025em;
+
+  /* font sizes */
+  --text-xs: 11px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --text-xl: 28px;
+  --text-2xl: 40px;
+
+  /* shadows — soft and subtle */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  /* ===== Legacy aliases (backward compat — remove in Phase 4) ===== */
+  --color-bg-base: var(--color-bg);
+  --color-bg-surface: var(--color-card);
+  --color-bg-elevated: var(--color-secondary);
+  --color-bg-overlay: var(--color-secondary);
+
+  --color-border-subtle: var(--color-border);
+  --color-border-default: var(--color-border);
+  --color-border-strong: var(--color-border);
+
+  --color-text-primary: var(--color-fg);
+  --color-text-secondary: var(--color-muted-fg);
+  --color-text-muted: var(--color-muted-fg);
+  --color-text-inverse: var(--color-bg);
+
+  --color-accent-blue: var(--color-primary);
+  --color-accent-green: var(--color-success);
+  --color-accent-amber: var(--color-warning);
+  --color-accent-red: var(--color-destructive);
+  --color-accent-purple: var(--color-accent);
+}
+
+/* ===== DARK MODE ===== */
+[data-theme="dark"] {
+  --color-bg: oklch(0.095 0.012 255);             /* #0D1117 */
+  --color-card: oklch(0.13 0.015 255);             /* #161B22 */
+  --color-secondary: oklch(0.17 0.015 255);        /* #1C2128 */
+
+  --color-fg: oklch(0.926 0.008 245);              /* #E6EDF3 */
+  --color-muted-fg: oklch(0.568 0.02 255);         /* #8B949E */
+
+  --color-primary: oklch(0.65 0.20 277);            /* #7C74FF */
+  --color-primary-hover: oklch(0.58 0.22 277);
+
+  --color-destructive: oklch(0.60 0.19 358);
+  --color-success: oklch(0.60 0.13 162);
+  --color-warning: oklch(0.75 0.15 47.6);
+
+  --color-border: oklch(0.245 0.015 255);           /* #30363D */
+  --color-accent: oklch(0.20 0.03 277);
+
+  /* status (dark mode) */
+  --color-status-pending-bg: #1A1A20;
+  --color-status-pending-text: #8B949E;
+  --color-status-pending-border: #30363D;
+  --color-status-running-bg: #0D1A35;
+  --color-status-running-text: #7C74FF;
+  --color-status-running-border: #2A2560;
+  --color-status-blocked-bg: #2D1A0A;
+  --color-status-blocked-text: #F5A623;
+  --color-status-blocked-border: #4A2D10;
+  --color-status-completed-bg: #0A1F16;
+  --color-status-completed-text: #3DD68C;
+  --color-status-completed-border: #124D2C;
+  --color-status-failed-bg: #1F0A0A;
+  --color-status-failed-text: #FF4D4D;
+  --color-status-failed-border: #4D1212;
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);
+  --shadow-lg: 0 12px 40px oklch(0 0 0 / 0.5);
+}
+
+/* ===== BASE RESETS ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-fg);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
+  letter-spacing: var(--heading-tracking);
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+code, pre {
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: rgba(26, 26, 26, 0.12);
+}
+
+/* Thin scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted-fg);
+}
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes fadeSlideIn {
+  0% { opacity: 0; transform: translateY(12px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* BlockNote editor — force transparent background on all internal layers */
+.bn-editor,
+.bn-container,
+.bn-block-group,
+.bn-block-outer,
+.bn-block,
+.bn-block-content,
+[class*="bn-editor"],
+[class*="bn-container"],
+[class*="bn-block-group"] {
+  background-color: transparent !important;
+  background: transparent !important;
+}

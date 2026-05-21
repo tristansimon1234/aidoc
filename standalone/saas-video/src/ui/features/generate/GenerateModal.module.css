@@ -1,0 +1,180 @@
+.fields { display: flex; flex-direction: column; gap: var(--space-md); }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+
+.label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-muted-fg);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.input, .textarea {
+  width: 100%;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: var(--text-sm);
+  color: var(--color-fg);
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:focus, .textarea:focus {
+  outline: none;
+  border-color: var(--color-accent, #2563eb);
+  box-shadow: 0 0 0 3px var(--color-accent-soft, rgba(37, 99, 235, 0.15));
+}
+
+.counter {
+  align-self: flex-end;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--color-muted-fg);
+}
+
+/* Brand picker */
+.brandGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-sm);
+}
+
+.brandCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.brandCardActive { border-width: 2px; }
+
+.singleBrand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.brandName {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+.brandSwatches {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.brandSwatches span {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+/* Voice/music grids */
+.choiceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-sm);
+}
+
+.choiceCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: var(--space-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.choiceCard:hover { border-color: var(--color-muted-fg); }
+
+.choiceCardActive {
+  border-color: var(--color-accent, #2563eb);
+  background: var(--color-accent-soft, rgba(37, 99, 235, 0.06));
+}
+
+.choiceName {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-fg);
+}
+
+.choiceMood {
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+}
+
+/* Summary */
+.summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.summaryRow { display: flex; align-items: flex-start; gap: var(--space-md); }
+
+.summaryLabel {
+  flex-shrink: 0;
+  min-width: 80px;
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  color: var(--color-muted-fg);
+  padding-top: 2px;
+}
+
+.summaryValue {
+  font-size: var(--text-sm);
+  color: var(--color-fg);
+  flex: 1;
+  min-width: 0;
+}
+
+.summaryValueMultiline { white-space: pre-wrap; line-height: 1.5; }
+
+.cost {
+  margin: var(--space-sm) 0 0;
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+}
+
+.errorMsg {
+  margin-top: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-status-failed-bg, #fef2f2);
+  color: var(--color-status-failed-text, #b91c1c);
+  border: 1px solid var(--color-status-failed-border, #fecaca);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
