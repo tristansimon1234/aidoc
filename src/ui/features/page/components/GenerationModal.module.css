@@ -1,0 +1,48 @@
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-muted-fg);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.input,
+.textarea {
+  width: 100%;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: var(--text-sm);
+  color: var(--color-fg);
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:focus,
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-accent, #2563eb);
+  box-shadow: 0 0 0 3px var(--color-accent-soft, rgba(37, 99, 235, 0.15));
+}
+
+.recorderWrap {
+  /* ScreenRecorder pulls PageView.module.css for its layout — give it a
+   * neutral container that doesn't fight those styles. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}

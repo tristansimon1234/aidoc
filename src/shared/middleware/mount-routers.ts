@@ -21,6 +21,7 @@ import { cronRouter } from '../../features/analytics/cron.routes.js'
 import { teamRouter, invitePublicRouter } from '../../features/team/team.routes.js'
 import { exportRouter } from '../../features/export/export.routes.js'
 import { marketingVideoRouter } from '../../features/marketing-video/marketing-video.routes.js'
+import { projectMarketingVideoRouter } from '../../features/marketing-video/project-marketing-video.routes.js'
 
 interface MountOptions {
   /**
@@ -70,6 +71,7 @@ export function mountRouters(app: Express, options: MountOptions): void {
   app.use(`${p}/projects/:projectId/tabs`, authMiddleware, tabRouter)
   app.use(`${p}/projects/:projectId/chat`, authMiddleware, chatRouter)
   app.use(`${p}/projects/:projectId/analytics`, authMiddleware, analyticsRouter)
+  app.use(`${p}/projects/:projectId`, authMiddleware, projectMarketingVideoRouter)
   app.use(`${p}/runs`, authMiddleware, runRouter)
   app.use(`${p}/runs`, authMiddleware, questionsRouter)
   app.use(`${p}/runs`, authMiddleware, documentationRouter)

@@ -12,6 +12,7 @@ import { ProjectSettings } from './features/project/pages/ProjectSettings.js'
 import { ProjectDesign } from './features/project/pages/ProjectDesign.js'
 import { ProjectActivity } from './features/project/pages/ProjectActivity.js'
 import { ChatPage } from './features/chat/pages/ChatPage.js'
+import { ProjectMarketing } from './features/project/pages/ProjectMarketing.js'
 import { SharePage } from './features/page/pages/SharePage.js'
 import { PublicDocs } from './features/docs/pages/PublicDocs.js'
 import { AnalyticsPage } from './features/analytics/pages/AnalyticsPage.js'
@@ -66,6 +67,7 @@ export function App(): React.ReactElement {
               <Route path="pages/new" element={<NewPage />} />
               <Route path="pages/:pageId" element={<PageView />} />
               <Route path="chat" element={<ChatPage />} />
+              <Route path="marketing" element={<ProjectMarketing />} />
               <Route path="share" element={<SharePage />} />
               <Route path="design" element={<ProjectDesign />} />
               <Route path="analytics" element={<AnalyticsPage />} />

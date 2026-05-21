@@ -9,9 +9,9 @@ import { PageTree } from '../../page/components/PageTree.js'
 import { TabBar } from '../../page/components/TabBar.js'
 import styles from './ProjectDetail.module.css'
 
-type NavTab = 'pages' | 'chat' | 'share' | 'design' | 'analytics' | 'activity' | 'settings'
+type NavTab = 'pages' | 'chat' | 'marketing' | 'share' | 'design' | 'analytics' | 'activity' | 'settings'
 
-const ROUTE_TABS: NavTab[] = ['chat', 'share', 'design', 'analytics', 'activity', 'settings']
+const ROUTE_TABS: NavTab[] = ['chat', 'marketing', 'share', 'design', 'analytics', 'activity', 'settings']
 
 /* Modern nav icons — semi-filled style */
 const NAV_ICONS: Record<NavTab, React.ReactNode> = {
@@ -25,6 +25,12 @@ const NAV_ICONS: Record<NavTab, React.ReactNode> = {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 2C6.477 2 2 6.015 2 10.97c0 2.735 1.329 5.175 3.406 6.813.118.093.2.236.2.394L5.4 20.6a.85.85 0 0 0 1.254.745l2.663-1.472a.85.85 0 0 1 .562-.088c.7.14 1.426.215 2.171.215 5.523 0 10-4.015 10-8.97C22 6.015 17.523 2 12 2z" />
       <path d="M8 11h.01" /><path d="M12 11h.01" /><path d="M16 11h.01" />
+    </svg>
+  ),
+  marketing: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="23 7 16 12 23 17 23 7" />
+      <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
     </svg>
   ),
   share: (
@@ -66,6 +72,7 @@ const NAV_ICONS: Record<NavTab, React.ReactNode> = {
 const NAV_ITEMS: { id: NavTab; label: string }[] = [
   { id: 'pages', label: 'Pages' },
   { id: 'chat', label: 'Chat' },
+  { id: 'marketing', label: 'Marketing' },
   { id: 'share', label: 'Share' },
   { id: 'design', label: 'Design' },
   { id: 'analytics', label: 'Analytics' },

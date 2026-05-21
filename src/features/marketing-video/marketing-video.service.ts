@@ -390,24 +390,46 @@ export async function generateMarketingVideoForRun(
   const run = await findRunById(runId)
   if (!run) throw new Error(`Run not found: ${runId}`)
 
-  // Need a doc page to drive the script — without it we'd be writing
-  // marketing copy from steps alone, which produces play-by-play not pitch.
-  if (!run.docPageId) {
-    throw new Error('This run has no linked page. Marketing video needs the page documentation as input.')
+  // Two sources of input text for the script:
+  //   - 'doc' runs: pull from the linked page's content (the original flow,
+  //     intent: turn an existing how-to into a pitch).
+  //   - 'marketing-only' runs (standalone, no doc): use the brief the user
+  //     typed at the project level. Branding comes from the project
+  //     directly; no screenshots are available so visualMode is locked
+  //     to 'mocks' downstream.
+  let sourceMarkdown: string
+  let pageTitle: string
+  let projectIdForBranding: string | null
+  if (run.kind === 'marketing-only') {
+    const brief = run.brief?.trim()
+    if (!brief) {
+      throw new Error('Standalone marketing run has no brief. Pass `brief` when creating the run.')
+    }
+    sourceMarkdown = brief
+    pageTitle = run.featureName || 'Marketing video'
+    projectIdForBranding = run.projectId
+  } else {
+    if (!run.docPageId) {
+      throw new Error('This run has no linked page. Marketing video needs the page documentation as input.')
+    }
+    const page = await findPageById(run.docPageId)
+    if (!page) throw new Error('Linked page not found')
+    const md = page.content?.trim()
+    if (!md) {
+      throw new Error('Page has no content yet. Generate or write the doc before creating a marketing video.')
+    }
+    sourceMarkdown = md
+    pageTitle = page.title
+    projectIdForBranding = page.projectId
   }
-  const page = await findPageById(run.docPageId)
-  if (!page) throw new Error('Linked page not found')
 
-  const sourceMarkdown = page.content?.trim()
-  if (!sourceMarkdown) {
-    throw new Error('Page has no content yet. Generate or write the doc before creating a marketing video.')
-  }
-
-  const branding = await resolveBranding(page.projectId)
-  const screenshots = await collectScreenshots(runId)
+  const branding = await resolveBranding(projectIdForBranding)
+  // Marketing-only runs never have steps → never have screenshots. Skip the
+  // lookup entirely so we don't pay for an empty query.
+  const screenshots = run.kind === 'marketing-only' ? [] : await collectScreenshots(runId)
   const language = detectLanguage(sourceMarkdown)
 
-  console.log(`[marketing-video] Run ${runId}: ${screenshots.length} screenshots, lang=${language}, product="${branding.productName}"`)
+  console.log(`[marketing-video] Run ${runId} (${run.kind}): ${screenshots.length} screenshots, lang=${language}, product="${branding.productName}"`)
 
   // Server-side guard: visualMode='screenshots' is meaningless when the
   // run has no screenshots available — every scene would emit
@@ -427,7 +449,7 @@ export async function generateMarketingVideoForRun(
 
   const script = await generateMarketingScript({
     productName: branding.productName,
-    pageTitle: page.title,
+    pageTitle,
     pageMarkdown: sourceMarkdown,
     availableScreenshots: screenshots.length,
     screenshotCaptions: screenshots.map((s) => s.caption),

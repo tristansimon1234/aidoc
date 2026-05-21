@@ -1,6 +1,6 @@
 import { supabase } from '../../shared/db/supabase.client.js'
 import { DatabaseError } from '../../shared/middleware/error.middleware.js'
-import type { Run, RunStatus, RunStep } from './run.types.js'
+import type { Run, RunKind, RunStatus, RunStep } from './run.types.js'
 
 interface RunRow {
   id: string
@@ -11,6 +11,9 @@ interface RunRow {
   token_usage: number
   browserbase_session_id: string | null
   doc_page_id: string | null
+  project_id: string | null
+  kind: string | null
+  brief: string | null
   summary_json: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -39,6 +42,9 @@ function mapToRun(row: RunRow): Run {
     tokenUsage: row.token_usage,
     browserbaseSessionId: row.browserbase_session_id,
     docPageId: row.doc_page_id,
+    projectId: row.project_id,
+    kind: (row.kind as RunKind | null) ?? 'doc',
+    brief: row.brief,
     summaryJson: row.summary_json,
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
@@ -65,6 +71,9 @@ export async function createRun(input: {
   startUrl: string
   goal: string
   docPageId?: string
+  kind?: RunKind
+  brief?: string
+  projectId?: string
 }): Promise<Run> {
   // Clean up old non-test runs: remove storage files + steps + docs
   // but KEEP the run row (for token usage tracking)
@@ -89,9 +98,10 @@ export async function createRun(input: {
     }
   }
 
-  // Resolve project_id from the linked page
-  let projectId: string | null = null
-  if (input.docPageId) {
+  // Resolve project_id: explicit input wins (required for marketing-only
+  // runs that have no page to derive from); otherwise derive via the page.
+  let projectId: string | null = input.projectId ?? null
+  if (!projectId && input.docPageId) {
     const { data: page } = await supabase.from('doc_pages').select('project_id').eq('id', input.docPageId).single()
     projectId = (page?.project_id as string) ?? null
   }
@@ -104,11 +114,28 @@ export async function createRun(input: {
       goal: input.goal,
       doc_page_id: input.docPageId ?? null,
       project_id: projectId,
+      kind: input.kind ?? 'doc',
+      brief: input.brief ?? null,
     })
     .select('*')
     .single()
   if (error) throw new DatabaseError(error.message)
   return mapToRun(data as RunRow)
+}
+
+/** List marketing-only runs scoped to a project, most recent first. Used
+ *  by the project-level Marketing tab. Excludes the 'doc' kind so the
+ *  standalone-video gallery doesn't pull in every page recording. */
+export async function listMarketingOnlyRunsByProject(projectId: string, limit = 50): Promise<Run[]> {
+  const { data, error } = await supabase
+    .from('runs')
+    .select('*')
+    .eq('project_id', projectId)
+    .eq('kind', 'marketing-only')
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new DatabaseError(error.message)
+  return (data as RunRow[]).map(mapToRun)
 }
 
 export async function findLatestRunByPageId(pageId: string): Promise<Run | null> {

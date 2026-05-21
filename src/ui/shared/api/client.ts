@@ -503,6 +503,46 @@ export const api = {
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
     },
+    /** Project-level standalone marketing video — no doc page required.
+     *  The brief is what the script generator uses in place of page content.
+     *  Synchronous: blocks until the full pipeline (script + voice + music +
+     *  render) finishes. */
+    createMarketingVideo: (
+      id: string,
+      input: {
+        brief: string
+        title?: string
+        options?: {
+          withVoiceover?: boolean
+          voiceId?: string
+          tone?: 'punchy' | 'calm' | 'playful' | 'serious' | 'confident' | 'inspirational' | 'conversational'
+          musicTrackId?: string
+          musicVolume?: number
+          aiMusicPrompt?: string
+          userPrompt?: string
+        }
+      },
+    ): Promise<{ runId: string; title: string } & MarketingVideoSummaryDTO> =>
+      request(`/projects/${id}/marketing-video`, {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
+    /** List standalone marketing videos for a project (excludes the page-scoped
+     *  ones). Returns enough to render a gallery row per item. */
+    listMarketingVideos: (
+      id: string,
+    ): Promise<{
+      items: Array<{
+        runId: string
+        title: string
+        brief: string | null
+        createdAt: string
+        videoUrl: string | null
+        renderStatus: 'idle' | 'rendering' | 'ready' | 'failed'
+        thumbnailUrl: string | null
+        durationSeconds: number | null
+      }>
+    }> => request(`/projects/${id}/marketing-videos`),
     importZip: async (id: string, file: File): Promise<ImportResultDTO> => {
       const { data } = await supabase.auth.getSession()
       const token = data.session?.access_token

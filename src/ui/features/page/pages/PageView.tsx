@@ -22,10 +22,10 @@ import { useJobs } from '../../../shared/jobs/JobContext.js'
 import { useQuotaStatus } from '../../../shared/hooks/useQuotaStatus.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { VideoTimeline } from '../components/VideoTimeline.js'
-import { ScreenRecorder } from '../components/ScreenRecorder.js'
 import { TryDocReport } from '../components/TryDocReport.js'
 import { PreflightPanel } from '../components/PreflightPanel.js'
 import { MarketingVideoPanel } from '../components/MarketingVideoPanel.js'
+import { GenerationModal } from '../components/GenerationModal.js'
 import styles from './PageView.module.css'
 
 interface PageContext {
@@ -68,7 +68,11 @@ function PageViewInner(): React.ReactElement {
   const [liveUrl, setLiveUrl] = useState<string | null>(hasRunningTest ? (initialTestJob.liveUrl ?? null) : null)
   const [statusMessage, setStatusMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'doc' | 'exploration' | 'video' | 'test' | 'marketing'>(hasRunningTest ? 'test' : 'doc')
+  const [activeTab, setActiveTab] = useState<'doc' | 'video' | 'test' | 'marketing'>(hasRunningTest ? 'test' : 'doc')
+  // The old "Generate" tab is now an action launched from the header CTA
+  // (and the Documentation tab empty-state) — opens a modal that wraps the
+  // briefing form + ScreenRecorder in a 2-step stepper.
+  const [generationModalOpen, setGenerationModalOpen] = useState(false)
   const [tryRunning, setTryRunning] = useState(false)
   const [tryStreamSteps, setTryStreamSteps] = useState<{ text: string; timestamp: number }[]>([])
   const [tryReport, setTryReport] = useState<TryDocReportDTO | null>(null)
@@ -370,7 +374,6 @@ function PageViewInner(): React.ReactElement {
       <div className={styles.pageHeader}>
         <div className={styles.tabBar}>
           <button className={`${styles.tab} ${activeTab === 'doc' ? styles.tabActive : ''}`} onClick={() => setActiveTab('doc')}>Documentation</button>
-          <button className={`${styles.tab} ${activeTab === 'exploration' ? styles.tabActive : ''}`} onClick={() => setActiveTab('exploration')}>Generate</button>
           <button
             className={`${styles.tab} ${activeTab === 'video' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('video')}
@@ -399,6 +402,23 @@ function PageViewInner(): React.ReactElement {
           </button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+          {/* Primary CTA — opens the generation modal. When the page has no
+              content yet this is the user's main next action; once a doc
+              exists the same button lets them regenerate from a new
+              recording. Phrased differently in each state to make intent
+              obvious. */}
+          <Button
+            size="sm"
+            variant={page.content ? 'ghost' : 'primary'}
+            onClick={() => setGenerationModalOpen(true)}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+              <path d="M12 2a4 4 0 0 0-4 4v6a4 4 0 0 0 8 0V6a4 4 0 0 0-4-4z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="22" />
+            </svg>
+            {page.content ? 'Regenerate' : 'Generate doc'}
+          </Button>
           <button
             type="button"
             onClick={() => { void api.pages.exportZip(projectId!, pageId!).catch((err: unknown) => { console.error('Export failed:', err) }) }}
@@ -436,6 +456,16 @@ function PageViewInner(): React.ReactElement {
           </div>
         </div>
       </div>
+
+      {/* Top-level error banner — surfaces failures from Try Doc + page
+          fetches that previously displayed inside the (now-removed) Generate
+          tab. Keep it inline so it can't be missed when tab-switching. */}
+      {error && (
+        <div className={styles.errorBanner}>
+          <span>{error}</span>
+          <button type="button" onClick={() => setError(null)} className={styles.errorBannerClose} aria-label="Dismiss">×</button>
+        </div>
+      )}
 
       {/* ===== DOCUMENTATION TAB ===== */}
       {activeTab === 'doc' && (
@@ -505,6 +535,35 @@ function PageViewInner(): React.ReactElement {
               )}
             </p>
           )}
+          {/* Empty-state CTA — replaces the now-removed "Generate" tab as
+              the user's main entry point when the page has no doc yet.
+              Without this the editor renders an empty canvas and users
+              don't realize they can generate from a recording. */}
+          {!page.content ? (
+            <div className={styles.emptyDocState}>
+              <div className={styles.emptyDocIcon}>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="9" y1="13" x2="15" y2="13" />
+                  <line x1="9" y1="17" x2="13" y2="17" />
+                </svg>
+              </div>
+              <h3 className={styles.emptyDocTitle}>This page has no documentation yet</h3>
+              <p className={styles.emptyDocText}>
+                Record your screen or upload a video — the AI extracts key screenshots and writes the doc for you.
+                You can also start writing manually below.
+              </p>
+              <div className={styles.emptyDocActions}>
+                <Button onClick={() => setGenerationModalOpen(true)} variant="primary">
+                  Generate from recording
+                </Button>
+                <Button onClick={() => setExternalRev((n) => n + 1)} variant="ghost">
+                  Write manually
+                </Button>
+              </div>
+            </div>
+          ) : null}
           <Suspense fallback={<div style={{ padding: '2rem' }}><Spinner size="md" /></div>}>
             <BlockEditor
               key={`${pageId}-${externalRev}`}
@@ -881,95 +940,6 @@ function PageViewInner(): React.ReactElement {
         </div>
       )}
 
-      {/* ===== GENERATE TAB ===== */}
-      {activeTab === 'exploration' && (
-        <div className={styles.tabContent}>
-          {/* Explanation */}
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-sm)', lineHeight: 1.6 }}>
-            Record your screen or upload a video — the AI analyzes every action, extracts key screenshots, and generates structured documentation automatically.
-          </p>
-          <div style={{
-            display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)',
-            padding: 'var(--space-sm) var(--space-md)',
-            background: 'var(--color-status-running-bg)',
-            border: '1px solid var(--color-status-running-border)',
-            borderRadius: 'var(--radius-lg)',
-            marginBottom: 'var(--space-lg)',
-            fontSize: 'var(--text-xs)', color: 'var(--color-status-running-text)', lineHeight: 1.5,
-          }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><circle cx="12" cy="12" r="10" /><path d="M12 16v-4" /><path d="M12 8h.01" /></svg>
-            <span>
-              <strong>Tip:</strong> For best results, narrate your actions while recording — describe what you&apos;re doing and why. The AI uses your voice to understand the context and generate better documentation.
-            </span>
-          </div>
-
-          {/* Two-column layout: briefing + actions */}
-          <div className={styles.generateGrid}>
-            {/* Left — Briefing */}
-            <div className={styles.section} style={{ margin: 0 }}>
-              <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
-                Briefing
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-                <div>
-                  <label className={styles.briefingFieldLabel}>Goal</label>
-                  <input type="text" value={page.goal ?? ''} onChange={(e) => {
-                    setPage({ ...page, goal: e.target.value })
-                    void debouncedPageUpdate({ goal: e.target.value })
-                  }} placeholder="e.g. Document the pricing and upgrade flow" className={styles.briefingInput} />
-                </div>
-
-                <div>
-                  <label className={styles.briefingFieldLabel}>What to document</label>
-                  <textarea
-                    value={(page.briefing as Record<string, unknown> | null)?.objective as string ?? ''}
-                    onChange={(e) => {
-                      const newBriefing = { ...(page.briefing ?? {}), objective: e.target.value } as typeof page.briefing
-                      setPage({ ...page, briefing: newBriefing })
-                      void debouncedPageUpdate({ briefing: newBriefing })
-                    }}
-                    placeholder="e.g. Document how a new user creates an account and completes onboarding"
-                    rows={2} className={styles.briefingTextarea}
-                  />
-                </div>
-
-                <div>
-                  <label className={styles.briefingFieldLabel}>What the agent can&apos;t see</label>
-                  <textarea
-                    value={(page.briefing as Record<string, unknown> | null)?.knowledge as string ?? ''}
-                    onChange={(e) => {
-                      const newBriefing = { ...(page.briefing ?? {}), knowledge: e.target.value } as typeof page.briefing
-                      setPage({ ...page, briefing: newBriefing })
-                      void debouncedPageUpdate({ briefing: newBriefing })
-                    }}
-                    placeholder="e.g. Free trial users can't access billing. Export only appears after 3 entries."
-                    rows={2} className={styles.briefingTextarea}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Right — Record / Upload */}
-            <div>
-              <ScreenRecorder
-                projectId={projectId!}
-                pageId={pageId!}
-                page={page}
-                hasExistingVoiceover={!!voiceoverUrl}
-                onComplete={async () => {
-                  await fetchData()
-                  await context.refetchPages()
-                  setActiveTab('doc')
-                }}
-              />
-            </div>
-          </div>
-
-          {error && <EmptyState title="Error" description={error} />}
-        </div>
-      )}
-
       {/* ===== TEST TAB ===== */}
       {activeTab === 'test' && (
         <div className={styles.tabContent}>
@@ -1103,6 +1073,32 @@ function PageViewInner(): React.ReactElement {
             />
           )}
         </div>
+      )}
+
+      {/* Generation modal — replaces the old "Generate" tab. Mounted at the
+          root so it overlays everything; ScreenRecorder fires onComplete
+          which closes the modal and lets the JobBadge handle progress. */}
+      {generationModalOpen && projectId && pageId && (
+        <GenerationModal
+          projectId={projectId}
+          pageId={pageId}
+          page={page}
+          hasExistingVoiceover={!!voiceoverUrl}
+          onGoalChange={(goal) => {
+            setPage({ ...page, goal })
+            void debouncedPageUpdate({ goal })
+          }}
+          onBriefingChange={(briefing) => {
+            setPage({ ...page, briefing })
+            void debouncedPageUpdate({ briefing })
+          }}
+          onComplete={async () => {
+            await fetchData()
+            await context.refetchPages()
+            setActiveTab('doc')
+          }}
+          onClose={() => setGenerationModalOpen(false)}
+        />
       )}
 
       {/* ===== MARKETING TAB =====

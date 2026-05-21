@@ -677,6 +677,85 @@
   align-items: center;
 }
 
+/* --- Top-level error banner --- */
+.errorBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-md);
+  margin: 0 0 var(--space-md);
+  background: var(--color-status-failed-bg, #fef2f2);
+  color: var(--color-status-failed-text, #b91c1c);
+  border: 1px solid var(--color-status-failed-border, #fecaca);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.errorBannerClose {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.errorBannerClose:hover {
+  opacity: 0.7;
+}
+
+/* --- Empty Documentation state ---
+   Shown above the BlockEditor when page.content is empty. Replaces the
+   silent blank-canvas problem (user lands on the page and doesn't know
+   they can generate from a recording) with an explicit CTA. */
+.emptyDocState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-md);
+  padding: var(--space-xl) var(--space-lg);
+  margin: var(--space-md) 0 var(--space-xl);
+  background: var(--color-bg);
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-xl);
+}
+
+.emptyDocIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-secondary);
+  color: var(--color-muted-fg);
+}
+
+.emptyDocTitle {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.emptyDocText {
+  margin: 0;
+  max-width: 480px;
+  font-size: var(--text-sm);
+  color: var(--color-muted-fg);
+  line-height: 1.55;
+}
+
+.emptyDocActions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: 4px;
+}
+
 /* --- Child page links (Notion-style) --- */
 .childPages {
   display: flex;
