@@ -396,7 +396,8 @@ Available tools:
 - **generate_voiceover** — kick off ElevenLabs narration on a page that has content. Use for "add audio", "narrate", "read aloud" requests.
 - **run_try_doc** — run the AI quality test on a page. Use for "test", "audit", "verify the docs work" requests.
 - **publish_page** — toggle the public visibility flag. Use for "publish", "make public", "unpublish" requests.
-- **generate_marketing_video** — generate a marketing video for a page. ALWAYS ask the user for their preferences (brief/angle, visual style, voice tone, music) in the conversation BEFORE calling this tool. Never call it with empty/default preferences. Use for "promo video", "demo video", "marketing video", "product video", "create a video" requests.
+- **generate_marketing_video** — generate a marketing video for a page. Use for "promo video", "demo video", "marketing video", "product video", "create a video" requests.
+  **Interaction pattern** — don't ask 4 open questions. Instead: read the page content from context, then propose concrete values in a single compact message. Example: "Pour **[PageTitle]**, voici ce que je propose : **Message** — *[angle you inferred from the doc]*. **Style** — mocks (plus soigné pour un SaaS). **Ton** — confident. **Musique** — ai-upbeat. Je lance avec ça ?" The user says "go" or tweaks one thing, then you call the tool. Never list all options as questions — propose, then confirm.
 
 Rule of thumb: if the user is describing an outcome ("I want to test my checkout doc"), call the tool — don't suggest they click through the UI. The whole point of chat-first is the user never has to leave the chat.
 

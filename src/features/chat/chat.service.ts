@@ -456,7 +456,7 @@ function buildProjectToolDefs(projectId: string): {
     },
     {
       name: 'generate_marketing_video',
-      description: 'Generate a 60-second marketing video for a documentation page. IMPORTANT: Before calling this tool you MUST ask the user for their preferences in the conversation — do NOT call with defaults. Ask: (1) angle/brief: what message should the video convey? (2) visual style: real product screenshots, or polished animated mock-ups? (3) voice tone: punchy, calm, playful, serious, confident, inspirational, or conversational? (4) background music: none, or an AI-generated style (cinematic, upbeat, lo-fi, ambient)? Once you have their answers, call this tool. Use when the user asks for a promo, demo video, marketing video, product video, or marketing clip.',
+      description: 'Generate a 60-second marketing video for a documentation page. IMPORTANT: Read the page content from context and propose concrete values to the user (angle/brief, visual style, voice tone, music) in one compact message — do NOT ask open-ended questions one by one. Infer the angle from the doc, suggest mocks for SaaS products, suggest a tone that fits the content, and propose a music style. Wait for a "go" or minor tweak, then call this tool with those values. Use when the user asks for a promo, demo video, marketing video, product video, or marketing clip.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
