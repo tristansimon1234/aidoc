@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, Spinner, ProgressLoader } from '../../../design-system/components/index.js'
+import { Button, Spinner, ProgressLoader, StepperFlow, type StepperStep } from '../../../design-system/components/index.js'
 import { api, ApiError } from '../../../shared/api/client.js'
 import { fetchMarketingVideo } from '../../../shared/api/db.js'
 import type { MarketingVideoSummaryDTO } from '../../../shared/api/client.js'
@@ -471,222 +471,254 @@ export function MarketingVideoPanel({ runId: initialRunId, pageId, pageTitle, fa
       >
         <div className={styles.formColumn}>
 
-      {/* === Brief === */}
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <span className={styles.cardTitle}>Creative brief</span>
-          <p className={styles.cardDescription}>
-            Tell the AI what angle to take. Skip if the doc speaks for itself.
-          </p>
-        </div>
-        <textarea
-          id="marketing-brief"
-          className={styles.briefTextarea}
-          value={userPrompt}
-          onChange={(e) => setUserPrompt(e.target.value)}
-          placeholder="e.g. Focus on the AI agent. Audience: B2B PMs. Tone: confident, slightly cheeky."
-          maxLength={800}
-          disabled={formLocked}
-        />
-      </div>
+      {/* The 4-step stepper replaces the previous "4 cards stacked + Generate
+       *  footer" layout. Walks the user through brief → visual → voice →
+       *  music with chat-bubble guidance so the form stops feeling like a
+       *  big static questionnaire. State still lives on the parent's
+       *  useStates — the stepper's own state is a no-op `{}` and each
+       *  render closes over the existing setters. The stepper's footer
+       *  drives the final Generate. */}
+      {(() => {
+        type _S = Record<string, never>
+        const initial: _S = {}
+        const steps: StepperStep<_S>[] = [
+          {
+            title: 'Brief',
+            message: hasManifest
+              ? "Tu veux changer l'angle ? Mets à jour le brief, sinon enchaîne — tes anciens choix sont conservés."
+              : "Dis-moi en une phrase l'angle marketing. Sur quoi je dois insister ? Pour qui ?",
+            render: () => (
+              <div className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <span className={styles.cardTitle}>Creative brief</span>
+                  <p className={styles.cardDescription}>
+                    Tell the AI what angle to take. Skip if the doc speaks for itself.
+                  </p>
+                </div>
+                <textarea
+                  id="marketing-brief"
+                  className={styles.briefTextarea}
+                  value={userPrompt}
+                  onChange={(e) => setUserPrompt(e.target.value)}
+                  placeholder="e.g. Focus on the AI agent. Audience: B2B PMs. Tone: confident, slightly cheeky."
+                  maxLength={800}
+                  disabled={formLocked}
+                  autoFocus
+                />
+              </div>
+            ),
+          },
+          {
+            title: 'Visuel',
+            message: runId
+              ? "Tu veux qu'on ancre la vidéo dans tes vraies captures, ou un rendu plus polished avec des mocks animés ?"
+              : "Pas de vidéo enregistrée sur cette page — je vais générer des mocks animés. Tu pourras passer en captures réelles après un enregistrement.",
+            render: () => (
+              <div className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <span className={styles.cardTitle}>Visual style</span>
+                  <p className={styles.cardDescription}>
+                    {runId
+                      ? 'Real screenshots ground the video in your product. Designed mocks look more polished but less specific.'
+                      : 'Record a video first to unlock real screenshots — for now, the AI generates designed mocks.'}
+                  </p>
+                </div>
+                <div className={styles.radioRow} role="radiogroup">
+                  {([
+                    { id: 'screenshots' as const, title: 'Real screenshots', subtitle: 'Grounded in your product UI' },
+                    { id: 'mocks' as const,       title: 'Designed mocks',    subtitle: 'AI-designed animated panels' },
+                  ]).map((opt) => {
+                    const selected = visualMode === opt.id
+                    const optDisabled = formLocked || (opt.id === 'screenshots' && !runId)
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => { if (!optDisabled) setVisualMode(opt.id) }}
+                        disabled={optDisabled}
+                        className={`${styles.radioCard} ${selected ? styles.radioCardSelected : ''}`}
+                      >
+                        <span className={styles.radioCardTitle}>{opt.title}</span>
+                        <span className={styles.radioCardSubtitle}>{opt.subtitle}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            ),
+          },
+          {
+            title: 'Voix',
+            message: "Qui doit porter la pitch ? Le ton règle à la fois la voix off et l'énergie du script.",
+            render: () => (
+              <div className={styles.card}>
+                <div className={styles.cardHeader}>
+                  <span className={styles.cardTitle}>Voice-over</span>
+                  <p className={styles.cardDescription}>
+                    ElevenLabs synthesizes a narration from the script. Disable to keep the video silent.
+                  </p>
+                </div>
+                <label className={styles.toggle}>
+                  <input
+                    type="checkbox"
+                    checked={withVoiceover}
+                    onChange={(e) => setWithVoiceover(e.target.checked)}
+                    disabled={formLocked}
+                  />
+                  Generate AI voice narration
+                </label>
 
-      {/* === Visual style === */}
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <span className={styles.cardTitle}>Visual style</span>
-          <p className={styles.cardDescription}>
-            {runId
-              ? 'Real screenshots ground the video in your product. Designed mocks look more polished but less specific.'
-              : 'Record a video first to unlock real screenshots — for now, the AI generates designed mocks.'}
-          </p>
-        </div>
-        <div className={styles.radioRow} role="radiogroup">
-          {([
-            { id: 'screenshots' as const, title: 'Real screenshots', subtitle: 'Grounded in your product UI' },
-            { id: 'mocks' as const,       title: 'Designed mocks',    subtitle: 'AI-designed animated panels' },
-          ]).map((opt) => {
-            const selected = visualMode === opt.id
-            const optDisabled = formLocked || (opt.id === 'screenshots' && !runId)
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => { if (!optDisabled) setVisualMode(opt.id) }}
-                disabled={optDisabled}
-                className={`${styles.radioCard} ${selected ? styles.radioCardSelected : ''}`}
-              >
-                <span className={styles.radioCardTitle}>{opt.title}</span>
-                <span className={styles.radioCardSubtitle}>{opt.subtitle}</span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
+                {withVoiceover && (
+                  <div className={styles.fieldGrid}>
+                    <div className={styles.field}>
+                      <span className={styles.fieldLabel}>Voice</span>
+                      <select
+                        className={styles.select}
+                        value={voiceId}
+                        onChange={(e) => setVoiceId(e.target.value)}
+                        disabled={formLocked || voices.length === 0}
+                      >
+                        <option value="">
+                          {voices.length === 0 ? 'Loading voices…' : 'Default — Sarah (clear, professional)'}
+                        </option>
+                        {voices.map((v) => (
+                          <option key={v.voiceId} value={v.voiceId}>
+                            {v.name}{v.category ? ` · ${v.category}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className={styles.field}>
+                      <span className={styles.fieldLabel}>Tone</span>
+                      <select
+                        className={styles.select}
+                        value={tone}
+                        onChange={(e) => setTone(e.target.value as VoiceTone)}
+                        disabled={formLocked}
+                      >
+                        {(Object.keys(TONE_LABELS) as VoiceTone[]).map((t) => (
+                          <option key={t} value={t}>{TONE_LABELS[t]}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ),
+          },
+          {
+            title: 'Musique',
+            message: "Dernière chose — la musique de fond. Génération IA en fonction du style, preset, upload, ou silence.",
+            validate: () => !(musicChoice === 'upload' && !musicUploadPath),
+            hint: () => 'Upload un MP3 avant de continuer (ou change le choix de musique).',
+            render: () => (
+              <>
+                <div className={styles.card}>
+                  <div className={styles.cardHeader}>
+                    <span className={styles.cardTitle}>Background music</span>
+                    <p className={styles.cardDescription}>
+                      Optional soundtrack mixed under the voice-over. Pick a preset, generate one with AI, or upload your own.
+                    </p>
+                  </div>
+                  <div className={musicChoice === 'none' ? '' : styles.fieldGrid}>
+                    <select
+                      className={styles.select}
+                      value={musicChoice}
+                      onChange={(e) => setMusicChoice(e.target.value)}
+                      disabled={formLocked}
+                    >
+                      <option value="none">None — voice-over only</option>
+                      {musicPresets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.mood ? ` · ${p.mood}` : ''}
+                        </option>
+                      ))}
+                      <option value="ai">Generate AI music</option>
+                      <option value="upload">Upload custom MP3…</option>
+                    </select>
+                    {musicChoice !== 'none' && (
+                      <div className={styles.field}>
+                        <span className={styles.fieldLabel}>Volume {Math.round(musicVolume * 100)}%</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={0.5}
+                          step={0.01}
+                          value={musicVolume}
+                          onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                          disabled={formLocked}
+                          title="0–50% — kept low so the voice-over stays audible"
+                          className={styles.volumeSlider}
+                        />
+                      </div>
+                    )}
+                  </div>
 
-      {/* === Voice-over === */}
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <span className={styles.cardTitle}>Voice-over</span>
-          <p className={styles.cardDescription}>
-            ElevenLabs synthesizes a narration from the script. Disable to keep the video silent.
-          </p>
-        </div>
-        <label className={styles.toggle}>
-          <input
-            type="checkbox"
-            checked={withVoiceover}
-            onChange={(e) => setWithVoiceover(e.target.checked)}
-            disabled={formLocked}
+                  {(musicChoice === 'ai' || musicChoice.startsWith('ai-')) && (
+                    <div className={styles.field}>
+                      <span className={styles.fieldLabel}>
+                        Music style <span className={styles.fieldHint}>optional · fine-tunes the AI prompt</span>
+                      </span>
+                      <input
+                        type="text"
+                        className={styles.textInput}
+                        value={aiMusicPrompt}
+                        onChange={(e) => setAiMusicPrompt(e.target.value)}
+                        placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
+                        maxLength={300}
+                        disabled={formLocked}
+                      />
+                    </div>
+                  )}
+
+                  {musicChoice === 'upload' && (
+                    <div className={styles.uploadRow}>
+                      <input
+                        type="file"
+                        accept="audio/mpeg,audio/mp3,audio/wav,audio/x-m4a"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) void handleMusicUpload(file)
+                        }}
+                        disabled={musicUploading || formLocked}
+                      />
+                      {musicUploading && <Spinner size="sm" />}
+                      {musicUploadName && !musicUploading && <span className={styles.uploadOk}>✓ {musicUploadName}</span>}
+                    </div>
+                  )}
+                </div>
+                {/* Summary right before the final action — Stripe Checkout
+                 *  pattern preserved from the previous footer. */}
+                <p className={styles.footerSummary} style={{ marginTop: 'var(--space-md)' }}>
+                  Generates a 45-second{' '}
+                  <strong>{visualMode === 'screenshots' ? 'screenshot-based' : 'designed-mock'}</strong>{' '}
+                  video
+                  {withVoiceover ? <> with a <strong>{TONE_LABELS[tone].split(' ')[0]?.toLowerCase()}</strong> voice-over</> : <> (no voice-over)</>}
+                  {musicChoice === 'none'
+                    ? ''
+                    : musicChoice === 'ai'
+                      ? ' and AI-generated music'
+                      : musicChoice === 'upload'
+                        ? ' and your uploaded music'
+                        : ` and the ${musicPresets.find((p) => p.id === musicChoice)?.name ?? 'selected'} preset`}
+                  .
+                </p>
+              </>
+            ),
+          },
+        ]
+        return (
+          <StepperFlow<_S>
+            steps={steps}
+            initialState={initial}
+            submitting={formLocked}
+            onComplete={() => { void handleGenerateAndRender() }}
+            finishLabel={showProgress ? 'Generating…' : hasManifest ? 'Regenerate' : 'Generate'}
           />
-          Generate AI voice narration
-        </label>
-
-        {withVoiceover && (
-          <div className={styles.fieldGrid}>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Voice</span>
-              <select
-                className={styles.select}
-                value={voiceId}
-                onChange={(e) => setVoiceId(e.target.value)}
-                disabled={formLocked || voices.length === 0}
-              >
-                <option value="">
-                  {voices.length === 0 ? 'Loading voices…' : 'Default — Sarah (clear, professional)'}
-                </option>
-                {voices.map((v) => (
-                  <option key={v.voiceId} value={v.voiceId}>
-                    {v.name}{v.category ? ` · ${v.category}` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Tone</span>
-              <select
-                className={styles.select}
-                value={tone}
-                onChange={(e) => setTone(e.target.value as VoiceTone)}
-                disabled={formLocked}
-              >
-                {(Object.keys(TONE_LABELS) as VoiceTone[]).map((t) => (
-                  <option key={t} value={t}>{TONE_LABELS[t]}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* === Music === */}
-      <div className={styles.card}>
-        <div className={styles.cardHeader}>
-          <span className={styles.cardTitle}>Background music</span>
-          <p className={styles.cardDescription}>
-            Optional soundtrack mixed under the voice-over. Pick a preset, generate one with AI, or upload your own.
-          </p>
-        </div>
-        <div className={musicChoice === 'none' ? '' : styles.fieldGrid}>
-          <select
-            className={styles.select}
-            value={musicChoice}
-            onChange={(e) => setMusicChoice(e.target.value)}
-            disabled={formLocked}
-          >
-            <option value="none">None — voice-over only</option>
-            {musicPresets.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}{p.mood ? ` · ${p.mood}` : ''}
-              </option>
-            ))}
-            <option value="ai">Generate AI music</option>
-            <option value="upload">Upload custom MP3…</option>
-          </select>
-          {musicChoice !== 'none' && (
-            <div className={styles.field}>
-              <span className={styles.fieldLabel}>Volume {Math.round(musicVolume * 100)}%</span>
-              <input
-                type="range"
-                min={0}
-                max={0.5}
-                step={0.01}
-                value={musicVolume}
-                onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
-                disabled={formLocked}
-                title="0–50% — kept low so the voice-over stays audible"
-                className={styles.volumeSlider}
-              />
-            </div>
-          )}
-        </div>
-
-        {(musicChoice === 'ai' || musicChoice.startsWith('ai-')) && (
-          <div className={styles.field}>
-            <span className={styles.fieldLabel}>
-              Music style <span className={styles.fieldHint}>optional · fine-tunes the AI prompt</span>
-            </span>
-            <input
-              type="text"
-              className={styles.textInput}
-              value={aiMusicPrompt}
-              onChange={(e) => setAiMusicPrompt(e.target.value)}
-              placeholder="e.g. trap drums and synth bass / minimal piano, no drums"
-              maxLength={300}
-              disabled={formLocked}
-            />
-          </div>
-        )}
-
-        {musicChoice === 'upload' && (
-          <div className={styles.uploadRow}>
-            <input
-              type="file"
-              accept="audio/mpeg,audio/mp3,audio/wav,audio/x-m4a"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) void handleMusicUpload(file)
-              }}
-              disabled={musicUploading || formLocked}
-            />
-            {musicUploading && <Spinner size="sm" />}
-            {musicUploadName && !musicUploading && <span className={styles.uploadOk}>✓ {musicUploadName}</span>}
-          </div>
-        )}
-      </div>
-
-      {/* === Footer / generate ===
-       *  Distinct from the cards above — sits as a clear "this is what
-       *  you're about to do" panel with a one-line summary of the
-       *  current selection above the primary CTA. Stripe Checkout
-       *  pattern: the user reads what they're confirming before
-       *  clicking. */}
-      <div className={styles.footer}>
-        <p className={styles.footerSummary}>
-          Generates a 45-second{' '}
-          <strong>{visualMode === 'screenshots' ? 'screenshot-based' : 'designed-mock'}</strong>{' '}
-          video
-          {withVoiceover ? <> with a <strong>{TONE_LABELS[tone].split(' ')[0]?.toLowerCase()}</strong> voice-over</> : <> (no voice-over)</>}
-          {musicChoice === 'none'
-            ? ''
-            : musicChoice === 'ai'
-              ? ' and AI-generated music'
-              : musicChoice === 'upload'
-                ? ' and your uploaded music'
-                : ` and the ${musicPresets.find((p) => p.id === musicChoice)?.name ?? 'selected'} preset`}
-          .
-        </p>
-        <div className={styles.actions}>
-          <Button
-            variant="primary"
-            onClick={() => void handleGenerateAndRender()}
-            disabled={formLocked || (musicChoice === 'upload' && !musicUploadPath)}
-          >
-            {showProgress ? 'Generating…' : hasManifest ? 'Regenerate video' : 'Generate marketing video'}
-          </Button>
-        </div>
-      </div>
+        )
+      })()}
         </div>{/* /formColumn */}
 
       {/* === Preview column === */}

@@ -23,9 +23,9 @@ import { useQuotaStatus } from '../../../shared/hooks/useQuotaStatus.js'
 import { NarratedPlayer } from '../components/NarratedPlayer.js'
 import { VideoTimeline } from '../components/VideoTimeline.js'
 import { TryDocReport } from '../components/TryDocReport.js'
-import { PreflightPanel } from '../components/PreflightPanel.js'
 import { MarketingVideoPanel } from '../components/MarketingVideoPanel.js'
 import { GenerationModal } from '../components/GenerationModal.js'
+import { TryDocStepper } from '../components/TryDocStepper.js'
 import styles from './PageView.module.css'
 
 interface PageContext {
@@ -943,83 +943,54 @@ function PageViewInner(): React.ReactElement {
       {/* ===== TEST TAB ===== */}
       {activeTab === 'test' && (
         <div className={styles.tabContent}>
-          {/* Not running — show config + run button or results */}
+          {/* Not running — show stepper-style config + last report.
+              Replaces the old two-column config/action layout. The stepper
+              guides the user through URL → context → preflight & run,
+              addressing the "forms are heavy, unguided" feedback. */}
           {!tryRunning && !analyzing && !(activeTryDocJob?.status === 'running') && (
             <>
-              {/* Two-column: config + action */}
-              <div className={styles.generateGrid}>
-                {/* Left — Test configuration */}
-                <TestConfig
-                  page={page}
-                  project={context.project}
-                  onBriefingChange={(newBriefing) => {
-                    setPage({ ...page, briefing: newBriefing })
-                    void debouncedPageUpdate({ briefing: newBriefing })
-                  }}
-                />
-
-                {/* Right — Run action + status */}
-                <div className={styles.section} style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                  <div>
-                    <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-sm)' }}>
-                      Documentation Test
-                    </div>
-                    <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', margin: '0 0 var(--space-lg)', lineHeight: 1.5 }}>
-                      An AI agent follows your documentation step-by-step as a naive user on the live application and reports what works and what doesn&apos;t.
-                    </p>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-                    {tryReport && !preflightResult && (
-                      <div style={{
-                        padding: 'var(--space-sm) var(--space-md)', background: 'var(--color-secondary)',
-                        borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)',
-                      }}>
-                        Last tested {new Date(tryReport.executedAt).toLocaleDateString()} — {tryReport.summary.overallVerdict}
-                      </div>
-                    )}
-                    {preflightLoading && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', padding: 'var(--space-sm) 0' }}>
-                        <Spinner size="sm" />
-                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)' }}>Checking test readiness...</span>
-                      </div>
-                    )}
-                    {!preflightResult && !preflightLoading && (
-                      <Button
-                        onClick={() => void (async () => {
-                          if (quotaBlocked) {
-                            await confirm({
-                              title: 'Monthly quota exhausted',
-                              message: `Your ${quota.planName ?? 'current'} plan is at ${Math.round(quota.percent)}%. Upgrade in Account → Billing to run more tests.`,
-                              confirmLabel: 'OK',
-                              cancelLabel: 'Dismiss',
-                              variant: 'primary',
-                            })
-                            return
-                          }
-                          await handlePreflight()
-                        })()}
-                        disabled={!page.content || quotaBlocked}
-                      >
-                        {tryReport ? 'Re-test documentation' : 'Run test'}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Pre-flight check results */}
-              {preflightResult && (
-                <div style={{ marginTop: 'var(--space-md)' }}>
-                  <PreflightPanel
-                    result={preflightResult}
-                    onConfirm={() => { setPreflightResult(null); void handleTryDoc() }}
-                    onDismiss={() => setPreflightResult(null)}
-                  />
+              {!page.content && (
+                <div className={styles.errorBanner} style={{ margin: '0 0 var(--space-md)' }}>
+                  <span>This page has no documentation yet — generate one first so the test agent has something to follow.</span>
                 </div>
               )}
+              {tryReport && (
+                <div style={{
+                  padding: 'var(--space-sm) var(--space-md)',
+                  marginBottom: 'var(--space-md)',
+                  background: 'var(--color-secondary)',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-muted-fg)',
+                }}>
+                  Last tested {new Date(tryReport.executedAt).toLocaleDateString()} — verdict: <strong>{tryReport.summary.overallVerdict}</strong>
+                </div>
+              )}
+              <TryDocStepper
+                page={page}
+                project={context.project}
+                preflightResult={preflightResult}
+                preflightLoading={preflightLoading}
+                quotaBlocked={quotaBlocked}
+                onBriefingChange={(newBriefing) => {
+                  setPage({ ...page, briefing: newBriefing })
+                  void debouncedPageUpdate({ briefing: newBriefing })
+                }}
+                onRunPreflight={handlePreflight}
+                onRunTest={() => void handleTryDoc()}
+                onDismissPreflight={() => setPreflightResult(null)}
+                onQuotaBlocked={() => {
+                  void confirm({
+                    title: 'Monthly quota exhausted',
+                    message: `Your ${quota.planName ?? 'current'} plan is at ${Math.round(quota.percent)}%. Upgrade in Account → Billing to run more tests.`,
+                    confirmLabel: 'OK',
+                    cancelLabel: 'Dismiss',
+                    variant: 'primary',
+                  })
+                }}
+              />
 
-              {/* Report below */}
+              {/* Last test report — kept below the stepper for context */}
               {tryReport && (
                 <div style={{ marginTop: 'var(--space-md)' }}>
                   <TryDocReport report={tryReport} />
@@ -1116,87 +1087,6 @@ function PageViewInner(): React.ReactElement {
           />
         </div>
       )}
-    </div>
-  )
-}
-
-// --- Test Configuration ---
-
-function TestConfig({ page, project, onBriefingChange }: {
-  page: DocPageDTO
-  project: ProjectDTO
-  onBriefingChange: (briefing: DocPageDTO['briefing']) => void
-}): React.ReactElement {
-  const briefing = page.briefing as Record<string, unknown> | null
-  const testUrl = (briefing?.testUrl as string) ?? ''
-  const testNotes = (briefing?.testNotes as string) ?? ''
-  const projectResources = project.resources ?? []
-  const selectedResources = (briefing?.selectedResources as number[]) ?? []
-
-  const update = (field: string, value: unknown): void => {
-    onBriefingChange({ ...(page.briefing ?? {}), [field]: value } as typeof page.briefing)
-  }
-
-  const toggleResource = (index: number): void => {
-    const next = selectedResources.includes(index)
-      ? selectedResources.filter((i) => i !== index)
-      : [...selectedResources, index]
-    update('selectedResources', next)
-  }
-
-  return (
-    <div className={styles.section} style={{ marginBottom: 'var(--space-md)' }}>
-      <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-fg)', marginBottom: 'var(--space-md)' }}>
-        Test Configuration
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
-        <div>
-          <label className={styles.briefingFieldLabel}>Test URL</label>
-          <input type="text"
-            value={testUrl || page.startUrl || project.baseUrl || ''}
-            onChange={(e) => update('testUrl', e.target.value)}
-            placeholder={page.startUrl ?? project.baseUrl ?? 'https://...'}
-            className={styles.briefingInput}
-            style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
-          />
-        </div>
-        <div>
-          <label className={styles.briefingFieldLabel}>Additional context</label>
-          <textarea
-            value={testNotes}
-            onChange={(e) => update('testNotes', e.target.value)}
-            placeholder="e.g. Test with an expired subscription. The Reset button should show a confirmation dialog."
-            rows={2} className={styles.briefingTextarea}
-          />
-        </div>
-
-        {/* Project resources — checkboxes to select which ones to use */}
-        <div>
-          <label className={styles.briefingFieldLabel} style={{ margin: 0 }}>Resources</label>
-          {projectResources.length > 0 ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-xs)', marginTop: 'var(--space-xs)' }}>
-              {projectResources.map((r, i) => (
-                <label key={i} style={{
-                  display: 'flex', alignItems: 'center', gap: 'var(--space-sm)',
-                  padding: '6px 8px', background: 'var(--color-secondary)', borderRadius: 'var(--radius-md)',
-                  fontSize: 'var(--text-xs)', cursor: 'pointer',
-                  border: selectedResources.includes(i) ? '1px solid var(--color-primary)' : '1px solid transparent',
-                }}>
-                  <input type="checkbox" checked={selectedResources.includes(i)}
-                    onChange={() => toggleResource(i)}
-                    style={{ accentColor: 'var(--color-primary)' }} />
-                  <span style={{ fontFamily: 'var(--font-mono)', textTransform: 'uppercase', fontSize: '10px', color: 'var(--color-muted-fg)' }}>{r.type}</span>
-                  <span style={{ color: 'var(--color-fg)' }}>{r.label || r.value.split('/').pop()}</span>
-                </label>
-              ))}
-            </div>
-          ) : (
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--color-muted-fg)', fontStyle: 'italic', margin: 'var(--space-xs) 0 0' }}>
-              No resources configured. Add files, URLs, or notes in Project Settings.
-            </p>
-          )}
-        </div>
-      </div>
     </div>
   )
 }
