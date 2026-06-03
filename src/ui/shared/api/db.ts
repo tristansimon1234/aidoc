@@ -40,8 +40,8 @@ export async function fetchPageFull(pageId: string): Promise<{
 }> {
   const [pageResult, runResult, docResult] = await Promise.all([
     supabase.from('doc_pages').select('*').eq('id', pageId).single(),
-    supabase.from('runs').select('*').eq('doc_page_id', pageId).not('feature_name', 'like', '[Test]%').order('created_at', { ascending: false }).limit(1).single(),
-    supabase.from('generated_docs').select('*').eq('doc_page_id', pageId).order('updated_at', { ascending: false }).limit(1).single(),
+    supabase.from('runs').select('*').eq('doc_page_id', pageId).not('feature_name', 'like', '[Test]%').order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('generated_docs').select('*').eq('doc_page_id', pageId).order('updated_at', { ascending: false }).limit(1).maybeSingle(),
   ])
 
   if (pageResult.error) throw new Error(pageResult.error.message)
@@ -72,7 +72,7 @@ export async function fetchPageFull(pageId: string): Promise<{
   // If no page-level doc, try run-level
   let doc = docResult.data && !docResult.error ? mapDoc(docResult.data) : null
   if (!doc && latestRun) {
-    const { data, error } = await supabase.from('generated_docs').select('*').eq('run_id', latestRun.id).single()
+    const { data, error } = await supabase.from('generated_docs').select('*').eq('run_id', latestRun.id).maybeSingle()
     if (data && !error) doc = mapDoc(data)
   }
 
@@ -319,7 +319,7 @@ export async function fetchLatestTestReport(pageId: string): Promise<TryDocRepor
     .like('feature_name', '[Test]%')
     .order('created_at', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
   if (error || !data) return null
   const summary = data.summary_json as Record<string, unknown> | null
