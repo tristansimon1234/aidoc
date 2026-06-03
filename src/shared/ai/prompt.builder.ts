@@ -883,7 +883,17 @@ export function buildVideoAnalysisPrompt(opts?: { segmentSeconds?: number }): st
     stepGuidance = `- This clip is about ${minutes} minute(s) long. Aim for roughly ${lo}-${hi} key steps — only the meaningful state changes, not every interaction.`
   }
 
-  return `Analyze this screen recording of a web application. Identify the KEY steps — focus on significant actions that a user would need to document, not every micro-interaction.
+  return `Analyze this screen recording. It may be a clean product screencast OR a longer recording — a sales call, meeting, webinar, or Loom — that CONTAINS a live product demo. Your job is to document the PRODUCT DEMO only: identify the KEY steps of how the product/application is used, not every micro-interaction.
+
+SCOPE — what to document vs ignore:
+- Document ONLY the segments where the actual product / application interface is on screen and being used (clicking through the app, filling forms, navigating features, showing results).
+- EXCLUDE entirely — create NO steps for:
+  • Video-call / meeting framing: webcam tiles, gallery or speaker view, "join meeting", waiting rooms, screen-share prompts, Zoom / Google Meet / Teams chrome.
+  • Introductions, greetings, small talk, agenda, pricing or commercial discussion, Q&A, and any talking-head segment where the product is not on screen.
+  • Pitch / marketing slide decks, title cards, slide presentations.
+- Begin the steps when the product UI first appears and stop when it leaves the screen. The product demo may be only a portion of a long recording — that portion is all that matters.
+- If the product interface is never actually shown, return an empty "steps" array.
+- Write each step as a product walkthrough instruction: teach a reader how to use the feature that was demonstrated, not "the presenter said hello".
 
 GROUPING RULES:
 - Group related actions into ONE step (e.g. "typed email, typed password, clicked Sign In" → one step: "User logged in")
