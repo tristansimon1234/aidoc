@@ -4,9 +4,11 @@ import { createClient } from '@supabase/supabase-js'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { GoogleAIFileManager } from '@google/generative-ai/server'
 import ws from 'ws'
-import { writeFileSync, readFileSync, unlinkSync, mkdirSync, readdirSync } from 'node:fs'
+import { writeFileSync, readFileSync, unlinkSync, mkdirSync, readdirSync, createWriteStream } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, basename } from 'node:path'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 
 const app = express()
 app.use(express.json({ limit: '300mb' }))
@@ -45,6 +47,19 @@ async function downloadVideo(supabase, videoPath) {
 async function uploadFile(supabase, path, buffer, contentType) {
   const { error } = await supabase.storage.from('artifacts').upload(path, buffer, { contentType, upsert: true })
   if (error) throw new Error(`Upload failed: ${error.message}`)
+}
+
+// Helper: stream a (possibly multi-GB) object from storage straight to a local
+// file, without ever holding it in memory. `downloadVideo` above buffers the
+// whole object into a Buffer, which OOM-kills the container on a 2.6 GB source.
+// We mint a short-lived signed URL (works for private buckets too) and pipe the
+// response body to disk — constant memory regardless of file size.
+async function downloadToFile(supabase, videoPath, destPath) {
+  const { data, error } = await supabase.storage.from('artifacts').createSignedUrl(videoPath, 1800)
+  if (error || !data?.signedUrl) throw new Error(`Signed URL failed: ${error?.message ?? 'no url'}`)
+  const res = await fetch(data.signedUrl)
+  if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status} ${res.statusText}`)
+  await pipeline(Readable.fromWeb(res.body), createWriteStream(destPath))
 }
 
 /**
@@ -777,15 +792,20 @@ async function runAnalysisPipeline(params) {
   const tempFiles = []
   const start = Date.now()
   try {
+    // Log BEFORE the download so the stdout shows the background task actually
+    // started — previously the first log came only after the (multi-GB)
+    // download, so an OOM mid-download left zero trace beyond the 202.
+    console.log(`[analyze] start run=${runId} — downloading ${videoPath}`)
     const supabase = getSupabase(body)
-    const sourceBuffer = await downloadVideo(supabase, videoPath)
-    console.log(`[analyze] run=${runId} source ${(sourceBuffer.length / 1024 / 1024).toFixed(1)}MB`)
 
     const ext = videoPath.substring(videoPath.lastIndexOf('.')) || '.mp4'
     const tmpIn = join(tmpdir(), `analyze-in-${Date.now()}${ext}`)
     const tmpCompressed = join(tmpdir(), `analyze-c-${Date.now()}.mp4`)
     tempFiles.push(tmpIn, tmpCompressed)
-    writeFileSync(tmpIn, sourceBuffer)
+
+    // Stream the source straight to disk — never hold it in memory.
+    await downloadToFile(supabase, videoPath, tmpIn)
+    console.log(`[analyze] run=${runId} downloaded → ${tmpIn}`)
 
     // 1. Compress/downscale below Gemini's 2 GB limit.
     await compressForAnalysis(tmpIn, tmpCompressed)
