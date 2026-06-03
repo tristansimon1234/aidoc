@@ -420,6 +420,7 @@ export async function analyzeVideoWithGemini(
     generationConfig: { maxOutputTokens: 16384 },
   })
 
+  const { buildVideoAnalysisPrompt } = await import('./prompt.builder.js')
   const result = await withRetry(() => model.generateContent([
     {
       fileData: {
@@ -428,56 +429,7 @@ export async function analyzeVideoWithGemini(
       },
     },
     {
-      text: `Analyze this screen recording of a web application. Identify the KEY steps — focus on significant actions that a user would need to document, not every micro-interaction.
-
-GROUPING RULES:
-- Group related actions into ONE step (e.g. "typed email, typed password, clicked Sign In" → one step: "User logged in")
-- Skip trivial actions: scrolling without purpose, mouse movements, brief hovers
-- Skip repeated similar actions (e.g. scrolling through a list → one step)
-- Aim for 5-10 steps for a typical 1-3 minute video. More only if the video covers many truly different features.
-- Each step should represent a meaningful state change or user accomplishment
-
-For each step:
-1. Provide the timestamp as a NUMBER OF SECONDS (integer or decimal). You MUST convert minutes to seconds:
-   - 45 seconds → 45
-   - 1 minute 27 seconds → 87 (= 1×60 + 27), NOT 127
-   - 2 minutes 8 seconds → 128 (= 2×60 + 8), NOT 208
-   Pick the SINGLE FRAME a doc author would screenshot to illustrate this step — the frame that shows the user WHAT TO DO, not the consequence (the consequence belongs to the NEXT step's screenshot). Three concrete patterns:
-   - **CTA / button click** (Submit, Save, "Continue", a navigation link) → frame AT the click — the button is still visible on the current page, the cursor / pointer is on or near it, the surrounding context is intact. NOT after the result loads — the result is the next step's frame, capturing it here would just duplicate it.
-   - **Form fill / input** (typing in a field, picking a date, choosing from a select) → frame where the field is fully filled with the new value, captured BEFORE the user moves to the next field or clicks anything else. The reader needs to see what value goes in.
-   - **Presentation of an element** (opening a menu, modal, tooltip, panel; revealing a section; showing a feature) → frame where ALL of the element's contents are fully visible — animations done, dropdown fully expanded, modal centred and stable.
-   Do NOT systematically pick "1 second after the action" — pick the frame that's most informative for this specific step's intent. Never so late that the next step has already begun.
-2. Describe what's visible on screen at that frame (UI elements, page layout, text)
-3. Describe what the user accomplished (not each individual click — the outcome)
-4. If there's narration/voiceover, transcribe what's being said at that moment
-
-IMPORTANT:
-- Steps MUST be in chronological order (timestamps ascending)
-- The timestamp MUST point to the most illustrative frame for the step, NOT a generic "+1s after click" offset
-- Skip idle moments or pauses where nothing changes
-- Timestamps are in SECONDS — convert from MM:SS to seconds (e.g. 2:30 = 150, not 230)
-
-Return ONLY valid JSON (no markdown fences):
-{
-  "steps": [
-    {
-      "timestamp": 3,
-      "screenDescription": "The dashboard with a list of projects and a 'New Project' button",
-      "userAction": "User navigated to the dashboard after logging in",
-      "narration": null
-    },
-    {
-      "timestamp": 15,
-      "screenDescription": "Project creation form with name and URL fields filled in",
-      "userAction": "User created a new project by entering the name and URL",
-      "narration": null
-    }
-  ],
-  "productName": "Name of the product shown in the recording",
-  "summary": "2-3 sentence summary of what this recording covers"
-}
-
-Remember: fewer, more meaningful steps is better than many granular ones.`,
+      text: buildVideoAnalysisPrompt(),
     },
   ]))
 

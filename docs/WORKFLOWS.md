@@ -20,6 +20,36 @@ Edit Docs → Generate Voice-over → Chat with Docs → Enable Widget → Embed
 7. Gemini generates documentation from enriched steps (`POST /runs/:id/generate-doc`)
 8. Doc auto-copied to `doc_pages.content`, page embeddings auto-indexed for chat
 
+### Long / large recordings (async pipeline)
+
+Short recordings run inline on Vercel. But a long demo (e.g. a 45-min prospect
+walkthrough, multiple GB) hits three hard walls inline: the 200 MB client cap,
+Gemini's **2 GB Files API limit**, and Vercel's **300 s** function cap. When the
+async pipeline is configured (`VIDEO_SERVICE_URL` + `PUBLIC_API_URL` +
+`INTERNAL_CALLBACK_SECRET`), `POST /runs/:id/analyze-video?generateDoc=true`
+hands the whole job to the Railway video-service instead:
+
+1. Client cap raised to 4 GB; the file still uploads **directly** to Supabase
+   Storage via signed URL (never through the API server).
+2. Doclee creates the doc-gen job and calls the video-service
+   `POST /process-and-analyze` (passing the Gemini key + the analysis prompt
+   built in `prompt.builder.ts`), which returns `202` immediately. Doclee
+   returns `{ jobId }` to the client right away.
+3. Off-Vercel (no 300 s cap) the worker: downloads → **compresses/downscales**
+   (720p, fps 2, low-bitrate audio) below Gemini's 2 GB limit → **chunks** if
+   longer than ~40 min → runs Gemini per chunk → merges + corrects timestamps →
+   extracts frames → uploads the compressed playable copy.
+4. The worker POSTs the merged result back to
+   `POST /internal/video-analysis-callback` (auth: `x-callback-secret`).
+5. Doclee Zod-validates, persists run steps + summary, runs `generateDoc`,
+   publishes the page, and **completes the job**. The UI tracks completion via
+   the existing jobs-table Realtime channel — same contract as the inline path.
+
+The Gemini call physically runs in the worker, but the prompt is still authored
+in `prompt.builder.ts` (`buildVideoAnalysisPrompt`) and shipped in the request,
+and the result is Zod-validated + persisted by Doclee — so the prompt /
+validation / repository rules still hold.
+
 ## Chat with Documentation (RAG)
 
 **Trigger**: User clicks 💬 in project sidebar

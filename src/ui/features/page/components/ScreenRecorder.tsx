@@ -10,6 +10,15 @@ type Status = 'idle' | 'recording' | 'uploading' | 'analyzing' | 'extracting' | 
 
 const MAX_RECORDING_SECONDS = 300 // 5 minutes max
 
+// Max size for an *uploaded* video file. Recordings made in-browser stay small
+// (low bitrate, 5-min cap), but uploads can be long-form demos. The file goes
+// straight to Supabase Storage via a signed URL — it never passes through the
+// API server — so the ceiling here is really the storage bucket limit and how
+// large a file the video-service can afford to download. The async pipeline
+// compresses well below Gemini's 2 GB limit before analysis, so multi-GB
+// source files are fine. Keep a guard so a stray 50 GB drop is rejected early.
+const MAX_UPLOAD_MB = 4096 // 4 GB
+
 /** DOM event captured by the Chrome extension's content script */
 interface DomEvent {
   type: 'click' | 'input' | 'navigation' | 'scroll' | 'load'
@@ -315,8 +324,8 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.size > 200 * 1024 * 1024) {
-      setError('Video too large (max 200MB)')
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setError(`Video too large (max ${MAX_UPLOAD_MB / 1024} GB)`)
       return
     }
 

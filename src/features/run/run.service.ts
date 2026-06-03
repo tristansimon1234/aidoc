@@ -609,6 +609,154 @@ export async function analyzeVideo(runId: string, videoPath: string): Promise<{ 
   }
 }
 
+/**
+ * Whether the async long-video pipeline (compress + chunk + Gemini off Vercel)
+ * is available. Requires the video-service plus the callback wiring; when any
+ * piece is missing we fall back to the inline path so short recordings keep
+ * working without extra config.
+ */
+export async function isAsyncVideoPipelineEnabled(): Promise<boolean> {
+  const { env } = await import('../../shared/config/env.js')
+  const { isVideoServiceConfigured } = await import('../../shared/video/video.client.js')
+  return Boolean(
+    isVideoServiceConfigured() &&
+      env.PUBLIC_API_URL &&
+      env.INTERNAL_CALLBACK_SECRET &&
+      env.GEMINI_API_KEY,
+  )
+}
+
+/**
+ * Hand a recording off to the video-service for async processing. Returns once
+ * the worker has accepted the job (HTTP 202); the heavy work (compress, chunk,
+ * Gemini, frame extraction) runs out-of-band on Railway and reports back via
+ * `finalizeExternalVideoAnalysis`. The job row stays `running` until then.
+ *
+ * The recording stays in `running` so the UI shows progress; a failure to even
+ * dispatch is surfaced to the caller (which fails the job).
+ */
+export async function dispatchAsyncVideoAnalysis(input: {
+  runId: string
+  videoPath: string
+  jobId: string
+  triggeredByUserId: string | null
+}): Promise<void> {
+  const { env } = await import('../../shared/config/env.js')
+  const { processAndAnalyze } = await import('../../shared/video/video.client.js')
+  const { buildVideoAnalysisPrompt } = await import('../../shared/ai/prompt.builder.js')
+
+  if (!env.PUBLIC_API_URL || !env.INTERNAL_CALLBACK_SECRET || !env.GEMINI_API_KEY) {
+    throw new Error('Async video pipeline is not configured')
+  }
+
+  await runRepo.updateRunStatus(input.runId, 'running')
+
+  // The worker analyses each ~10-minute chunk independently, so the prompt is
+  // built for a segment of that length rather than the whole recording.
+  const CHUNK_SECONDS = 600
+  const callbackUrl = `${env.PUBLIC_API_URL.replace(/\/$/, '')}/internal/video-analysis-callback`
+
+  await processAndAnalyze({
+    runId: input.runId,
+    videoPath: input.videoPath,
+    jobId: input.jobId,
+    triggeredByUserId: input.triggeredByUserId,
+    geminiApiKey: env.GEMINI_API_KEY,
+    geminiModel: 'gemini-2.5-flash',
+    analysisPrompt: buildVideoAnalysisPrompt({ segmentSeconds: CHUNK_SECONDS }),
+    callbackUrl,
+    callbackSecret: env.INTERNAL_CALLBACK_SECRET,
+    chunkSeconds: CHUNK_SECONDS,
+  })
+}
+
+/**
+ * Persist the result of an async video analysis (delivered by the
+ * video-service callback) and run the rest of the doc pipeline: write the run
+ * steps + summary, generate the doc, publish the linked page, and complete the
+ * job. Mirrors the inline `analyze-video` + `generate-doc` path, minus the
+ * analysis itself (already done off-Vercel). The worker has already corrected
+ * timestamps, sorted, clamped and extracted frames — we trust the validated
+ * shape, not the values, and simply persist.
+ */
+export async function finalizeExternalVideoAnalysis(payload: {
+  runId: string
+  jobId: string
+  triggeredByUserId: string | null
+  productName: string
+  summary: string
+  videoPath?: string
+  steps: { timestamp: number; screenDescription: string; userAction: string; narration: string | null; screenshotPath: string | null }[]
+}): Promise<void> {
+  const { completeJob, failJob } = await import('./job.service.js')
+
+  try {
+    const run = await runRepo.findRunById(payload.runId)
+    if (!run) throw new NotFoundError('Run')
+
+    if (payload.steps.length === 0) {
+      throw new Error('Video analysis returned no steps')
+    }
+
+    const sortedSteps = [...payload.steps].sort((a, b) => a.timestamp - b.timestamp)
+    const timestamps = sortedSteps.map((s) => s.timestamp)
+
+    for (let i = 0; i < sortedSteps.length; i++) {
+      const s = sortedSteps[i]!
+      const narrationText = s.narration ? `\nNarration: ${s.narration}` : ''
+      await runRepo.createRunStep({
+        runId: payload.runId,
+        stepIndex: i,
+        title: s.userAction,
+        action: s.userAction,
+        observation: `${s.screenDescription}${narrationText}`,
+        screenshotPath: s.screenshotPath ?? undefined,
+        status: 'completed',
+      })
+    }
+
+    await runRepo.updateRunSummary(payload.runId, {
+      sections: [{
+        url: 'video',
+        label: payload.productName || run.featureName,
+        status: 'documented',
+        stepCount: sortedSteps.length,
+      }],
+      blockers: [],
+      agentMessage: payload.summary,
+      videoPath: payload.videoPath ?? undefined,
+      stepTimestamps: timestamps,
+    })
+
+    await runRepo.updateRunStatus(payload.runId, 'completed')
+
+    // Generate the doc + publish the page — same as the inline generateDoc branch.
+    await generateDoc(payload.runId, payload.triggeredByUserId)
+    if (run.docPageId) {
+      const { updatePage } = await import('../page/page.repository.js')
+      await updatePage(run.docPageId, { status: 'published' })
+    }
+
+    await completeJob(payload.jobId)
+  } catch (err) {
+    console.error(`[video] Finalize failed for run ${payload.runId}:`, err)
+    await runRepo.updateRunStatus(payload.runId, 'failed').catch(() => {})
+    await failJob(payload.jobId, (err as Error).message).catch(() => {})
+    throw err
+  }
+}
+
+/** Mark an async analysis job failed when the worker reports an error. */
+export async function failExternalVideoAnalysis(input: {
+  runId: string
+  jobId: string
+  error: string
+}): Promise<void> {
+  const { failJob } = await import('./job.service.js')
+  await runRepo.updateRunStatus(input.runId, 'failed').catch(() => {})
+  await failJob(input.jobId, input.error).catch(() => {})
+}
+
 
 export async function getRun(id: string): Promise<Run> {
   const run = await runRepo.findRunById(id)

@@ -11,6 +11,17 @@ const EnvSchema = z.object({
   GEMINI_API_KEY: z.string().min(1),
   ELEVENLABS_API_KEY: z.string().optional(),
   VIDEO_SERVICE_URL: z.string().url().optional(),
+  // Public base URL of this backend's own API (e.g. https://app.doclee.tech/api).
+  // Passed to the video-service so its async worker can call back into
+  // /internal/video-analysis-callback once a long recording finishes
+  // processing. Required for the async long-video path; when unset the
+  // analyze-video route falls back to the inline (Vercel-bound) path.
+  PUBLIC_API_URL: z.string().url().optional(),
+  // Shared secret for the internal video-analysis callback. The video-service
+  // echoes it back in the `x-callback-secret` header; the callback route
+  // rejects anything that doesn't match (timing-safe). Required for the async
+  // long-video path; unset disables it.
+  INTERNAL_CALLBACK_SECRET: z.string().optional(),
   // Comma-separated list of emails allowed on admin-only routes.
   ADMIN_EMAILS: z.string().optional(),
   // Transactional email (team invites, future quota alerts, etc.)
