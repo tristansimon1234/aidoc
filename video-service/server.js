@@ -618,11 +618,9 @@ app.post('/render-marketing-video', async (req, res) => {
 // RAM recommended). The compressed copy used for chunking/frames is small.
 // ---------------------------------------------------------------------------
 
-const ANALYSIS_MAX_OUTPUT_TOKENS = 16384
-// A recording shorter than this is analysed in a single Gemini call; longer
-// ones are split into `chunkSeconds`-sized pieces. 40 min sits comfortably
-// inside Gemini 2.5 Flash's video context.
-const MAX_SINGLE_SECONDS = 2400
+// High output budget so a dense, exhaustive analysis of a ~10-min chunk isn't
+// truncated (many steps × verbose descriptions). Gemini 2.5 Flash supports it.
+const ANALYSIS_MAX_OUTPUT_TOKENS = 32768
 
 /** ffprobe duration (seconds) for a local file. */
 function probeDuration(path) {
@@ -819,10 +817,14 @@ async function runAnalysisPipeline(params) {
     const compressedPath = `runs/${runId}/analysis-source.mp4`
     await uploadFile(supabase, compressedPath, readFileSync(tmpCompressed), 'video/mp4')
 
-    // 3. Decide chunking.
+    // 3. Chunk into ~chunkSeconds segments. We split EVERY recording longer
+    //    than one chunk (not just very long ones) so each segment gets its own
+    //    dedicated, exhaustive Gemini pass with the full output-token budget —
+    //    a single 38-min call would under-cover and risk truncation. A short
+    //    recording (≤ one chunk) analyses the compressed file directly.
     const chunkLen = chunkSeconds && chunkSeconds > 0 ? chunkSeconds : 600
     const chunks = []
-    if (duration <= MAX_SINGLE_SECONDS) {
+    if (duration <= chunkLen) {
       chunks.push({ start: 0, len: duration, path: tmpCompressed })
     } else {
       for (let s = 0; s < duration; s += chunkLen) {

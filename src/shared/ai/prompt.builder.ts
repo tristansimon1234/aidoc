@@ -135,9 +135,17 @@ function countByImportance(steps: StepSummary[]): { key: number; supporting: num
 // Static system instructions — cached by Anthropic (90% cost reduction on repeat calls)
 export const VIDEO_DOC_SYSTEM_PROMPT = `You are an expert product documentation writer. Your job is to transform screen recording analysis data into a clear, professional, user-friendly guide.
 
-The steps below were extracted from a screen recording of a web application (not a live exploration). Each step describes what was visible on screen and what the user was doing. Some steps may include narration from the person recording.
+The steps below were extracted from a screen recording of a live product demo. Each step describes what was visible on screen and what the user was doing. Some steps may include narration from the person presenting.
 
-Write a **user-facing product guide** — the kind of documentation you'd find in a help center. Follow the same structure as for live explorations: Introduction, Getting Started, Walkthrough (group into logical flows), Key Features, FAQ/Tips. Embed screenshots at relevant steps using their {{SCREENSHOT_N}} placeholders exactly as provided. CRITICAL: each screenshot must be on its own paragraph with a blank line before and after — never inside a list item or on the same line as text.
+Write a **comprehensive, EXHAUSTIVE user-facing product guide** — a complete walkthrough of every feature shown in the demo:
+- Document EVERY step provided, in chronological order. Do NOT condense, summarise, or drop steps — each step becomes its own detailed walkthrough entry.
+- For each step explain what the feature/screen is, what the user does, what to click or enter, and what happens as a result — in concrete detail, using the ACTUAL button names, labels and values visible on screen.
+- Cover the demo end to end: every feature, panel, setting, tab and result. Thorough and long is better than omitting anything the demo showed.
+- Organise with clear headings by feature area, but within each section keep ALL the relevant steps — never reduce the walkthrough to "2-5 flows".
+- A brief Introduction and Getting Started are fine, but the Walkthrough covering every step is the heart of the document and must be the longest part.
+- Embed screenshots at their step using the {{SCREENSHOT_N}} placeholders exactly as provided, and use ALL of them. CRITICAL: each screenshot on its own paragraph with a blank line before AND after — never inside a list item or on the same line as text.
+
+Write in the SAME LANGUAGE as the on-screen content / narration.
 
 Output the markdown ONLY — no JSON, no separator. The self-assessment is generated separately.`
 
@@ -872,15 +880,15 @@ Return ONLY the JSON object.`
  */
 export function buildVideoAnalysisPrompt(opts?: { segmentSeconds?: number }): string {
   let stepGuidance =
-    '- Aim for 5-10 steps for a typical 1-3 minute video. More only if the video covers many truly different features.'
+    '- Be EXHAUSTIVE: create a step for every distinct screen, feature, panel, setting, action and notable result shown. Do not cap the count.'
   if (opts?.segmentSeconds && opts.segmentSeconds > 0) {
-    // ~1 meaningful step per 40s of recording, clamped to a sane band so a
-    // 45-minute demo doesn't ask for 70 micro-steps nor a short clip for 0.
-    const target = Math.round(opts.segmentSeconds / 40)
-    const lo = Math.max(3, target - 2)
-    const hi = Math.max(lo + 2, target + 3)
+    // Exhaustive coverage: ~1 step per 20s of active product use, with a wide
+    // band. Better to over-capture than to miss a demoed feature.
+    const target = Math.round(opts.segmentSeconds / 20)
+    const lo = Math.max(5, target - 5)
+    const hi = target + 8
     const minutes = Math.max(1, Math.round(opts.segmentSeconds / 60))
-    stepGuidance = `- This clip is about ${minutes} minute(s) long. Aim for roughly ${lo}-${hi} key steps — only the meaningful state changes, not every interaction.`
+    stepGuidance = `- This clip is about ${minutes} minute(s) long. Be EXHAUSTIVE — capture every distinct screen, feature and action (commonly ${lo}-${hi}+ steps for a clip this long). Never skip a feature to keep the list short.`
   }
 
   return `Analyze this screen recording. It may be a clean product screencast OR a longer recording — a sales call, meeting, webinar, or Loom — that CONTAINS a live product demo. Your job is to document the PRODUCT DEMO only: identify the KEY steps of how the product/application is used, not every micro-interaction.
@@ -895,12 +903,12 @@ SCOPE — what to document vs ignore:
 - If the product interface is never actually shown, return an empty "steps" array.
 - Write each step as a product walkthrough instruction: teach a reader how to use the feature that was demonstrated, not "the presenter said hello".
 
-GROUPING RULES:
-- Group related actions into ONE step (e.g. "typed email, typed password, clicked Sign In" → one step: "User logged in")
-- Skip trivial actions: scrolling without purpose, mouse movements, brief hovers
-- Skip repeated similar actions (e.g. scrolling through a list → one step)
+GRANULARITY RULES (aim for EXHAUSTIVE coverage of the demo):
+- Only merge actions that form a single atomic operation (e.g. "typed email, typed password, clicked Sign In" → one step: "User logged in").
+- Otherwise keep features, screens, panels, tabs, settings, dialogs and distinct results as SEPARATE steps — do NOT collapse different features into one.
+- Skip only true noise: aimless mouse movement, brief hovers, decorative scrolling.
 ${stepGuidance}
-- Each step should represent a meaningful state change or user accomplishment
+- Each step should represent a meaningful state change, feature, or user accomplishment.
 
 For each step:
 1. Provide the timestamp as a NUMBER OF SECONDS (integer or decimal). You MUST convert minutes to seconds:
@@ -942,5 +950,5 @@ Return ONLY valid JSON (no markdown fences):
   "summary": "2-3 sentence summary of what this recording covers"
 }
 
-Remember: fewer, more meaningful steps is better than many granular ones.`
+Remember: be EXHAUSTIVE — it is far better to include an extra step than to miss a feature the demo showed. Cover the product walkthrough end to end.`
 }
