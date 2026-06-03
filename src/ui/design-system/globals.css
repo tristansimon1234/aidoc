@@ -238,3 +238,60 @@ code, pre {
   background-color: transparent !important;
   background: transparent !important;
 }
+
+/* ---- PDF export (print-to-PDF) ----
+   A hidden, MarkdownRenderer-rendered copy of the doc lives in the DOM under
+   `.pdf-print-root`. On screen it's hidden; the "Export PDF" button adds
+   `printing-pdf` to <body> and calls window.print(). During print we hide the
+   whole app via `visibility` (which, unlike display, a descendant can override)
+   and reveal only the print root, repositioned to the top of the page. We print
+   the clean MarkdownRenderer output rather than the live BlockNote editor. */
+.pdf-print-root { display: none; }
+
+@media print {
+  body.printing-pdf * { visibility: hidden !important; }
+  body.printing-pdf .pdf-print-root,
+  body.printing-pdf .pdf-print-root * { visibility: visible !important; }
+
+  body.printing-pdf .pdf-print-root {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #111;
+    font-family: var(--font-sans, system-ui, sans-serif);
+  }
+
+  /* Readable on paper regardless of the app's dark theme. */
+  body.printing-pdf .pdf-print-root,
+  body.printing-pdf .pdf-print-root p,
+  body.printing-pdf .pdf-print-root li,
+  body.printing-pdf .pdf-print-root td,
+  body.printing-pdf .pdf-print-root th { color: #111 !important; }
+  body.printing-pdf .pdf-print-root h1,
+  body.printing-pdf .pdf-print-root h2,
+  body.printing-pdf .pdf-print-root h3,
+  body.printing-pdf .pdf-print-root h4 { color: #000 !important; }
+  body.printing-pdf .pdf-print-root a { color: #1a4fbf !important; text-decoration: underline; }
+
+  /* Keep headings with their content and don't slice images across pages. */
+  body.printing-pdf .pdf-print-root h1,
+  body.printing-pdf .pdf-print-root h2,
+  body.printing-pdf .pdf-print-root h3 { break-after: avoid; page-break-after: avoid; }
+  body.printing-pdf .pdf-print-root img {
+    max-width: 100% !important;
+    height: auto !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+    border: 1px solid #ddd;
+  }
+  body.printing-pdf .pdf-print-root pre,
+  body.printing-pdf .pdf-print-root blockquote { break-inside: avoid; page-break-inside: avoid; }
+
+  @page { margin: 16mm; }
+}
