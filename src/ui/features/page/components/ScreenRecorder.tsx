@@ -479,8 +479,8 @@ export function ScreenRecorder({ pageId, page, hasExistingVoiceover }: ScreenRec
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m17 8-5-5-5 5" /><path d="M12 3v12" />
         </svg>
         <span className={styles.dropZoneTitle}>Upload a video</span>
-        <span className={styles.dropZoneHint}>.mp4, .webm, .mov — up to 200MB</span>
-        <input type="file" accept="video/mp4,video/webm,video/quicktime"
+        <span className={styles.dropZoneHint}>.mp4, .webm, .mov, .mkv, .avi… — up to 4 GB</span>
+        <input type="file" accept="video/*,.mp4,.webm,.mov,.mkv,.avi,.m4v"
           disabled={quotaBlocked}
           onChange={(e) => void handleFileUpload(e)}
           style={{ display: 'none' }} />
