@@ -8,6 +8,7 @@ import { adminRouter } from '../../features/admin/admin.routes.js'
 import { pageRouter } from '../../features/page/page.routes.js'
 import { tabRouter } from '../../features/tab/tab.routes.js'
 import { runRouter } from '../../features/run/run.routes.js'
+import { internalRouter } from '../../features/run/internal.routes.js'
 import { questionsRouter } from '../../features/questions/questions.routes.js'
 import { documentationRouter } from '../../features/documentation/documentation.routes.js'
 import { chatRouter } from '../../features/chat/chat.routes.js'
@@ -55,6 +56,9 @@ export function mountRouters(app: Express, options: MountOptions): void {
   // Vercel cron handlers — authed via `Authorization: Bearer CRON_SECRET`,
   // not the user JWT.
   app.use(`${p}/cron`, cronRouter)
+  // Internal service-to-service callbacks (video-service async pipeline).
+  // Authed via the `x-callback-secret` shared secret, not the user JWT.
+  app.use(`${p}/internal`, internalRouter)
 
   // Authed routes.
   app.use(`${p}/profile`, authMiddleware, profileRouter)

@@ -67,6 +67,53 @@ async function callService<T>(endpoint: string, body: Record<string, unknown>): 
   }
 }
 
+/**
+ * Kick off the async long-video pipeline on the video-service (Railway, no
+ * 300s cap). The service responds 202 immediately, then in the background:
+ * downloads → compresses/downscales below Gemini's 2 GB file limit → splits
+ * into chunks if the recording is long → runs Gemini per chunk with the prompt
+ * we ship in `analysisPrompt` → merges + corrects timestamps → extracts frames
+ * → POSTs the result back to `callbackUrl` (which echoes `callbackSecret` in
+ * the `x-callback-secret` header).
+ *
+ * We pass the Gemini key and the prompt in the body — same pattern as the
+ * Supabase service key — so the worker needs no Doclee-specific env beyond the
+ * npm dependency. Returns once the service has accepted the job (202); the
+ * actual work continues out-of-band and reports back via the callback.
+ *
+ * Server contract (implemented in `video-service/server.js`):
+ *   POST /process-and-analyze
+ *   body: { runId, videoPath, jobId, triggeredByUserId, geminiApiKey,
+ *           geminiModel, analysisPrompt, chunkSeconds, callbackUrl, callbackSecret }
+ *   -> 202 { accepted: true }
+ */
+export async function processAndAnalyze(input: {
+  runId: string
+  videoPath: string
+  jobId: string
+  triggeredByUserId: string | null
+  geminiApiKey: string
+  geminiModel: string
+  analysisPrompt: string
+  callbackUrl: string
+  callbackSecret: string
+  chunkSeconds?: number
+}): Promise<void> {
+  await callService<{ accepted: boolean }>('/process-and-analyze', {
+    runId: input.runId,
+    videoPath: input.videoPath,
+    jobId: input.jobId,
+    triggeredByUserId: input.triggeredByUserId,
+    geminiApiKey: input.geminiApiKey,
+    geminiModel: input.geminiModel,
+    analysisPrompt: input.analysisPrompt,
+    callbackUrl: input.callbackUrl,
+    callbackSecret: input.callbackSecret,
+    chunkSeconds: input.chunkSeconds ?? 600,
+  })
+  console.log(`[video-service] Accepted async analysis for run ${input.runId}`)
+}
+
 /** Convert video to MP4. Returns the new path in Supabase storage. */
 export async function convertToMp4(videoPath: string, runId: string): Promise<string> {
   const result = await callService<{ mp4Path: string; skipped?: boolean }>('/convert', { videoPath, runId })

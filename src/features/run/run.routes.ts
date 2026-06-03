@@ -216,6 +216,31 @@ runRouter.post('/:id/analyze-video', (req: Request, res: Response, next: NextFun
           triggeredByUserId: getUserId(req),
         })
 
+        // Long / large recordings can't be analysed inside Vercel's 300s cap
+        // (Gemini Files processing + a 45-min generateContent alone busts it).
+        // When the async pipeline is wired, hand the whole job to the
+        // video-service (Railway, no cap): it compresses below Gemini's 2 GB
+        // limit, chunks if long, runs Gemini per chunk, then calls back into
+        // /internal/video-analysis-callback to persist + generate the doc.
+        // We return {jobId} immediately; the UI tracks completion via the
+        // jobs-table Realtime channel exactly as it does for the inline path.
+        if (await runService.isAsyncVideoPipelineEnabled()) {
+          try {
+            await runService.dispatchAsyncVideoAnalysis({
+              runId,
+              videoPath: body.videoPath,
+              jobId: job.id,
+              triggeredByUserId: getUserId(req),
+            })
+          } catch (dispatchErr) {
+            await failJob(job.id, (dispatchErr as Error).message)
+            throw dispatchErr
+          }
+          res.status(200).json({ jobId: job.id })
+          return
+        }
+
+        // Fallback: inline pipeline (short recordings, or async path not configured).
         try {
           await runService.analyzeVideo(runId, body.videoPath)
           await runService.generateDoc(runId, getUserId(req))

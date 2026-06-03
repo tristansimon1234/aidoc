@@ -1,10 +1,12 @@
 import express from 'express'
 import ffmpeg from 'fluent-ffmpeg'
 import { createClient } from '@supabase/supabase-js'
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleAIFileManager } from '@google/generative-ai/server'
 import ws from 'ws'
 import { writeFileSync, readFileSync, unlinkSync, mkdirSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 
 const app = express()
 app.use(express.json({ limit: '300mb' }))
@@ -582,6 +584,363 @@ app.post('/render-marketing-video', async (req, res) => {
     const shortStack = (err.stack || '').split('\n').slice(0, 6).join(' | ')
     res.status(500).json({ error: err.message, stack: shortStack })
   }
+})
+
+// ---------------------------------------------------------------------------
+// Async long-video pipeline
+//
+// Doclee's Vercel functions are capped at 300s, which a 45-minute / multi-GB
+// demo blows through (Gemini Files processing + a single long generateContent
+// alone can take minutes). This service has no such cap, so Doclee hands the
+// whole job here: we compress the recording below Gemini's 2 GB file limit,
+// split it into chunks if it's long, run Gemini per chunk, merge + correct the
+// timestamps, extract frames, and POST the result back to Doclee — which
+// persists it and generates the doc. We respond 202 up front and do the work
+// out-of-band; the only channel back is the callback.
+//
+// Memory note: like the other endpoints, this downloads the source into a
+// Buffer. A 2.6 GB source needs a Railway instance sized accordingly (≥ 4 GB
+// RAM recommended). The compressed copy used for chunking/frames is small.
+// ---------------------------------------------------------------------------
+
+const ANALYSIS_MAX_OUTPUT_TOKENS = 16384
+// A recording shorter than this is analysed in a single Gemini call; longer
+// ones are split into `chunkSeconds`-sized pieces. 40 min sits comfortably
+// inside Gemini 2.5 Flash's video context.
+const MAX_SINGLE_SECONDS = 2400
+
+/** ffprobe duration (seconds) for a local file. */
+function probeDuration(path) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(path, (err, metadata) => {
+      if (err) return reject(err)
+      resolve(metadata.format?.duration || 0)
+    })
+  })
+}
+
+/** Downscale + drop frame-rate + low-bitrate audio so the file lands well under
+ *  Gemini's 2 GB limit. Gemini samples video at ~1 fps anyway, so fps=2 / 720p
+ *  loses nothing useful for step detection while shrinking a multi-GB source to
+ *  a few hundred MB. Audio is kept (low bitrate) for narration transcription. */
+function compressForAnalysis(tmpIn, tmpOut) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(tmpIn)
+      .inputOptions(['-threads', '0'])
+      .outputOptions([
+        '-vf', 'scale=1280:-2,fps=2',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '30',
+        '-c:a', 'aac',
+        '-b:a', '64k',
+        '-ac', '1',
+        '-movflags', '+faststart',
+        '-threads', '0',
+      ])
+      .output(tmpOut)
+      .on('progress', (p) => { if (p.timemark) console.log(`[analyze] compress ${p.timemark}`) })
+      .on('end', resolve)
+      .on('error', reject)
+      .run()
+  })
+}
+
+/** Cut [start, start+len] out of a (already compressed) mp4. Stream-copy keeps
+ *  it fast; keyframe-approx offsets are fine since we re-add `start` afterwards
+ *  and clamp later. */
+function cutChunk(tmpIn, start, len, tmpOut) {
+  return new Promise((resolve, reject) => {
+    ffmpeg(tmpIn)
+      .inputOptions(['-ss', String(start)])
+      .outputOptions(['-t', String(len), '-c', 'copy', '-movflags', '+faststart'])
+      .output(tmpOut)
+      .on('end', resolve)
+      .on('error', reject)
+      .run()
+  })
+}
+
+/** Parse Gemini's analysis JSON — mirrors the tolerant parsing in Doclee's
+ *  gemini.client.ts (strip fences, slice to outermost braces, fix MM:SS, repair
+ *  truncation). Returns { steps, productName, summary } with safe defaults.
+ *  Doclee re-validates the merged result with Zod, so this stays lenient. */
+function parseGeminiAnalysis(text) {
+  let jsonStr = (text || '').trim()
+  const fence = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/)
+  if (fence) jsonStr = fence[1]
+  const first = jsonStr.indexOf('{')
+  const last = jsonStr.lastIndexOf('}')
+  if (first !== -1 && last > first) jsonStr = jsonStr.slice(first, last + 1)
+  jsonStr = jsonStr.replace(/"timestamp"\s*:\s*(\d{1,2}):(\d{2})(?::(\d{2}))?\b/g, (_m, p1, p2, p3) => {
+    const mins = parseInt(p1, 10)
+    const secs = parseInt(p2, 10)
+    const hundredths = p3 ? parseInt(p3, 10) : 0
+    return `"timestamp": ${mins * 60 + secs + hundredths / 100}`
+  })
+
+  let parsed
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch {
+    let repaired = jsonStr
+      .replace(/,\s*"[^"]*"?\s*:?\s*"?[^"]*$/, '')
+      .replace(/,\s*\{[^}]*$/, '')
+    const ob = (repaired.match(/\{/g) || []).length
+    const cb = (repaired.match(/\}/g) || []).length
+    const obk = (repaired.match(/\[/g) || []).length
+    const cbk = (repaired.match(/\]/g) || []).length
+    repaired += ']'.repeat(Math.max(0, obk - cbk))
+    repaired += '}'.repeat(Math.max(0, ob - cb))
+    parsed = JSON.parse(repaired)
+  }
+
+  const steps = Array.isArray(parsed.steps) ? parsed.steps : []
+  return {
+    steps: steps
+      .filter((s) => s && typeof s.timestamp === 'number' && typeof s.userAction === 'string')
+      .map((s) => ({
+        timestamp: s.timestamp,
+        screenDescription: typeof s.screenDescription === 'string' ? s.screenDescription : '',
+        userAction: s.userAction,
+        narration: typeof s.narration === 'string' ? s.narration : null,
+      })),
+    productName: typeof parsed.productName === 'string' ? parsed.productName : '',
+    summary: typeof parsed.summary === 'string' ? parsed.summary : '',
+  }
+}
+
+/** Port of Doclee's correctTimestamps for a single segment of known length. */
+function correctTimestamps(steps, durationSeconds) {
+  if (!steps.length || !isFinite(durationSeconds) || durationSeconds <= 0) return steps
+  const maxTs = Math.max(...steps.map((s) => s.timestamp))
+  if (maxTs <= durationSeconds * 1.1) return steps
+  return steps.map((s) => {
+    if (s.timestamp < 60) return s
+    const minutes = Math.floor(s.timestamp / 100)
+    const seconds = s.timestamp % 100
+    if (seconds >= 60) return s
+    return { ...s, timestamp: Math.min(minutes * 60 + seconds, durationSeconds - 1) }
+  })
+}
+
+/** Upload one local file to the Gemini Files API and run the analysis prompt. */
+async function analyzeChunkWithGemini(genAI, fileManager, chunkPath, model, prompt) {
+  const uploadResult = await fileManager.uploadFile(chunkPath, {
+    mimeType: 'video/mp4',
+    displayName: basename(chunkPath),
+  })
+  let file = uploadResult.file
+  while (file.state === 'PROCESSING') {
+    await new Promise((r) => setTimeout(r, 3000))
+    file = await fileManager.getFile(file.name)
+  }
+  if (file.state === 'FAILED') throw new Error('Gemini failed to process the video chunk')
+
+  try {
+    const genModel = genAI.getGenerativeModel({
+      model,
+      generationConfig: { maxOutputTokens: ANALYSIS_MAX_OUTPUT_TOKENS },
+    })
+    const result = await genModel.generateContent([
+      { fileData: { mimeType: file.mimeType, fileUri: file.uri } },
+      { text: prompt },
+    ])
+    return parseGeminiAnalysis(result.response.text())
+  } finally {
+    await fileManager.deleteFile(file.name).catch(() => {})
+  }
+}
+
+/** POST the final result (or failure) back to Doclee. */
+async function postCallback(callbackUrl, callbackSecret, body) {
+  const res = await fetch(callbackUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-callback-secret': callbackSecret },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const preview = (await res.text().catch(() => '')).slice(0, 300)
+    console.error(`[analyze] Callback failed ${res.status}: ${preview}`)
+  } else {
+    console.log(`[analyze] Callback delivered (${body.ok ? 'ok' : 'error'}) for run ${body.runId}`)
+  }
+}
+
+async function runAnalysisPipeline(params) {
+  const {
+    runId, videoPath, jobId, triggeredByUserId,
+    geminiApiKey, geminiModel, analysisPrompt, chunkSeconds,
+    callbackUrl, callbackSecret, body,
+  } = params
+
+  const tempFiles = []
+  const start = Date.now()
+  try {
+    const supabase = getSupabase(body)
+    const sourceBuffer = await downloadVideo(supabase, videoPath)
+    console.log(`[analyze] run=${runId} source ${(sourceBuffer.length / 1024 / 1024).toFixed(1)}MB`)
+
+    const ext = videoPath.substring(videoPath.lastIndexOf('.')) || '.mp4'
+    const tmpIn = join(tmpdir(), `analyze-in-${Date.now()}${ext}`)
+    const tmpCompressed = join(tmpdir(), `analyze-c-${Date.now()}.mp4`)
+    tempFiles.push(tmpIn, tmpCompressed)
+    writeFileSync(tmpIn, sourceBuffer)
+
+    // 1. Compress/downscale below Gemini's 2 GB limit.
+    await compressForAnalysis(tmpIn, tmpCompressed)
+    try { unlinkSync(tmpIn) } catch {}
+    const compressedSize = readFileSync(tmpCompressed).length
+    const duration = await probeDuration(tmpCompressed)
+    console.log(`[analyze] compressed → ${(compressedSize / 1024 / 1024).toFixed(1)}MB, ${duration.toFixed(0)}s`)
+
+    // 2. Upload the compressed copy as the playable video (the original may be
+    //    several GB — too heavy for browser playback on the doc page).
+    const compressedPath = `runs/${runId}/analysis-source.mp4`
+    await uploadFile(supabase, compressedPath, readFileSync(tmpCompressed), 'video/mp4')
+
+    // 3. Decide chunking.
+    const chunkLen = chunkSeconds && chunkSeconds > 0 ? chunkSeconds : 600
+    const chunks = []
+    if (duration <= MAX_SINGLE_SECONDS) {
+      chunks.push({ start: 0, len: duration, path: tmpCompressed })
+    } else {
+      for (let s = 0; s < duration; s += chunkLen) {
+        const len = Math.min(chunkLen, duration - s)
+        const chunkPath = join(tmpdir(), `analyze-chunk-${Date.now()}-${s}.mp4`)
+        tempFiles.push(chunkPath)
+        await cutChunk(tmpCompressed, s, len, chunkPath)
+        chunks.push({ start: s, len, path: chunkPath })
+      }
+    }
+    console.log(`[analyze] ${chunks.length} chunk(s)`)
+
+    // 4. Gemini per chunk → merge with offsets.
+    const genAI = new GoogleGenerativeAI(geminiApiKey)
+    const fileManager = new GoogleAIFileManager(geminiApiKey)
+    const model = geminiModel || 'gemini-2.5-flash'
+
+    let allSteps = []
+    let productName = ''
+    const summaries = []
+    for (const chunk of chunks) {
+      const analysis = await analyzeChunkWithGemini(genAI, fileManager, chunk.path, model, analysisPrompt)
+      if (!productName && analysis.productName) productName = analysis.productName
+      if (analysis.summary) summaries.push(analysis.summary)
+      const corrected = correctTimestamps(analysis.steps, chunk.len)
+      for (const s of corrected) {
+        allSteps.push({ ...s, timestamp: s.timestamp + chunk.start })
+      }
+      console.log(`[analyze] chunk @${chunk.start}s → ${corrected.length} steps`)
+    }
+
+    if (allSteps.length === 0) throw new Error('Gemini detected no documentable steps in the recording')
+
+    // 5. Global sort + clamp into the video, then the safety-gap clamp so a
+    //    step's frame never bleeds into the next step's state.
+    allSteps.sort((a, b) => a.timestamp - b.timestamp)
+    allSteps = allSteps.map((s) => ({ ...s, timestamp: Math.max(0, Math.min(s.timestamp, duration - 0.1)) }))
+    const SAFETY_GAP = 0.6
+    for (let i = 0; i < allSteps.length - 1; i++) {
+      const ceil = Math.max(0, allSteps[i + 1].timestamp - SAFETY_GAP)
+      if (allSteps[i].timestamp > ceil) allSteps[i].timestamp = ceil
+    }
+
+    // 6. Extract a frame per step from the compressed video.
+    const framesDir = join(tmpdir(), `analyze-frames-${Date.now()}`)
+    mkdirSync(framesDir, { recursive: true })
+    const finalSteps = []
+    for (let i = 0; i < allSteps.length; i++) {
+      const s = allSteps[i]
+      const outPath = join(framesDir, `frame-${i}.jpg`)
+      let screenshotPath = null
+      try {
+        await new Promise((resolve, reject) => {
+          ffmpeg(tmpCompressed)
+            .seekInput(s.timestamp)
+            .frames(1)
+            .outputOptions(['-vf', 'scale=1280:-2', '-q:v', '2'])
+            .output(outPath)
+            .on('end', resolve)
+            .on('error', reject)
+            .run()
+        })
+        const framePath = `runs/${runId}/frame-${i}.jpg`
+        await uploadFile(supabase, framePath, readFileSync(outPath), 'image/jpeg')
+        screenshotPath = framePath
+      } catch (err) {
+        console.warn(`[analyze] frame ${i} failed: ${err.message}`)
+      }
+      finalSteps.push({
+        timestamp: s.timestamp,
+        // Keep the callback body well under Doclee's JSON limit even for a
+        // long demo with many steps — trim verbose fields rather than risk a
+        // 413. The full recording still drives doc generation downstream.
+        screenDescription: (s.screenDescription || '').slice(0, 600),
+        userAction: (s.userAction || '').slice(0, 400),
+        narration: s.narration ? s.narration.slice(0, 500) : null,
+        screenshotPath,
+      })
+    }
+    try { for (const f of readdirSync(framesDir)) unlinkSync(join(framesDir, f)) } catch {}
+
+    console.log(`[analyze] Done in ${((Date.now() - start) / 1000).toFixed(1)}s → ${finalSteps.length} steps`)
+
+    // 7. Hand the result back to Doclee for persistence + doc generation.
+    await postCallback(callbackUrl, callbackSecret, {
+      runId,
+      jobId,
+      triggeredByUserId: triggeredByUserId ?? null,
+      ok: true,
+      productName,
+      summary: summaries.join(' ').slice(0, 2000),
+      videoPath: compressedPath,
+      steps: finalSteps,
+    })
+  } catch (err) {
+    console.error(`[analyze] Pipeline failed for run ${runId}:`, err.message)
+    await postCallback(callbackUrl, callbackSecret, {
+      runId,
+      jobId,
+      triggeredByUserId: triggeredByUserId ?? null,
+      ok: false,
+      error: err.message,
+    }).catch(() => {})
+  } finally {
+    for (const f of tempFiles) { try { unlinkSync(f) } catch {} }
+  }
+}
+
+/**
+ * POST /process-and-analyze
+ * Async entry point for the long-video pipeline. Validates, responds 202, then
+ * processes out-of-band and reports back via the callback.
+ */
+app.post('/process-and-analyze', (req, res) => {
+  const {
+    runId, videoPath, jobId, triggeredByUserId,
+    geminiApiKey, geminiModel, analysisPrompt, chunkSeconds,
+    callbackUrl, callbackSecret,
+  } = req.body || {}
+
+  if (!runId || !videoPath || !jobId || !geminiApiKey || !analysisPrompt || !callbackUrl || !callbackSecret) {
+    return res.status(400).json({
+      error: 'runId, videoPath, jobId, geminiApiKey, analysisPrompt, callbackUrl and callbackSecret are required',
+    })
+  }
+  if (!req.body.supabaseUrl || !req.body.serviceKey) {
+    return res.status(400).json({ error: 'supabaseUrl and serviceKey required' })
+  }
+
+  // Accept first, work after — the caller (Vercel) must not block on a 45-min job.
+  res.status(202).json({ accepted: true })
+
+  runAnalysisPipeline({
+    runId, videoPath, jobId, triggeredByUserId,
+    geminiApiKey, geminiModel, analysisPrompt, chunkSeconds,
+    callbackUrl, callbackSecret,
+    body: req.body,
+  }).catch((err) => console.error('[analyze] Unhandled pipeline error:', err))
 })
 
 app.listen(PORT, () => console.log(`Video service running on port ${PORT}`))
