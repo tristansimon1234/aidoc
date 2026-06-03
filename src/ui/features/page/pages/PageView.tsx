@@ -6,6 +6,7 @@ import {
   Spinner,
   EmptyState,
   TableOfContents,
+  MarkdownRenderer,
   ProgressLoader,
   useConfirmDialog,
   AlreadyRunningNotice,
@@ -360,6 +361,16 @@ function PageViewInner(): React.ReactElement {
   return (
     <div>
       {confirmDialog}
+      {/* Hidden, print-only copy of the doc. Rendered with MarkdownRenderer
+          (clean output) rather than the live BlockNote editor; the print
+          stylesheet (.pdf-print-root in globals.css) reveals only this during
+          window.print(), triggered by the "Export PDF" button. */}
+      {page.content && (
+        <div className="pdf-print-root" aria-hidden="true">
+          <h1>{page.title}</h1>
+          <MarkdownRenderer content={page.content} />
+        </div>
+      )}
       {alreadyRunning && (
         <AlreadyRunningNotice
           details={alreadyRunning}
@@ -419,6 +430,38 @@ function PageViewInner(): React.ReactElement {
             </svg>
             Export
           </button>
+          {page.content && (
+            <button
+              type="button"
+              onClick={() => {
+                // Reveal the hidden .pdf-print-root, open the print dialog, then
+                // clean up the body class once the dialog closes.
+                document.body.classList.add('printing-pdf')
+                const cleanup = (): void => {
+                  document.body.classList.remove('printing-pdf')
+                  window.removeEventListener('afterprint', cleanup)
+                }
+                window.addEventListener('afterprint', cleanup)
+                window.print()
+              }}
+              title="Export this page as a PDF (opens the print dialog → Save as PDF)"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '4px 10px',
+                fontSize: 'var(--text-xs)',
+                background: 'transparent', border: '1px solid var(--color-border)',
+                borderRadius: 6, cursor: 'pointer',
+                color: 'var(--color-muted-fg)',
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 6 2 18 2 18 9" />
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                <rect x="6" y="14" width="12" height="8" />
+              </svg>
+              Export PDF
+            </button>
+          )}
           <div
             className={styles.publishToggle}
             onClick={() => {
