@@ -63,9 +63,12 @@ export async function generateDocumentation(context: {
   const userPrompt = buildDocumentationPrompt(context)
 
   const response = await generateText({
+    // Exhaustive video-demo guides can be long (every feature documented with
+    // its screenshot). Give Flash a high output budget so the markdown isn't
+    // cut off mid-walkthrough; non-video docs stay well under this.
+    maxTokens: 40000,
     systemPrompt,
     userPrompt,
-    maxTokens: 24576,
   })
 
   let markdown = replaceScreenshotPlaceholders(stripTrailingJsonTail(response.text.trim()), buildScreenshotMap(context.steps))
