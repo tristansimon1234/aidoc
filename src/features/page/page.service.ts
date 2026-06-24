@@ -3,6 +3,38 @@ import type { DocPage, DocPageTreeNode, CreatePageInput, UpdatePageInput, Reorde
 import * as pageRepo from './page.repository.js'
 import { findProfileById } from '../profile/profile.repository.js'
 
+/** Re-index a page's embeddings and surface failures to Sentry so a
+ *  silent Gemini outage doesn't leave the chat citing stale content.
+ *  Awaited (not fire-and-forget) — the embedding round-trip is the only
+ *  thing guaranteeing search reflects the new content, so callers pay
+ *  the ~2-5s cost rather than risk drift. embedTexts has its own 429
+ *  retry/backoff so transient rate limits are already handled. */
+async function reindexOrLog(updated: DocPage, context: string): Promise<void> {
+  try {
+    const { indexPage } = await import('../chat/chat.service.js')
+    await indexPage({
+      id: updated.id,
+      projectId: updated.projectId,
+      title: updated.title,
+      slug: updated.slug,
+      content: updated.content,
+    })
+  } catch (err) {
+    console.error(`[chat] Auto-index failed (${context}):`, err)
+    // Surface to Sentry but don't throw — the content was saved, only
+    // the search index is stale. A follow-up indexProject call (manual
+    // or scheduled) can reconcile.
+    try {
+      const { Sentry } = await import('../../shared/observability/sentry.js')
+      Sentry.captureException(err, {
+        tags: { error_code: 'AUTO_INDEX_FAILED', context, page_id: updated.id, project_id: updated.projectId },
+      })
+    } catch {
+      // Sentry import / capture failed — nothing more we can do.
+    }
+  }
+}
+
 export async function createPage(input: CreatePageInput): Promise<DocPage> {
   // Resolve the target tab. Callers can pass either an explicit tabId
   // (preferred — the UI picks the active tab) or omit it, in which case
@@ -44,19 +76,12 @@ export async function updatePage(id: string, input: UpdatePageInput, editorUserI
   if (!page) throw new NotFoundError('Page')
   const updated = await pageRepo.updatePage(id, input, editorUserId)
 
-  // Re-index embeddings when content changes (fire-and-forget)
+  // Re-index embeddings when content changes. Awaited so callers know
+  // the search index is fresh by the time updatePage returns. Failures
+  // are logged + sent to Sentry but don't fail the update — the saved
+  // content is the source of truth, the index is reconcilable.
   if (input.content !== undefined && input.content !== page.content) {
-    import('../chat/chat.service.js')
-      .then(({ indexPage }) =>
-        indexPage({
-          id: updated.id,
-          projectId: updated.projectId,
-          title: updated.title,
-          slug: updated.slug,
-          content: updated.content,
-        }),
-      )
-      .catch((err) => console.error('[chat] Auto-index failed:', err))
+    await reindexOrLog(updated, 'updatePage')
   }
 
   return updated
@@ -78,23 +103,15 @@ export async function deletePage(id: string): Promise<void> {
   )
 
   const siblings = await pageRepo.findPagesByProjectId(page.projectId)
-  const indexer = import('../chat/chat.service.js')
   for (const sibling of siblings) {
     if (!sibling.content || !linkRegex.test(sibling.content)) continue
     linkRegex.lastIndex = 0
     const cleaned = sibling.content.replace(linkRegex, '$1')
     const updated = await pageRepo.updatePage(sibling.id, { content: cleaned })
-    indexer
-      .then(({ indexPage }) =>
-        indexPage({
-          id: updated.id,
-          projectId: updated.projectId,
-          title: updated.title,
-          slug: updated.slug,
-          content: updated.content,
-        }),
-      )
-      .catch((err) => console.error('[chat] Re-index after page delete failed:', err))
+    // Awaited so a delete cleanup leaves the chat in a consistent state.
+    // Sequential (not parallel) because deletePage is rare and we don't
+    // want to spike Gemini RPS on a large project with many cross-links.
+    await reindexOrLog(updated, 'deletePage cleanup')
   }
 }
 
@@ -106,17 +123,7 @@ export async function reorderPages(items: ReorderItem[]): Promise<void> {
  *  content so chat/search see the old version again. */
 export async function restorePreviousContent(id: string): Promise<DocPage> {
   const restored = await pageRepo.restorePreviousContent(id)
-  import('../chat/chat.service.js')
-    .then(({ indexPage }) =>
-      indexPage({
-        id: restored.id,
-        projectId: restored.projectId,
-        title: restored.title,
-        slug: restored.slug,
-        content: restored.content,
-      }),
-    )
-    .catch((err) => console.error('[chat] Re-index after restore failed:', err))
+  await reindexOrLog(restored, 'restorePreviousContent')
   return restored
 }
 

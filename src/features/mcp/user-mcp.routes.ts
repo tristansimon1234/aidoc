@@ -229,13 +229,32 @@ const TOOL_DEFINITIONS = [
   {
     name: 'create_project',
     description:
-      'Create a new documentation project in the authorized workspace. Returns the created project (with id) ready to be populated with pages.\n\nCompanion tools: `list_projects`, `list_pages`, `create_page`.',
+      `Create a new documentation project in the authorized workspace. Returns the created project (with id) ready to be populated with pages.
+
+Pass \`design\` if you already know the product's brand colors — the public docs site and the embeddable chat widget will use them immediately. Omit \`design\` and the project falls back to the shared design-system defaults until an admin sets colors from the UI.
+
+Companion tools: \`list_projects\`, \`list_pages\`, \`create_page\`.`,
     inputSchema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Project name shown in the dashboard.' },
         baseUrl: { type: 'string', description: 'URL of the product being documented.' },
         description: { type: 'string', description: 'Optional one-line description.' },
+        design: {
+          type: 'object',
+          description:
+            'Optional brand colors + typography. All hex colors accept #RGB or #RRGGBB; unknown font families coerce to the system stack.',
+          properties: {
+            accentColor: { type: 'string', description: 'Primary brand accent, e.g. "#635BFF".' },
+            bgColor: { type: 'string', description: 'Page background color, e.g. "#0C0C0E".' },
+            textColor: { type: 'string', description: 'Body text color, e.g. "#E5E5E5".' },
+            font: { type: 'string', description: 'CSS font-family value or a known Google Font name.' },
+            logoUrl: { type: 'string', description: 'Optional. Must point at the project\'s own Supabase storage bucket (upload via the admin UI first).' },
+            accentSecondary: { type: 'string', description: 'Optional secondary accent for two-tone marketing videos.' },
+            radius: { type: 'number', description: 'Optional corner radius (px, 0-64) for marketing-video primitives + CTA button.' },
+          },
+          required: ['accentColor', 'bgColor', 'textColor', 'font'],
+        },
       },
       required: ['name', 'baseUrl'],
     },
@@ -933,9 +952,11 @@ async function handleCreateProject(
     name: parsed.data.name,
     baseUrl: parsed.data.baseUrl,
     description: parsed.data.description,
+    design: parsed.data.design,
   })
+  const designNote = project.design ? ' Brand colors applied.' : ''
   return toolText(
-    `Created project **${project.name}** (id: ${project.id}). It has a starter "Getting Started" page.`,
+    `Created project **${project.name}** (id: ${project.id}). It has a starter "Getting Started" page.${designNote}`,
   )
 }
 

@@ -61,6 +61,7 @@ export async function createProject(userId: string, teamId: string, input: Creat
       description: input.description ?? null,
       context: input.context ?? null,
       credentials: input.credentials ?? null,
+      design: input.design ?? null,
     })
     .select('*')
     .single()
