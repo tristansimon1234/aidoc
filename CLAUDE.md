@@ -487,12 +487,6 @@ While Doclee is in the design-partner phase, signups are gated by an `allowed_em
 
 # Cron (authed via Authorization: Bearer CRON_SECRET — called by Vercel on schedule)
 /api/cron/classify-messages                # POST/GET: hourly sentiment/frustration classifier for chat messages
-
-# Internal service-to-service (authed via x-callback-secret = INTERNAL_CALLBACK_SECRET)
-/api/internal/video-analysis-callback      # POST (from the Railway video-service): delivers the
-                                           # merged, frame-extracted analysis of a long recording →
-                                           # Doclee Zod-validates, persists steps + summary, runs
-                                           # generateDoc, publishes page, completes the job.
 ```
 
 ### Error format
@@ -548,15 +542,7 @@ GEMINI_API_KEY, BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
 # Optional
 ANTHROPIC_API_KEY    # Only needed for Try Doc testing (Stagehand)
 ELEVENLABS_API_KEY   # Optional — voice-over narration
-VIDEO_SERVICE_URL    # Optional — external video processing service (Railway)
-PUBLIC_API_URL       # Optional — this backend's own public API base, INCLUDING
-                     # the /api prefix (e.g. https://app.doclee.tech/api). Used by
-                     # the async long-video pipeline so the video-service can call
-                     # back to /internal/video-analysis-callback.
-INTERNAL_CALLBACK_SECRET   # Optional — shared secret for that callback (echoed
-                     # by the worker in x-callback-secret, timing-safe compare).
-                     # VIDEO_SERVICE_URL + PUBLIC_API_URL + INTERNAL_CALLBACK_SECRET
-                     # together enable the async path; missing any → inline fallback.
+VIDEO_SERVICE_URL    # Optional — external video processing service
 ADMIN_EMAILS         # Comma-separated allowlist for /api/admin/* routes
                      # e.g. ADMIN_EMAILS=you@example.com,partner@example.com
 RESEND_API_KEY       # Optional — transactional email (team invites, doc-ready pings) via Resend
@@ -626,8 +612,7 @@ VITE_SENTRY_RELEASE      # Optional — override for the release tag
 - [ ] **Scale bottlenecks still on the shelf**:
   - [ ] Embeddings stored via `JSON.stringify()` cast to `vector(768)` — index works, but a native `pgvector-node` path would drop the parsing overhead on bulk inserts. Defer until latency signals justify it.
   - [ ] RLS `user_team_ids()` subquery re-executed on every SELECT — at ~100 concurrent chats it adds measurable latency. Fix is either Postgres-side (make the function `STABLE`) or client-side (cache the team ids on the JWT). Needs an architecture call.
-  - [ ] Video is buffered to a `Buffer` in memory for voice-over; a 300 MB recording OOMs Vercel. Needs streaming to Gemini Files API, or a hard client-side cap on upload size. (Doc *generation* from long videos no longer hits this: the async pipeline — see below — keeps the big file off Vercel entirely. Voice-over still buffers.)
-  - [x] ~~Long / large recording doc-gen blocked by Vercel 300s + Gemini's 2 GB Files limit~~ — async pipeline offloads compress + chunk + Gemini to the Railway video-service (`POST /process-and-analyze`, no time cap), which calls back to `POST /internal/video-analysis-callback` (shared-secret auth) for persistence + doc-gen. Enabled by `VIDEO_SERVICE_URL` + `PUBLIC_API_URL` + `INTERNAL_CALLBACK_SECRET`; falls back to the inline path when unset. Worker still buffers the source download, so size it accordingly (≥ 4 GB RAM for multi-GB sources).
+  - [ ] Video is buffered to a `Buffer` in memory for voice-over; a 300 MB recording OOMs Vercel. Needs streaming to Gemini Files API, or a hard client-side cap on upload size.
   - [ ] `chat_messages` grows unbounded. Need a pruning cron or partition scheme before ~10M rows degrade analytics queries.
 - [ ] **Chat RAG quality — deferred batches** (already landed: top-20 retrieval, conversational query rewriting, temperature 0.3, hierarchy breadcrumbs, Gemini-as-judge reranking, Pro model routing on complex queries). Still on the shelf:
   - [ ] Hybrid BM25 + vector search (pgvector + `tsvector`). Helps on queries with exact terms / proper nouns that embed weakly.

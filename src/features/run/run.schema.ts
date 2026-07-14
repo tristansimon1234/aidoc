@@ -12,34 +12,6 @@ export type CreateRunInput = z.infer<typeof CreateRunSchema>
 
 export const RunIdParamSchema = UuidParamSchema
 
-// --- Async video-analysis callback (from the video-service worker) ---
-// The video-service posts this back once a long recording has been
-// compressed, chunked, analysed by Gemini, merged and frame-extracted.
-// Validated before anything is persisted — we never trust the worker's
-// payload raw (same rule as any external AI output).
-const ExternalVideoStepSchema = z.object({
-  timestamp: z.number().nonnegative(),
-  screenDescription: z.string().default(''),
-  userAction: z.string().min(1),
-  narration: z.string().nullable().default(null),
-  screenshotPath: z.string().nullable().default(null),
-})
-
-export const VideoAnalysisCallbackSchema = z.object({
-  runId: z.string().uuid(),
-  jobId: z.string().uuid(),
-  triggeredByUserId: z.string().uuid().nullable().default(null),
-  ok: z.boolean(),
-  error: z.string().optional(),
-  productName: z.string().default(''),
-  summary: z.string().default(''),
-  videoPath: z.string().optional(),
-  steps: z.array(ExternalVideoStepSchema).default([]),
-})
-
-export type VideoAnalysisCallback = z.infer<typeof VideoAnalysisCallbackSchema>
-export type ExternalVideoStep = z.infer<typeof ExternalVideoStepSchema>
-
 // --- Try Doc Report Zod schema (for Gemini output validation) ---
 // Uses .catch() and .default() to handle Gemini returning slightly off values
 

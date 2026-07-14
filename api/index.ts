@@ -11,10 +11,7 @@ initSentry()
 const app = express()
 
 app.use(cors())
-// 2 MB so the internal video-analysis callback (a long demo can carry ~100+
-// steps with narration transcripts) isn't rejected by the default 100 kB cap.
-// Still modest — public endpoints are rate-limited and carry tiny bodies.
-app.use(express.json({ limit: '2mb' }))
+app.use(express.json())
 
 // Health check (no auth)
 app.get('/api/health', (_req: Request, res: Response) => {
