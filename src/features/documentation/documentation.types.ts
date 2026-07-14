@@ -2,13 +2,54 @@ export interface GeneratedDoc {
   id: string
   runId: string
   markdownContent: string | null
-  /** Persisted on `generated_docs.json_content`. Used to hold an AI
-   *  self-assessment; emptied after we dropped the second-pass call.
-   *  Kept on the type for back-compat with existing rows and as a slot
-   *  for future deterministic metadata. */
   jsonContent: Record<string, unknown> | null
   createdAt: Date
   updatedAt: Date
+}
+
+export type StepConfidence = 'high' | 'medium' | 'low'
+
+export interface DocStepAssessment {
+  stepIndex: number
+  confidence: StepConfidence
+  note: string | null
+}
+
+export interface DocGap {
+  area: string
+  reason: string
+  severity: 'major' | 'minor'
+}
+
+export interface DocNextStep {
+  suggestion: string
+  reason: string
+  priority: 'high' | 'medium' | 'low'
+}
+
+export interface StructuralSuggestion {
+  type: 'move' | 'merge' | 'split' | 'rename' | 'new'
+  targetSlug?: string
+  details: string
+  suggestedTitle?: string
+  suggestedParentSlug?: string
+}
+
+export interface DocSelfAssessment {
+  overallCompleteness: number
+  stepAssessments: DocStepAssessment[]
+  gaps: DocGap[]
+  nextSteps: DocNextStep[]
+  structuralSuggestions?: StructuralSuggestion[]
+}
+
+export interface DocJsonSummary {
+  featureName: string
+  totalSteps: number
+  keyPages: string[]
+  userActions: string[]
+  screenshots: number
+  selfAssessment: DocSelfAssessment
 }
 
 // --- Try Doc Report ---

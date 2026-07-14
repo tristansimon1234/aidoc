@@ -1,3 +1,4 @@
+import { SchemaType, type ResponseSchema } from '@google/generative-ai'
 import type { StepSummary } from '../../features/exploration/exploration.types.js'
 import type { DiscoveredContext } from '../../features/project/project.types.js'
 import type { DomSnapshot } from '../../features/chat/walkthrough.types.js'
@@ -853,4 +854,106 @@ Produce a JSON object with this exact shape:
 }
 
 Return ONLY the JSON object.`
+}
+
+// --- Doc self-assessment (second-pass, structured output) ---
+//
+// We run a small follow-up Gemini call after the markdown generation
+// instead of asking for `markdown + JSON` in a single response. The
+// single-pass approach was unreliable: ~10–15 % of runs returned a JSON
+// with the WRONG shape ({title, description, …}) because Gemini drifted
+// the schema mid-generation, and our parser had to fall back to a
+// "could not parse" sentinel that blew up as `0 % confidence` in the
+// banner. With responseSchema the API rejects any deviation server-side
+// — Gemini physically can't emit the wrong keys.
+
+export const SELF_ASSESSMENT_RESPONSE_SCHEMA: ResponseSchema = {
+  type: SchemaType.OBJECT,
+  required: ['overallCompleteness', 'stepAssessments', 'gaps', 'nextSteps'],
+  properties: {
+    overallCompleteness: {
+      type: SchemaType.INTEGER,
+      description: '0-100 estimate of how complete the documentation is.',
+    },
+    stepAssessments: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        required: ['stepIndex', 'confidence'],
+        properties: {
+          stepIndex: { type: SchemaType.INTEGER },
+          confidence: { type: SchemaType.STRING, format: 'enum', enum: ['high', 'medium', 'low'] },
+          note: { type: SchemaType.STRING, nullable: true },
+        },
+      },
+    },
+    gaps: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        required: ['area', 'reason', 'severity'],
+        properties: {
+          area: { type: SchemaType.STRING },
+          reason: { type: SchemaType.STRING },
+          severity: { type: SchemaType.STRING, format: 'enum', enum: ['major', 'minor'] },
+        },
+      },
+    },
+    nextSteps: {
+      type: SchemaType.ARRAY,
+      items: {
+        type: SchemaType.OBJECT,
+        required: ['suggestion', 'reason', 'priority'],
+        properties: {
+          suggestion: { type: SchemaType.STRING },
+          reason: { type: SchemaType.STRING },
+          priority: { type: SchemaType.STRING, format: 'enum', enum: ['high', 'medium', 'low'] },
+        },
+      },
+    },
+  },
+}
+
+export function buildSelfAssessmentPrompt(input: {
+  markdown: string
+  steps: StepSummary[]
+  projectContext?: string
+}): string {
+  const stepBlock = input.steps
+    .map((s, i) => {
+      const obs = (s.observation ?? '').slice(0, 240)
+      const hasShot = s.screenshotUrl && s.screenshotUrl.startsWith('http') ? 'yes' : 'no'
+      return `${i + 1}. [screenshot:${hasShot}] ${s.action ?? '(unknown action)'} — ${obs}`
+    })
+    .join('\n')
+
+  const ctx = input.projectContext ? `\n## Product context\n${input.projectContext}\n` : ''
+
+  return `You are auditing a piece of product documentation that was just generated from a screen recording.
+
+Be brutally honest. A 40 % completeness with specific gaps is more useful than a 90 % that hides problems.
+
+## What completeness means
+- 90-100: Doc covers every key step shown in the recording, screenshots are used at the right moments, nothing material is missing.
+- 70-89: Solid; minor gaps a writer should patch (one missing screenshot, a vague step, an undocumented edge case).
+- 50-69: Major gaps — a real user could get stuck. List them.
+- < 50: Doc is partial / speculative — the recording didn't cover enough to ship this as-is.
+
+## stepAssessments
+One entry per recorded step, by index (0-based). high / medium / low based on whether the doc actually covers that step with the right level of detail and a screenshot if available.
+
+## gaps
+Things missing from the doc that a real reader would notice. Be specific (which area, why it's a problem). severity = major if it blocks the reader, minor otherwise. Empty array is fine if the doc is genuinely complete.
+
+## nextSteps
+Suggestions for follow-up pages or sections. Empty array is fine.
+
+## Inputs
+
+### Recorded steps
+${stepBlock}
+${ctx}
+### Generated documentation (markdown)
+${input.markdown.slice(0, 12_000)}
+`
 }
