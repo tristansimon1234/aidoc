@@ -427,7 +427,7 @@ SLOTS
 ${slots}
 
 SOP
-${input.sop.replace(/!\[[^\]]*\]\([^)]*\)\n?/g, '').slice(0, 12000)}
+${input.sop.replace(/!\[[^\]]*\]\([^)]*\)\n?/g, '').slice(0, 60000)}
 
 Return ONLY JSON: {"lines": ["text for slot 1", "text for slot 2", ...]} with exactly ${input.slots.length} entries.`
 }

@@ -37,6 +37,26 @@ export function uncoveredRanges(
 }
 
 /**
+ * Rattache à chaque étape ce que la personne dit entre l'étape précédente et elle (la transcription
+ * horodatée, plus fiable que le champ « spoken » que Gemini remplit de moins en moins vers la fin
+ * d'une longue réponse). Ce qui est dit après la dernière étape (la conclusion) va à la dernière.
+ */
+export function attachTranscript(
+  steps: VideoSteps['steps'],
+  transcript: VideoSteps['transcript'],
+): VideoSteps['steps'] {
+  return steps.map((s, i) => {
+    const from = i === 0 ? -Infinity : steps[i - 1]!.timestamp
+    const to = i === steps.length - 1 ? Infinity : s.timestamp
+    const said = transcript
+      .filter((t) => t.start >= from && t.start < to)
+      .map((t) => t.text.trim())
+      .join(' ')
+    return { ...s, spoken: said || s.spoken }
+  })
+}
+
+/**
  * Découpe la vidéo en créneaux de voix off : l'étape i est racontée entre la capture i-1 et la capture i
  * (on annonce l'action juste avant qu'elle se produise). Les créneaux trop courts sont fusionnés.
  * Chaque créneau emporte ce que la personne a dit pendant ces étapes, pour que la voix off le reprenne.

@@ -24,6 +24,7 @@ import {
 } from './prompts.js'
 import {
   applyPickedTimes,
+  attachTranscript,
   candidateTimes,
   cleanSteps,
   fitSegment,
@@ -302,6 +303,22 @@ describe('niveau de parole de la voix off', () => {
     expect(misfit(10, 7.6)).toBe(0)
     expect(misfit(10, 5)).toBeCloseTo(2.5)
     expect(misfit(10, 10.2)).toBeCloseTo(1.8)
+  })
+})
+
+describe('attachTranscript', () => {
+  it('donne à chaque étape ce qui est dit juste avant elle, la conclusion à la dernière', () => {
+    const out = attachTranscript(
+      [step(10, 'A', 'old'), step(20, 'B'), step(30, 'C')],
+      [
+        { start: 2, text: 'Intro.' },
+        { start: 12, text: 'Why B.' },
+        { start: 25, text: 'Careful with C.' },
+        { start: 40, text: 'Done!' },
+      ],
+    )
+    expect(out.map((s) => s.spoken)).toEqual(['Intro.', 'Why B.', 'Careful with C. Done!'])
+    expect(attachTranscript([step(10, 'A', 'kept')], [])[0]!.spoken).toBe('kept')
   })
 })
 

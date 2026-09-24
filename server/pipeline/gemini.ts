@@ -99,7 +99,8 @@ export async function askJson<T>(prompt: string, schema: z.ZodType<T>): Promise<
     const res = await gemini().models.generateContent({
       model: env.GEMINI_MODEL,
       contents: prompt,
-      config: { responseMimeType: 'application/json', maxOutputTokens: 16000 },
+      // La réflexion de Gemini compte dans cette limite : large, pour ne pas couper la réponse.
+      config: { responseMimeType: 'application/json', maxOutputTokens: 60000 },
     })
     return parseJson(res.text ?? '', schema)
   })

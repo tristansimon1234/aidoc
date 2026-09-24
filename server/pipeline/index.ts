@@ -39,6 +39,7 @@ import {
 } from './prompts.js'
 import {
   applyPickedTimes,
+  attachTranscript,
   candidateTimes,
   cleanSteps,
   fitSegment,
@@ -182,7 +183,10 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
 
     // 3. Une capture par étape, au meilleur moment (Gemini choisit parmi plusieurs images)
     await step('Taking screenshots')
-    const steps = await pickScreenshotTimes(video, found, duration, dir)
+    const steps = attachTranscript(
+      await pickScreenshotTimes(video, found, duration, dir),
+      analysis.transcript,
+    )
     const urls: (string | null)[] = []
     for (const [i, s] of steps.entries()) {
       const jpg = join(dir, `step-${i + 1}.jpg`)
@@ -326,6 +330,18 @@ async function narrate(input: {
     }
   }
   const files = voices.map((v) => v?.file ?? null)
+
+  // Diagnostic dans les logs : ce que chaque passage montre, ce que la voix dit, et le silence restant.
+  console.log(
+    `[pipeline] voix off : ${slots.length} passages, ${rate.toFixed(1)} mots/s\n` +
+      slots
+        .map((slot, i) => {
+          const v = voices[i]
+          const silence = slot.seconds - (v?.seconds ?? 0)
+          return `  #${i + 1} ${slot.start.toFixed(0)}s +${slot.seconds.toFixed(1)}s | voix ${(v?.seconds ?? 0).toFixed(1)}s | ${silence < 0 ? `déborde ${(-silence).toFixed(1)}s` : `silence ${silence.toFixed(1)}s`} | ${slot.action.slice(0, 60)} → "${(v?.text ?? '').slice(0, 80)}"`
+        })
+        .join('\n'),
+  )
 
   // La vidéo garde sa vitesse réelle : la voix dit ce qui est à l'écran à ce moment-là.
   const segments = await Promise.all(
