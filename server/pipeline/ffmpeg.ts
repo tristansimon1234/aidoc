@@ -1,5 +1,7 @@
 // Petites fonctions ffmpeg (binaire système, installé dans le Dockerfile du service vidéo).
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 
@@ -97,11 +99,17 @@ export async function extractFrame(
   output: string,
   width?: number,
 ): Promise<void> {
-  await run([
-    '-y', '-ss', seconds.toFixed(2), '-i', video, '-frames:v', '1',
-    ...(width ? ['-vf', `scale=${width}:-2`] : []),
-    '-q:v', '3', output,
-  ])
+  // Tout près de la fin, ffmpeg peut ne trouver aucune image (sans erreur) : on recule un peu.
+  for (const back of [0, 0.5, 1.5, 3]) {
+    await rm(output, { force: true })
+    await run([
+      '-y', '-ss', Math.max(0, seconds - back).toFixed(2), '-i', video, '-frames:v', '1',
+      ...(width ? ['-vf', `scale=${width}:-2`] : []),
+      '-q:v', '3', output,
+    ])
+    if (existsSync(output)) return
+  }
+  throw new Error(`Aucune image à ${seconds.toFixed(2)} s dans ${video}`)
 }
 
 /**

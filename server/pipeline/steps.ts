@@ -1,11 +1,46 @@
 import type { VideoSteps } from './prompts.js'
 
+/** « 104 » → 64 (1:04), ou null si le nombre ne peut pas être des minutes-secondes collées. */
+function asMinuteSeconds(seconds: number): number | null {
+  if (seconds < 100) return null
+  const minutes = Math.floor(seconds / 100)
+  const rest = seconds - minutes * 100
+  return rest < 60 ? minutes * 60 + rest : null
+}
+
+/**
+ * Temps au-delà de la fin de la vidéo qui ressemblent à des minutes-secondes collées (« 110 » pour
+ * 1:10) : Gemini a écrit toute la liste ainsi après la première minute, donc on la relit en entier
+ * (« 104 » = 1:04 aussi, même s'il tient dans la vidéo). Sinon la liste est laissée telle quelle.
+ */
+export function repairTimecodes(values: number[], duration: number): number[] {
+  const tooLate = values.filter((v) => v > duration + 1)
+  const repairable = tooLate.some((v) => {
+    const fixed = asMinuteSeconds(v)
+    return fixed !== null && fixed <= duration + 1
+  })
+  if (!repairable) return values
+  return values.map((v) => {
+    const fixed = asMinuteSeconds(v)
+    return fixed !== null && fixed <= duration + 1 ? fixed : v
+  })
+}
+
+/** Version pour un seul temps (moments du storyboard marketing). */
+export function repairTimecode(seconds: number, duration: number): number {
+  return repairTimecodes([seconds], duration)[0]!
+}
+
 /** Trie, borne les horodatages à la vidéo, et évite qu'une capture montre déjà l'étape suivante. */
 export function cleanSteps(steps: VideoSteps['steps'], duration: number): VideoSteps['steps'] {
+  const times = repairTimecodes(
+    steps.map((s) => s.timestamp),
+    duration,
+  )
   const sorted = steps
-    .map((s) => ({
+    .map((s, i) => ({
       ...s,
-      timestamp: Math.min(Math.max(0, s.timestamp), Math.max(0, duration - 0.2)),
+      timestamp: Math.min(Math.max(0, times[i]!), Math.max(0, duration - 0.2)),
     }))
     .sort((a, b) => a.timestamp - b.timestamp)
   for (let i = 0; i < sorted.length - 1; i++) {

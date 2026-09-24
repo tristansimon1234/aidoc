@@ -15,15 +15,38 @@ export function languageName(code: string): string {
   return LANGUAGES[code] ?? 'English'
 }
 
+/**
+ * Un instant de la vidéo. On demande à Gemini le format « MM:SS » (son format natif pour les vidéos) :
+ * en secondes, il écrit souvent 1:04 comme « 104 » après la première minute. Nombres acceptés aussi.
+ */
+export function parseTimecode(value: number | string): number {
+  if (typeof value === 'number') return value
+  const text = value.trim()
+  if (/^\d+(\.\d+)?$/.test(text)) return Number(text)
+  const m = /^(?:(\d+):)?(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/.exec(text)
+  return m ? Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : NaN
+}
+
+const timecode = z
+  .union([z.number(), z.string()])
+  .transform(parseTimecode)
+  .pipe(z.number().nonnegative())
+
+/** 87.4 → « 1:27 » */
+export function toTimecode(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
 // ── 1. Analyse de la vidéo → transcription + étapes horodatées ──
 
 export const VideoStepsSchema = z.object({
   title: z.string().default(''),
   // Tout ce que dit la personne, mot pour mot : c'est la meilleure source d'explications.
-  transcript: z.array(z.object({ start: z.number().nonnegative(), text: z.string() })).default([]),
+  transcript: z.array(z.object({ start: timecode, text: z.string() })).default([]),
   steps: z.array(
     z.object({
-      timestamp: z.number().nonnegative(),
+      timestamp: timecode,
       action: z.string(),
       screen: z.string(),
       spoken: z.string().nullable().default(null),
@@ -39,7 +62,7 @@ export function videoAnalysisPrompt(durationSeconds: number): string {
 
 Do two things.
 
-1. "transcript": transcribe EVERYTHING the person says, word for word, in the language spoken, as consecutive segments of one or a few sentences, each with its start time IN SECONDS. Do not summarize, do not skip anything: the explanations, reasons, rules, exceptions and warnings they give are the most valuable part. Remove only filler sounds ("euh", "um"). If nobody speaks, return an empty list.
+1. "transcript": transcribe EVERYTHING the person says, word for word, in the language spoken, as consecutive segments of one or a few sentences, each with its start time as "MM:SS" (e.g. "1:27"). Do not summarize, do not skip anything: the explanations, reasons, rules, exceptions and warnings they give are the most valuable part. Remove only filler sounds ("euh", "um"). If nobody speaks, return an empty list.
 
 2. "steps": every step needed to reproduce the task, from the first screen to the final result.
 - One step = one meaningful action or state change: open a page, fill a form, click a button, choose an option, check a result. Merge micro-actions that form one operation ("typed email + password + clicked Sign in" = one step).
@@ -48,14 +71,14 @@ Do two things.
 - "action": what is done, with the exact labels visible on screen (buttons, menus, fields, tabs) in quotes, in their original language.
 - "screen": short description of what is visible at the step's frame.
 - "spoken": everything the person says while doing this step, word for word (it usually explains WHY and what to watch out for), or null if silent.
-- "timestamp": the moment IN SECONDS (1 min 27 s → 87, not 127) of the frame that best illustrates the step: the button or field is visible and the value is filled in, BEFORE the next step starts.
-- Chronological order. All times between 0 and ${Math.ceil(durationSeconds)}. Cover the WHOLE recording until its very end: the task often continues late in the video, keep listing steps up to the last action.
+- "timestamp": the moment as "MM:SS" (e.g. "1:27" for 1 min 27 s) of the frame that best illustrates the step: the button or field is visible and the value is filled in, BEFORE the next step starts.
+- Chronological order. All times between 0:00 and ${toTimecode(durationSeconds)} (the length of the video). Cover the WHOLE recording until its very end: the task often continues late in the video, keep listing steps up to the last action.
 - Never copy sensitive values seen on screen or said aloud (passwords, tokens, bank details, personal emails or phone numbers): describe them instead ("the client's email").
 
 "title": short name of the task, e.g. "Create a supplier invoice in Pennylane".
 
 Return ONLY JSON:
-{"title": "...", "transcript": [{"start": 0, "text": "So today I'll show you how we book a supplier invoice..."}], "steps": [{"timestamp": 4, "action": "Open the 'Invoices' menu", "screen": "Sidebar with 'Invoices' highlighted", "spoken": "First go to Invoices, not Purchases, because..."}]}`
+{"title": "...", "transcript": [{"start": "0:00", "text": "So today I'll show you how we book a supplier invoice..."}], "steps": [{"timestamp": "0:04", "action": "Open the 'Invoices' menu", "screen": "Sidebar with 'Invoices' highlighted", "spoken": "First go to Invoices, not Purchases, because..."}]}`
 }
 
 export const MissingStepsSchema = VideoStepsSchema.pick({ steps: true })
@@ -69,7 +92,7 @@ export function missingStepsPrompt(input: {
   transcript: Transcript
 }): string {
   const said = input.transcript.filter((t) => t.start >= input.start - 2 && t.start <= input.end)
-  return `You are watching AND listening to the same screen recording. A list of steps was extracted from it, but NO step was found between ${Math.floor(input.start)}s and ${Math.ceil(input.end)}s.
+  return `You are watching AND listening to the same screen recording. A list of steps was extracted from it, but NO step was found between ${toTimecode(input.start)} and ${toTimecode(input.end)}.
 ${
   input.before
     ? `
@@ -82,17 +105,17 @@ First step after this part: ${input.after}`
       : ''
   }
 
-Watch that part carefully (between ${Math.floor(input.start)}s and ${Math.ceil(input.end)}s) and list every meaningful step of the task done there, with the same rules: one step = one meaningful action or state change, exact on-screen labels in quotes, "timestamp" IN SECONDS of the frame that best illustrates the step (between ${Math.floor(input.start)} and ${Math.ceil(input.end)}), "spoken" = what the person says while doing it (or null). If truly nothing happens there (waiting, talking without acting on screen), return an empty list.
+Watch that part carefully (between ${toTimecode(input.start)} and ${toTimecode(input.end)}) and list every meaningful step of the task done there, with the same rules: one step = one meaningful action or state change, exact on-screen labels in quotes, "timestamp" as "MM:SS" of the frame that best illustrates the step (between ${toTimecode(input.start)} and ${toTimecode(input.end)}), "spoken" = what the person says while doing it (or null). If truly nothing happens there (waiting, talking without acting on screen), return an empty list.
 
 What the person says in this part:
 ${formatTranscript(said)}
 
-Return ONLY JSON: {"steps": [{"timestamp": 0, "action": "...", "screen": "...", "spoken": null}]}`
+Return ONLY JSON: {"steps": [{"timestamp": "1:05", "action": "...", "screen": "...", "spoken": null}]}`
 }
 
 function formatTranscript(transcript: Transcript): string {
   if (transcript.length === 0) return '(the person does not speak)'
-  return transcript.map((t) => `[${Math.floor(t.start)}s] ${t.text}`).join('\n')
+  return transcript.map((t) => `[${toTimecode(t.start)}] ${t.text}`).join('\n')
 }
 
 // ── 2. Rédaction de la SOP (markdown), avec la vidéo sous les yeux ──
@@ -107,7 +130,7 @@ export function sopPrompt(input: {
   const steps = input.steps
     .map(
       (s, i) =>
-        `STEP ${i + 1} (at ${Math.floor(s.timestamp)}s)\n- Action: ${s.action}\n- Screen: ${s.screen}${s.spoken ? `\n- Said while doing it: ${s.spoken}` : ''}\n- Screenshot placeholder: {{SCREENSHOT_${i}}}`,
+        `STEP ${i + 1} (at ${toTimecode(s.timestamp)})\n- Action: ${s.action}\n- Screen: ${s.screen}${s.spoken ? `\n- Said while doing it: ${s.spoken}` : ''}\n- Screenshot placeholder: {{SCREENSHOT_${i}}}`,
     )
     .join('\n\n')
 
@@ -302,7 +325,7 @@ Return ONLY JSON: {"picks": [{"step": <step number>, "image": <chosen image numb
 // ── 2 ter. Vidéo marketing (30 ou 60 s) ───────────────────
 
 export const MarketingPlanSchema = z.object({
-  segments: z.array(z.object({ start: z.number(), end: z.number(), line: z.string() })),
+  segments: z.array(z.object({ start: timecode, end: timecode, line: z.string() })),
   musicPrompt: z.string().default('modern upbeat corporate background music, light and positive'),
 })
 export type MarketingPlan = z.infer<typeof MarketingPlanSchema>
@@ -321,14 +344,14 @@ export function marketingPrompt(input: {
   return `From this screen recording, plan a punchy marketing video of at most ${input.targetSeconds} seconds for "${input.title}". It will be cut from the recording and narrated by a voice-over in ${language}.
 ${input.brief ? `\nBRIEF FROM THE USER (follow it: what to highlight, for whom, which message):\n${input.brief}\n` : ''}
 Pick ${moments} moments of the recording that show the VALUE best (results, key features, "wow" moments), not every click. For each moment give:
-- "start" and "end" in seconds (between 0 and ${Math.floor(input.durationSeconds)}), 3 to 12 seconds long, in chronological order, not overlapping;
+- "start" and "end" as "MM:SS" (between 0:00 and ${toTimecode(input.durationSeconds)}), 3 to 12 seconds long, in chronological order, not overlapping;
 - "line": the voice-over sentence for that moment, in ${language}, 8 to 25 words.
 
 The lines together tell a story: the first opens with a hook (the problem or the promise), the middle shows the benefits, the last ends with a clear call to action. At most ${words} words in total. Use what the person says in the recording for the real benefits and vocabulary. Tone: ${TONES[input.tone].direction} No URLs, no personal data, no stage directions.
 
 "musicPrompt": one short description of fitting background music (style, mood, tempo), e.g. "upbeat electronic, driving rhythm, positive".
 
-Return ONLY JSON: {"segments": [{"start": 12, "end": 18, "line": "..."}], "musicPrompt": "..."}`
+Return ONLY JSON: {"segments": [{"start": "0:12", "end": "0:18", "line": "..."}], "musicPrompt": "..."}`
 }
 
 /** Garde les moments valides du plan marketing : dans la vidéo, dans l'ordre, sans chevauchement. */
@@ -485,7 +508,7 @@ export const StoryboardSchema = z.object({
         onScreen: z.string(),
         visual: z.string(),
         screenshots: z
-          .array(z.object({ time: z.number(), what: z.string() }))
+          .array(z.object({ time: timecode, what: z.string() }))
           .max(3)
           .default([]),
       }),
@@ -521,13 +544,13 @@ Write:
   - "line": the voice-over for that scene, in ${language}, one or two short sentences, 6 to 22 words. The lines follow each other as one fluid text. At most ${words} words in total for all scenes.
   - "onScreen": the few words shown big on screen (2 to 7 words, in ${language}), not a copy of the line: the key idea.
   - "visual": the animation idea, precise and visual (what appears, how it moves, what the camera zooms on, which UI element is rebuilt big, where a cursor clicks, what number counts up). Vary the layouts from scene to scene. The hook and the call to action can be pure typography and shapes.
-  - "screenshots": 0 to 2 moments of the recording to use as material: "time" in seconds (between 0 and ${Math.floor(input.durationSeconds)}), at a frame where the interface is clean and shows the thing (no loading, no open menu unless it is the point); "what": what is visible and where on the screen (e.g. "invoice list, 'Paid' badges in the right column").
+  - "screenshots": 0 to 2 moments of the recording to use as material: "time" as "MM:SS" (between 0:00 and ${toTimecode(input.durationSeconds)}), at a frame where the interface is clean and shows the thing (no loading, no open menu unless it is the point); "what": what is visible and where on the screen (e.g. "invoice list, 'Paid' badges in the right column").
 - "musicPrompt": fitting background music (style, mood, tempo).
 
 Tone: ${TONES[input.tone].direction} No URLs, no personal data (names, emails, amounts that look private), no stage directions in the lines.
 
 Return ONLY JSON:
-{"productName": "...", "brand": {"accent": "#...", "accent2": "#...", "background": "#..."}, "hooks": [{"line": "...", "onScreen": "..."}], "scenes": [{"purpose": "hook", "line": "...", "onScreen": "...", "visual": "...", "screenshots": [{"time": 12.5, "what": "..."}]}], "musicPrompt": "..."}`
+{"productName": "...", "brand": {"accent": "#...", "accent2": "#...", "background": "#..."}, "hooks": [{"line": "...", "onScreen": "..."}], "scenes": [{"purpose": "hook", "line": "...", "onScreen": "...", "visual": "...", "screenshots": [{"time": "0:12", "what": "..."}]}], "musicPrompt": "..."}`
 }
 
 export const HookPickSchema = z.object({ best: z.number().int(), reason: z.string().default('') })

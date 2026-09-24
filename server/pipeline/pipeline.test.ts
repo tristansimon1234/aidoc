@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { createReadStream, mkdtempSync } from 'node:fs'
+import { createReadStream, existsSync, mkdtempSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,7 +20,9 @@ import {
   insertScreenshots,
   marketingPrompt,
   narrationPrompt,
+  parseTimecode,
   sopPrompt,
+  VideoStepsSchema,
 } from './prompts.js'
 import {
   applyPickedTimes,
@@ -32,6 +34,7 @@ import {
   narrationSlots,
   misfit,
   planEdit,
+  repairTimecodes,
   speakingRate,
   uncoveredRanges,
   wordsFor,
@@ -109,7 +112,7 @@ describe('prompts', () => {
       steps: [step(4, "Open 'Invoices'", 'Always start from Invoices, never Purchases')],
       transcript: [{ start: 0, text: 'Here is how we book supplier invoices at the firm.' }],
     })
-    expect(sop).toContain('[0s] Here is how we book supplier invoices at the firm.')
+    expect(sop).toContain('[0:00] Here is how we book supplier invoices at the firm.')
     expect(sop).toContain('Said while doing it: Always start from Invoices, never Purchases')
     expect(sop).toContain('written in French')
 
@@ -322,6 +325,31 @@ describe('attachTranscript', () => {
   })
 })
 
+describe('temps renvoyés par Gemini', () => {
+  it('lit le format MM:SS et répare les minutes-secondes collées', () => {
+    expect(parseTimecode('1:04')).toBe(64)
+    expect(parseTimecode('0:07.5')).toBe(7.5)
+    expect(parseTimecode('1:02:03')).toBe(3723)
+    expect(parseTimecode('42')).toBe(42)
+    expect(parseTimecode(12.5)).toBe(12.5)
+    expect(parseTimecode('soon')).toBeNaN()
+    const parsed = VideoStepsSchema.parse({
+      transcript: [{ start: '1:10', text: 'x' }],
+      steps: [{ timestamp: '1:04', action: 'a', screen: 's' }],
+    })
+    expect(parsed.steps[0]!.timestamp).toBe(64)
+    expect(parsed.transcript[0]!.start).toBe(70)
+    // Vidéo de 107 s : « 110 » est impossible, c'était 1:10 ; toute la liste est donc relue
+    // (« 104 » = 1:04). Une liste sans temps impossible n'est pas touchée.
+    expect(repairTimecodes([49, 104, 110], 107)).toEqual([49, 64, 70])
+    expect(repairTimecodes([49, 104], 107)).toEqual([49, 104])
+    expect(repairTimecodes([49, 175], 107)).toEqual([49, 175]) // 1:75 n'existe pas
+    expect(cleanSteps([step(49), step(104), step(110)], 107).map((s) => s.timestamp)).toEqual([
+      49, 64, 70,
+    ])
+  })
+})
+
 describe('uncoveredRanges', () => {
   it('repère les longs passages sans étape, y compris la fin de la vidéo', () => {
     expect(uncoveredRanges([step(10), step(30)], 200)).toEqual([{ start: 30, end: 200 }])
@@ -356,6 +384,9 @@ describe('ffmpeg', () => {
     expect(await durationOf(video)).toBeCloseTo(6, 0)
 
     await extractFrame(video, 2, join(dir, 'frame.jpg'))
+    // Tout au bout de la vidéo, il n'y a plus d'image : on en prend une un peu avant.
+    await extractFrame(video, (await durationOf(video)) - 0.01, join(dir, 'last.jpg'))
+    expect(existsSync(join(dir, 'last.jpg'))).toBe(true)
 
     const cut = join(dir, 'cut.mp4')
     await cutVideo(

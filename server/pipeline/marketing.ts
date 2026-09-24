@@ -33,7 +33,7 @@ import {
 } from './prompts.js'
 import { renderMarketingVideo, renderSceneStills, withBrowser } from './remotion.js'
 import { compileScene, extractCode } from './scene-code.js'
-import { captionWords, luminance, mapLimit } from './steps.js'
+import { captionWords, luminance, mapLimit, repairTimecode } from './steps.js'
 import { speak } from '../voices.js'
 
 const WIDTH = 1920
@@ -94,7 +94,7 @@ export async function makeMotionVideo({
         scene.screenshots.map((s, k) =>
           screenshot(
             video,
-            Math.min(Math.max(0, s.time), duration - 0.2),
+            Math.min(Math.max(0, repairTimecode(s.time, duration)), duration - 0.2),
             s.what,
             join(dir, `shot-${i}-${k}.jpg`),
           ),
