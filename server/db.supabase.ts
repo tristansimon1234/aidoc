@@ -77,10 +77,16 @@ export async function testUserId(): Promise<string> {
   const created = await sb().auth.admin.createUser({ email, email_confirm: true })
   let id = created.data.user?.id
   if (!id) {
-    const { data } = await sb().auth.admin.listUsers({ perPage: 1000 })
-    id = data.users.find((u) => u.email === email)?.id
+    // Déjà créé lors d'un appel précédent : on le retrouve dans la liste.
+    const listed = await sb().auth.admin.listUsers({ perPage: 1000 })
+    id = listed.data.users.find((u) => u.email === email)?.id
+    if (!id) {
+      throw new Error(
+        `Compte de test impossible à créer — création : ${created.error?.message ?? '?'} ; ` +
+          `liste : ${listed.error?.message ?? 'aucun compte test@doclee.dev'}`,
+      )
+    }
   }
-  if (!id) throw new Error('Compte de test introuvable')
   await applyCredits(id, 1000, 'test', 'test-grant')
   testUser = id
   return id
