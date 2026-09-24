@@ -1,7 +1,23 @@
 import { createClient } from '@supabase/supabase-js'
 
-/** Sans VITE_SUPABASE_URL : mode local, pas d'écran de connexion (le serveur accepte le jeton « local »). */
-export const isLocalMode = !import.meta.env.VITE_SUPABASE_URL
+/**
+ * Adresse de l'API quand elle n'est pas sur le même site : le service Railway en mode test sans Supabase.
+ * `https://` est ajouté s'il manque (sinon le navigateur la prendrait pour un chemin du site).
+ */
+export const apiUrl = normalizeUrl(import.meta.env.VITE_API_URL as string | undefined)
+
+function normalizeUrl(raw: string | undefined): string {
+  const url = (raw ?? '').trim().replace(/\/+$/, '')
+  if (!url) return ''
+  return /^https?:\/\//.test(url) ? url : `https://${url}`
+}
+
+/**
+ * Mode local, sans écran de connexion (le serveur accepte le jeton « local ») :
+ * pas de Supabase configuré, ou API sur Railway en mode test (VITE_API_URL), même si
+ * les variables Supabase sont présentes.
+ */
+export const isLocalMode = !import.meta.env.VITE_SUPABASE_URL || apiUrl !== ''
 
 /** Pas d'écran de connexion : mode local, ou mode test (VITE_DISABLE_LOGIN=true, avec DISABLE_LOGIN côté serveur). */
 export const loginDisabled = isLocalMode || import.meta.env.VITE_DISABLE_LOGIN === 'true'

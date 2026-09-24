@@ -17,6 +17,12 @@ const EnvSchema = z.object({
   GEMINI_TTS_MODEL: z.string().default('gemini-2.5-flash-preview-tts'),
   ELEVENLABS_API_KEY: optional,
   ELEVENLABS_VOICE_ID: z.string().default('JBFqnCBsd6RMkjVDRZzb'),
+  // Force le mode local (données sur le disque, pas de connexion) même si SUPABASE_URL est défini.
+  // Pour tester sur Railway sans Supabase tout en gardant ses variables.
+  LOCAL_MODE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
   // Mode test : pas d'écran de connexion, tout le monde utilise un compte de test partagé.
   // À n'activer que sur un déploiement protégé (ex. preview Vercel protégée), jamais en public.
   DISABLE_LOGIN: z

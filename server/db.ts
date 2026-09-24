@@ -6,7 +6,7 @@ import * as local from './db.local.js'
 
 export type { Account, Sop, SopPatch, SopStatus, Voice } from './db.types.js'
 
-export const isLocalMode = !env.SUPABASE_URL
+export const isLocalMode = !env.SUPABASE_URL || env.LOCAL_MODE
 
 if (isLocalMode && process.env.VERCEL) {
   throw new Error(

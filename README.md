@@ -87,10 +87,10 @@ Sans `SUPABASE_URL` ni `VITE_SUPABASE_URL`, l'app démarre en **mode local** : p
 
 Le service Railway peut faire tout le travail sans Supabase : API, traitement vidéo, stockage sur son disque, pas de connexion (100 crédits).
 
-- **Railway** : déployer le repo (Dockerfile). Variables : `GEMINI_API_KEY` (+ `ELEVENLABS_API_KEY` en option), **sans** `SUPABASE_URL`. Générer un domaine public. Sans volume, les données sont effacées à chaque déploiement ; pour les garder, monter un volume sur `/app/.local-data`.
-- **Vercel** : `VITE_API_URL` = l'URL Railway, et **retirer** `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Redéployer.
+- **Railway** : déployer le repo (Dockerfile). Variables : `GEMINI_API_KEY` (+ `ELEVENLABS_API_KEY` en option) et `LOCAL_MODE=true` (force le mode sans Supabase, même si ses variables sont là). Générer un domaine public. Sans volume, les données sont effacées à chaque déploiement ; pour les garder, monter un volume sur `/app/.local-data`.
+- **Vercel** : `VITE_API_URL` = l'URL Railway (`https://` ajouté si besoin). Les variables Supabase peuvent rester : `VITE_API_URL` a la priorité. Redéployer.
 
-⚠️ Sans connexion, quiconque connaît l'URL peut lancer des générations avec ta clé Gemini : à réserver aux tests. Pour revenir à la version normale, remettre les variables Supabase des deux côtés et retirer `VITE_API_URL`.
+⚠️ Sans connexion, quiconque connaît l'URL peut lancer des générations avec ta clé Gemini : à réserver aux tests. Pour revenir à la version normale : retirer `VITE_API_URL` (Vercel) et `LOCAL_MODE` (Railway).
 
 ## Tester un déploiement complet sans se connecter (mode test)
 

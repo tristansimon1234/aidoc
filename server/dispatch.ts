@@ -1,8 +1,9 @@
-// Confie une SOP au service vidéo (Railway). En local, sans VIDEO_SERVICE_URL, on traite sur place.
+// Confie une SOP au service vidéo (Railway). En mode local ou sans VIDEO_SERVICE_URL, on traite sur place.
 import { env } from './env.js'
+import { isLocalMode } from './db.js'
 
 export async function dispatchSop(sopId: string): Promise<void> {
-  if (!env.VIDEO_SERVICE_URL) {
+  if (!env.VIDEO_SERVICE_URL || isLocalMode) {
     const { enqueue } = await import('./pipeline/queue.js')
     enqueue(sopId)
     return

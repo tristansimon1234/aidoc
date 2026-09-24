@@ -1,5 +1,5 @@
 // Tous les appels au serveur.
-import { accessToken } from './supabase'
+import { accessToken, apiUrl } from './supabase'
 
 export type Voice = 'none' | 'standard' | 'premium'
 export type Status = 'uploading' | 'processing' | 'ready' | 'failed'
@@ -36,11 +36,8 @@ export interface Sop {
   createdAt: string
 }
 
-/** Adresse de l'API : vide = même site ; sinon le serveur Railway (mode test sans Supabase). */
-const API_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '')
-
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API_URL}/api${path}`, {
+  const res = await fetch(`${apiUrl}/api${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -74,7 +71,7 @@ export const api = {
       durationSeconds: input.durationSeconds,
     })
     // En mode local, l'URL d'envoi est relative au serveur de l'API.
-    const url = uploadUrl.startsWith('/') ? `${API_URL}${uploadUrl}` : uploadUrl
+    const url = uploadUrl.startsWith('/') ? `${apiUrl}${uploadUrl}` : uploadUrl
     await uploadWithProgress(url, input.file, onProgress)
     await call('POST', `/sops/${id}/start`, { durationSeconds: input.durationSeconds })
     return id
