@@ -225,7 +225,7 @@ async function narrate(input: {
   // Synthèse de toutes les phrases, 4 à la fois.
   const files = await mapLimit(slots, 4, async (_, i) => {
     // Plafond appliqué par le code : une phrase trop longue décalerait la voix par rapport à l'écran.
-    const text = limitWords(lines[i] ?? '', Math.ceil(maxWordsFor(slots[i]!.seconds) * 1.15))
+    const text = limitWords(lines[i] ?? '', maxWordsFor(slots[i]!.seconds))
     if (!text) return null
     const { audio, ext } = await speak(input.sop.voice, text, toTone(input.sop.tone))
     const file = join(input.dir, `voice-${i}.${ext}`)
@@ -233,7 +233,7 @@ async function narrate(input: {
     return file
   })
 
-  // La vidéo suit la voix : chaque passage dure exactement le temps de sa phrase (aucun blanc).
+  // La vidéo garde sa vitesse réelle : la voix dit ce qui est à l'écran à ce moment-là.
   const segments = await Promise.all(
     slots.map(async (slot, i) => {
       const audio = files[i] ?? null
@@ -288,7 +288,7 @@ async function makeMarketingVideo({ video, duration, sop, dir, step }: Job): Pro
       start: m.start,
       end: m.end,
       audio: files[i]!,
-      ...fitSegment(m.end - m.start, await durationOf(files[i]!)),
+      ...fitSegment(m.end - m.start, await durationOf(files[i]!), 'stretch'),
     })),
   )
   let clip = join(dir, 'marketing.mp4')

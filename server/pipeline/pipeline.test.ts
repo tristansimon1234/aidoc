@@ -158,14 +158,18 @@ describe('captures', () => {
   })
 
   it('cale chaque passage sur sa voix off', () => {
-    expect(fitSegment(10, 3.6)).toEqual({ factor: 0.4, freeze: 0, length: 4, tempo: 1 })
-    expect(fitSegment(4, 5.6)).toEqual({ factor: 1.5, freeze: 0, length: 6, tempo: 1 })
-    // Voix bien trop longue : accélérée de 20 % avant de figer l'image.
+    // SOP : la vidéo n'est jamais accélérée ni ralentie.
+    expect(fitSegment(10, 3.6)).toEqual({ factor: 1, freeze: 0, length: 10, tempo: 1 })
+    expect(fitSegment(5, 0)).toEqual({ factor: 1, freeze: 0, length: 5, tempo: 1 })
+    // Voix un peu trop longue : accélérée de 10 % max, puis l'image se fige le temps qu'elle finisse.
     const long = fitSegment(2, 5.6)
-    expect(long.tempo).toBe(1.2)
-    expect(long.factor).toBe(1.5)
-    expect(long.freeze).toBeCloseTo(5.6 / 1.2 + 0.4 - 3)
-    expect(fitSegment(5, 0).length).toBeCloseTo(2)
+    expect(long.factor).toBe(1)
+    expect(long.tempo).toBe(1.1)
+    expect(long.freeze).toBeCloseTo(5.6 / 1.1 + 0.4 - 2)
+    // Vidéo marketing : aucun blanc, la vidéo s'adapte à la phrase.
+    expect(fitSegment(10, 3.6, 'stretch')).toEqual({ factor: 0.4, freeze: 0, length: 4, tempo: 1 })
+    expect(fitSegment(4, 5.6, 'stretch')).toEqual({ factor: 1.5, freeze: 0, length: 6, tempo: 1 })
+    expect(fitSegment(5, 0, 'stretch').length).toBeCloseTo(2)
   })
 })
 
@@ -279,8 +283,8 @@ describe('ffmpeg', () => {
     await renderNarrated(
       video,
       [
-        { start: 0, end: 3, audio: shortVoice, ...fitSegment(3, 1) },
-        { start: 3, end: 4, audio: voice, ...fitSegment(1, 3) },
+        { start: 0, end: 3, audio: shortVoice, ...fitSegment(3, 1, 'stretch') },
+        { start: 3, end: 4, audio: voice, ...fitSegment(1, 3, 'stretch') },
       ],
       out,
     )
@@ -327,7 +331,7 @@ describe('ffmpeg', () => {
       start: i * 0.69,
       end: i * 0.69 + 0.69,
       audio: voice,
-      ...fitSegment(0.69, 0.53),
+      ...fitSegment(0.69, 0.53, 'stretch'),
     }))
     const out = join(dir, 'out.mp4')
     await renderNarrated(cut, segments, out)

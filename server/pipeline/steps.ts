@@ -148,17 +148,25 @@ export function applyPickedTimes(
 }
 
 /**
- * Cale un passage de vidéo sur sa phrase de voix off, pour ne laisser aucun blanc :
- * `factor` < 1 accélère la vidéo (jusqu'à ×2,5), > 1 la ralentit (jusqu'à ×1,5) ;
- * si la voix est encore plus longue, la dernière image est figée (`freeze`).
+ * Cale un passage de vidéo sur sa phrase de voix off.
+ * - `realtime` (SOP) : la vidéo garde sa vitesse réelle, pour que la voix corresponde toujours à ce qui
+ *   est à l'écran. Voix plus courte : le passage continue sans voix. Voix plus longue : on l'accélère
+ *   un peu (×1,1 max, inaudible), puis on fige la dernière image le temps qu'elle finisse.
+ * - `stretch` (vidéo marketing) : aucun blanc, la vidéo est accélérée (jusqu'à ×2,5) ou ralentie
+ *   (jusqu'à ×1,5) pour durer le temps de la phrase.
  */
 export function fitSegment(
   slotSeconds: number,
   audioSeconds: number,
+  mode: 'realtime' | 'stretch' = 'realtime',
 ): { factor: number; freeze: number; length: number; tempo: number } {
   const BREATH = 0.4 // petite respiration après chaque phrase
-  // Voix plus longue que ce que la vidéo ralentie peut couvrir : on accélère d'abord un peu la voix
-  // (jusqu'à ×1,2, inaudible) plutôt que de figer l'image, pour qu'elle reste sur ce qui est à l'écran.
+  if (mode === 'realtime') {
+    const needed = audioSeconds > 0 ? audioSeconds + BREATH : 0
+    const tempo = needed > slotSeconds ? Math.min(1.1, needed / slotSeconds) : 1
+    const freeze = Math.max(0, (audioSeconds > 0 ? audioSeconds / tempo + BREATH : 0) - slotSeconds)
+    return { factor: 1, freeze, length: slotSeconds + freeze, tempo }
+  }
   const room = slotSeconds * 1.5
   const tempo = audioSeconds + BREATH > room ? Math.min(1.2, (audioSeconds + BREATH) / room) : 1
   const target = audioSeconds > 0 ? audioSeconds / tempo + BREATH : 0

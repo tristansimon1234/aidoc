@@ -311,9 +311,12 @@ export function toTone(value: string | null | undefined): Tone {
 
 export const NarrationSchema = z.object({ lines: z.array(z.string()) })
 
-/** Mots maximum pour un créneau de voix off : ~2 mots / seconde, pour que la voix reste sur ce qui est à l'écran. */
+/**
+ * Mots maximum pour un créneau de voix off : ~2 mots / seconde (une voix lit ~2,5 mots / s), pour que
+ * la phrase tienne dans le passage sans accélérer la vidéo. Mieux vaut dire moins que décaler.
+ */
 export function maxWordsFor(seconds: number): number {
-  return Math.max(6, Math.floor(seconds * 2))
+  return Math.max(4, Math.floor(seconds * 2))
 }
 
 /** Un texte court par créneau ; le budget de mots suit la durée du créneau. */
@@ -334,7 +337,7 @@ export function narrationPrompt(input: {
 
   return `Write the voice-over of a short tutorial video, in ${languageName(input.language)}. A text-to-speech voice will read it over the screen recording.
 
-The video is split into ${input.slots.length} time slots. Write exactly ONE text per slot, in order. The voice must stay in sync with the screen: in each slot, talk ONLY about what happens on screen in that slot. Be concise: one or two short sentences, NEVER more words than the slot's maximum. The written SOP already holds all the details; the voice only guides the eye and gives the key "why".
+The video is split into ${input.slots.length} time slots. Write exactly ONE text per slot, in order. The voice must stay in sync with the screen: in each slot, talk ONLY about what happens on screen in that slot. Be concise: one or two short sentences, NEVER more words than the slot's maximum. The video plays at real speed and is never sped up to fit the voice, so a text that is too long ends up talking about the next screen: when in doubt, say less. The written SOP already holds all the details; the voice only guides the eye and gives the key "why".
 
 - The voice-over replaces the person's own voice. Base each slot on the essential of WHAT THEY SAID during it (the main reason or warning), condensed into clean, confident sentences, in ${languageName(input.language)}. Keep their meaning, drop hesitations, repetitions and side remarks.
 - When they said nothing useful in a slot, explain what is being done and why, using the SOP below. Do not just describe the screen.
