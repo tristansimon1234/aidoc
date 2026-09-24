@@ -92,13 +92,3 @@
   margin-top: var(--space-md);
 }
 
-.toggleLink {
-  color: var(--color-primary);
-  cursor: pointer;
-  background: none;
-  border: none;
-  font-size: inherit;
-  font-family: inherit;
-  text-decoration: underline;
-  padding: 0;
-}

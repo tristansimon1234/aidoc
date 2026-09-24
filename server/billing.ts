@@ -116,7 +116,3 @@ export async function handleWebhook(rawBody: Buffer, signature: string): Promise
     )
   }
 }
-
-export function isBillingEnabled(): boolean {
-  return stripe !== null
-}

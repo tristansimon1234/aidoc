@@ -80,27 +80,6 @@
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
-
-  /* ===== Legacy aliases (backward compat — remove in Phase 4) ===== */
-  --color-bg-base: var(--color-bg);
-  --color-bg-surface: var(--color-card);
-  --color-bg-elevated: var(--color-secondary);
-  --color-bg-overlay: var(--color-secondary);
-
-  --color-border-subtle: var(--color-border);
-  --color-border-default: var(--color-border);
-  --color-border-strong: var(--color-border);
-
-  --color-text-primary: var(--color-fg);
-  --color-text-secondary: var(--color-muted-fg);
-  --color-text-muted: var(--color-muted-fg);
-  --color-text-inverse: var(--color-bg);
-
-  --color-accent-blue: var(--color-primary);
-  --color-accent-green: var(--color-success);
-  --color-accent-amber: var(--color-warning);
-  --color-accent-red: var(--color-destructive);
-  --color-accent-purple: var(--color-accent);
 }
 
 /* ===== DARK MODE ===== */
