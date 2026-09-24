@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { creditsFor } from '../credits.js'
+import { withAbsoluteUrls } from '../urls.js'
 import {
   addMusic,
   cutVideo,
@@ -26,6 +27,7 @@ import {
   candidateTimes,
   cleanSteps,
   fitSegment,
+  limitWords,
   narrationSlots,
   planEdit,
 } from './steps.js'
@@ -121,6 +123,25 @@ describe('prompts', () => {
   })
 })
 
+describe('adresses des fichiers', () => {
+  it('complète les adresses relatives et répare localhost, sans toucher le reste', () => {
+    const base = 'https://api.example.app'
+    expect(withAbsoluteUrls('/api/local-files/u/s/video.mp4', base)).toBe(
+      'https://api.example.app/api/local-files/u/s/video.mp4',
+    )
+    expect(
+      withAbsoluteUrls(
+        '![a](/api/local-files/1.jpg)\n![b](http://localhost:8080/api/local-files/2.jpg)',
+        base,
+      ),
+    ).toBe(
+      '![a](https://api.example.app/api/local-files/1.jpg)\n![b](https://api.example.app/api/local-files/2.jpg)',
+    )
+    const done = '![c](https://other.app/api/local-files/3.jpg)'
+    expect(withAbsoluteUrls(done, base)).toBe(done)
+  })
+})
+
 describe('captures', () => {
   it('cherche autour de l’horodatage sans déborder sur les étapes voisines', () => {
     const steps = [step(10), step(12), step(30)]
@@ -137,9 +158,13 @@ describe('captures', () => {
   })
 
   it('cale chaque passage sur sa voix off', () => {
-    expect(fitSegment(10, 3.6)).toEqual({ factor: 0.4, freeze: 0, length: 4 })
-    expect(fitSegment(4, 5.6)).toEqual({ factor: 1.5, freeze: 0, length: 6 })
-    expect(fitSegment(2, 5.6)).toEqual({ factor: 1.5, freeze: 3, length: 6 })
+    expect(fitSegment(10, 3.6)).toEqual({ factor: 0.4, freeze: 0, length: 4, tempo: 1 })
+    expect(fitSegment(4, 5.6)).toEqual({ factor: 1.5, freeze: 0, length: 6, tempo: 1 })
+    // Voix bien trop longue : accélérée de 20 % avant de figer l'image.
+    const long = fitSegment(2, 5.6)
+    expect(long.tempo).toBe(1.2)
+    expect(long.factor).toBe(1.5)
+    expect(long.freeze).toBeCloseTo(5.6 / 1.2 + 0.4 - 3)
     expect(fitSegment(5, 0).length).toBeCloseTo(2)
   })
 })
@@ -177,6 +202,16 @@ describe('vidéo marketing', () => {
       { start: 30, end: 38, line: 'Then the result.' },
       { start: 50, end: 60, line: 'Runs past the end.' },
     ])
+  })
+})
+
+describe('limitWords', () => {
+  it('coupe à la dernière phrase complète sous la limite', () => {
+    expect(limitWords('Click Save. Then check the list below carefully.', 5)).toBe('Click Save.')
+    expect(limitWords('Short one.', 5)).toBe('Short one.')
+    expect(limitWords('Open the menu, then pick the invoices tab and wait', 5)).toBe(
+      'Open the menu, then pick.',
+    )
   })
 })
 

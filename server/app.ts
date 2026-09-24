@@ -11,6 +11,8 @@ import { isLocalMode } from './db.js'
 import { LOCAL_FILES_DIR, localFilePath } from './db.local.js'
 
 export const app = express()
+// Derrière le proxy de Railway / Vercel : req.protocol reflète https (en-tête X-Forwarded-Proto).
+app.set('trust proxy', true)
 
 // L'interface (Vercel) peut appeler ce serveur directement depuis une autre adresse (VITE_API_URL).
 // L'authentification passe par l'en-tête Authorization, pas par des cookies.

@@ -311,7 +311,12 @@ export function toTone(value: string | null | undefined): Tone {
 
 export const NarrationSchema = z.object({ lines: z.array(z.string()) })
 
-/** Un texte par créneau ; le budget de mots suit la durée du créneau (~2,6 mots / seconde, au moins 80 %). */
+/** Mots maximum pour un créneau de voix off : ~2 mots / seconde, pour que la voix reste sur ce qui est à l'écran. */
+export function maxWordsFor(seconds: number): number {
+  return Math.max(6, Math.floor(seconds * 2))
+}
+
+/** Un texte court par créneau ; le budget de mots suit la durée du créneau. */
 export function narrationPrompt(input: {
   language: string
   tone: Tone
@@ -320,8 +325,8 @@ export function narrationPrompt(input: {
 }): string {
   const slots = input.slots
     .map((s, i) => {
-      const max = Math.max(8, Math.floor(s.seconds * 2.6))
-      const min = Math.max(5, Math.floor(max * 0.8))
+      const max = maxWordsFor(s.seconds)
+      const min = Math.max(3, Math.floor(max * 0.5))
       const said = s.spoken ? `\n   What the person said here: "${s.spoken}"` : ''
       return `${i + 1}. [${s.start.toFixed(0)}s, ${s.seconds.toFixed(0)}s available → ${min}-${max} words] On screen: ${s.action}${said}`
     })
@@ -329,11 +334,11 @@ export function narrationPrompt(input: {
 
   return `Write the voice-over of a short tutorial video, in ${languageName(input.language)}. A text-to-speech voice will read it over the screen recording.
 
-The video is split into ${input.slots.length} time slots. Write exactly ONE text per slot, in order. Use each slot's word range fully: the voice should talk from the start to the end of the slot, with no dead air. Aim for the upper half of the range.
+The video is split into ${input.slots.length} time slots. Write exactly ONE text per slot, in order. The voice must stay in sync with the screen: in each slot, talk ONLY about what happens on screen in that slot. Be concise: one or two short sentences, NEVER more words than the slot's maximum. The written SOP already holds all the details; the voice only guides the eye and gives the key "why".
 
-- The voice-over replaces the person's own voice. Base each slot on WHAT THEY SAID during it (their explanations, reasons and warnings), rewritten as clean, confident sentences, in ${languageName(input.language)}. Keep their meaning, drop hesitations and repetitions.
+- The voice-over replaces the person's own voice. Base each slot on the essential of WHAT THEY SAID during it (the main reason or warning), condensed into clean, confident sentences, in ${languageName(input.language)}. Keep their meaning, drop hesitations, repetitions and side remarks.
 - When they said nothing useful in a slot, explain what is being done and why, using the SOP below. Do not just describe the screen.
-- Repeat the critical points (rules, figures, deadlines, warnings) in the slot where they apply, keeping figures and names exact.
+- A critical point (rule, figure, deadline, warning) is said in the slot where it applies, with exact figures and names; nothing else from other slots.
 - Slot 1 starts with one short sentence saying what we are about to do.
 - The last slot ends with one sentence confirming what has been achieved.
 - Tone: ${TONES[input.tone].direction} Speak to the viewer ("click…", "here you choose… because…").

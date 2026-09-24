@@ -4,7 +4,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { env } from './env.js'
 import type { Account, Sop, SopKind, SopPatch, Voice } from './db.types.js'
 
 export const LOCAL_DIR = join(process.cwd(), '.local-data')
@@ -180,12 +179,12 @@ export function sourceForFfmpeg(path: string): string {
   return localFilePath(path)
 }
 
+/**
+ * Adresse relative : l'API la complète avec l'adresse du serveur qui répond (voir withAbsoluteUrls
+ * dans routes.ts), donc elle marche en local, sur Railway ou derrière n'importe quel domaine.
+ */
 export function publicUrl(path: string): string {
-  // Sur Railway, l'adresse publique du service ; en local, localhost.
-  const base = process.env.RAILWAY_PUBLIC_DOMAIN
-    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-    : `http://localhost:${env.PORT}`
-  return `${base}/api/local-files/${path}`
+  return `/api/local-files/${path}`
 }
 
 export async function deleteFolder(prefix: string): Promise<void> {

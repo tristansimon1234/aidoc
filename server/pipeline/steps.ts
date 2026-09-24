@@ -149,10 +149,25 @@ export function applyPickedTimes(
 export function fitSegment(
   slotSeconds: number,
   audioSeconds: number,
-): { factor: number; freeze: number; length: number } {
-  const target = audioSeconds > 0 ? audioSeconds + 0.4 : 0 // petite respiration après chaque phrase
+): { factor: number; freeze: number; length: number; tempo: number } {
+  const BREATH = 0.4 // petite respiration après chaque phrase
+  // Voix plus longue que ce que la vidéo ralentie peut couvrir : on accélère d'abord un peu la voix
+  // (jusqu'à ×1,2, inaudible) plutôt que de figer l'image, pour qu'elle reste sur ce qui est à l'écran.
+  const room = slotSeconds * 1.5
+  const tempo = audioSeconds + BREATH > room ? Math.min(1.2, (audioSeconds + BREATH) / room) : 1
+  const target = audioSeconds > 0 ? audioSeconds / tempo + BREATH : 0
   const factor = Math.min(1.5, Math.max(0.4, target / slotSeconds))
   const videoLength = slotSeconds * factor
   const freeze = Math.max(0, target - videoLength)
-  return { factor, freeze, length: videoLength + freeze }
+  return { factor, freeze, length: videoLength + freeze, tempo }
+}
+
+/** Coupe un texte trop long à la dernière phrase complète sous la limite de mots. */
+export function limitWords(text: string, maxWords: number): string {
+  const words = text.trim().split(/\s+/)
+  if (words.length <= maxWords) return text.trim()
+  const cut = words.slice(0, maxWords).join(' ')
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '))
+  if (end > cut.length * 0.25) return cut.slice(0, end + 1)
+  return `${cut.replace(/[,;:]$/, '')}.`
 }

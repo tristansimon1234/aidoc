@@ -8,6 +8,7 @@ import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
 import { isKnownVoice, listVoices, previewVoice } from './voices.js'
 import { DEFAULT_TONE, LANGUAGES, TONES, type Tone } from './pipeline/prompts.js'
 import { dispatchSop } from './dispatch.js'
+import { withAbsoluteUrls } from './urls.js'
 import { fail, failIfStale } from './pipeline/index.js'
 
 export const api = Router()
@@ -38,7 +39,11 @@ async function ownedSop(id: string, userId: string): Promise<db.Sop | null> {
   return sop && sop.userId === userId ? failIfStale(sop) : null
 }
 
-function toView(sop: db.Sop) {
+function serverBase(req: Request): string {
+  return `${req.protocol}://${req.get('host') ?? 'localhost'}`
+}
+
+function toView(sop: db.Sop, base: string) {
   return {
     id: sop.id,
     title: sop.title,
@@ -50,8 +55,8 @@ function toView(sop: db.Sop) {
     error: sop.error,
     creditsUsed: sop.creditsUsed,
     durationSeconds: sop.durationSeconds,
-    markdown: sop.markdown,
-    videoUrl: sop.videoPath ? db.publicUrl(sop.videoPath) : null,
+    markdown: sop.markdown === null ? null : withAbsoluteUrls(sop.markdown, base),
+    videoUrl: sop.videoPath ? withAbsoluteUrls(db.publicUrl(sop.videoPath), base) : null,
     kind: sop.kind,
     brief: sop.brief,
     targetSeconds: sop.targetSeconds,
@@ -109,9 +114,9 @@ api.get(
 
 api.get(
   '/sops',
-  authed(async (_req, res, userId) => {
+  authed(async (req, res, userId) => {
     const sops = await Promise.all((await db.listSops(userId)).map(failIfStale))
-    res.json(sops.map((s) => ({ ...toView(s), markdown: null })))
+    res.json(sops.map((s) => ({ ...toView(s, serverBase(req)), markdown: null })))
   }),
 )
 
@@ -123,7 +128,7 @@ api.get(
       res.status(404).json({ error: 'SOP not found' })
       return
     }
-    res.json(toView(sop))
+    res.json(toView(sop, serverBase(req)))
   }),
 )
 

@@ -27,6 +27,7 @@ import {
   NarrationSchema,
   VideoStepsSchema,
   insertScreenshots,
+  maxWordsFor,
   narrationPrompt,
   sopPrompt,
   videoAnalysisPrompt,
@@ -37,6 +38,7 @@ import {
   candidateTimes,
   cleanSteps,
   fitSegment,
+  limitWords,
   narrationSlots,
   planEdit,
 } from './steps.js'
@@ -222,7 +224,8 @@ async function narrate(input: {
 
   // Synthèse de toutes les phrases, 4 à la fois.
   const files = await mapLimit(slots, 4, async (_, i) => {
-    const text = lines[i]?.trim()
+    // Plafond appliqué par le code : une phrase trop longue décalerait la voix par rapport à l'écran.
+    const text = limitWords(lines[i] ?? '', Math.ceil(maxWordsFor(slots[i]!.seconds) * 1.15))
     if (!text) return null
     const { audio, ext } = await speak(input.sop.voice, text, toTone(input.sop.tone))
     const file = join(input.dir, `voice-${i}.${ext}`)

@@ -100,6 +100,7 @@ export async function renderNarrated(
     factor: number
     freeze: number
     length: number
+    tempo: number
   }[],
   output: string,
 ): Promise<void> {
@@ -116,7 +117,7 @@ export async function renderNarrated(
     const v = `[${i}:v]setpts=(PTS-STARTPTS)*${s.factor.toFixed(4)},fps=15${freeze}[v${i}]`
     const len = s.length.toFixed(3)
     const a = s.audio
-      ? `[${audioIndex++}:a]aresample=44100,aformat=channel_layouts=mono,apad,atrim=duration=${len}[a${i}]`
+      ? `[${audioIndex++}:a]aresample=44100,aformat=channel_layouts=mono${s.tempo > 1.001 ? `,atempo=${s.tempo.toFixed(3)}` : ''},apad,atrim=duration=${len}[a${i}]`
       : `aevalsrc=0:s=44100:d=${len},aformat=channel_layouts=mono[a${i}]`
     return `${v};${a}`
   })
