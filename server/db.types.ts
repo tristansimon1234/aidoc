@@ -4,6 +4,8 @@ export type SopStatus = 'uploading' | 'processing' | 'ready' | 'failed'
 /** « none », « gemini:<nom> » ou « elevenlabs:<id> » (voir server/voices.ts). */
 export type Voice = string
 
+export type SopKind = 'sop' | 'marketing'
+
 export interface Sop {
   id: string
   userId: string
@@ -12,6 +14,12 @@ export interface Sop {
   voice: Voice
   /** Ton de la voix off (voir TONES dans prompts.ts). */
   tone: string
+  /** « sop » (procédure + vidéo commentée) ou « marketing » (vidéo promo courte). */
+  kind: SopKind
+  /** Vidéo marketing : ce qu'il faut mettre en avant, durée visée (30 ou 60 s), musique de fond. */
+  brief: string | null
+  targetSeconds: number
+  music: boolean
   status: SopStatus
   progress: string | null
   error: string | null

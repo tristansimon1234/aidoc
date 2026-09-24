@@ -132,3 +132,16 @@ export async function renderNarrated(
     output,
   ])
 }
+
+/** Ajoute une musique de fond discrète sous la voix (la vidéo garde sa durée). */
+export async function addMusic(video: string, music: string, output: string): Promise<void> {
+  await run([
+    '-y', '-i', video, '-stream_loop', '-1', '-i', music,
+    '-filter_complex',
+    '[1:a]volume=0.12,afade=t=in:d=1[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]',
+    '-map', '0:v', '-map', '[a]',
+    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+    '-movflags', '+faststart',
+    output,
+  ])
+}

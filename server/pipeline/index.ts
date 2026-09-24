@@ -1,15 +1,26 @@
-// Vidéo → SOP (markdown + captures) → vidéo narrée.
+// Vidéo → SOP (markdown + captures + vidéo commentée) ou vidéo marketing courte.
 // Tourne sur le service vidéo (Railway), sans limite de durée ; en local, dans le même process.
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as db from '../db.js'
 import { creditsFor } from '../credits.js'
-import { cutVideo, durationOf, extractFrame, normalizeVideo, renderNarrated } from './ffmpeg.js'
+import {
+  addMusic,
+  cutVideo,
+  durationOf,
+  extractFrame,
+  normalizeVideo,
+  renderNarrated,
+} from './ffmpeg.js'
+import { generateMusic } from './elevenlabs.js'
 import { askJson, askJsonWithImages, withVideo } from './gemini.js'
 import { speak } from '../voices.js'
 import {
   addUpdatedDate,
+  cleanMarketingSegments,
+  MarketingPlanSchema,
+  marketingPrompt,
   toTone,
   FramePickSchema,
   framePickPrompt,
@@ -58,7 +69,7 @@ export async function processSop(id: string): Promise<void> {
 
   const dir = await mkdtemp(join(tmpdir(), `sop-${id}-`))
   const folder = `${sop.userId}/${sop.id}`
-  const step = (progress: string) => db.updateSop(id, { progress })
+  const step: Step = (progress) => db.updateSop(id, { progress })
 
   try {
     // 1. Vidéo propre (MP4 720p) + durée réelle
@@ -79,74 +90,8 @@ export async function processSop(id: string): Promise<void> {
       await db.updateSop(id, { creditsUsed: sop.creditsUsed })
     }
 
-    // 2 à 4 : la vidéo est envoyée une fois à Gemini, qui la regarde ET l'écoute pour chaque étape.
-    const { steps, markdown } = await withVideo(video, duration, async (gemini) => {
-      // 2. Transcription de ce que dit la personne + liste des étapes
-      await step('Analyzing the video')
-      const analysis = await gemini.json(videoAnalysisPrompt(duration), VideoStepsSchema)
-      const found = cleanSteps(analysis.steps, duration)
-      if (found.length === 0) {
-        throw new UserFacingError(
-          'No action detected in the video. Record your screen while you perform the task.',
-        )
-      }
-
-      // 3. Une capture par étape, au meilleur moment (Gemini choisit parmi plusieurs images)
-      await step('Taking screenshots')
-      const steps = await pickScreenshotTimes(video, found, duration, dir)
-      const urls: (string | null)[] = []
-      for (const [i, s] of steps.entries()) {
-        const jpg = join(dir, `step-${i + 1}.jpg`)
-        try {
-          await extractFrame(video, s.timestamp, jpg)
-          const path = `${folder}/step-${i + 1}.jpg`
-          await db.uploadFile(path, await readFile(jpg), 'image/jpeg')
-          urls.push(db.publicUrl(path))
-        } catch (err) {
-          console.warn(`[pipeline] capture ${i + 1} ratée`, (err as Error).message)
-          urls.push(null)
-        }
-      }
-
-      // 4. Rédaction de la SOP, vidéo + transcription sous les yeux
-      await step('Writing the procedure')
-      const raw = await gemini.text(
-        sopPrompt({
-          title: sop.title || analysis.title,
-          language: sop.language,
-          steps,
-          transcript: analysis.transcript,
-        }),
-      )
-      const markdown = addUpdatedDate(insertScreenshots(stripFence(raw), urls), sop.language)
-      await db.updateSop(id, { markdown })
-      return { steps, markdown }
-    })
-
-    // 5. Montage : la vidéo livrée dure 4 min max (extraits autour de chaque étape).
-    const edit = planEdit(steps, duration)
-    let finalVideo = video
-    if (edit.clips.length > 1 || edit.duration < duration) {
-      await step('Editing the video')
-      finalVideo = join(dir, 'edited.mp4')
-      await cutVideo(video, edit.clips, finalVideo, sop.voice === 'none')
-    }
-
-    // 6. Voix off, calée sur la vidéo montée
-    if (sop.voice !== 'none') {
-      await step('Recording the voice-over')
-      const narrated = join(dir, 'narrated.mp4')
-      await narrate({
-        video: finalVideo,
-        duration: edit.duration,
-        steps: edit.steps,
-        markdown,
-        sop,
-        dir,
-        output: narrated,
-      })
-      finalVideo = narrated
-    }
+    const job = { video, duration, sop, dir, folder, step }
+    const finalVideo = sop.kind === 'marketing' ? await makeMarketingVideo(job) : await makeSop(job)
 
     await step('Finishing')
     const videoPath = `${folder}/video.mp4`
@@ -154,7 +99,7 @@ export async function processSop(id: string): Promise<void> {
     await db.updateSop(id, { videoPath, status: 'ready', progress: null })
     await db.deleteFolder(`${folder}/source`).catch(() => {})
   } catch (err) {
-    console.error(`[pipeline] SOP ${id} en échec`, err)
+    console.error(`[pipeline] ${sop.kind} ${id} en échec`, err)
     const message =
       err instanceof UserFacingError
         ? err.message
@@ -165,10 +110,94 @@ export async function processSop(id: string): Promise<void> {
   }
 }
 
+type Step = (progress: string) => Promise<void>
+
+interface Job {
+  video: string
+  duration: number
+  sop: db.Sop
+  dir: string
+  folder: string
+  step: Step
+}
+
 class UserFacingError extends Error {}
 
 function stripFence(text: string): string {
   return text.replace(/^```(?:markdown|md)?\s*\n/, '').replace(/\n```\s*$/, '')
+}
+
+/** SOP : procédure écrite avec captures, puis vidéo commentée de 4 min max. Renvoie la vidéo finale. */
+async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promise<string> {
+  // 2 à 4 : la vidéo est envoyée une fois à Gemini, qui la regarde ET l'écoute pour chaque étape.
+  const { steps, markdown } = await withVideo(video, duration, async (gemini) => {
+    // 2. Transcription de ce que dit la personne + liste des étapes
+    await step('Analyzing the video')
+    const analysis = await gemini.json(videoAnalysisPrompt(duration), VideoStepsSchema)
+    const found = cleanSteps(analysis.steps, duration)
+    if (found.length === 0) {
+      throw new UserFacingError(
+        'No action detected in the video. Record your screen while you perform the task.',
+      )
+    }
+
+    // 3. Une capture par étape, au meilleur moment (Gemini choisit parmi plusieurs images)
+    await step('Taking screenshots')
+    const steps = await pickScreenshotTimes(video, found, duration, dir)
+    const urls: (string | null)[] = []
+    for (const [i, s] of steps.entries()) {
+      const jpg = join(dir, `step-${i + 1}.jpg`)
+      try {
+        await extractFrame(video, s.timestamp, jpg)
+        const path = `${folder}/step-${i + 1}.jpg`
+        await db.uploadFile(path, await readFile(jpg), 'image/jpeg')
+        urls.push(db.publicUrl(path))
+      } catch (err) {
+        console.warn(`[pipeline] capture ${i + 1} ratée`, (err as Error).message)
+        urls.push(null)
+      }
+    }
+
+    // 4. Rédaction de la SOP, vidéo + transcription sous les yeux
+    await step('Writing the procedure')
+    const raw = await gemini.text(
+      sopPrompt({
+        title: sop.title || analysis.title,
+        language: sop.language,
+        steps,
+        transcript: analysis.transcript,
+      }),
+    )
+    const markdown = addUpdatedDate(insertScreenshots(stripFence(raw), urls), sop.language)
+    await db.updateSop(sop.id, { markdown })
+    return { steps, markdown }
+  })
+
+  // 5. Montage : la vidéo livrée dure 4 min max (extraits autour de chaque étape).
+  const edit = planEdit(steps, duration)
+  let finalVideo = video
+  if (edit.clips.length > 1 || edit.duration < duration) {
+    await step('Editing the video')
+    finalVideo = join(dir, 'edited.mp4')
+    await cutVideo(video, edit.clips, finalVideo, sop.voice === 'none')
+  }
+
+  // 6. Voix off, calée sur la vidéo montée
+  if (sop.voice !== 'none') {
+    await step('Recording the voice-over')
+    const narrated = join(dir, 'narrated.mp4')
+    await narrate({
+      video: finalVideo,
+      duration: edit.duration,
+      steps: edit.steps,
+      markdown,
+      sop,
+      dir,
+      output: narrated,
+    })
+    finalVideo = narrated
+  }
+  return finalVideo
 }
 
 async function narrate(input: {
@@ -211,6 +240,71 @@ async function narrate(input: {
   )
   if (!segments.some((s) => s.audio)) throw new Error('Voix off vide')
   await renderNarrated(input.video, segments, input.output)
+}
+
+/**
+ * Vidéo marketing de 30 ou 60 s : Gemini choisit les moments forts selon le brief et écrit la voix off,
+ * chaque moment est calé sur sa phrase (aucun blanc), musique de fond en option. Renvoie la vidéo finale.
+ */
+async function makeMarketingVideo({ video, duration, sop, dir, step }: Job): Promise<string> {
+  await step('Analyzing the video')
+  const tone = toTone(sop.tone)
+  const plan = await withVideo(video, duration, (gemini) =>
+    gemini.json(
+      marketingPrompt({
+        language: sop.language,
+        tone,
+        durationSeconds: duration,
+        title: sop.title,
+        brief: sop.brief,
+        targetSeconds: sop.targetSeconds,
+      }),
+      MarketingPlanSchema,
+    ),
+  )
+  const moments = cleanMarketingSegments(plan.segments, duration)
+  if (moments.length === 0) {
+    throw new UserFacingError(
+      'No highlight found in the video. Try a recording that shows the product in action.',
+    )
+  }
+
+  // Une vidéo marketing a toujours une voix off (une vidéo muette ne vend rien).
+  await step('Recording the voice-over')
+  const voice = sop.voice === 'none' ? 'gemini:Puck' : sop.voice
+  const files = await mapLimit(moments, 4, async (m, i) => {
+    const { audio, ext } = await speak(voice, m.line, tone)
+    const file = join(dir, `line-${i}.${ext}`)
+    await writeFile(file, audio)
+    return file
+  })
+
+  await step('Editing the video')
+  const segments = await Promise.all(
+    moments.map(async (m, i) => ({
+      start: m.start,
+      end: m.end,
+      audio: files[i]!,
+      ...fitSegment(m.end - m.start, await durationOf(files[i]!)),
+    })),
+  )
+  let clip = join(dir, 'marketing.mp4')
+  await renderNarrated(video, segments, clip)
+
+  if (sop.music) {
+    await step('Adding music')
+    try {
+      const music = join(dir, 'music.mp3')
+      const length = await durationOf(clip)
+      await writeFile(music, await generateMusic(plan.musicPrompt, (length + 1) * 1000))
+      const withMusic = join(dir, 'marketing-music.mp4')
+      await addMusic(clip, music, withMusic)
+      clip = withMusic
+    } catch (err) {
+      console.warn('[pipeline] musique impossible, vidéo sans musique', (err as Error).message)
+    }
+  }
+  return clip
 }
 
 /**

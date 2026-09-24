@@ -1,6 +1,6 @@
 # CLAUDE.md — Doclee
 
-Doclee transforme une vidéo d'écran en **SOP** (markdown + captures) et en **vidéo commentée de 4 min max**. SaaS payant au crédit.
+Doclee transforme une vidéo d'écran en **SOP** (markdown + captures + vidéo commentée de 4 min max) ou en **vidéo marketing** de 30/60 s (champ `kind` sur la table `sops`). SaaS payant au crédit.
 Voir `README.md` pour l'architecture, la tarification et le déploiement.
 
 ## Principe directeur : rester simple

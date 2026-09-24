@@ -13,7 +13,7 @@ import { NarratedPlayer } from '../ui/NarratedPlayer'
 import styles from './pages.module.css'
 
 /** Étapes affichées pendant la génération (libellés = `progress` envoyé par le serveur). */
-const STEPS = [
+const SOP_STEPS = [
   { label: 'Preparing the video', estimatedSeconds: 20 },
   { label: 'Analyzing the video', estimatedSeconds: 60 },
   { label: 'Taking screenshots', estimatedSeconds: 10 },
@@ -21,6 +21,15 @@ const STEPS = [
   { label: 'Editing the video', estimatedSeconds: 20 },
   { label: 'Recording the voice-over', estimatedSeconds: 60 },
   { label: 'Finishing', estimatedSeconds: 10 },
+]
+
+const MARKETING_STEPS = [
+  { label: 'Preparing the video', estimatedSeconds: 20 },
+  { label: 'Analyzing the video', estimatedSeconds: 45 },
+  { label: 'Recording the voice-over', estimatedSeconds: 20 },
+  { label: 'Editing the video', estimatedSeconds: 20 },
+  { label: 'Adding music', estimatedSeconds: 45 },
+  { label: 'Finishing', estimatedSeconds: 5 },
 ]
 
 export function SopPage() {
@@ -48,6 +57,7 @@ export function SopPage() {
 
   if (error) return <p className={styles.error}>{error}</p>
   if (!sop) return <Spinner />
+  const marketing = sop.kind === 'marketing'
 
   async function copy() {
     if (!doc.current || !sop?.markdown) return
@@ -73,19 +83,21 @@ export function SopPage() {
   async function remove() {
     if (!sop) return
     const ok = await confirm({
-      title: 'Delete this procedure?',
-      message: 'The text, screenshots and video will be permanently deleted.',
+      title: marketing ? 'Delete this marketing video?' : 'Delete this procedure?',
+      message: marketing
+        ? 'The video will be permanently deleted.'
+        : 'The text, screenshots and video will be permanently deleted.',
       confirmLabel: 'Delete',
     })
     if (!ok) return
     await api.deleteSop(sop.id)
-    navigate('/')
+    navigate(marketing ? '/?tab=marketing' : '/')
   }
 
   const header = (
     <div className={`${styles.header} no-print`}>
-      {/* Une fois prête, le titre est celui de la procédure elle-même (dans le document). */}
-      {sop.status === 'ready' ? (
+      {/* Une fois prête, le titre d'une SOP est celui du document lui-même. */}
+      {sop.status === 'ready' && !marketing ? (
         <p className={styles.subtitle}>{new Date(sop.createdAt).toLocaleDateString('en-GB')}</p>
       ) : (
         <div>
@@ -93,7 +105,19 @@ export function SopPage() {
           <p className={styles.subtitle}>{new Date(sop.createdAt).toLocaleDateString('en-GB')}</p>
         </div>
       )}
-      {sop.status === 'ready' && (
+      {sop.status === 'ready' && marketing && (
+        <div className={styles.actions}>
+          {sop.videoUrl && (
+            <a href={sop.videoUrl} download={`${sop.title}.mp4`}>
+              <Button>Download video</Button>
+            </a>
+          )}
+          <Button variant="ghost" onClick={() => void remove()}>
+            Delete
+          </Button>
+        </div>
+      )}
+      {sop.status === 'ready' && !marketing && (
         <div className={styles.actions}>
           <Button onClick={() => void copy()}>
             {copied ? 'Copied ✓' : 'Copy for Notion / Docs'}
@@ -113,9 +137,9 @@ export function SopPage() {
   )
 
   if (sop.status === 'processing') {
-    const steps = STEPS.filter(
-      (s) => sop.voice !== 'none' || s.label !== 'Recording the voice-over',
-    )
+    const steps = marketing
+      ? MARKETING_STEPS.filter((s) => sop.music || s.label !== 'Adding music')
+      : SOP_STEPS.filter((s) => sop.voice !== 'none' || s.label !== 'Recording the voice-over')
     const active = Math.max(
       0,
       steps.findIndex((s) => s.label === sop.progress),
@@ -156,13 +180,15 @@ export function SopPage() {
           <NarratedPlayer videoUrl={sop.videoUrl} narrated={sop.voice !== 'none'} />
         </div>
       )}
-      <div className={styles.doc}>
-        <Card>
-          <div ref={doc}>
-            <MarkdownRenderer content={sop.markdown ?? ''} lang={sop.language} />
-          </div>
-        </Card>
-      </div>
+      {!marketing && (
+        <div className={styles.doc}>
+          <Card>
+            <div ref={doc}>
+              <MarkdownRenderer content={sop.markdown ?? ''} lang={sop.language} />
+            </div>
+          </Card>
+        </div>
+      )}
       {dialog}
     </>
   )

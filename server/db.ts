@@ -4,7 +4,7 @@ import { env } from './env.js'
 import * as remote from './db.supabase.js'
 import * as local from './db.local.js'
 
-export type { Account, Sop, SopPatch, SopStatus, Voice } from './db.types.js'
+export type { Account, Sop, SopKind, SopPatch, SopStatus, Voice } from './db.types.js'
 
 export const isLocalMode = !env.SUPABASE_URL || env.LOCAL_MODE
 

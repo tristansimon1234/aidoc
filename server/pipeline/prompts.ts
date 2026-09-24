@@ -223,6 +223,52 @@ ${list}
 Return ONLY JSON: {"picks": [{"step": <step number>, "image": <chosen image number>}, ...]} with one entry per step.`
 }
 
+// ── 2 ter. Vidéo marketing (30 ou 60 s) ───────────────────
+
+export const MarketingPlanSchema = z.object({
+  segments: z.array(z.object({ start: z.number(), end: z.number(), line: z.string() })),
+  musicPrompt: z.string().default('modern upbeat corporate background music, light and positive'),
+})
+export type MarketingPlan = z.infer<typeof MarketingPlanSchema>
+
+export function marketingPrompt(input: {
+  language: string
+  tone: Tone
+  durationSeconds: number
+  title: string
+  brief: string | null
+  targetSeconds: number
+}): string {
+  const language = languageName(input.language)
+  const moments = input.targetSeconds <= 30 ? '3 to 5' : '4 to 7'
+  const words = Math.round(input.targetSeconds * 2.2)
+  return `From this screen recording, plan a punchy marketing video of at most ${input.targetSeconds} seconds for "${input.title}". It will be cut from the recording and narrated by a voice-over in ${language}.
+${input.brief ? `\nBRIEF FROM THE USER (follow it: what to highlight, for whom, which message):\n${input.brief}\n` : ''}
+Pick ${moments} moments of the recording that show the VALUE best (results, key features, "wow" moments), not every click. For each moment give:
+- "start" and "end" in seconds (between 0 and ${Math.floor(input.durationSeconds)}), 3 to 12 seconds long, in chronological order, not overlapping;
+- "line": the voice-over sentence for that moment, in ${language}, 8 to 25 words.
+
+The lines together tell a story: the first opens with a hook (the problem or the promise), the middle shows the benefits, the last ends with a clear call to action. At most ${words} words in total. Use what the person says in the recording for the real benefits and vocabulary. Tone: ${TONES[input.tone].direction} No URLs, no personal data, no stage directions.
+
+"musicPrompt": one short description of fitting background music (style, mood, tempo), e.g. "upbeat electronic, driving rhythm, positive".
+
+Return ONLY JSON: {"segments": [{"start": 12, "end": 18, "line": "..."}], "musicPrompt": "..."}`
+}
+
+/** Garde les moments valides du plan marketing : dans la vidéo, dans l'ordre, sans chevauchement. */
+export function cleanMarketingSegments(
+  segments: MarketingPlan['segments'],
+  durationSeconds: number,
+): MarketingPlan['segments'] {
+  const out: MarketingPlan['segments'] = []
+  for (const s of [...segments].sort((a, b) => a.start - b.start)) {
+    const start = Math.max(0, s.start, out[out.length - 1]?.end ?? 0)
+    const end = Math.min(durationSeconds, s.end)
+    if (end - start >= 1.5 && s.line.trim()) out.push({ start, end, line: s.line.trim() })
+  }
+  return out.slice(0, 7)
+}
+
 // ── 3. Script de la voix off ─────────────────────────────────
 
 /** Tons proposés pour la voix off : `direction` guide l'écriture, `speech` l'intonation de la synthèse Gemini. */

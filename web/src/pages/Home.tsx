@@ -1,183 +1,98 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { api, videoDuration, type Me, type Sop } from '../api'
-import { Button, Card, EmptyState, Field, StatusIndicator } from '../ui/design-system/components'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { api, type Kind, type Sop } from '../api'
+import { Button, Card, EmptyState, StatusIndicator } from '../ui/design-system/components'
 import type { StatusKey } from '../ui/design-system/tokens'
-import { ScreenRecorder } from '../ui/ScreenRecorder'
-import { VoicePicker, loadVoiceChoice } from '../ui/VoicePicker'
 import styles from './pages.module.css'
 
-const LANGUAGE_LABELS: Record<string, string> = {
-  en: 'English',
-  fr: 'French',
-  es: 'Spanish',
-  de: 'German',
-  it: 'Italian',
-  pt: 'Portuguese',
-  nl: 'Dutch',
-}
+const TABS: { id: Kind; label: string; empty: string }[] = [
+  { id: 'sop', label: 'SOPs', empty: 'No SOP yet' },
+  { id: 'marketing', label: 'Marketing videos', empty: 'No marketing video yet' },
+]
 
-export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) {
+/** Accueil : deux onglets (SOPs / vidéos marketing) et le bouton de création. */
+export function Home() {
   const navigate = useNavigate()
-  const [sops, setSops] = useState<Sop[] | null>(null)
-  const [file, setFile] = useState<File | null>(null)
-  const [duration, setDuration] = useState(0)
-  const [title, setTitle] = useState('')
-  const [language, setLanguage] = useState('en')
-  const [{ voice, tone }, setVoiceChoice] = useState(loadVoiceChoice)
-  const [uploading, setUploading] = useState<number | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [params, setParams] = useSearchParams()
+  const tab: Kind = params.get('tab') === 'marketing' ? 'marketing' : 'sop'
+  const [items, setItems] = useState<Sop[] | null>(null)
 
   const load = () =>
     api
       .listSops()
-      .then(setSops)
-      .catch(() => setSops([]))
+      .then(setItems)
+      .catch(() => setItems([]))
   useEffect(() => {
     void load()
   }, [])
-  // Rafraîchit la liste tant qu'une procédure est en cours de génération.
+  // Rafraîchit la liste tant qu'une création est en cours.
   useEffect(() => {
-    if (!sops?.some((s) => s.status === 'processing')) return
+    if (!items?.some((s) => s.status === 'processing')) return
     const t = setInterval(load, 4000)
     return () => clearInterval(t)
-  }, [sops])
+  }, [items])
 
-  async function pick(f: File) {
-    setError(null)
-    try {
-      const seconds = await videoDuration(f)
-      if (me && seconds > me.maxVideoMinutes * 60) {
-        setError(`Video too long (${me.maxVideoMinutes} min max).`)
-        return
-      }
-      setFile(f)
-      setDuration(seconds)
-      setTitle(f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '))
-    } catch (err) {
-      setError((err as Error).message)
-    }
-  }
-
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    if (!file) return
-    setError(null)
-    setUploading(0)
-    try {
-      const id = await api.createSop(
-        { title, language, voice, tone, file, durationSeconds: duration },
-        setUploading,
-      )
-      onChange()
-      navigate(`/sop/${id}`)
-    } catch (err) {
-      setError((err as Error).message)
-      setUploading(null)
-    }
-  }
-
-  const cost = me ? Math.max(1, Math.ceil(duration / (me.minutesPerCredit * 60))) : 1
-  const notEnough = me !== null && me.credits < cost
+  const current = TABS.find((t) => t.id === tab)!
+  const shown = (items ?? []).filter((s) => (s.kind ?? 'sop') === tab)
 
   return (
     <>
       <div className={styles.header}>
         <div>
-          <h1 className={styles.title}>New procedure</h1>
+          <h1 className={styles.title}>Your library</h1>
           <p className={styles.subtitle}>
-            Do the task while recording your screen: Doclee writes the procedure and edits a
-            narrated video of 4 min max.
+            Turn a screen recording into an SOP or a marketing video.
           </p>
         </div>
+        <Button onClick={() => navigate(`/new?kind=${tab}`)}>
+          + New {tab === 'sop' ? 'SOP' : 'marketing video'}
+        </Button>
       </div>
 
-      {!file ? (
-        <ScreenRecorder onFile={pick} maxMinutes={me?.maxVideoMinutes ?? 60} />
-      ) : (
+      <div className={styles.tabs} role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={t.id === tab}
+            className={t.id === tab ? styles.tabActive : styles.tab}
+            onClick={() => setParams(t.id === 'sop' ? {} : { tab: t.id })}
+          >
+            {t.label}
+            <span className={styles.tabCount}>
+              {(items ?? []).filter((s) => (s.kind ?? 'sop') === t.id).length}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {items === null ? null : shown.length === 0 ? (
         <Card>
-          <form className={styles.form} onSubmit={(e) => void submit(e)}>
-            <div className={styles.fileRow}>
-              <span className={styles.fileName}>{file.name}</span>
-              <span className={styles.mono}>{formatDuration(duration)}</span>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setFile(null)}>
-                Change
-              </Button>
-            </div>
-
-            <Field
-              label="Title"
-              value={title}
-              onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
-              required
-              maxLength={200}
-            />
-
-            <div className={styles.row}>
-              <label className={styles.select}>
-                Procedure language
-                <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                  {(me?.languages ?? ['en']).map((l) => (
-                    <option key={l} value={l}>
-                      {LANGUAGE_LABELS[l] ?? l}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <VoicePicker
-              language={language}
-              tones={me?.tones ?? []}
-              voice={voice}
-              tone={tone}
-              onChange={setVoiceChoice}
-            />
-
-            <div className={styles.actions}>
-              {uploading !== null ? (
-                <span className={styles.notice}>Uploading video… {uploading}%</span>
-              ) : notEnough ? (
-                <span className={styles.notice}>
-                  You need {cost} credit{cost > 1 ? 's' : ''}.{' '}
-                  <Link to="/credits">Buy credits</Link>
-                </span>
-              ) : (
-                <Button type="submit">
-                  Generate · {cost} credit{cost > 1 ? 's' : ''}
-                </Button>
-              )}
-            </div>
-          </form>
+          <EmptyState
+            title={current.empty}
+            description="Record your screen or upload a video to create one."
+            action={
+              <Link to={`/new?kind=${tab}`}>
+                <Button variant="secondary">Create one</Button>
+              </Link>
+            }
+          />
         </Card>
+      ) : (
+        <div className={styles.grid}>
+          {shown.map((s) => (
+            <Card key={s.id} onClick={() => navigate(`/sop/${s.id}`)}>
+              <p className={styles.cardTitle}>{s.title}</p>
+              <div className={styles.cardMeta}>
+                <StatusIndicator status={statusKey(s)} label={statusLabel(s)} />
+                <span className={styles.mono}>
+                  {new Date(s.createdAt).toLocaleDateString('en-GB')}
+                </span>
+              </div>
+            </Card>
+          ))}
+        </div>
       )}
-      {error && <p className={styles.error}>{error}</p>}
-
-      <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>My procedures</h2>
-        {sops === null ? null : sops.length === 0 ? (
-          <Card>
-            <EmptyState
-              title="No procedures yet"
-              description="Record your screen or drop a video above to create your first one."
-            />
-          </Card>
-        ) : (
-          <div className={styles.grid}>
-            {sops.map((s) => (
-              <Card key={s.id} onClick={() => navigate(`/sop/${s.id}`)}>
-                <p className={styles.cardTitle}>{s.title}</p>
-                <div className={styles.cardMeta}>
-                  <StatusIndicator status={statusKey(s)} label={statusLabel(s)} />
-                  <span className={styles.mono}>
-                    {new Date(s.createdAt).toLocaleDateString('en-GB')}
-                  </span>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
     </>
   )
 }
@@ -194,10 +109,4 @@ function statusLabel(s: Sop): string {
   if (s.status === 'processing') return s.progress ?? 'In progress'
   if (s.status === 'failed') return 'Failed'
   return 'Upload interrupted'
-}
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.round(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
 }

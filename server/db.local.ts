@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { env } from './env.js'
-import type { Account, Sop, SopPatch, Voice } from './db.types.js'
+import type { Account, Sop, SopKind, SopPatch, Voice } from './db.types.js'
 
 export const LOCAL_DIR = join(process.cwd(), '.local-data')
 export const LOCAL_FILES_DIR = join(LOCAL_DIR, 'files')
@@ -98,6 +98,10 @@ export async function createSop(input: {
   language: string
   voice: Voice
   tone: string
+  kind: SopKind
+  brief: string | null
+  targetSeconds: number
+  music: boolean
   sourcePath: string
 }): Promise<Sop> {
   const now = new Date().toISOString()

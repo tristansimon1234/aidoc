@@ -8,6 +8,7 @@ import { Shell } from './ui/layout/Shell'
 import { useTheme } from './ui/layout/useTheme'
 import { Login } from './pages/Login'
 import { Home } from './pages/Home'
+import { Create } from './pages/Create'
 import { SopPage } from './pages/SopPage'
 import { Credits } from './pages/Credits'
 import './ui/design-system/globals.css'
@@ -44,7 +45,8 @@ function App() {
       credits={me?.credits ?? null}
     >
       <Routes>
-        <Route path="/" element={<Home me={me} onChange={refreshMe} />} />
+        <Route path="/" element={<Home />} />
+        <Route path="/new" element={<Create me={me} onChange={refreshMe} />} />
         <Route path="/sop/:id" element={<SopPage />} />
         <Route path="/credits" element={<Credits me={me} />} />
       </Routes>

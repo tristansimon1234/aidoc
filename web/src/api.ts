@@ -10,6 +10,9 @@ export interface VoiceOption {
   description: string
   premium: boolean
 }
+/** SOP (procédure + vidéo commentée) ou vidéo marketing courte. */
+export type Kind = 'sop' | 'marketing'
+
 export type Status = 'uploading' | 'processing' | 'ready' | 'failed'
 
 export interface Offer {
@@ -23,6 +26,7 @@ export interface Me {
   credits: number
   hasBillingAccount: boolean
   tones: { id: string; label: string }[]
+  musicAvailable: boolean
   languages: string[]
   minutesPerCredit: number
   maxVideoMinutes: number
@@ -42,6 +46,10 @@ export interface Sop {
   durationSeconds: number | null
   markdown: string | null
   videoUrl: string | null
+  kind: Kind
+  brief: string | null
+  targetSeconds: number
+  music: boolean
   createdAt: string
 }
 
@@ -85,6 +93,10 @@ export const api = {
       language: string
       voice: Voice
       tone: string
+      kind: Kind
+      brief: string
+      targetSeconds: 30 | 60
+      music: boolean
       file: File
       durationSeconds: number
     },
@@ -95,6 +107,10 @@ export const api = {
       language: input.language,
       voice: input.voice,
       tone: input.tone,
+      kind: input.kind,
+      brief: input.brief,
+      targetSeconds: input.targetSeconds,
+      music: input.music,
       fileName: input.file.name,
       durationSeconds: input.durationSeconds,
     })

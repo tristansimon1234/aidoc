@@ -5,8 +5,22 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { creditsFor } from '../credits.js'
-import { cutVideo, durationOf, extractFrame, normalizeVideo, renderNarrated } from './ffmpeg.js'
-import { addUpdatedDate, insertScreenshots, narrationPrompt, sopPrompt } from './prompts.js'
+import {
+  addMusic,
+  cutVideo,
+  durationOf,
+  extractFrame,
+  normalizeVideo,
+  renderNarrated,
+} from './ffmpeg.js'
+import {
+  addUpdatedDate,
+  cleanMarketingSegments,
+  insertScreenshots,
+  marketingPrompt,
+  narrationPrompt,
+  sopPrompt,
+} from './prompts.js'
 import {
   applyPickedTimes,
   candidateTimes,
@@ -130,6 +144,42 @@ describe('captures', () => {
   })
 })
 
+describe('vidéo marketing', () => {
+  it('suit le brief et la durée demandée', () => {
+    const prompt = marketingPrompt({
+      language: 'fr',
+      tone: 'energetic',
+      durationSeconds: 300,
+      title: 'Pennylane',
+      brief: 'Pour les cabinets comptables, finir sur « Réservez une démo »',
+      targetSeconds: 30,
+    })
+    expect(prompt).toContain('at most 30 seconds')
+    expect(prompt).toContain('3 to 5 moments')
+    expect(prompt).toContain('Pour les cabinets comptables')
+    expect(prompt).toContain('narrated by a voice-over in French')
+  })
+
+  it('garde des moments valides, dans l’ordre et sans chevauchement', () => {
+    const out = cleanMarketingSegments(
+      [
+        { start: 30, end: 38, line: 'Then the result.' },
+        { start: 2, end: 9, line: 'The hook.' },
+        { start: 7, end: 12, line: 'Overlaps the hook.' },
+        { start: 50, end: 70, line: 'Runs past the end.' },
+        { start: 40, end: 40.5, line: 'Too short.' },
+      ],
+      60,
+    )
+    expect(out).toEqual([
+      { start: 2, end: 9, line: 'The hook.' },
+      { start: 9, end: 12, line: 'Overlaps the hook.' },
+      { start: 30, end: 38, line: 'Then the result.' },
+      { start: 50, end: 60, line: 'Runs past the end.' },
+    ])
+  })
+})
+
 describe('addUpdatedDate', () => {
   it('ajoute la date sous le titre, dans la langue de la SOP', () => {
     const out = addUpdatedDate('# Book an invoice\n\nIntro', 'fr', new Date('2026-09-24'))
@@ -206,5 +256,12 @@ describe('ffmpeg', () => {
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
     )
     expect(silences).not.toContain('silence_start')
+
+    // Musique de fond sous la voix : la durée du clip ne change pas.
+    const music = join(dir, 'music.mp3')
+    execFileSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'sine=frequency=220:duration=2', music])
+    const withMusic = join(dir, 'with-music.mp4')
+    await addMusic(out, music, withMusic)
+    expect(await durationOf(withMusic)).toBeCloseTo(await durationOf(out), 0)
   }, 60_000)
 })

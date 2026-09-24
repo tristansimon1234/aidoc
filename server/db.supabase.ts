@@ -1,7 +1,7 @@
 // Stockage des données dans Supabase (base + fichiers). Utilisé dès que SUPABASE_URL est défini.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { env } from './env.js'
-import type { Account, Sop, SopPatch, SopStatus, Voice } from './db.types.js'
+import type { Account, Sop, SopKind, SopPatch, SopStatus, Voice } from './db.types.js'
 
 let client: SupabaseClient | null = null
 function sb(): SupabaseClient {
@@ -28,6 +28,10 @@ interface SopRow {
   duration_seconds: number | string | null
   markdown: string | null
   video_path: string | null
+  kind: SopKind | null
+  brief: string | null
+  target_seconds: number | null
+  music: boolean | null
   created_at: string
   updated_at: string
 }
@@ -48,6 +52,10 @@ function toSop(r: SopRow): Sop {
     durationSeconds: r.duration_seconds === null ? null : Number(r.duration_seconds),
     markdown: r.markdown,
     videoPath: r.video_path,
+    kind: r.kind ?? 'sop',
+    brief: r.brief,
+    targetSeconds: r.target_seconds ?? 60,
+    music: r.music ?? false,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -144,7 +152,7 @@ export async function applyCredits(
 // ── SOPs ─────────────────────────────────────────────────────
 
 const SOP_COLUMNS =
-  'id, user_id, title, language, voice, tone, status, progress, error, credits_used, source_path, duration_seconds, markdown, video_path, created_at, updated_at'
+  'id, user_id, title, language, voice, tone, status, progress, error, credits_used, source_path, duration_seconds, markdown, video_path, kind, brief, target_seconds, music, created_at, updated_at'
 
 export async function createSop(input: {
   id: string
@@ -153,6 +161,10 @@ export async function createSop(input: {
   language: string
   voice: Voice
   tone: string
+  kind: SopKind
+  brief: string | null
+  targetSeconds: number
+  music: boolean
   sourcePath: string
 }): Promise<Sop> {
   const res = await sb()
@@ -164,6 +176,10 @@ export async function createSop(input: {
       language: input.language,
       voice: input.voice,
       tone: input.tone,
+      kind: input.kind,
+      brief: input.brief,
+      target_seconds: input.targetSeconds,
+      music: input.music,
       source_path: input.sourcePath,
     })
     .select(SOP_COLUMNS)

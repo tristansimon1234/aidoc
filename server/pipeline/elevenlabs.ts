@@ -63,3 +63,20 @@ export async function listElevenLabsVoices(): Promise<ElevenLabsVoice[]> {
   cache = { at: Date.now(), voices: list }
   return list
 }
+
+/** Musique de fond composée par ElevenLabs (MP3). Compter 30 à 60 s de génération. */
+export async function generateMusic(prompt: string, durationMs: number): Promise<Buffer> {
+  if (!env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY manquante')
+  const res = await fetch('https://api.elevenlabs.io/v1/music/compose', {
+    method: 'POST',
+    headers: {
+      'xi-api-key': env.ELEVENLABS_API_KEY,
+      'Content-Type': 'application/json',
+      Accept: 'audio/mpeg',
+    },
+    body: JSON.stringify({ prompt, music_length_ms: Math.round(durationMs) }),
+  })
+  if (!res.ok)
+    throw new Error(`ElevenLabs Music ${res.status}: ${(await res.text()).slice(0, 300)}`)
+  return Buffer.from(await res.arrayBuffer())
+}

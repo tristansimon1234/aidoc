@@ -4,6 +4,7 @@ import { z } from 'zod'
 import * as db from './db.js'
 import * as billing from './billing.js'
 import { MAX_VIDEO_MINUTES, MINUTES_PER_CREDIT, OFFERS, creditsFor } from './credits.js'
+import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
 import { isKnownVoice, listVoices, previewVoice } from './voices.js'
 import { DEFAULT_TONE, LANGUAGES, TONES, type Tone } from './pipeline/prompts.js'
 import { dispatchSop } from './dispatch.js'
@@ -51,6 +52,10 @@ function toView(sop: db.Sop) {
     durationSeconds: sop.durationSeconds,
     markdown: sop.markdown,
     videoUrl: sop.videoPath ? db.publicUrl(sop.videoPath) : null,
+    kind: sop.kind,
+    brief: sop.brief,
+    targetSeconds: sop.targetSeconds,
+    music: sop.music,
     createdAt: sop.createdAt,
   }
 }
@@ -65,6 +70,7 @@ api.get(
       hasBillingAccount: account.stripeCustomerId !== null,
       languages: Object.keys(LANGUAGES),
       tones: Object.entries(TONES).map(([id, t]) => ({ id, label: t.label })),
+      musicAvailable: isElevenLabsEnabled(),
       minutesPerCredit: MINUTES_PER_CREDIT,
       maxVideoMinutes: MAX_VIDEO_MINUTES,
       offers: await billing.listOffers(),
@@ -126,6 +132,11 @@ const CreateSchema = z.object({
   language: z.string().refine((l) => l in LANGUAGES),
   voice: z.string().max(100),
   tone: z.enum(Object.keys(TONES) as [Tone, ...Tone[]]),
+  kind: z.enum(['sop', 'marketing']).default('sop'),
+  // Vidéo marketing uniquement
+  brief: z.string().trim().max(2000).optional(),
+  targetSeconds: z.union([z.literal(30), z.literal(60)]).default(60),
+  music: z.boolean().default(false),
   fileName: z.string().max(300),
   durationSeconds: z
     .number()
@@ -158,6 +169,10 @@ api.post(
       language: input.language,
       voice: input.voice,
       tone: input.tone,
+      kind: input.kind,
+      brief: input.kind === 'marketing' ? input.brief || null : null,
+      targetSeconds: input.targetSeconds,
+      music: input.kind === 'marketing' && input.music && isElevenLabsEnabled(),
       sourcePath,
     })
     const upload = await db.createUploadUrl(sourcePath)

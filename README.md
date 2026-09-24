@@ -1,6 +1,11 @@
 # Doclee
 
-Filmez votre écran pendant que vous faites une tâche → recevez **la procédure écrite (SOP) avec captures** et **une vidéo commentée**.
+Filmez votre écran → recevez au choix :
+
+- **une SOP** : la procédure écrite avec captures + une vidéo commentée de 4 min max ;
+- **une vidéo marketing** de 30 ou 60 s : les moments forts, une voix off qui vend (accroche → bénéfices → appel à l'action), musique de fond en option, guidée par un brief.
+
+L'accueil a deux onglets (SOPs / Marketing videos) ; la création se fait en 4 étapes : type → vidéo → options → lancement.
 
 L'édition, le partage et la recherche se font dans vos outils habituels : bouton **« Copier pour Notion / Docs »** (colle texte + images), export **PDF**, **Markdown** et **vidéo MP4**.
 
@@ -17,7 +22,7 @@ Vidéo (upload ou enregistrement dans le navigateur)
     puis chaque passage de vidéo est accéléré ou ralenti pour durer exactement le temps de sa phrase (aucun blanc)
 ```
 
-**Voix off** : l'utilisateur choisit la voix (8 voix Gemini incluses ; avec `ELEVENLABS_API_KEY`, toutes les voix du compte ElevenLabs, voix clonées comprises) et le ton (amical, professionnel, énergique, calme, joueur), et peut écouter un extrait avant de lancer. Liste des voix : `server/voices.ts` ; tons : `TONES` dans `server/pipeline/prompts.ts`.
+**Voix off** : l'utilisateur choisit la voix (30 voix Gemini incluses ; avec `ELEVENLABS_API_KEY`, toutes les voix du compte ElevenLabs, voix clonées comprises) et le ton (amical, professionnel, énergique, calme, joueur), et peut écouter un extrait avant de lancer. Liste des voix : `server/voices.ts` ; tons : `TONES` dans `server/pipeline/prompts.ts`.
 
 La vidéo livrée dure **4 minutes maximum**, quelle que soit la durée de l'enregistrement : au-delà, on garde un extrait autour de chaque étape (surtout ce qui précède l'action) et on coupe le reste. La voix off est calée sur ce montage. Réglage : `MAX_SOP_VIDEO_SECONDS` dans `server/pipeline/steps.ts`.
 
