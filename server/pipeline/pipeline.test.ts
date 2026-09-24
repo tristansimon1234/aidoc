@@ -299,4 +299,53 @@ describe('ffmpeg', () => {
     await addMusic(out, music, withMusic)
     expect(await durationOf(withMusic)).toBeCloseTo(await durationOf(out), 0)
   }, 60_000)
+
+  it('ne dérive pas : image et voix gardent la même durée sur 30 passages', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'doclee-drift-'))
+    const src = join(dir, 'src.mp4')
+    const voice = join(dir, 'voice.wav')
+    execFileSync(ffmpeg, [
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc=size=640x360:rate=15:duration=30',
+      '-pix_fmt',
+      'yuv420p',
+      src,
+    ])
+    execFileSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.53', voice])
+
+    // Montage 4 min : 30 extraits aux bornes « bizarres ».
+    const cut = join(dir, 'cut.mp4')
+    const clips = Array.from({ length: 30 }, (_, i) => ({ start: i + 0.013, end: i + 0.71 }))
+    await cutVideo(src, clips, cut, false)
+
+    // Voix off : 30 passages de 0,53 s de voix sur des créneaux de 0,69 s (les derniers dépassent
+    // même un peu la fin de la vidéo montée : ils doivent quand même avoir leurs images).
+    const segments = Array.from({ length: 30 }, (_, i) => ({
+      start: i * 0.69,
+      end: i * 0.69 + 0.69,
+      audio: voice,
+      ...fitSegment(0.69, 0.53),
+    }))
+    const out = join(dir, 'out.mp4')
+    await renderNarrated(cut, segments, out)
+
+    const streams = execFileSync(
+      'ffprobe',
+      ['-v', 'error', '-show_entries', 'stream=codec_type,duration', '-of', 'csv=p=0', out],
+      { encoding: 'utf8' },
+    )
+    const duration = (type: string) =>
+      Number(
+        streams
+          .split('\n')
+          .find((l) => l.startsWith(type))
+          ?.split(',')[1],
+      )
+    expect(Math.abs(duration('video') - duration('audio'))).toBeLessThan(0.1)
+    const expected = segments.reduce((sum, seg) => sum + Math.round(seg.length * 15) / 15, 0)
+    expect(duration('video')).toBeCloseTo(expected, 1)
+  }, 120_000)
 })

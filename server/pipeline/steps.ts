@@ -83,6 +83,12 @@ export function planEdit(
     else clips.push({ ...w })
   }
 
+  // Bornes calées sur les images de la vidéo (15 / s), pour que le montage ne dérive pas.
+  for (const c of clips) {
+    c.start = Math.round(c.start * 15) / 15
+    c.end = Math.round(c.end * 15) / 15
+  }
+
   // Filet de sécurité (plus de 120 étapes) : on coupe ce qui dépasse.
   let total = 0
   const kept: Clip[] = []

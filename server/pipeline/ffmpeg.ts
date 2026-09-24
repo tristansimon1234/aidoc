@@ -3,6 +3,16 @@ import { spawn } from 'node:child_process'
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 
+/**
+ * Images par seconde de toutes les vidéos produites. Chaque passage monté dure un nombre ENTIER
+ * d'images, et sa piste audio exactement la même durée : sinon les arrondis (1/15 s par passage)
+ * s'accumulent et la voix se décale de plus en plus vers la fin.
+ */
+export const FPS = 15
+export function toFrames(seconds: number): number {
+  return Math.max(1, Math.round(seconds * FPS))
+}
+
 /** Lance ffmpeg ; renvoie la sortie d'erreur (c'est là que ffmpeg écrit ses infos). */
 function run(args: string[], allowFailure = false): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -40,7 +50,7 @@ export async function durationOf(file: string): Promise<number> {
 export async function normalizeVideo(input: string, output: string): Promise<void> {
   await run([
     '-y', '-i', input,
-    '-vf', "scale='min(1280,iw)':-2,fps=15",
+    '-vf', `scale='min(1280,iw)':-2,fps=${FPS}`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '96k',
     '-movflags', '+faststart',
@@ -60,8 +70,15 @@ export async function cutVideo(
   const inputs = clips.flatMap((c) => [
     '-ss', c.start.toFixed(3), '-t', (c.end - c.start).toFixed(3), '-i', input,
   ])
-  const streams = clips.map((_, i) => (audio ? `[${i}:v][${i}:a]` : `[${i}:v]`)).join('')
-  const concat = `${streams}concat=n=${clips.length}:v=1:a=${audio ? 1 : 0}${audio ? '[v][a]' : '[v]'}`
+  // Durée de chaque extrait calée à l'image près, identique pour l'image et le son.
+  const filters = clips.map((c, i) => {
+    const frames = toFrames(c.end - c.start)
+    const v = `[${i}:v]fps=${FPS},tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${frames},setpts=PTS-STARTPTS[v${i}]`
+    const a = `[${i}:a]apad,atrim=duration=${(frames / FPS).toFixed(6)},asetpts=PTS-STARTPTS[a${i}]`
+    return audio ? `${v};${a}` : v
+  })
+  const streams = clips.map((_, i) => (audio ? `[v${i}][a${i}]` : `[v${i}]`)).join('')
+  const concat = `${filters.join(';')};${streams}concat=n=${clips.length}:v=1:a=${audio ? 1 : 0}${audio ? '[vc][a]' : '[vc]'};[vc]setpts=N/(${FPS}*TB)[v]`
 
   await run([
     '-y', ...inputs,
@@ -104,24 +121,31 @@ export async function renderNarrated(
   }[],
   output: string,
 ): Promise<void> {
-  // Un « -ss/-t » par passage (saut direct), puis les fichiers audio.
-  const videoInputs = segments.flatMap((s) => [
-    '-ss', s.start.toFixed(3), '-t', (s.end - s.start).toFixed(3), '-i', video,
-  ])
+  // Un « -ss/-t » par passage (saut direct), puis les fichiers audio. Un passage ne commence jamais
+  // après la dernière image : il serait vide et ne pourrait pas être prolongé.
+  const lastFrame = Math.max(0, (await durationOf(video)) - 1 / FPS)
+  const videoInputs = segments.flatMap((s) => {
+    const start = Math.min(s.start, lastFrame)
+    return ['-ss', start.toFixed(3), '-t', Math.max(1 / FPS, s.end - start).toFixed(3), '-i', video]
+  })
   const audioFiles = segments.map((s) => s.audio).filter((a): a is string => a !== null)
   const audioInputs = audioFiles.flatMap((f) => ['-i', f])
 
   let audioIndex = segments.length
   const filters = segments.map((s, i) => {
-    const freeze = s.freeze > 0 ? `,tpad=stop_mode=clone:stop_duration=${s.freeze.toFixed(3)}` : ''
-    const v = `[${i}:v]setpts=(PTS-STARTPTS)*${s.factor.toFixed(4)},fps=15${freeze}[v${i}]`
-    const len = s.length.toFixed(3)
+    // Passage accéléré/ralenti, image figée si besoin, puis coupé à un nombre exact d'images ;
+    // la voix (ou le silence) est coupée exactement à la même durée.
+    const frames = toFrames(s.length)
+    const len = (frames / FPS).toFixed(6)
+    const v = `[${i}:v]setpts=(PTS-STARTPTS)*${s.factor.toFixed(4)},fps=${FPS},tpad=stop_mode=clone:stop_duration=${(s.freeze + 1).toFixed(3)},trim=end_frame=${frames},setpts=PTS-STARTPTS[v${i}]`
     const a = s.audio
       ? `[${audioIndex++}:a]aresample=44100,aformat=channel_layouts=mono${s.tempo > 1.001 ? `,atempo=${s.tempo.toFixed(3)}` : ''},apad,atrim=duration=${len}[a${i}]`
       : `aevalsrc=0:s=44100:d=${len},aformat=channel_layouts=mono[a${i}]`
     return `${v};${a}`
   })
-  const concat = `${segments.map((_, i) => `[v${i}][a${i}]`).join('')}concat=n=${segments.length}:v=1:a=1[v][a]`
+  // Après l'assemblage, chaque image est réhorodatée d'après son rang (n / 15 s) : sinon des images en
+  // limite de passage se chevauchent, l'encodeur en supprime, et l'image prend du retard sur la voix.
+  const concat = `${segments.map((_, i) => `[v${i}][a${i}]`).join('')}concat=n=${segments.length}:v=1:a=1[vc][a];[vc]setpts=N/(${FPS}*TB)[v]`
 
   await run([
     '-y', ...videoInputs, ...audioInputs,
