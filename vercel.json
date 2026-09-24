@@ -4,7 +4,18 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist/web",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api" },
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+    {
+      "source": "/api/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/index.ts": {
+      "excludeFiles": "{node_modules/@remotion/**,node_modules/remotion/**,node_modules/esbuild/**,node_modules/@esbuild/**,node_modules/@anthropic-ai/**,node_modules/lucide-react/**,node_modules/recharts/**,node_modules/@fontsource-variable/**,remotion/**,dist/remotion-bundle/**}"
+    }
+  }
 }

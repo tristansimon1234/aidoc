@@ -1,5 +1,6 @@
 import {
   GoogleGenAI,
+  type Content,
   FileState,
   MediaResolution,
   createPartFromUri,
@@ -7,6 +8,7 @@ import {
 } from '@google/genai'
 import type { z } from 'zod'
 import { env } from '../env.js'
+import type { CodeChat } from './claude.js'
 
 let client: GoogleGenAI | null = null
 function gemini(): GoogleGenAI {
@@ -159,4 +161,33 @@ function pcmToWav(pcm: Buffer, sampleRate: number): Buffer {
   header.write('data', 36)
   header.writeUInt32LE(pcm.length, 40)
   return Buffer.concat([header, pcm])
+}
+
+/** Conversation avec Gemini (modèle GEMINI_CODE_MODEL) pour écrire du code, quand Claude n'est pas configuré. */
+export function geminiChat(system: string): CodeChat {
+  const contents: Content[] = []
+  return {
+    async send(parts) {
+      contents.push({
+        role: 'user',
+        parts: parts.map((p) =>
+          'text' in p
+            ? { text: p.text }
+            : { inlineData: { mimeType: p.mediaType, data: p.image.toString('base64') } },
+        ),
+      })
+      const text = await withRetry(async () => {
+        const res = await gemini().models.generateContent({
+          model: env.GEMINI_CODE_MODEL,
+          contents,
+          config: { systemInstruction: system, maxOutputTokens: 32000 },
+        })
+        const out = res.text?.trim()
+        if (!out) throw new Error('Réponse Gemini vide')
+        return out
+      })
+      contents.push({ role: 'model', parts: [{ text }] })
+      return text
+    },
+  }
 }

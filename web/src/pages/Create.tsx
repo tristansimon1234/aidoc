@@ -27,7 +27,7 @@ const KINDS: { id: Kind; title: string; text: string }[] = [
   {
     id: 'marketing',
     title: 'Marketing video',
-    text: 'A punchy 30 or 60-second video that shows off your product, with voice-over and music.',
+    text: 'A 30 or 60-second animated video that shows off your product, with voice-over, captions and music.',
   },
 ]
 
@@ -97,7 +97,11 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
     }
   }
 
-  const cost = me ? Math.max(1, Math.ceil(duration / (me.minutesPerCredit * 60))) : 1
+  const cost = !me
+    ? 1
+    : kind === 'marketing'
+      ? me.marketingCredits
+      : Math.max(1, Math.ceil(duration / (me.minutesPerCredit * 60)))
   const notEnough = me !== null && me.credits < cost
   const kindLabel = KINDS.find((k) => k.id === kind)!.title
 

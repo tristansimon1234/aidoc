@@ -23,8 +23,8 @@ export function Credits({ me }: { me: Me | null }) {
         <div>
           <h1 className={styles.title}>Credits</h1>
           <p className={styles.subtitle}>
-            1 credit = one video of up to {me.minutesPerCredit} min: procedure, screenshots and
-            narrated video included.
+            SOP: 1 credit per {me.minutesPerCredit} min of video (procedure, screenshots and
+            narrated video included). Marketing video: {me.marketingCredits} credits.
           </p>
         </div>
       </div>

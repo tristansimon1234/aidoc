@@ -29,6 +29,7 @@ export interface Me {
   musicAvailable: boolean
   languages: string[]
   minutesPerCredit: number
+  marketingCredits: number
   maxVideoMinutes: number
   offers: Offer[]
 }

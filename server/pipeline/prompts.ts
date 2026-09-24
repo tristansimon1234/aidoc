@@ -355,3 +355,209 @@ ${input.sop.replace(/!\[[^\]]*\]\([^)]*\)\n?/g, '').slice(0, 12000)}
 
 Return ONLY JSON: {"lines": ["text for slot 1", "text for slot 2", ...]} with exactly ${input.slots.length} entries.`
 }
+
+// ── 4. Vidéo marketing animée (Remotion) : storyboard, accroche, code des scènes, relecture ──
+
+const hex = (fallback: string) =>
+  z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .catch(fallback)
+
+export const StoryboardSchema = z.object({
+  productName: z.string().min(1).catch('Our product'),
+  brand: z.object({
+    accent: hex('#6D5BFF'),
+    accent2: hex('#FFD84D'),
+    background: hex('#0E0B1F'),
+  }),
+  hooks: z
+    .array(z.object({ line: z.string().min(1), onScreen: z.string().min(1) }))
+    .min(1)
+    .max(3),
+  scenes: z
+    .array(
+      z.object({
+        purpose: z.string(),
+        line: z.string().min(1),
+        onScreen: z.string(),
+        visual: z.string(),
+        screenshots: z
+          .array(z.object({ time: z.number(), what: z.string() }))
+          .max(3)
+          .default([]),
+      }),
+    )
+    .min(2)
+    .max(8),
+  musicPrompt: z.string().default('modern upbeat electronic background music, positive, driving'),
+})
+export type Storyboard = z.infer<typeof StoryboardSchema>
+
+/** Gemini regarde et écoute l'enregistrement, puis écrit le storyboard d'une vidéo animée. */
+export function storyboardPrompt(input: {
+  language: string
+  tone: Tone
+  durationSeconds: number
+  title: string
+  brief: string | null
+  targetSeconds: number
+}): string {
+  const language = languageName(input.language)
+  const scenes = input.targetSeconds <= 30 ? '4 or 5' : '6 to 8'
+  const words = Math.round(input.targetSeconds * 2.3)
+  return `You are a creative director at a top SaaS motion-design studio. From this screen recording of "${input.title}", write the storyboard of a ${input.targetSeconds}-second animated marketing video (motion design, like the launch videos of Linear, Stripe or Notion). It is NOT a cut of the recording: each scene is animated from scratch, using the real screenshots of the product as material. A voice-over in ${language} runs over the whole video, with captions.
+${input.brief ? `\nBRIEF FROM THE USER (follow it: what to highlight, for whom, which message, which call to action):\n${input.brief}\n` : ''}
+Understand the product first: what it does, for whom, the real benefits. Use what the person says in the recording (their vocabulary, figures, promises); never invent features or figures.
+
+Write:
+- "productName": the product's name as seen or heard (or a short descriptive name).
+- "brand": colors taken from the product's interface: "accent" = its main brand/UI color, "accent2" = a bright complementary highlight color (readable on a dark background), "background" = a deep, dark, slightly tinted background color that goes with the accent. Hex "#RRGGBB".
+- "hooks": 3 different opening hooks (first 3 seconds, decides if people keep watching): "line" = the voice-over sentence (6 to 12 words, in ${language}); "onScreen" = the 2-5 words shown big on screen. Vary the angle: a pain point, a bold promise, a surprising question.
+- "scenes": ${scenes} scenes forming a story: scene 1 is the hook (write it with the best of your hooks), then the problem or the promise, then 2-4 key benefits shown in the product, then the call to action (last scene). For each scene:
+  - "purpose": one short phrase (e.g. "hook", "benefit: invoices sorted automatically", "cta");
+  - "line": the voice-over for that scene, in ${language}, one or two short sentences, 6 to 22 words. The lines follow each other as one fluid text. At most ${words} words in total for all scenes.
+  - "onScreen": the few words shown big on screen (2 to 7 words, in ${language}), not a copy of the line: the key idea.
+  - "visual": the animation idea, precise and visual (what appears, how it moves, what the camera zooms on, which UI element is rebuilt big, where a cursor clicks, what number counts up). Vary the layouts from scene to scene. The hook and the call to action can be pure typography and shapes.
+  - "screenshots": 0 to 2 moments of the recording to use as material: "time" in seconds (between 0 and ${Math.floor(input.durationSeconds)}), at a frame where the interface is clean and shows the thing (no loading, no open menu unless it is the point); "what": what is visible and where on the screen (e.g. "invoice list, 'Paid' badges in the right column").
+- "musicPrompt": fitting background music (style, mood, tempo).
+
+Tone: ${TONES[input.tone].direction} No URLs, no personal data (names, emails, amounts that look private), no stage directions in the lines.
+
+Return ONLY JSON:
+{"productName": "...", "brand": {"accent": "#...", "accent2": "#...", "background": "#..."}, "hooks": [{"line": "...", "onScreen": "..."}], "scenes": [{"purpose": "hook", "line": "...", "onScreen": "...", "visual": "...", "screenshots": [{"time": 12.5, "what": "..."}]}], "musicPrompt": "..."}`
+}
+
+export const HookPickSchema = z.object({ best: z.number().int(), reason: z.string().default('') })
+
+/** Choisit la meilleure des accroches proposées. */
+export function hookPickPrompt(input: {
+  productName: string
+  brief: string | null
+  hooks: Storyboard['hooks']
+}): string {
+  const hooks = input.hooks
+    .map((h, i) => `${i + 1}. Voice: "${h.line}" / On screen: "${h.onScreen}"`)
+    .join('\n')
+  return `You judge the opening hooks of a short marketing video for "${input.productName}".${input.brief ? `\nBrief: ${input.brief}` : ''}
+
+Pick the hook most likely to make the target audience keep watching after 3 seconds: specific, concrete, about THEIR problem or gain, easy to grasp instantly, not generic hype ("Revolutionize your workflow" is bad).
+
+${hooks}
+
+Return ONLY JSON: {"best": <number of the best hook>, "reason": "..."}`
+}
+
+/**
+ * Prompt système du modèle qui code les scènes : la boîte à outils disponible et les règles.
+ * Identique pour toutes les scènes (mis en cache par Claude) : ne rien y mettre qui change d'une vidéo à l'autre.
+ */
+export const SCENE_SYSTEM_PROMPT = `You are a senior motion designer who codes. You write ONE scene of an animated marketing video as a React component rendered by Remotion, frame by frame, at 30 fps. Your scenes look like the launch videos of Linear, Stripe, Vercel or Notion: bold typography, generous space, depth, smooth motion, the real product front and center.
+
+# Output
+
+Reply with the complete code of the scene in ONE \`\`\`tsx block. Nothing else is needed.
+
+\`\`\`tsx
+function Scene({ brand, shots, durationInFrames }) {
+  const frame = Remotion.useCurrentFrame()
+  const { fps, width, height } = Remotion.useVideoConfig()
+  // ...
+  return <Remotion.AbsoluteFill style={{ background: brand.background }}>...</Remotion.AbsoluteFill>
+}
+\`\`\`
+
+- \`React\` and \`Remotion\` are in scope. NO imports, NO exports. Helper components and constants may be defined above \`Scene\`, in the same block. TypeScript types are optional.
+- Props: \`brand\` = { productName, accent, accent2, background, text } (hex colors); \`shots\` = the real screenshots of the product for this scene: [{ src, width, height, description }] (may be empty); \`durationInFrames\` = length of the scene.
+- Everything is a pure function of \`frame\`: no useState/useEffect, no timers, no Math.random (use \`Remotion.random('any-seed')\`, deterministic, 0-1), no Date, no CSS animations/transitions/@keyframes, no window/document, no network, no external images or fonts, no <video>/<audio>. Hooks allowed: useCurrentFrame, useVideoConfig, React.useMemo.
+- Use inline styles. The font (Inter) is already set. Sizes in px for the given \`width\`/\`height\` (1920×1080 landscape or 1080×1920 portrait: adapt the layout to both, e.g. \`const vertical = height > width\`).
+- Only use the APIs listed below. Guard every array access (\`shots[0]\` may be undefined).
+
+# Remotion API (all on the \`Remotion\` object)
+
+Core: \`useCurrentFrame()\`, \`useVideoConfig()\` → { fps, width, height, durationInFrames }, \`interpolate(frame, [in0, in1], [out0, out1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing })\`, \`spring({ frame, fps, delay?, config?: { damping, stiffness, mass }, durationInFrames? })\` → 0..1 (damping 200 = no bounce; 12 = bouncy), \`Easing.bezier(x1,y1,x2,y2)\` / \`Easing.out(Easing.cubic)\` / \`Easing.inOut(Easing.quad)\`, \`interpolateColors(frame, [a, b], [colorA, colorB])\`, \`random(seed)\`, \`<AbsoluteFill style>\` (full-size absolutely positioned flex column), \`<Sequence from={f} durationInFrames={n}>\` (children see frame reset to 0 at \`from\`), \`<Img src style>\`.
+
+Product material:
+- \`<Remotion.Screenshot shot={shots[0]} focus={{ x: 72, y: 30, zoom: 1.6 }} startFrame={20} zoomFrames={40} radius={16} style={...} />\`: the real screenshot, fully visible (object-fit contain) in its container, with a camera push towards \`focus\` (x/y in % of the screenshot, zoom factor), eased. Without \`focus\`: slow subtle zoom. Give it a sized container (width/height or flex). This is the most convincing material: show the real product, then zoom on what the voice talks about.
+- \`<Remotion.MockFrame url="app.acme.com" tone="light|dark" style>children</Remotion.MockFrame>\`: browser window chrome (traffic lights, URL bar) around children, fills its container. Nice around a Screenshot, optional.
+- \`<Remotion.AnimatedCursor leftPct topPct accentColor ripple? rippleRadius? rippleOpacity? />\`: mouse pointer at % of its positioned parent, with optional click ripple you animate yourself.
+- \`<Remotion.Pill tone="success|warning|danger|accent|muted" dot? accentColor style>label</Remotion.Pill>\`: status badge.
+- \`<Remotion.AccentGlow color size? opacity? frame? position="center|top|bottom|left|right" style? />\`: big blurred color glow for depth, behind the focal element (pass \`frame\` for a slow pulse).
+- \`Remotion.Icons.<LucideName>\`: every lucide icon (Sparkles, Zap, Check, CheckCircle2, ArrowRight, FileText, Clock, Users, Search, Bell, Shield, TrendingUp, Wand2, MousePointerClick, Send, Calendar, Mail…), props { size, color, strokeWidth }. Assign to a capitalized variable before use: \`const Zap = Remotion.Icons.Zap\`.
+- \`Remotion.Charts\`: recharts (ResponsiveContainer, LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell). Always \`isAnimationActive={false}\` and animate the data yourself with interpolate.
+- Motion primitives: \`<TypewriterText text startFrame? charsPerFrame? cursor? cursorColor? style />\`, \`<FadeInStagger startFrame? stagger? fadeFrames? slideY? style>children</FadeInStagger>\`, \`<PulseGlow color intensity? period?>children</PulseGlow>\`, \`<BreathingScale amplitude? period?>children</BreathingScale>\`, \`<OrbitingDot center={{x,y}} radius period phase size color />\`, \`<Connector from={{x,y}} to={{x,y}} color thickness startFrame drawFrames traveling />\`, \`<TravelingPhoton from to speed size color />\`, \`<ParticleField count color size drift seed opacity />\` (all under \`Remotion.\`; positions in % of a position:relative parent).
+
+# Craft rules
+
+- One idea per scene. The on-screen text is short (2-7 words), BIG (landscape: 72-140 px, weight 700-900, letter-spacing -0.02em to -0.04em; portrait: 80-150 px), max 2 lines, never a paragraph. Use exactly the on-screen text you are given (same language).
+- Show the product: when there are shots, build the scene around them (big, with depth: shadow, slight 3D tilt via perspective/rotateX/rotateY, glow behind), and move the camera to the part the voice talks about. You can also REBUILD a key UI element from the screenshot big and clean (a card, a button, a row, a badge, a number) with divs, in the product's colors, and animate it (cursor click, value filling, badge appearing, number counting up). Never invent a different interface.
+- Motion: the first element is visible by frame 8-12 (no empty start), entrances are staggered and eased (spring or Easing.out), something keeps moving until the end (slow push, drift, glow, parallax) so no frame is frozen. No exit animation needed: the next scene fades in over the last frames. Keep timings proportional to \`durationInFrames\`.
+- Layout: everything inside the frame with at least 80 px margins; nothing overlaps unless on purpose; text never clipped or overflowing (set maxWidth, test long words); strong contrast (text on dark background = light; on a light card = dark).
+- CAPTIONS ZONE: the voice-over captions are drawn over the bottom of the video. Keep the bottom 22% of the height free of any text or important element (backgrounds and decorative glows are fine).
+- Colors: brand.background as the base (you may add a subtle gradient or noise of it), brand.accent for the key element, brand.accent2 for small highlights. Stay coherent with the other scenes (same background, same type style).
+- Quality bar: this must look designed by a studio, not like a slide. Depth, hierarchy, rhythm. Avoid clutter: 1 focal point, 1-3 supporting elements.`
+
+/** Demande du code d'une scène (les captures sont jointes en images après ce texte). */
+export function scenePrompt(input: {
+  language: string
+  productName: string
+  brief: string | null
+  storyboard: { purpose: string; line: string; onScreen: string }[]
+  index: number
+  visual: string
+  seconds: number
+  frames: number
+  width: number
+  height: number
+  brand: { accent: string; accent2: string; background: string; text: string }
+  shots: { what: string }[]
+}): string {
+  const scene = input.storyboard[input.index]!
+  const story = input.storyboard
+    .map(
+      (s, i) => `${i + 1}. [${s.purpose}] "${s.line}"${i === input.index ? '   ← THIS SCENE' : ''}`,
+    )
+    .join('\n')
+  const shots =
+    input.shots.length > 0
+      ? input.shots.map((s, i) => `shots[${i}]: ${s.what} (image ${i + 1} below)`).join('\n')
+      : 'none: use typography, shapes and icons.'
+  return `Video: ${input.productName} — ${input.storyboard.length} scenes, voice-over in ${languageName(input.language)}.${input.brief ? `\nBrief: ${input.brief}` : ''}
+
+Whole script (for continuity):
+${story}
+
+THIS SCENE: ${input.index + 1} of ${input.storyboard.length} — ${scene.purpose}
+- Voice-over during the scene: "${scene.line}"
+- On-screen text (use exactly): "${scene.onScreen}"
+- Animation idea: ${input.visual}
+- Duration: ${input.frames} frames (${input.seconds.toFixed(1)} s) at 30 fps
+- Format: ${input.width}×${input.height}
+- brand = ${JSON.stringify({ productName: input.productName, ...input.brand })}
+- Screenshots: ${shots}
+
+Write the scene.`
+}
+
+/** Le rendu a échoué : l'erreur est renvoyée au modèle. */
+export function sceneFixPrompt(error: string): string {
+  return `The scene could not be rendered. Error:
+
+${error.slice(0, 3000)}
+
+Fix it and reply with the complete corrected code in one \`\`\`tsx block.`
+}
+
+/** Relecture « directeur artistique » : le modèle voit des images du rendu de sa scène. */
+export function sceneReviewPrompt(frames: number[], total: number): string {
+  return `Here is your scene rendered at frames ${frames.join(', ')} of ${total} (half resolution), in that order.
+
+Review it like a demanding art director. Check: text clipped, overflowing or overlapping; anything in the bottom 22% captions zone; empty or unbalanced composition; unreadable text or poor contrast; screenshot too small to read or badly cropped; elements off-screen; a first frame that is still empty; nothing moving between frames; generic "slide" look.
+
+If it is good enough to ship, reply exactly: VERDICT: OK
+Otherwise reply "VERDICT: FIX", the list of problems, then the complete improved code in one \`\`\`tsx block.`
+}
+
+export function reviewApproved(answer: string): boolean {
+  return /VERDICT:\s*OK/i.test(answer) && !/```/.test(answer)
+}

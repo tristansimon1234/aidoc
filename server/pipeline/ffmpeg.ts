@@ -170,3 +170,45 @@ export async function addMusic(video: string, music: string, output: string): Pr
     output,
   ])
 }
+
+/** Largeur et hauteur de l'image d'une vidéo ou d'une image. */
+export async function frameSize(file: string): Promise<{ width: number; height: number }> {
+  const info = await run(['-i', file], true)
+  const m = /Stream #\S+.*: Video: .*?, (\d{2,5})x(\d{2,5})/.exec(info)
+  if (!m) throw new Error(`Dimensions illisibles pour ${file}`)
+  return { width: Number(m[1]), height: Number(m[2]) }
+}
+
+/** Piste voix off : chaque phrase (ou silence) occupe exactement la durée de sa scène, bout à bout. */
+export async function buildVoiceTrack(
+  parts: { audio: string | null; seconds: number }[],
+  output: string,
+): Promise<void> {
+  const files = parts.map((p) => p.audio).filter((a): a is string => a !== null)
+  let input = 0
+  const filters = parts.map((p, i) => {
+    const len = p.seconds.toFixed(6)
+    return p.audio
+      ? `[${input++}:a]aresample=44100,aformat=channel_layouts=mono,apad,atrim=duration=${len}[a${i}]`
+      : `aevalsrc=0:s=44100:d=${len},aformat=channel_layouts=mono[a${i}]`
+  })
+  const concat = `${parts.map((_, i) => `[a${i}]`).join('')}concat=n=${parts.length}:v=0:a=1[a]`
+  await run([
+    '-y', ...files.flatMap((f) => ['-i', f]),
+    '-filter_complex', `${filters.join(';')};${concat}`,
+    '-map', '[a]', '-c:a', 'pcm_s16le',
+    output,
+  ])
+}
+
+/** Assemble une vidéo muette et sa piste audio (la vidéo garde sa durée). */
+export async function muxAudio(video: string, audio: string, output: string): Promise<void> {
+  await run([
+    '-y', '-i', video, '-i', audio,
+    '-map', '0:v', '-map', '1:a',
+    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k',
+    '-af', 'apad', '-shortest',
+    '-movflags', '+faststart',
+    output,
+  ])
+}

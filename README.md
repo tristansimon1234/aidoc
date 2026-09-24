@@ -3,7 +3,7 @@
 Filmez votre écran → recevez au choix :
 
 - **une SOP** : la procédure écrite avec captures + une vidéo commentée de 4 min max ;
-- **une vidéo marketing** de 30 ou 60 s : les moments forts, une voix off qui vend (accroche → bénéfices → appel à l'action), musique de fond en option, guidée par un brief.
+- **une vidéo marketing** animée de 30 ou 60 s (motion design, à partir des vraies captures du produit) : une voix off qui vend (accroche → bénéfices → appel à l'action), sous-titres mot à mot, musique de fond en option, guidée par un brief.
 
 L'accueil a deux onglets (SOPs / Marketing videos) ; la création se fait en 4 étapes : type → vidéo → options → lancement.
 
@@ -21,6 +21,22 @@ Vidéo (upload ou enregistrement dans le navigateur)
   → Gemini écrit la voix off (à partir de ce que la personne a dit), synthèse vocale (Gemini ou ElevenLabs),
     puis chaque passage de vidéo est accéléré ou ralenti pour durer exactement le temps de sa phrase (aucun blanc)
 ```
+
+**Vidéo marketing animée** (`server/pipeline/marketing.ts`, projet Remotion dans `remotion/`) :
+
+```
+Vidéo → Gemini regarde et écoute l'enregistrement → storyboard (4 à 8 scènes, 3 accroches, couleurs du produit,
+        moments de l'enregistrement à capturer) → la meilleure accroche est choisie
+  → voix off par scène (chaque scène dure le temps de sa phrase)
+  → pour chaque scène, Claude (ou Gemini sans clé Anthropic) écrit le code React/Remotion de l'animation,
+    avec une boîte à outils (captures animées, cadre de navigateur, curseur, icônes, graphiques, effets)
+    → compilation + rendu de 3 images ; en cas d'erreur, elle est renvoyée au modèle (3 essais)
+    → relecture « directeur artistique » : le modèle voit les images de sa scène et peut la corriger
+    → si rien ne passe : scène de secours (titre + capture en mouvement)
+  → Remotion rend la vidéo (1920×1080, 30 i/s, sous-titres), ffmpeg ajoute la voix et la musique
+```
+
+Si la vidéo animée échoue entièrement, on livre un montage des moments forts de l'enregistrement (ancienne méthode). Le code des scènes est contrôlé avant rendu (pas d'import, de réseau, d'aléatoire ni d'animation CSS : `server/pipeline/scene-code.ts`). Remotion est gratuit pour les structures de 3 personnes max ; au-delà, licence entreprise (remotion.pro).
 
 **Voix off** : l'utilisateur choisit la voix (30 voix Gemini incluses ; avec `ELEVENLABS_API_KEY`, toutes les voix du compte ElevenLabs, voix clonées comprises) et le ton (amical, professionnel, énergique, calme, joueur), et peut écouter un extrait avant de lancer. Liste des voix : `server/voices.ts` ; tons : `TONES` dans `server/pipeline/prompts.ts`.
 
@@ -55,8 +71,14 @@ server/
     prompts.ts      tous les prompts IA
     gemini.ts       analyse vidéo, texte, synthèse vocale
     elevenlabs.ts   voix premium
+    marketing.ts    vidéo marketing animée : storyboard, code des scènes, rendu
+    claude.ts       Claude (code des scènes), ou Gemini à défaut
+    scene-code.ts   contrôle et compilation du code des scènes (esbuild)
+    remotion.ts     rendu Remotion (images de test, vidéo complète)
     ffmpeg.ts       conversion, captures, montage audio
     steps.ts        nettoyage des étapes, montage 4 min, découpage de la voix off
+remotion/           compositions Remotion (vidéo marketing, test d'une scène), boîte à outils des scènes
+scripts/bundle-remotion.mjs  construit le bundle Remotion (au build Docker)
 web/src/
   main.tsx          routes
   api.ts            appels au serveur
@@ -72,7 +94,8 @@ supabase/migrations/  schéma de la base (3 tables) + choix de la voix et du ton
 
 ## Tarification
 
-- 1 crédit = une vidéo de 10 min max (texte + captures + voix off). Une vidéo de 25 min coûte 3 crédits.
+- SOP : 1 crédit = une vidéo de 10 min max (texte + captures + voix off). Une vidéo de 25 min coûte 3 crédits.
+- Vidéo marketing : 2 crédits (`MARKETING_CREDITS`), quelle que soit la durée de l'enregistrement.
 - 1 crédit offert à l'inscription.
 - Deux offres Stripe : **pack** (paiement unique → 10 crédits) et **abonnement mensuel** (→ 30 crédits / mois).
 - Les prix se règlent dans Stripe. Le nombre de crédits se règle dans `server/credits.ts`.
@@ -80,7 +103,7 @@ supabase/migrations/  schéma de la base (3 tables) + choix de la voix et du ton
 
 ## Lancer en local (sans compte, sans connexion)
 
-Prérequis : Node 20+, `ffmpeg` installé, une clé Gemini.
+Prérequis : Node 20+, `ffmpeg` installé, une clé Gemini (et une clé Anthropic pour les vidéos marketing). Pour le rendu Remotion en local, `npm run bundle:remotion` télécharge son navigateur (ou `REMOTION_BROWSER_EXECUTABLE` = un Chrome installé).
 
 ```bash
 npm install
@@ -95,7 +118,7 @@ Sans `SUPABASE_URL` ni `VITE_SUPABASE_URL`, l'app démarre en **mode local** : p
 
 Le service Railway peut faire tout le travail sans Supabase : API, traitement vidéo, stockage sur son disque, pas de connexion (100 crédits).
 
-- **Railway** : déployer le repo (Dockerfile). Variables : `GEMINI_API_KEY` (+ `ELEVENLABS_API_KEY` en option) et `LOCAL_MODE=true` (force le mode sans Supabase, même si ses variables sont là). Générer un domaine public. Sans volume, les données sont effacées à chaque déploiement ; pour les garder, monter un volume sur `/app/.local-data`.
+- **Railway** : déployer le repo (Dockerfile). Variables : `GEMINI_API_KEY` (+ `ANTHROPIC_API_KEY` pour que Claude code les scènes des vidéos marketing, `ELEVENLABS_API_KEY` en option) et `LOCAL_MODE=true` (force le mode sans Supabase, même si ses variables sont là). Générer un domaine public. Sans volume, les données sont effacées à chaque déploiement ; pour les garder, monter un volume sur `/app/.local-data`.
 - **Vercel** : `VITE_API_URL` = l'URL Railway (`https://` ajouté si besoin). Les variables Supabase peuvent rester : `VITE_API_URL` a la priorité. Redéployer.
 
 ⚠️ Sans connexion, quiconque connaît l'URL peut lancer des générations avec ta clé Gemini : à réserver aux tests. Pour revenir à la version normale : retirer `VITE_API_URL` (Vercel) et `LOCAL_MODE` (Railway).
@@ -110,14 +133,15 @@ Sur un déploiement avec Supabase + Railway, mettre `DISABLE_LOGIN=true` et `VIT
    - Auth → URL Configuration : mettre l'URL de l'app en *Site URL* (pour le lien de connexion par email).
    - Storage → Settings : la taille max par fichier est de 50 Mo sur le plan gratuit. Pour des vidéos d'écran de plusieurs minutes, passer au plan Pro et la monter (le bucket accepte jusqu'à 2 Go).
 2. **Railway (service vidéo)** : *New service → GitHub repo* `aidoc`. `railway.json` + `Dockerfile` sont détectés.
-   - Variables : `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GEMINI_API_KEY`, `VIDEO_SERVICE_SECRET` (une longue chaîne aléatoire), et `ELEVENLABS_API_KEY` pour la voix premium.
+   - Variables : `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GEMINI_API_KEY`, `VIDEO_SERVICE_SECRET` (une longue chaîne aléatoire), `ANTHROPIC_API_KEY` (Claude code les scènes des vidéos marketing ; sans elle, Gemini), et `ELEVENLABS_API_KEY` pour la voix premium.
+   - Le build Docker installe le navigateur headless de Remotion et construit le bundle des vidéos marketing (`scripts/bundle-remotion.mjs`).
    - *Settings → Networking → Generate Domain* : c'est le `VIDEO_SERVICE_URL`.
 3. **Vercel (interface + API)** : importer le repo, `vercel.json` règle le build.
    - Variables : `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `APP_URL`, `VIDEO_SERVICE_URL`, `VIDEO_SERVICE_SECRET` (le même que sur Railway), les variables Stripe, et `ELEVENLABS_API_KEY` si la voix premium doit être proposée.
 4. **Stripe** : créer 2 prix (un paiement unique, un récurrent mensuel) et mettre leurs IDs dans `STRIPE_PRICE_PACK` / `STRIPE_PRICE_MONTHLY`.
    - Webhook vers `https://<app>/api/stripe/webhook`, évènements `checkout.session.completed` et `invoice.paid`.
    - Activer le portail client (Settings → Billing → Customer portal).
-5. **Modèles IA** : `GEMINI_MODEL` et `GEMINI_TTS_MODEL` sont réglables par variable d'environnement. Vérifier qu'ils sont toujours proposés par Google.
+5. **Modèles IA** : `GEMINI_MODEL`, `GEMINI_TTS_MODEL`, `GEMINI_CODE_MODEL` et `CLAUDE_MODEL` sont réglables par variable d'environnement. Vérifier qu'ils sont toujours proposés.
 
 ## Limites connues
 

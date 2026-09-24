@@ -39,6 +39,7 @@ import {
   cleanSteps,
   fitSegment,
   limitWords,
+  mapLimit,
   narrationSlots,
   planEdit,
 } from './steps.js'
@@ -83,10 +84,12 @@ export async function processSop(id: string): Promise<void> {
     await db.updateSop(id, { durationSeconds: duration })
 
     // La durée annoncée par le navigateur a fixé le prix ; on complète si la vraie durée est plus longue.
-    const extra = creditsFor(duration) - sop.creditsUsed
+    const extra = creditsFor(duration, sop.kind) - sop.creditsUsed
     if (extra > 0) {
       if (!(await db.applyCredits(sop.userId, -extra, 'sop', `sop-extra:${id}`))) {
-        throw new UserFacingError(`Not enough credits: this video needs ${creditsFor(duration)}.`)
+        throw new UserFacingError(
+          `Not enough credits: this video needs ${creditsFor(duration, sop.kind)}.`,
+        )
       }
       sop.creditsUsed += extra
       await db.updateSop(id, { creditsUsed: sop.creditsUsed })
@@ -246,10 +249,25 @@ async function narrate(input: {
 }
 
 /**
- * Vidéo marketing de 30 ou 60 s : Gemini choisit les moments forts selon le brief et écrit la voix off,
- * chaque moment est calé sur sa phrase (aucun blanc), musique de fond en option. Renvoie la vidéo finale.
+ * Vidéo marketing de 30 ou 60 s : vidéo animée (motion design Remotion, voir marketing.ts). Si elle
+ * échoue (navigateur de rendu absent, IA indisponible…), on livre un montage des moments forts.
  */
-async function makeMarketingVideo({ video, duration, sop, dir, step }: Job): Promise<string> {
+async function makeMarketingVideo(job: Job): Promise<string> {
+  try {
+    // Import à la demande : Remotion n'est chargé que sur le service vidéo, jamais par l'API.
+    const { makeMotionVideo } = await import('./marketing.js')
+    return await makeMotionVideo(job)
+  } catch (err) {
+    console.error('[pipeline] vidéo animée impossible, montage des moments forts', err)
+    return makeHighlightVideo(job)
+  }
+}
+
+/**
+ * Montage des moments forts : Gemini choisit les moments selon le brief et écrit la voix off,
+ * chaque moment est calé sur sa phrase (aucun blanc), musique de fond en option.
+ */
+async function makeHighlightVideo({ video, duration, sop, dir, step }: Job): Promise<string> {
   await step('Analyzing the video')
   const tone = toTone(sop.tone)
   const plan = await withVideo(video, duration, (gemini) =>
@@ -360,22 +378,4 @@ async function pickScreenshotTimes(
     )
     return steps
   }
-}
-
-/** Comme Promise.all(items.map(fn)), mais `limit` appels à la fois au maximum. */
-async function mapLimit<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T, i: number) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length)
-  let next = 0
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++
-      results[i] = await fn(items[i]!, i)
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return results
 }

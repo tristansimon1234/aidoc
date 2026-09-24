@@ -185,3 +185,51 @@ export function limitWords(text: string, maxWords: number): string {
   if (end > cut.length * 0.25) return cut.slice(0, end + 1)
   return `${cut.replace(/[,;:]$/, '')}.`
 }
+
+/** Comme Promise.all(items.map(fn)), mais `limit` appels à la fois au maximum. */
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, i: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await fn(items[i]!, i)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
+/**
+ * Sous-titres mot à mot : la durée de chaque phrase est répartie entre ses mots selon leur longueur
+ * (une approximation suffisante tant que la synthèse vocale ne donne pas l'horodatage des mots).
+ */
+export function captionWords(
+  lines: { text: string; startMs: number; durationMs: number }[],
+): { text: string; startMs: number; endMs: number }[] {
+  return lines.flatMap((line) => {
+    const words = line.text.trim().split(/\s+/).filter(Boolean)
+    const weights = words.map((w) => w.length + 2)
+    const total = weights.reduce((a, b) => a + b, 0)
+    let t = line.startMs
+    return words.map((text, i) => {
+      const length = (line.durationMs * weights[i]!) / total
+      const word = { text, startMs: Math.round(t), endMs: Math.round(t + length) }
+      t += length
+      return word
+    })
+  })
+}
+
+/** Luminance relative d'une couleur hex (0 = noir, 1 = blanc). */
+export function luminance(hex: string): number {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+}

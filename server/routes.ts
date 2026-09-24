@@ -3,7 +3,13 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod'
 import * as db from './db.js'
 import * as billing from './billing.js'
-import { MAX_VIDEO_MINUTES, MINUTES_PER_CREDIT, OFFERS, creditsFor } from './credits.js'
+import {
+  MARKETING_CREDITS,
+  MAX_VIDEO_MINUTES,
+  MINUTES_PER_CREDIT,
+  OFFERS,
+  creditsFor,
+} from './credits.js'
 import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
 import { isKnownVoice, listVoices, previewVoice } from './voices.js'
 import { DEFAULT_TONE, LANGUAGES, TONES, type Tone } from './pipeline/prompts.js'
@@ -77,6 +83,7 @@ api.get(
       tones: Object.entries(TONES).map(([id, t]) => ({ id, label: t.label })),
       musicAvailable: isElevenLabsEnabled(),
       minutesPerCredit: MINUTES_PER_CREDIT,
+      marketingCredits: MARKETING_CREDITS,
       maxVideoMinutes: MAX_VIDEO_MINUTES,
       offers: await billing.listOffers(),
     })
@@ -158,7 +165,7 @@ api.post(
       res.status(400).json({ error: 'Unknown voice' })
       return
     }
-    const needed = creditsFor(input.durationSeconds)
+    const needed = creditsFor(input.durationSeconds, input.kind)
     if ((await db.getAccount(userId)).credits < needed) {
       res.status(402).json({ error: `Not enough credits: this video needs ${needed}.` })
       return
@@ -199,7 +206,7 @@ api.post(
       return
     }
     const { durationSeconds } = z.object({ durationSeconds: z.number().positive() }).parse(req.body)
-    const cost = creditsFor(Math.min(durationSeconds, MAX_VIDEO_MINUTES * 60))
+    const cost = creditsFor(Math.min(durationSeconds, MAX_VIDEO_MINUTES * 60), sop.kind)
     if (!(await db.applyCredits(userId, -cost, 'sop', `sop:${sop.id}`))) {
       res.status(402).json({ error: `Not enough credits: this video needs ${cost}.` })
       return

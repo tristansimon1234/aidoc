@@ -25,10 +25,11 @@ const SOP_STEPS = [
 
 const MARKETING_STEPS = [
   { label: 'Preparing the video', estimatedSeconds: 20 },
-  { label: 'Analyzing the video', estimatedSeconds: 45 },
+  { label: 'Writing the storyboard', estimatedSeconds: 60 },
   { label: 'Recording the voice-over', estimatedSeconds: 20 },
-  { label: 'Editing the video', estimatedSeconds: 20 },
-  { label: 'Adding music', estimatedSeconds: 45 },
+  { label: 'Designing the scenes', estimatedSeconds: 300 },
+  { label: 'Rendering the video', estimatedSeconds: 120 },
+  { label: 'Mixing the sound', estimatedSeconds: 30 },
   { label: 'Finishing', estimatedSeconds: 5 },
 ]
 
@@ -138,11 +139,12 @@ export function SopPage() {
 
   if (sop.status === 'processing') {
     const steps = marketing
-      ? MARKETING_STEPS.filter((s) => sop.music || s.label !== 'Adding music')
+      ? MARKETING_STEPS
       : SOP_STEPS.filter((s) => sop.voice !== 'none' || s.label !== 'Recording the voice-over')
     const active = Math.max(
       0,
-      steps.findIndex((s) => s.label === sop.progress),
+      // « Designing the scenes (2/6) » : le compteur suit le libellé.
+      steps.findIndex((s) => sop.progress?.startsWith(s.label)),
     )
     return (
       <>
