@@ -12,8 +12,11 @@ Vidéo (upload ou enregistrement dans le navigateur)
   → Gemini regarde la vidéo et liste les étapes horodatées
   → ffmpeg : une capture par étape
   → Gemini rédige la SOP (markdown)
+  → ffmpeg monte une vidéo de 4 min max (un extrait autour de chaque étape)
   → Gemini écrit la voix off, synthèse vocale (Gemini ou ElevenLabs), ffmpeg la pose sur la vidéo
 ```
+
+La vidéo livrée dure **4 minutes maximum**, quelle que soit la durée de l'enregistrement : au-delà, on garde un extrait autour de chaque étape (surtout ce qui précède l'action) et on coupe le reste. La voix off est calée sur ce montage. Réglage : `MAX_SOP_VIDEO_SECONDS` dans `server/pipeline/steps.ts`.
 
 Tout tourne dans **un seul serveur Node** (API + interface + traitement vidéo). Supabase sert pour la connexion, la base et le stockage des fichiers. Stripe gère le paiement.
 
@@ -33,11 +36,17 @@ server/
     gemini.ts       analyse vidéo, texte, synthèse vocale
     elevenlabs.ts   voix premium
     ffmpeg.ts       conversion, captures, montage audio
-    steps.ts        nettoyage des étapes, découpage de la voix off
+    steps.ts        nettoyage des étapes, montage 4 min, découpage de la voix off
 web/src/
-  main.tsx          routes + en-tête
+  main.tsx          routes
   api.ts            appels au serveur
   pages/            Login, Home, SopPage, Credits
+  ui/
+    design-system/  design system de l'ancienne plateforme (thème clair/sombre, Button, Card,
+                    Badge, StatusIndicator, ProgressLoader, MarkdownRenderer avec encadrés…)
+    layout/         Shell, rail latéral, menu avatar, thème
+    ScreenRecorder  enregistrement d'écran + dépôt de vidéo
+    NarratedPlayer  lecteur vidéo
 supabase/migrations/  schéma de la base (3 tables)
 ```
 

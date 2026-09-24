@@ -1,0 +1,104 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-bg);
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  padding: var(--space-xl);
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+}
+
+.logo {
+  font-family: var(--font-heading);
+  font-stretch: var(--heading-stretch);
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: var(--heading-tracking);
+  color: var(--color-fg);
+  text-align: center;
+  margin-bottom: var(--space-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logoMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin-right: 10px;
+  border-radius: 10px;
+  background: var(--color-primary);
+  color: var(--color-bg);
+  font-size: 20px;
+}
+
+.tagline {
+  text-align: center;
+  color: var(--color-muted-fg);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: var(--space-xs);
+}
+
+.sent {
+  text-align: center;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.subtitle {
+  text-align: center;
+  color: var(--color-muted-fg);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-xl);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-top: var(--space-sm);
+}
+
+.error {
+  font-size: var(--text-sm);
+  color: var(--color-destructive);
+  text-align: center;
+}
+
+.toggle {
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--color-muted-fg);
+  margin-top: var(--space-md);
+}
+
+.toggleLink {
+  color: var(--color-primary);
+  cursor: pointer;
+  background: none;
+  border: none;
+  font-size: inherit;
+  font-family: inherit;
+  text-decoration: underline;
+  padding: 0;
+}

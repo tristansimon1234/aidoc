@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as db from '../db.js'
 import { creditsFor } from '../credits.js'
-import { durationOf, extractFrame, muxNarration, normalizeVideo } from './ffmpeg.js'
+import { cutVideo, durationOf, extractFrame, muxNarration, normalizeVideo } from './ffmpeg.js'
 import { askAboutVideo, askJson, askText, speakWithGemini } from './gemini.js'
 import { speakWithElevenLabs } from './elevenlabs.js'
 import {
@@ -17,7 +17,7 @@ import {
   videoAnalysisPrompt,
   type VideoSteps,
 } from './prompts.js'
-import { cleanSteps, narrationSlots } from './steps.js'
+import { cleanSteps, narrationSlots, planEdit } from './steps.js'
 
 const MAX_PARALLEL = 2
 const queue: string[] = []
@@ -121,17 +121,34 @@ async function processSop(id: string): Promise<void> {
 
     // 4. Rédaction de la SOP
     await step('Rédaction de la procédure')
-    const title = analysis.title || sop.title
+    const title = sop.title || analysis.title
     const raw = await askText(sopPrompt({ title, language: sop.language, steps }))
     const markdown = insertScreenshots(stripFence(raw), urls)
     await db.updateSop(id, { markdown })
 
-    // 5. Voix off (ou vidéo seule)
+    // 5. Montage : la vidéo livrée dure 4 min max (extraits autour de chaque étape).
+    const edit = planEdit(steps, duration)
     let finalVideo = video
+    if (edit.clips.length > 1 || edit.duration < duration) {
+      await step('Montage de la vidéo')
+      finalVideo = join(dir, 'edited.mp4')
+      await cutVideo(video, edit.clips, finalVideo, sop.voice === 'none')
+    }
+
+    // 6. Voix off, calée sur la vidéo montée
     if (sop.voice !== 'none') {
       await step('Voix off')
-      finalVideo = join(dir, 'narrated.mp4')
-      await narrate({ video, duration, steps, markdown, sop, dir, output: finalVideo })
+      const narrated = join(dir, 'narrated.mp4')
+      await narrate({
+        video: finalVideo,
+        duration: edit.duration,
+        steps: edit.steps,
+        markdown,
+        sop,
+        dir,
+        output: narrated,
+      })
+      finalVideo = narrated
     }
 
     await step('Finalisation')

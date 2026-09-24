@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { creditsFor } from '../credits.js'
-import { durationOf, extractFrame, muxNarration, normalizeVideo } from './ffmpeg.js'
+import { cutVideo, durationOf, extractFrame, muxNarration, normalizeVideo } from './ffmpeg.js'
 import { insertScreenshots } from './prompts.js'
-import { cleanSteps, narrationSlots } from './steps.js'
+import { cleanSteps, narrationSlots, planEdit } from './steps.js'
 
 const step = (timestamp: number, action = 'a') => ({ timestamp, action, screen: '', spoken: null })
 
@@ -35,6 +35,31 @@ describe('narrationSlots', () => {
     ])
     const merged = narrationSlots([step(2, 'A'), step(20, 'B')], 40)
     expect(merged).toEqual([{ start: 0, seconds: 40, action: 'A Then: B' }])
+  })
+})
+
+describe('planEdit', () => {
+  it('ne touche pas une vidéo de 4 min ou moins', () => {
+    const plan = planEdit([step(10), step(100)], 200)
+    expect(plan.clips).toEqual([{ start: 0, end: 200 }])
+    expect(plan.duration).toBe(200)
+  })
+
+  it('condense une vidéo de 20 min à 4 min max, étapes repositionnées', () => {
+    const steps = [60, 300, 305, 600, 1100].map((t) => step(t))
+    const plan = planEdit(steps, 1200)
+    expect(plan.duration).toBeLessThanOrEqual(240)
+    // 20 s par étape : 14 s avant la capture, 6 s après ; 300 et 305 fusionnent.
+    expect(plan.clips[0]).toEqual({ start: 46, end: 66 })
+    expect(plan.clips).toHaveLength(4)
+    expect(plan.steps.map((s) => s.timestamp)).toEqual([14, 34, 39, 59, 79])
+  })
+
+  it('garde 4 min max même avec énormément d’étapes', () => {
+    const steps = Array.from({ length: 200 }, (_, i) => step(i * 30 + 10))
+    const plan = planEdit(steps, 6000)
+    expect(plan.duration).toBeLessThanOrEqual(240)
+    expect(plan.steps.length).toBeGreaterThan(100)
   })
 })
 
@@ -70,6 +95,18 @@ describe('ffmpeg', () => {
     expect(await durationOf(video)).toBeCloseTo(6, 0)
 
     await extractFrame(video, 2, join(dir, 'frame.jpg'))
+
+    const cut = join(dir, 'cut.mp4')
+    await cutVideo(
+      video,
+      [
+        { start: 0.5, end: 2 },
+        { start: 4, end: 5 },
+      ],
+      cut,
+      false,
+    )
+    expect(await durationOf(cut)).toBeCloseTo(2.5, 0)
 
     const out = join(dir, 'out.mp4')
     await muxNarration(

@@ -39,6 +39,42 @@ export async function normalizeVideo(input: string, output: string): Promise<voi
   ])
 }
 
+export async function hasAudio(file: string): Promise<boolean> {
+  const out = await run('ffprobe', [
+    '-v', 'error', '-select_streams', 'a',
+    '-show_entries', 'stream=index', '-of', 'csv=p=0',
+    file,
+  ])
+  return out.trim().length > 0
+}
+
+/** Monte la vidéo en ne gardant que les extraits `clips` (secondes), mis bout à bout. */
+export async function cutVideo(
+  input: string,
+  clips: { start: number; end: number }[],
+  output: string,
+  keepAudio: boolean,
+): Promise<void> {
+  const audio = keepAudio && (await hasAudio(input))
+  const parts = clips.map((c, i) => {
+    const range = `start=${c.start.toFixed(3)}:end=${c.end.toFixed(3)}`
+    const v = `[0:v]trim=${range},setpts=PTS-STARTPTS[v${i}]`
+    const a = `[0:a]atrim=${range},asetpts=PTS-STARTPTS[a${i}]`
+    return audio ? `${v};${a}` : v
+  })
+  const inputs = clips.map((_, i) => (audio ? `[v${i}][a${i}]` : `[v${i}]`)).join('')
+  const concat = `${inputs}concat=n=${clips.length}:v=1:a=${audio ? 1 : 0}${audio ? '[v][a]' : '[v]'}`
+
+  await run('ffmpeg', [
+    '-y', '-i', input,
+    '-filter_complex', `${parts.join(';')};${concat}`,
+    '-map', '[v]', ...(audio ? ['-map', '[a]', '-c:a', 'aac', '-b:a', '96k'] : ['-an']),
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart',
+    output,
+  ])
+}
+
 export async function extractFrame(video: string, seconds: number, output: string): Promise<void> {
   await run('ffmpeg', ['-y', '-ss', seconds.toFixed(2), '-i', video, '-frames:v', '1', '-q:v', '3', output])
 }

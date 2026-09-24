@@ -1,47 +1,65 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { Button, Field } from '../ui/design-system/components'
 import { supabase } from '../supabase'
+import styles from './Login.module.css'
 
+/** Connexion sans mot de passe : un lien magique par email (crée le compte au premier passage). */
 export function Login() {
   const [email, setEmail] = useState('')
   const [sent, setSent] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    setLoading(true)
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: window.location.origin },
     })
+    setLoading(false)
     if (error) setError(error.message)
     else setSent(true)
   }
 
   return (
-    <main className="narrow">
-      <h1 className="logo big">Doclee</h1>
-      <p className="lead">
-        Filmez votre écran pendant que vous faites une tâche.
-        <br />
-        Recevez la procédure écrite, avec captures, et une vidéo commentée.
-      </p>
+    <div className={styles.page}>
+      <div className={styles.card}>
+        <h1 className={styles.logo}>
+          <span className={styles.logoMark}>d</span>doclee
+        </h1>
+        <p className={styles.tagline}>Vidéo → procédure</p>
+        <p className={styles.subtitle}>
+          Filmez votre écran pendant une tâche. Recevez la procédure écrite avec captures et une
+          vidéo commentée.
+        </p>
 
-      {sent ? (
-        <p className="notice">Lien de connexion envoyé à {email}. Ouvrez votre boîte mail.</p>
-      ) : (
-        <form onSubmit={submit} className="stack">
-          <input
-            type="email"
-            required
-            placeholder="vous@entreprise.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <button className="primary">Recevoir un lien de connexion</button>
-          {error && <p className="error">{error}</p>}
-          <p className="muted">Première vidéo offerte.</p>
-        </form>
-      )}
-    </main>
+        {sent ? (
+          <p className={styles.sent}>
+            Lien de connexion envoyé à <strong>{email}</strong>.<br />
+            Ouvrez votre boîte mail (et vos spams).
+          </p>
+        ) : (
+          <form className={styles.form} onSubmit={(e) => void submit(e)}>
+            <Field
+              label="Email"
+              type="email"
+              placeholder="vous@entreprise.com"
+              value={email}
+              onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+              required
+            />
+            {error && <p className={styles.error}>{error}</p>}
+            <div className={styles.actions}>
+              <Button type="submit" disabled={loading}>
+                {loading ? 'Envoi…' : 'Recevoir un lien de connexion'}
+              </Button>
+            </div>
+            <p className={styles.toggle}>Première vidéo offerte.</p>
+          </form>
+        )}
+      </div>
+    </div>
   )
 }

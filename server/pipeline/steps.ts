@@ -42,3 +42,65 @@ export function narrationSlots(
     action: s.action,
   }))
 }
+
+/** Durée maximale de la vidéo SOP livrée. */
+export const MAX_SOP_VIDEO_SECONDS = 240
+
+export interface Clip {
+  start: number
+  end: number
+}
+
+/**
+ * Plan de montage pour tenir en {@link MAX_SOP_VIDEO_SECONDS} : on garde un extrait autour de chaque
+ * étape (surtout ce qui précède la capture : c'est là que l'action a lieu) et on coupe le reste.
+ * Renvoie les extraits à garder et les étapes repositionnées sur la vidéo montée.
+ */
+export function planEdit(
+  steps: VideoSteps['steps'],
+  duration: number,
+  max = MAX_SOP_VIDEO_SECONDS,
+): { clips: Clip[]; steps: VideoSteps['steps']; duration: number } {
+  if (duration <= max || steps.length === 0) {
+    return { clips: [{ start: 0, end: duration }], steps, duration }
+  }
+
+  // Temps accordé à chaque étape : entre 2 s et 20 s, et jamais plus que max / nombre d'étapes.
+  const perStep = Math.max(2, Math.min(20, max / steps.length))
+  const windows = steps.map((s) => ({
+    start: Math.max(0, s.timestamp - perStep * 0.7),
+    end: Math.min(duration, s.timestamp + perStep * 0.3),
+  }))
+
+  // Fusionne les extraits qui se chevauchent ou se touchent presque.
+  const clips: Clip[] = []
+  for (const w of windows) {
+    const last = clips[clips.length - 1]
+    if (last && w.start <= last.end + 0.5) last.end = Math.max(last.end, w.end)
+    else clips.push({ ...w })
+  }
+
+  // Filet de sécurité (plus de 120 étapes) : on coupe ce qui dépasse.
+  let total = 0
+  const kept: Clip[] = []
+  for (const c of clips) {
+    if (total >= max) break
+    const end = Math.min(c.end, c.start + (max - total))
+    kept.push({ start: c.start, end })
+    total += end - c.start
+  }
+
+  // Position de chaque étape sur la vidéo montée ; celles coupées par le filet de sécurité disparaissent.
+  const remapped: VideoSteps['steps'] = []
+  for (const s of steps) {
+    let offset = 0
+    for (const c of kept) {
+      if (s.timestamp >= c.start && s.timestamp <= c.end) {
+        remapped.push({ ...s, timestamp: offset + (s.timestamp - c.start) })
+        break
+      }
+      offset += c.end - c.start
+    }
+  }
+  return { clips: kept, steps: remapped, duration: total }
+}

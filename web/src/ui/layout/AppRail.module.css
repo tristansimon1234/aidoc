@@ -1,0 +1,118 @@
+.rail {
+  width: 60px;
+  flex-shrink: 0;
+  background: var(--color-card);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 60;
+  overflow: visible;
+}
+
+.top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+  overflow: visible;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--color-primary);
+  border-radius: 10px;
+  transition: background-color 0.15s;
+}
+
+.logo:hover {
+  background: var(--color-secondary);
+}
+
+.logoImg {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
+.navBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--color-muted-fg);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  text-decoration: none;
+}
+
+.navBtn:hover {
+  background: var(--color-secondary);
+  color: var(--color-fg);
+}
+
+.navBtnActive {
+  background: var(--color-secondary);
+  color: var(--color-fg);
+}
+
+/* Logo : pastille de la couleur principale avec l'initiale. */
+.logoMark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: var(--color-bg);
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.04em;
+}
+
+/* Mobile : barre horizontale en bas de l'écran. */
+@media (max-width: 640px) {
+  .rail {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    justify-content: space-between;
+    padding: 8px 16px;
+    top: auto;
+    bottom: 0;
+    border-right: none;
+    border-top: 1px solid var(--color-border);
+  }
+  .top,
+  .bottom {
+    flex-direction: row;
+  }
+  .bottom {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+}

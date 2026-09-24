@@ -1,0 +1,18 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  border-radius: 6px;
+  background-color: var(--color-secondary);
+  line-height: 1.7;
+  letter-spacing: -0.01em;
+}
+
+.blue   { color: var(--color-primary); background: oklch(from var(--color-primary) l c h / 0.1); }
+.green  { color: var(--color-success); background: oklch(from var(--color-success) l c h / 0.1); }
+.amber  { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / 0.1); }
+.red    { color: var(--color-destructive); background: oklch(from var(--color-destructive) l c h / 0.1); }
+.purple { color: var(--color-primary); background: oklch(from var(--color-primary) l c h / 0.08); }
