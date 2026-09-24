@@ -207,7 +207,7 @@ export function addUpdatedDate(markdown: string, language: string, date = new Da
  * la section de son étape (« ### N. » ou « #### N. »), sinon à la fin du document.
  */
 export function insertScreenshots(markdown: string, urls: (string | null)[]): string {
-  let out = markdown
+  let out = normalizeImageLinks(markdown)
   const forgotten: string[] = []
   urls.forEach((url, i) => {
     const placeholder = `{{SCREENSHOT_${i}}}`
@@ -228,7 +228,31 @@ export function insertScreenshots(markdown: string, urls: (string | null)[]): st
     )
     out = out.replaceAll(placeholder, `![](${url})`)
   })
+  // Repères restés sans capture (numéro inventé par l'IA) : l'image est retirée plutôt que cassée.
+  out = out.replace(/^[ \t]*!\[[^\]]*\]\(\{\{SCREENSHOT_\d+\}\}\)[ \t]*\n?/gm, '')
+  out = out.replace(/!\[[^\]]*\]\(\{\{SCREENSHOT_\d+\}\}\)|\{\{SCREENSHOT_\d+\}\}/g, '')
   return forgotten.length > 0 ? `${out.trimEnd()}\n\n${forgotten.join('\n\n')}\n` : out
+}
+
+/**
+ * L'IA déforme parfois les repères de capture (« {{ SCREENSHOT_7 }} », « SCREENSHOT_7 »,
+ * « screenshot-7.png », « step-8.jpg »…) : on les ramène à « {{SCREENSHOT_N}} ». Toute autre image
+ * (adresse inventée) est retirée : une SOP ne contient que nos captures.
+ */
+function normalizeImageLinks(markdown: string): string {
+  return markdown
+    .replace(/\{\{\s*SCREENSHOT[\s_-]*(\d+)\s*\}\}/gi, '{{SCREENSHOT_$1}}')
+    .replace(
+      /^[ \t]*!\[([^\]]*)\]\(\s*<?([^)\s>]*)>?(?:\s+"[^"]*")?\s*\)[ \t]*$/gm,
+      (line, alt: string, target: string) => {
+        if (/^\{\{SCREENSHOT_\d+\}\}$/.test(target)) return line
+        const placeholder = /SCREENSHOT[\s_-]*(\d+)/i.exec(target)
+        if (placeholder) return `![${alt}]({{SCREENSHOT_${placeholder[1]}}})`
+        const step = /step[\s_-]*(\d+)\.(?:jpe?g|png)/i.exec(target)
+        if (step && Number(step[1]) > 0) return `![${alt}]({{SCREENSHOT_${Number(step[1]) - 1}}})`
+        return ''
+      },
+    )
 }
 
 /** Ajoute `image` à la fin de la section de l'étape `n` ; null si l'étape n'est pas trouvée. */

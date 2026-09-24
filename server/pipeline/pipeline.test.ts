@@ -245,6 +245,41 @@ describe('insertScreenshots', () => {
   })
 })
 
+describe('insertScreenshots : repères déformés par l’IA', () => {
+  it('répare les variantes, retire les images inventées ou sans capture', () => {
+    const md = [
+      '#### 1. A',
+      '',
+      '![a]({{ SCREENSHOT_0 }})',
+      '',
+      '#### 2. B',
+      '',
+      '![b](SCREENSHOT_1)',
+      '',
+      '#### 3. C',
+      '',
+      '![c](screenshots/step-3.jpg)',
+      '',
+      '#### 4. D',
+      '',
+      '![d](https://example.com/fake.png)',
+      '',
+      '#### 5. E',
+      '',
+      '![e]({{SCREENSHOT_9}})',
+      '',
+    ].join('\n')
+    const out = insertScreenshots(md, ['u0', 'u1', 'u2', 'u3'])
+    expect(out).toContain('![a](u0)')
+    expect(out).toContain('![b](u1)')
+    expect(out).toContain('![c](u2)')
+    expect(out).not.toContain('example.com')
+    expect(out).not.toContain('SCREENSHOT')
+    // La capture 4 n'était plus utilisée : elle revient sous l'étape 4.
+    expect(out).toMatch(/#### 4\. D\n\n!\[\]\(u3\)/)
+  })
+})
+
 describe('uncoveredRanges', () => {
   it('repère les longs passages sans étape, y compris la fin de la vidéo', () => {
     expect(uncoveredRanges([step(10), step(30)], 200)).toEqual([{ start: 30, end: 200 }])
