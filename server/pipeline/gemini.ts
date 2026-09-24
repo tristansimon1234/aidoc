@@ -103,6 +103,29 @@ export async function askJson<T>(prompt: string, schema: z.ZodType<T>): Promise<
   })
 }
 
+/** Question avec des images (JPEG), chacune précédée de son libellé ; réponse JSON validée. */
+export async function askJsonWithImages<T>(
+  prompt: string,
+  images: { label: string; jpeg: Buffer }[],
+  schema: z.ZodType<T>,
+): Promise<T> {
+  const parts = [
+    { text: prompt },
+    ...images.flatMap((img) => [
+      { text: img.label },
+      { inlineData: { mimeType: 'image/jpeg', data: img.jpeg.toString('base64') } },
+    ]),
+  ]
+  return withRetry(async () => {
+    const res = await gemini().models.generateContent({
+      model: env.GEMINI_MODEL,
+      contents: [{ role: 'user', parts }],
+      config: { responseMimeType: 'application/json', maxOutputTokens: 4000 },
+    })
+    return parseJson(res.text ?? '', schema)
+  })
+}
+
 /** Synthèse vocale Gemini → fichier WAV (PCM 16 bits, 24 kHz, mono). */
 export async function speakWithGemini(text: string): Promise<Buffer> {
   return withRetry(async () => {

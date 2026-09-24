@@ -107,3 +107,52 @@ export function planEdit(
   }
   return { clips: kept, steps: remapped, duration: total }
 }
+
+/**
+ * Moments candidats pour la capture d'une étape : autour de l'horodatage donné par Gemini
+ * (souvent décalé de 1-2 s), sans déborder sur les étapes voisines.
+ */
+export function candidateTimes(steps: VideoSteps['steps'], i: number, duration: number): number[] {
+  const t = steps[i]!.timestamp
+  const lo = i > 0 ? steps[i - 1]!.timestamp + 0.3 : 0
+  const hi = i < steps.length - 1 ? steps[i + 1]!.timestamp - 0.3 : Math.max(0, duration - 0.2)
+  const times = [-3, -2, -1, 0, 1, 2].map((o) => {
+    const clamped = Math.min(Math.max(t + o, lo), Math.max(lo, hi))
+    return Math.round(clamped * 10) / 10
+  })
+  return [...new Set(times)].sort((a, b) => a - b)
+}
+
+/**
+ * Applique les moments choisis pour les captures en gardant les étapes dans l'ordre :
+ * si un choix passe avant l'étape précédente, l'étape garde son horodatage d'origine.
+ */
+export function applyPickedTimes(
+  steps: VideoSteps['steps'],
+  picked: (number | null)[],
+): VideoSteps['steps'] {
+  const out: VideoSteps['steps'] = []
+  steps.forEach((s, i) => {
+    const prev = out[i - 1]
+    const wanted = picked[i] ?? s.timestamp
+    const timestamp = prev && wanted <= prev.timestamp ? s.timestamp : wanted
+    out.push({ ...s, timestamp })
+  })
+  return out
+}
+
+/**
+ * Cale un passage de vidéo sur sa phrase de voix off, pour ne laisser aucun blanc :
+ * `factor` < 1 accélère la vidéo (jusqu'à ×2,5), > 1 la ralentit (jusqu'à ×1,5) ;
+ * si la voix est encore plus longue, la dernière image est figée (`freeze`).
+ */
+export function fitSegment(
+  slotSeconds: number,
+  audioSeconds: number,
+): { factor: number; freeze: number; length: number } {
+  const target = audioSeconds > 0 ? audioSeconds + 0.4 : 0 // petite respiration après chaque phrase
+  const factor = Math.min(1.5, Math.max(0.4, target / slotSeconds))
+  const videoLength = slotSeconds * factor
+  const freeze = Math.max(0, target - videoLength)
+  return { factor, freeze, length: videoLength + freeze }
+}

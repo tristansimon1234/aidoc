@@ -10,10 +10,11 @@ L'édition, le partage et la recherche se font dans vos outils habituels : bouto
 Vidéo (upload ou enregistrement dans le navigateur)
   → ffmpeg : MP4 720p
   → Gemini regarde la vidéo et liste les étapes horodatées
-  → ffmpeg : une capture par étape
+  → ffmpeg extrait quelques images autour de chaque étape, Gemini choisit la meilleure capture
   → Gemini rédige la SOP (markdown)
   → ffmpeg monte une vidéo de 4 min max (un extrait autour de chaque étape)
-  → Gemini écrit la voix off, synthèse vocale (Gemini ou ElevenLabs), ffmpeg la pose sur la vidéo
+  → Gemini écrit la voix off (à partir de ce que la personne a dit), synthèse vocale (Gemini ou ElevenLabs),
+    puis chaque passage de vidéo est accéléré ou ralenti pour durer exactement le temps de sa phrase (aucun blanc)
 ```
 
 La vidéo livrée dure **4 minutes maximum**, quelle que soit la durée de l'enregistrement : au-delà, on garde un extrait autour de chaque étape (surtout ce qui précède l'action) et on coupe le reste. La voix off est calée sur ce montage. Réglage : `MAX_SOP_VIDEO_SECONDS` dans `server/pipeline/steps.ts`.

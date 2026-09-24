@@ -154,11 +154,40 @@ export function insertScreenshots(markdown: string, urls: (string | null)[]): st
   return forgotten.length > 0 ? `${out.trimEnd()}\n\n${forgotten.join('\n\n')}\n` : out
 }
 
+// ── 2 bis. Choix de la meilleure capture pour chaque étape ──
+
+export const FramePickSchema = z.object({
+  picks: z.array(z.object({ step: z.number().int(), image: z.number().int() })),
+})
+
+/** `steps[].images` = numéros des images candidates de l'étape (dans l'ordre chronologique). */
+export function framePickPrompt(
+  steps: { step: number; action: string; screen: string; images: number[] }[],
+): string {
+  const list = steps
+    .map(
+      (s) =>
+        `STEP ${s.step}: ${s.action}\n  Expected on screen: ${s.screen}\n  Candidate images: ${s.images.join(', ')}`,
+    )
+    .join('\n\n')
+  return `These images are frames from a screen recording. For each step of a written procedure, pick the ONE candidate image that best illustrates it as a screenshot in the procedure.
+
+The best frame:
+- shows the element the reader must act on (button, menu, field) and, for a form, the value already filled in;
+- shows the screen BEFORE the next action changes it (not the result of the next step);
+- for a step about checking a result, shows that result;
+- is not a transition, a loading screen, a blurred frame, or a frame hidden by an unrelated popup.
+
+${list}
+
+Return ONLY JSON: {"picks": [{"step": <step number>, "image": <chosen image number>}, ...]} with one entry per step.`
+}
+
 // ── 3. Script de la voix off ─────────────────────────────────
 
 export const NarrationSchema = z.object({ lines: z.array(z.string()) })
 
-/** Une phrase par créneau ; le budget de mots suit la durée du créneau (~2,3 mots / seconde). */
+/** Un texte par créneau ; le budget de mots suit la durée du créneau (~2,6 mots / seconde, au moins 80 %). */
 export function narrationPrompt(input: {
   language: string
   sop: string
@@ -166,8 +195,8 @@ export function narrationPrompt(input: {
 }): string {
   const slots = input.slots
     .map((s, i) => {
-      const max = Math.max(6, Math.floor(s.seconds * 2.3))
-      const min = Math.max(3, Math.floor(max * 0.6))
+      const max = Math.max(8, Math.floor(s.seconds * 2.6))
+      const min = Math.max(5, Math.floor(max * 0.8))
       const said = s.spoken ? `\n   What the person said here: "${s.spoken}"` : ''
       return `${i + 1}. [${s.start.toFixed(0)}s, ${s.seconds.toFixed(0)}s available → ${min}-${max} words] On screen: ${s.action}${said}`
     })
@@ -175,7 +204,7 @@ export function narrationPrompt(input: {
 
   return `Write the voice-over of a short tutorial video, in ${languageName(input.language)}. A text-to-speech voice will read it over the screen recording.
 
-The video is split into ${input.slots.length} time slots. Write exactly ONE text per slot, in order. Stay within each word range: too long and the voice falls behind the image.
+The video is split into ${input.slots.length} time slots. Write exactly ONE text per slot, in order. Use each slot's word range fully: the voice should talk from the start to the end of the slot, with no dead air. Aim for the upper half of the range.
 
 - The voice-over replaces the person's own voice. Base each slot on WHAT THEY SAID during it (their explanations, reasons and warnings), rewritten as clean, confident sentences, in ${languageName(input.language)}. Keep their meaning, drop hesitations and repetitions.
 - When they said nothing useful in a slot, explain what is being done and why, using the SOP below. Do not just describe the screen.

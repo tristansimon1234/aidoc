@@ -73,38 +73,59 @@ export async function cutVideo(
   ])
 }
 
-export async function extractFrame(video: string, seconds: number, output: string): Promise<void> {
-  await run(['-y', '-ss', seconds.toFixed(2), '-i', video, '-frames:v', '1', '-q:v', '3', output])
+/** Une image de la vidéo à l'instant `seconds` ; `width` pour une miniature (choix des captures). */
+export async function extractFrame(
+  video: string,
+  seconds: number,
+  output: string,
+  width?: number,
+): Promise<void> {
+  await run([
+    '-y', '-ss', seconds.toFixed(2), '-i', video, '-frames:v', '1',
+    ...(width ? ['-vf', `scale=${width}:-2`] : []),
+    '-q:v', '3', output,
+  ])
 }
 
 /**
- * Remplace la bande son de la vidéo par la voix off.
- * Chaque segment audio est posé à son instant `start` (secondes).
- * Si la voix dépasse la fin, la dernière image est figée le temps nécessaire.
+ * Vidéo commentée sans blanc : chaque passage [start, end] de la vidéo est suivi de sa phrase de voix off,
+ * accéléré ou ralenti (`factor`) et prolongé (`freeze`) pour durer exactement `length` secondes.
  */
-export async function muxNarration(
+export async function renderNarrated(
   video: string,
-  segments: { file: string; start: number }[],
-  audioEnd: number,
+  segments: {
+    start: number
+    end: number
+    audio: string | null
+    factor: number
+    freeze: number
+    length: number
+  }[],
   output: string,
 ): Promise<void> {
-  const videoDuration = await durationOf(video)
-  const freeze = Math.max(0, audioEnd - videoDuration + 0.5)
+  // Un « -ss/-t » par passage (saut direct), puis les fichiers audio.
+  const videoInputs = segments.flatMap((s) => [
+    '-ss', s.start.toFixed(3), '-t', (s.end - s.start).toFixed(3), '-i', video,
+  ])
+  const audioFiles = segments.map((s) => s.audio).filter((a): a is string => a !== null)
+  const audioInputs = audioFiles.flatMap((f) => ['-i', f])
 
-  const inputs = segments.flatMap((s) => ['-i', s.file])
-  const delays = segments
-    .map((s, i) => {
-      const ms = Math.round(s.start * 1000)
-      return `[${i + 1}:a]aresample=44100,adelay=${ms}|${ms}[a${i}]`
-    })
-    .join(';')
-  const mix = `${segments.map((_, i) => `[a${i}]`).join('')}amix=inputs=${segments.length}:normalize=0[aout]`
-  const pad = freeze > 0 ? `[0:v]tpad=stop_mode=clone:stop_duration=${freeze.toFixed(2)}[vout]` : '[0:v]null[vout]'
+  let audioIndex = segments.length
+  const filters = segments.map((s, i) => {
+    const freeze = s.freeze > 0 ? `,tpad=stop_mode=clone:stop_duration=${s.freeze.toFixed(3)}` : ''
+    const v = `[${i}:v]setpts=(PTS-STARTPTS)*${s.factor.toFixed(4)},fps=15${freeze}[v${i}]`
+    const len = s.length.toFixed(3)
+    const a = s.audio
+      ? `[${audioIndex++}:a]aresample=44100,aformat=channel_layouts=mono,apad,atrim=duration=${len}[a${i}]`
+      : `aevalsrc=0:s=44100:d=${len},aformat=channel_layouts=mono[a${i}]`
+    return `${v};${a}`
+  })
+  const concat = `${segments.map((_, i) => `[v${i}][a${i}]`).join('')}concat=n=${segments.length}:v=1:a=1[v][a]`
 
   await run([
-    '-y', '-i', video, ...inputs,
-    '-filter_complex', `${delays};${mix};${pad}`,
-    '-map', '[vout]', '-map', '[aout]',
+    '-y', ...videoInputs, ...audioInputs,
+    '-filter_complex', `${filters.join(';')};${concat}`,
+    '-map', '[v]', '-map', '[a]',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '128k',
     '-movflags', '+faststart',

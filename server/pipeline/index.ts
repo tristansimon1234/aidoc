@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as db from '../db.js'
 import { creditsFor } from '../credits.js'
-import { cutVideo, durationOf, extractFrame, muxNarration, normalizeVideo } from './ffmpeg.js'
-import { askJson, speakWithGemini, withVideo } from './gemini.js'
+import { cutVideo, durationOf, extractFrame, normalizeVideo, renderNarrated } from './ffmpeg.js'
+import { askJson, askJsonWithImages, speakWithGemini, withVideo } from './gemini.js'
 import { speakWithElevenLabs } from './elevenlabs.js'
 import {
+  FramePickSchema,
+  framePickPrompt,
   NarrationSchema,
   VideoStepsSchema,
   insertScreenshots,
@@ -17,7 +19,14 @@ import {
   videoAnalysisPrompt,
   type VideoSteps,
 } from './prompts.js'
-import { cleanSteps, narrationSlots, planEdit } from './steps.js'
+import {
+  applyPickedTimes,
+  candidateTimes,
+  cleanSteps,
+  fitSegment,
+  narrationSlots,
+  planEdit,
+} from './steps.js'
 
 /**
  * Filet de sécurité si le service vidéo tombe : un traitement qui n'avance plus depuis 30 min
@@ -73,15 +82,16 @@ export async function processSop(id: string): Promise<void> {
       // 2. Transcription de ce que dit la personne + liste des étapes
       await step('Analyzing the video')
       const analysis = await gemini.json(videoAnalysisPrompt(duration), VideoStepsSchema)
-      const steps = cleanSteps(analysis.steps, duration)
-      if (steps.length === 0) {
+      const found = cleanSteps(analysis.steps, duration)
+      if (found.length === 0) {
         throw new UserFacingError(
           'No action detected in the video. Record your screen while you perform the task.',
         )
       }
 
-      // 3. Une capture par étape
+      // 3. Une capture par étape, au meilleur moment (Gemini choisit parmi plusieurs images)
       await step('Taking screenshots')
+      const steps = await pickScreenshotTimes(video, found, duration, dir)
       const urls: (string | null)[] = []
       for (const [i, s] of steps.entries()) {
         const jpg = join(dir, `step-${i + 1}.jpg`)
@@ -185,18 +195,68 @@ async function narrate(input: {
     return file
   })
 
-  const segments: { file: string; start: number }[] = []
-  let cursor = 0
-  for (const [i, slot] of slots.entries()) {
-    const file = files[i]
-    if (!file) continue
-    // Jamais deux phrases l'une sur l'autre : si la précédente déborde, celle-ci attend.
-    const start = Math.max(slot.start, cursor)
-    segments.push({ file, start })
-    cursor = start + (await durationOf(file)) + 0.3
+  // La vidéo suit la voix : chaque passage dure exactement le temps de sa phrase (aucun blanc).
+  const segments = await Promise.all(
+    slots.map(async (slot, i) => {
+      const audio = files[i] ?? null
+      const fit = fitSegment(slot.seconds, audio ? await durationOf(audio) : 0)
+      return { start: slot.start, end: slot.start + slot.seconds, audio, ...fit }
+    }),
+  )
+  if (!segments.some((s) => s.audio)) throw new Error('Voix off vide')
+  await renderNarrated(input.video, segments, input.output)
+}
+
+/**
+ * Gemini situe les étapes à 1-2 s près : pour chaque étape on extrait quelques images autour,
+ * et Gemini choisit celle qui l'illustre le mieux. En cas d'échec, on garde les horodatages d'origine.
+ */
+async function pickScreenshotTimes(
+  video: string,
+  steps: VideoSteps['steps'],
+  duration: number,
+  dir: string,
+): Promise<VideoSteps['steps']> {
+  try {
+    const candidates = steps.map((_, i) => candidateTimes(steps, i, duration))
+    const batches: number[][] = []
+    for (let i = 0; i < steps.length; i += 6)
+      batches.push(steps.slice(i, i + 6).map((_, k) => i + k))
+
+    const picked: (number | null)[] = steps.map(() => null)
+    await mapLimit(batches, 3, async (batch) => {
+      const images: { label: string; jpeg: Buffer }[] = []
+      const items = []
+      for (const i of batch) {
+        const numbers: number[] = []
+        for (const t of candidates[i]!) {
+          const file = join(dir, `cand-${i}-${t}.jpg`)
+          await extractFrame(video, t, file, 640)
+          images.push({ label: `Image ${images.length + 1}`, jpeg: await readFile(file) })
+          numbers.push(images.length)
+        }
+        items.push({
+          step: i + 1,
+          action: steps[i]!.action,
+          screen: steps[i]!.screen,
+          images: numbers,
+        })
+      }
+      const { picks } = await askJsonWithImages(framePickPrompt(items), images, FramePickSchema)
+      for (const p of picks) {
+        const item = items.find((it) => it.step === p.step)
+        const k = item?.images.indexOf(p.image) ?? -1
+        if (item && k >= 0) picked[item.step - 1] = candidates[item.step - 1]![k] ?? null
+      }
+    })
+    return applyPickedTimes(steps, picked)
+  } catch (err) {
+    console.warn(
+      '[pipeline] choix des captures impossible, horodatages d’origine',
+      (err as Error).message,
+    )
+    return steps
   }
-  if (segments.length === 0) throw new Error('Voix off vide')
-  await muxNarration(input.video, segments, cursor, input.output)
 }
 
 /** Comme Promise.all(items.map(fn)), mais `limit` appels à la fois au maximum. */

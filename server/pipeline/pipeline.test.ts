@@ -5,9 +5,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { creditsFor } from '../credits.js'
-import { cutVideo, durationOf, extractFrame, muxNarration, normalizeVideo } from './ffmpeg.js'
+import { cutVideo, durationOf, extractFrame, normalizeVideo, renderNarrated } from './ffmpeg.js'
 import { insertScreenshots, narrationPrompt, sopPrompt } from './prompts.js'
-import { cleanSteps, narrationSlots, planEdit } from './steps.js'
+import {
+  applyPickedTimes,
+  candidateTimes,
+  cleanSteps,
+  fitSegment,
+  narrationSlots,
+  planEdit,
+} from './steps.js'
 
 const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'
 const step = (timestamp: number, action = 'a', spoken: string | null = null) => ({
@@ -95,6 +102,29 @@ describe('prompts', () => {
   })
 })
 
+describe('captures', () => {
+  it('cherche autour de l’horodatage sans déborder sur les étapes voisines', () => {
+    const steps = [step(10), step(12), step(30)]
+    expect(candidateTimes(steps, 1, 40)).toEqual([10.3, 11, 12, 13, 14])
+    expect(candidateTimes(steps, 0, 40)).toEqual([7, 8, 9, 10, 11, 11.7])
+    expect(candidateTimes(steps, 2, 31)).toEqual([27, 28, 29, 30, 30.8])
+  })
+
+  it('garde les étapes dans l’ordre même si un choix recule', () => {
+    const steps = [step(10), step(12), step(30)]
+    expect(applyPickedTimes(steps, [11.7, 10.3, null]).map((s) => s.timestamp)).toEqual([
+      11.7, 12, 30,
+    ])
+  })
+
+  it('cale chaque passage sur sa voix off', () => {
+    expect(fitSegment(10, 3.6)).toEqual({ factor: 0.4, freeze: 0, length: 4 })
+    expect(fitSegment(4, 5.6)).toEqual({ factor: 1.5, freeze: 0, length: 6 })
+    expect(fitSegment(2, 5.6)).toEqual({ factor: 1.5, freeze: 3, length: 6 })
+    expect(fitSegment(5, 0).length).toBeCloseTo(2)
+  })
+})
+
 describe('insertScreenshots', () => {
   it('remplace les repères, retire les captures ratées, ajoute les oubliées', () => {
     const md = '1\n\n![Ouvrir]({{SCREENSHOT_0}})\n\n2\n\n![x]({{SCREENSHOT_1}})\n'
@@ -106,7 +136,7 @@ describe('insertScreenshots', () => {
 })
 
 describe('ffmpeg', () => {
-  it('normalise (depuis une URL), capture une image et pose la voix off (en figeant la fin si elle déborde)', async () => {
+  it('normalise (depuis une URL), capture une image, monte et cale la vidéo sur la voix off', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'doclee-test-'))
     const src = join(dir, 'src.webm')
     const voice = join(dir, 'voice.wav')
@@ -144,16 +174,25 @@ describe('ffmpeg', () => {
     )
     expect(await durationOf(cut)).toBeCloseTo(2.5, 0)
 
+    // La vidéo suit la voix : un passage de 3 s avec 1 s de voix est accéléré,
+    // un passage de 1 s avec 3 s de voix est ralenti puis figé. Aucun blanc.
+    const shortVoice = join(dir, 'short.wav')
+    execFileSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', shortVoice])
     const out = join(dir, 'out.mp4')
-    await muxNarration(
+    await renderNarrated(
       video,
       [
-        { file: voice, start: 1 },
-        { file: voice, start: 5 },
+        { start: 0, end: 3, audio: shortVoice, ...fitSegment(3, 1) },
+        { start: 3, end: 4, audio: voice, ...fitSegment(1, 3) },
       ],
-      8.3,
       out,
     )
-    expect(await durationOf(out)).toBeGreaterThan(8)
+    expect(await durationOf(out)).toBeCloseTo(1.4 + 3.4, 0)
+    const silences = execFileSync(
+      ffmpeg,
+      ['-i', out, '-af', 'silencedetect=noise=-40dB:d=0.6', '-f', 'null', '-'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+    )
+    expect(silences).not.toContain('silence_start')
   }, 60_000)
 })
