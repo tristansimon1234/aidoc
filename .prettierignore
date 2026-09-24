@@ -1,0 +1,2 @@
+# Arguments ffmpeg alignés par paires (option valeur), plus lisible à la main
+server/pipeline/ffmpeg.ts

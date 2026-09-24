@@ -1,0 +1,194 @@
+import { randomUUID } from 'node:crypto'
+import { Router, type NextFunction, type Request, type Response } from 'express'
+import { z } from 'zod'
+import * as db from './db.js'
+import * as billing from './billing.js'
+import { MAX_VIDEO_MINUTES, MINUTES_PER_CREDIT, OFFERS, creditsFor } from './credits.js'
+import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
+import { LANGUAGES } from './pipeline/prompts.js'
+import { enqueue } from './pipeline/index.js'
+
+export const api = Router()
+
+type Handler = (req: Request, res: Response, userId: string) => Promise<void>
+
+/** Vérifie le jeton Supabase puis appelle le handler avec l'id de l'utilisateur. */
+function authed(handler: Handler) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const token = req.headers.authorization?.replace(/^Bearer /, '')
+      const userId = token ? await db.userIdFromToken(token) : null
+      if (!userId) {
+        res.status(401).json({ error: 'Non connecté' })
+        return
+      }
+      await handler(req, res, userId)
+    } catch (err) {
+      next(err)
+    }
+  }
+}
+
+async function ownedSop(id: string, userId: string): Promise<db.Sop | null> {
+  const parsed = z.string().uuid().safeParse(id)
+  if (!parsed.success) return null
+  const sop = await db.getSop(parsed.data)
+  return sop && sop.userId === userId ? sop : null
+}
+
+function toView(sop: db.Sop) {
+  return {
+    id: sop.id,
+    title: sop.title,
+    language: sop.language,
+    voice: sop.voice,
+    status: sop.status,
+    progress: sop.progress,
+    error: sop.error,
+    creditsUsed: sop.creditsUsed,
+    durationSeconds: sop.durationSeconds,
+    markdown: sop.markdown,
+    videoUrl: sop.videoPath ? db.publicUrl(sop.videoPath) : null,
+    createdAt: sop.createdAt,
+  }
+}
+
+// Infos de l'utilisateur + ce que l'interface doit savoir pour s'afficher.
+api.get(
+  '/me',
+  authed(async (_req, res, userId) => {
+    const account = await db.getAccount(userId)
+    res.json({
+      credits: account.credits,
+      hasBillingAccount: account.stripeCustomerId !== null,
+      premiumVoice: isElevenLabsEnabled(),
+      languages: Object.keys(LANGUAGES),
+      minutesPerCredit: MINUTES_PER_CREDIT,
+      maxVideoMinutes: MAX_VIDEO_MINUTES,
+      offers: await billing.listOffers(),
+    })
+  }),
+)
+
+api.get(
+  '/sops',
+  authed(async (_req, res, userId) => {
+    const sops = await db.listSops(userId)
+    res.json(sops.map((s) => ({ ...toView(s), markdown: null })))
+  }),
+)
+
+api.get(
+  '/sops/:id',
+  authed(async (req, res, userId) => {
+    const sop = await ownedSop(String(req.params.id), userId)
+    if (!sop) {
+      res.status(404).json({ error: 'SOP introuvable' })
+      return
+    }
+    res.json(toView(sop))
+  }),
+)
+
+const CreateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  language: z.string().refine((l) => l in LANGUAGES),
+  voice: z.enum(['none', 'standard', 'premium']),
+  fileName: z.string().max(300),
+  durationSeconds: z
+    .number()
+    .positive()
+    .max(MAX_VIDEO_MINUTES * 60),
+})
+
+// Étape 1 : crée la SOP et renvoie une URL d'upload direct vers le stockage.
+api.post(
+  '/sops',
+  authed(async (req, res, userId) => {
+    const input = CreateSchema.parse(req.body)
+    if (input.voice === 'premium' && !isElevenLabsEnabled()) {
+      res.status(400).json({ error: 'Voix premium indisponible' })
+      return
+    }
+    const needed = creditsFor(input.durationSeconds)
+    if ((await db.getAccount(userId)).credits < needed) {
+      res.status(402).json({ error: `Crédits insuffisants : cette vidéo en demande ${needed}.` })
+      return
+    }
+    const id = randomUUID()
+    const ext =
+      (input.fileName.split('.').pop() ?? 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4'
+    const sourcePath = `${userId}/${id}/source/video.${ext}`
+    await db.createSop({
+      id,
+      userId,
+      title: input.title,
+      language: input.language,
+      voice: input.voice,
+      sourcePath,
+    })
+    const upload = await db.createUploadUrl(sourcePath)
+    res.status(201).json({ id, uploadUrl: upload.signedUrl })
+  }),
+)
+
+// Étape 2 : l'upload est fini → on débite les crédits et on lance le traitement.
+api.post(
+  '/sops/:id/start',
+  authed(async (req, res, userId) => {
+    const sop = await ownedSop(String(req.params.id), userId)
+    if (!sop || sop.status !== 'uploading') {
+      res.status(404).json({ error: 'SOP introuvable' })
+      return
+    }
+    if (!(await db.fileExists(sop.sourcePath))) {
+      res.status(400).json({ error: "La vidéo n'a pas été reçue" })
+      return
+    }
+    const { durationSeconds } = z.object({ durationSeconds: z.number().positive() }).parse(req.body)
+    const cost = creditsFor(Math.min(durationSeconds, MAX_VIDEO_MINUTES * 60))
+    if (!(await db.applyCredits(userId, -cost, 'sop', `sop:${sop.id}`))) {
+      res.status(402).json({ error: `Crédits insuffisants : cette vidéo en demande ${cost}.` })
+      return
+    }
+    await db.updateSop(sop.id, { status: 'processing', creditsUsed: cost, progress: 'En attente' })
+    enqueue(sop.id)
+    res.json({ ok: true })
+  }),
+)
+
+api.delete(
+  '/sops/:id',
+  authed(async (req, res, userId) => {
+    const sop = await ownedSop(String(req.params.id), userId)
+    if (!sop) {
+      res.status(404).json({ error: 'SOP introuvable' })
+      return
+    }
+    if (sop.status === 'processing') {
+      res.status(409).json({ error: 'Attendez la fin du traitement' })
+      return
+    }
+    await db.deleteFolder(`${userId}/${sop.id}/source`).catch(() => {})
+    await db.deleteFolder(`${userId}/${sop.id}`).catch(() => {})
+    await db.deleteSop(sop.id)
+    res.json({ ok: true })
+  }),
+)
+
+api.post(
+  '/checkout',
+  authed(async (req, res, userId) => {
+    const { offer } = z
+      .object({ offer: z.enum(Object.keys(OFFERS) as ['pack', 'monthly']) })
+      .parse(req.body)
+    res.json({ url: await billing.createCheckout(userId, offer) })
+  }),
+)
+
+api.post(
+  '/billing-portal',
+  authed(async (_req, res, userId) => {
+    res.json({ url: await billing.createPortal(userId) })
+  }),
+)
