@@ -1,51 +1,54 @@
-// Petites fonctions ffmpeg (binaire système, installé dans le Dockerfile).
+// Petites fonctions ffmpeg. Le binaire vient du paquet `ffmpeg-static` (embarqué dans la
+// fonction Vercel, cf. vercel.json) ; FFMPEG_PATH permet d'en forcer un autre.
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 
-function run(cmd: 'ffmpeg' | 'ffprobe', args: string[]): Promise<string> {
+const require = createRequire(import.meta.url)
+const FFMPEG = process.env.FFMPEG_PATH || (require('ffmpeg-static') as string | null) || 'ffmpeg'
+
+/** Lance ffmpeg ; renvoie la sortie d'erreur (c'est là que ffmpeg écrit ses infos). */
+function run(args: string[], allowFailure = false): Promise<string> {
   return new Promise((resolve, reject) => {
-    const p = spawn(cmd, args)
-    let out = ''
+    const p = spawn(FFMPEG, ['-hide_banner', ...args])
     let err = ''
-    p.stdout.on('data', (d: Buffer) => (out += d.toString()))
     p.stderr.on('data', (d: Buffer) => (err += d.toString()))
     p.on('error', reject)
     p.on('close', (code) =>
-      code === 0 ? resolve(out) : reject(new Error(`${cmd} a échoué (${code}): ${err.slice(-800)}`)),
+      code === 0 || allowFailure
+        ? resolve(err)
+        : reject(new Error(`ffmpeg a échoué (${code}): ${err.slice(-800)}`)),
     )
   })
 }
 
-export async function durationOf(file: string): Promise<number> {
-  const out = await run('ffprobe', [
-    '-v', 'error',
-    '-show_entries', 'format=duration',
-    '-of', 'default=noprint_wrappers=1:nokey=1',
-    file,
-  ])
-  const seconds = Number.parseFloat(out.trim())
-  if (!Number.isFinite(seconds)) throw new Error(`Durée illisible pour ${file}`)
-  return seconds
+/** Durée et présence d'une piste audio, lues dans l'en-tête affiché par `ffmpeg -i`. */
+export async function probe(file: string): Promise<{ duration: number; hasAudio: boolean }> {
+  const info = await run(['-i', file], true) // sans fichier de sortie, ffmpeg « échoue » : normal
+  const m = /Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/.exec(info)
+  if (!m) throw new Error(`Durée illisible pour ${file}`)
+  return {
+    duration: Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]),
+    hasAudio: /Stream #\S+.*: Audio:/.test(info),
+  }
 }
 
-/** Ré-encode n'importe quelle vidéo (webm, mov…) en MP4 720p léger : lecture web + envoi à Gemini. */
+export async function durationOf(file: string): Promise<number> {
+  return (await probe(file)).duration
+}
+
+/**
+ * Ré-encode n'importe quelle vidéo (webm, mov…) en MP4 720p / 15 i/s léger, pour la lecture web,
+ * Gemini et les captures. `input` peut être une URL : ffmpeg la lit en streaming (rien sur le disque).
+ */
 export async function normalizeVideo(input: string, output: string): Promise<void> {
-  await run('ffmpeg', [
+  await run([
     '-y', '-i', input,
-    '-vf', "scale='min(1280,iw)':-2",
+    '-vf', "scale='min(1280,iw)':-2,fps=15",
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '96k',
     '-movflags', '+faststart',
     output,
   ])
-}
-
-export async function hasAudio(file: string): Promise<boolean> {
-  const out = await run('ffprobe', [
-    '-v', 'error', '-select_streams', 'a',
-    '-show_entries', 'stream=index', '-of', 'csv=p=0',
-    file,
-  ])
-  return out.trim().length > 0
 }
 
 /** Monte la vidéo en ne gardant que les extraits `clips` (secondes), mis bout à bout. */
@@ -55,19 +58,17 @@ export async function cutVideo(
   output: string,
   keepAudio: boolean,
 ): Promise<void> {
-  const audio = keepAudio && (await hasAudio(input))
-  const parts = clips.map((c, i) => {
-    const range = `start=${c.start.toFixed(3)}:end=${c.end.toFixed(3)}`
-    const v = `[0:v]trim=${range},setpts=PTS-STARTPTS[v${i}]`
-    const a = `[0:a]atrim=${range},asetpts=PTS-STARTPTS[a${i}]`
-    return audio ? `${v};${a}` : v
-  })
-  const inputs = clips.map((_, i) => (audio ? `[v${i}][a${i}]` : `[v${i}]`)).join('')
-  const concat = `${inputs}concat=n=${clips.length}:v=1:a=${audio ? 1 : 0}${audio ? '[v][a]' : '[v]'}`
+  const audio = keepAudio && (await probe(input)).hasAudio
+  // Un « -ss/-t » par extrait : ffmpeg saute directement au bon endroit (rapide même sur une longue vidéo).
+  const inputs = clips.flatMap((c) => [
+    '-ss', c.start.toFixed(3), '-t', (c.end - c.start).toFixed(3), '-i', input,
+  ])
+  const streams = clips.map((_, i) => (audio ? `[${i}:v][${i}:a]` : `[${i}:v]`)).join('')
+  const concat = `${streams}concat=n=${clips.length}:v=1:a=${audio ? 1 : 0}${audio ? '[v][a]' : '[v]'}`
 
-  await run('ffmpeg', [
-    '-y', '-i', input,
-    '-filter_complex', `${parts.join(';')};${concat}`,
+  await run([
+    '-y', ...inputs,
+    '-filter_complex', concat,
     '-map', '[v]', ...(audio ? ['-map', '[a]', '-c:a', 'aac', '-b:a', '96k'] : ['-an']),
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p',
     '-movflags', '+faststart',
@@ -76,7 +77,7 @@ export async function cutVideo(
 }
 
 export async function extractFrame(video: string, seconds: number, output: string): Promise<void> {
-  await run('ffmpeg', ['-y', '-ss', seconds.toFixed(2), '-i', video, '-frames:v', '1', '-q:v', '3', output])
+  await run(['-y', '-ss', seconds.toFixed(2), '-i', video, '-frames:v', '1', '-q:v', '3', output])
 }
 
 /**
@@ -103,7 +104,7 @@ export async function muxNarration(
   const mix = `${segments.map((_, i) => `[a${i}]`).join('')}amix=inputs=${segments.length}:normalize=0[aout]`
   const pad = freeze > 0 ? `[0:v]tpad=stop_mode=clone:stop_duration=${freeze.toFixed(2)}[vout]` : '[0:v]null[vout]'
 
-  await run('ffmpeg', [
+  await run([
     '-y', '-i', video, ...inputs,
     '-filter_complex', `${delays};${mix};${pad}`,
     '-map', '[vout]', '-map', '[aout]',

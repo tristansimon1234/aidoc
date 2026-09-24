@@ -1,5 +1,5 @@
 // Vidéo → SOP (markdown + captures) → vidéo narrée.
-// Tourne dans le process du serveur, dans une petite file d'attente (2 traitements à la fois).
+// Lancé en tâche de fond après la réponse HTTP (waitUntil sur Vercel), dans la limite de durée de la fonction.
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,36 +19,19 @@ import {
 } from './prompts.js'
 import { cleanSteps, narrationSlots, planEdit } from './steps.js'
 
-const MAX_PARALLEL = 2
-const queue: string[] = []
-let running = 0
+/**
+ * Au-delà de ce délai sans avancer, un traitement est considéré comme mort
+ * (fonction Vercel coupée à 800 s) : on le passe en échec et on rembourse.
+ */
+const STALE_AFTER_MS = 15 * 60_000
 
-export function enqueue(sopId: string): void {
-  queue.push(sopId)
-  void drain()
-}
-
-async function drain(): Promise<void> {
-  while (running < MAX_PARALLEL && queue.length > 0) {
-    const id = queue.shift()!
-    running++
-    processSop(id)
-      .catch((err) => console.error(`[pipeline] ${id}`, err))
-      .finally(() => {
-        running--
-        void drain()
-      })
-  }
-}
-
-/** Au démarrage : les traitements coupés par un redémarrage sont marqués en échec et remboursés. */
-export async function recoverInterrupted(): Promise<void> {
-  for (const sop of await db.listStuckSops()) {
-    await fail(
-      sop,
-      'Processing was interrupted (server restart). Your credits were refunded, please try again.',
-    )
-  }
+export async function failIfStale(sop: db.Sop): Promise<db.Sop> {
+  if (sop.status !== 'processing') return sop
+  if (Date.now() - new Date(sop.updatedAt).getTime() < STALE_AFTER_MS) return sop
+  const error =
+    'Processing took too long and was stopped. Your credits were refunded, please try again.'
+  await fail(sop, error)
+  return { ...sop, status: 'failed', progress: null, error }
 }
 
 async function fail(sop: db.Sop, message: string): Promise<void> {
@@ -58,7 +41,7 @@ async function fail(sop: db.Sop, message: string): Promise<void> {
   }
 }
 
-async function processSop(id: string): Promise<void> {
+export async function processSop(id: string): Promise<void> {
   const sop = await db.getSop(id)
   if (!sop || sop.status !== 'processing') return
 
@@ -69,10 +52,9 @@ async function processSop(id: string): Promise<void> {
   try {
     // 1. Vidéo propre (MP4 720p) + durée réelle
     await step('Preparing the video')
-    const original = join(dir, 'original')
     const video = join(dir, 'video.mp4')
-    await db.downloadToFile(sop.sourcePath, original)
-    await normalizeVideo(original, video)
+    // ffmpeg lit la vidéo source directement depuis le stockage : rien de gros sur le disque (/tmp est limité).
+    await normalizeVideo(db.publicUrl(sop.sourcePath), video)
     const duration = await durationOf(video)
     await db.updateSop(id, { durationSeconds: duration })
 
@@ -187,15 +169,22 @@ async function narrate(input: {
     NarrationSchema,
   )
 
-  const segments: { file: string; start: number }[] = []
-  let cursor = 0
-  for (const [i, slot] of slots.entries()) {
+  // Synthèse de toutes les phrases, 4 à la fois.
+  const premium = input.sop.voice === 'premium'
+  const files = await mapLimit(slots, 4, async (_, i) => {
     const text = lines[i]?.trim()
-    if (!text) continue
-    const premium = input.sop.voice === 'premium'
+    if (!text) return null
     const audio = premium ? await speakWithElevenLabs(text) : await speakWithGemini(text)
     const file = join(input.dir, `voice-${i}.${premium ? 'mp3' : 'wav'}`)
     await writeFile(file, audio)
+    return file
+  })
+
+  const segments: { file: string; start: number }[] = []
+  let cursor = 0
+  for (const [i, slot] of slots.entries()) {
+    const file = files[i]
+    if (!file) continue
     // Jamais deux phrases l'une sur l'autre : si la précédente déborde, celle-ci attend.
     const start = Math.max(slot.start, cursor)
     segments.push({ file, start })
@@ -203,4 +192,22 @@ async function narrate(input: {
   }
   if (segments.length === 0) throw new Error('Voix off vide')
   await muxNarration(input.video, segments, cursor, input.output)
+}
+
+/** Comme Promise.all(items.map(fn)), mais `limit` appels à la fois au maximum. */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, i: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await fn(items[i]!, i)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
 }

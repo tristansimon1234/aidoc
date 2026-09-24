@@ -12,7 +12,7 @@ Elle reste consultable dans l'historique git (commit `f3fc06a`).
 ## Stack
 
 Node 20+ · TypeScript strict · Express 5 · React 19 + Vite · Supabase (auth, Postgres, stockage) · Gemini (`@google/genai`) · ElevenLabs (optionnel) · Stripe · ffmpeg · Vitest.
-Un seul serveur (Docker) sert l'API, l'interface et le traitement vidéo.
+Déployé sur Vercel (Pro) : interface statique + une fonction `api/index.ts` (Express) qui fait aussi le traitement vidéo en tâche de fond (`waitUntil`, 800 s max, ffmpeg via `ffmpeg-static`).
 
 ## Règles
 

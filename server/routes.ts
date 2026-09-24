@@ -6,7 +6,8 @@ import * as billing from './billing.js'
 import { MAX_VIDEO_MINUTES, MINUTES_PER_CREDIT, OFFERS, creditsFor } from './credits.js'
 import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
 import { LANGUAGES } from './pipeline/prompts.js'
-import { enqueue } from './pipeline/index.js'
+import { waitUntil } from '@vercel/functions'
+import { failIfStale, processSop } from './pipeline/index.js'
 
 export const api = Router()
 
@@ -33,7 +34,7 @@ async function ownedSop(id: string, userId: string): Promise<db.Sop | null> {
   const parsed = z.string().uuid().safeParse(id)
   if (!parsed.success) return null
   const sop = await db.getSop(parsed.data)
-  return sop && sop.userId === userId ? sop : null
+  return sop && sop.userId === userId ? failIfStale(sop) : null
 }
 
 function toView(sop: db.Sop) {
@@ -73,7 +74,7 @@ api.get(
 api.get(
   '/sops',
   authed(async (_req, res, userId) => {
-    const sops = await db.listSops(userId)
+    const sops = await Promise.all((await db.listSops(userId)).map(failIfStale))
     res.json(sops.map((s) => ({ ...toView(s), markdown: null })))
   }),
 )
@@ -152,7 +153,8 @@ api.post(
       return
     }
     await db.updateSop(sop.id, { status: 'processing', creditsUsed: cost, progress: 'En attente' })
-    enqueue(sop.id)
+    // La génération continue après la réponse, jusqu'à la durée max de la fonction (vercel.json).
+    waitUntil(processSop(sop.id).catch((err) => console.error(`[pipeline] ${sop.id}`, err)))
     res.json({ ok: true })
   }),
 )

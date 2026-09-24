@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync } from 'node:fs'
+import { createReadStream, mkdtempSync } from 'node:fs'
+import { createServer } from 'node:http'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -8,6 +10,7 @@ import { cutVideo, durationOf, extractFrame, muxNarration, normalizeVideo } from
 import { insertScreenshots } from './prompts.js'
 import { cleanSteps, narrationSlots, planEdit } from './steps.js'
 
+const ffmpeg = createRequire(import.meta.url)('ffmpeg-static') as string
 const step = (timestamp: number, action = 'a') => ({ timestamp, action, screen: '', spoken: null })
 
 describe('creditsFor', () => {
@@ -74,11 +77,11 @@ describe('insertScreenshots', () => {
 })
 
 describe('ffmpeg', () => {
-  it('normalise, capture une image et pose la voix off (en figeant la fin si elle déborde)', async () => {
+  it('normalise (depuis une URL), capture une image et pose la voix off (en figeant la fin si elle déborde)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'doclee-test-'))
     const src = join(dir, 'src.webm')
     const voice = join(dir, 'voice.wav')
-    execFileSync('ffmpeg', [
+    execFileSync(ffmpeg, [
       '-y',
       '-f',
       'lavfi',
@@ -88,10 +91,14 @@ describe('ffmpeg', () => {
       'libvpx',
       src,
     ])
-    execFileSync('ffmpeg', ['-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', voice])
+    execFileSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', voice])
 
+    // Comme sur Vercel : ffmpeg lit la source par URL, sans la télécharger.
+    const server = createServer((_req, res) => createReadStream(src).pipe(res)).listen(0)
+    const port = (server.address() as { port: number }).port
     const video = join(dir, 'video.mp4')
-    await normalizeVideo(src, video)
+    await normalizeVideo(`http://127.0.0.1:${port}/src.webm`, video)
+    server.close()
     expect(await durationOf(video)).toBeCloseTo(6, 0)
 
     await extractFrame(video, 2, join(dir, 'frame.jpg'))
