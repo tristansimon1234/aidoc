@@ -18,13 +18,14 @@ export function cleanSteps(steps: VideoSteps['steps'], duration: number): VideoS
 /**
  * Découpe la vidéo en créneaux de voix off : l'étape i est racontée entre la capture i-1 et la capture i
  * (on annonce l'action juste avant qu'elle se produise). Les créneaux trop courts sont fusionnés.
+ * Chaque créneau emporte ce que la personne a dit pendant ces étapes, pour que la voix off le reprenne.
  */
 export function narrationSlots(
   steps: VideoSteps['steps'],
   duration: number,
-): { start: number; seconds: number; action: string }[] {
+): { start: number; seconds: number; action: string; spoken: string }[] {
   const MIN_SLOT = 4
-  const slots: { start: number; end: number; action: string }[] = []
+  const slots: { start: number; end: number; action: string; spoken: string }[] = []
   steps.forEach((s, i) => {
     const start = i === 0 ? 0 : steps[i - 1]!.timestamp
     const end = i === steps.length - 1 ? duration : s.timestamp
@@ -32,14 +33,16 @@ export function narrationSlots(
     if (last && last.end - last.start < MIN_SLOT) {
       last.end = end
       last.action += ` Then: ${s.action}`
+      if (s.spoken) last.spoken = [last.spoken, s.spoken].filter(Boolean).join(' ')
     } else {
-      slots.push({ start, end, action: s.action })
+      slots.push({ start, end, action: s.action, spoken: s.spoken ?? '' })
     }
   })
   return slots.map((s) => ({
     start: s.start,
     seconds: Math.max(2, s.end - s.start),
     action: s.action,
+    spoken: s.spoken,
   }))
 }
 

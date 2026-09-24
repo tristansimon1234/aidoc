@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import * as db from '../db.js'
 import { creditsFor } from '../credits.js'
 import { cutVideo, durationOf, extractFrame, muxNarration, normalizeVideo } from './ffmpeg.js'
-import { askAboutVideo, askJson, askText, speakWithGemini } from './gemini.js'
+import { askJson, speakWithGemini, withVideo } from './gemini.js'
 import { speakWithElevenLabs } from './elevenlabs.js'
 import {
   NarrationSchema,
@@ -68,43 +68,48 @@ export async function processSop(id: string): Promise<void> {
       await db.updateSop(id, { creditsUsed: sop.creditsUsed })
     }
 
-    // 2. Gemini regarde la vidéo et liste les étapes
-    await step('Analyzing the video')
-    const analysis = await askAboutVideo(
-      video,
-      duration,
-      videoAnalysisPrompt(duration),
-      VideoStepsSchema,
-    )
-    const steps = cleanSteps(analysis.steps, duration)
-    if (steps.length === 0) {
-      throw new UserFacingError(
-        'No action detected in the video. Record your screen while you perform the task.',
-      )
-    }
-
-    // 3. Une capture par étape
-    await step('Taking screenshots')
-    const urls: (string | null)[] = []
-    for (const [i, s] of steps.entries()) {
-      const jpg = join(dir, `step-${i + 1}.jpg`)
-      try {
-        await extractFrame(video, s.timestamp, jpg)
-        const path = `${folder}/step-${i + 1}.jpg`
-        await db.uploadFile(path, await readFile(jpg), 'image/jpeg')
-        urls.push(db.publicUrl(path))
-      } catch (err) {
-        console.warn(`[pipeline] capture ${i + 1} ratée`, (err as Error).message)
-        urls.push(null)
+    // 2 à 4 : la vidéo est envoyée une fois à Gemini, qui la regarde ET l'écoute pour chaque étape.
+    const { steps, markdown } = await withVideo(video, duration, async (gemini) => {
+      // 2. Transcription de ce que dit la personne + liste des étapes
+      await step('Analyzing the video')
+      const analysis = await gemini.json(videoAnalysisPrompt(duration), VideoStepsSchema)
+      const steps = cleanSteps(analysis.steps, duration)
+      if (steps.length === 0) {
+        throw new UserFacingError(
+          'No action detected in the video. Record your screen while you perform the task.',
+        )
       }
-    }
 
-    // 4. Rédaction de la SOP
-    await step('Writing the procedure')
-    const title = sop.title || analysis.title
-    const raw = await askText(sopPrompt({ title, language: sop.language, steps }))
-    const markdown = insertScreenshots(stripFence(raw), urls)
-    await db.updateSop(id, { markdown })
+      // 3. Une capture par étape
+      await step('Taking screenshots')
+      const urls: (string | null)[] = []
+      for (const [i, s] of steps.entries()) {
+        const jpg = join(dir, `step-${i + 1}.jpg`)
+        try {
+          await extractFrame(video, s.timestamp, jpg)
+          const path = `${folder}/step-${i + 1}.jpg`
+          await db.uploadFile(path, await readFile(jpg), 'image/jpeg')
+          urls.push(db.publicUrl(path))
+        } catch (err) {
+          console.warn(`[pipeline] capture ${i + 1} ratée`, (err as Error).message)
+          urls.push(null)
+        }
+      }
+
+      // 4. Rédaction de la SOP, vidéo + transcription sous les yeux
+      await step('Writing the procedure')
+      const raw = await gemini.text(
+        sopPrompt({
+          title: sop.title || analysis.title,
+          language: sop.language,
+          steps,
+          transcript: analysis.transcript,
+        }),
+      )
+      const markdown = insertScreenshots(stripFence(raw), urls)
+      await db.updateSop(id, { markdown })
+      return { steps, markdown }
+    })
 
     // 5. Montage : la vidéo livrée dure 4 min max (extraits autour de chaque étape).
     const edit = planEdit(steps, duration)

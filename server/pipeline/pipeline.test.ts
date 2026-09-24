@@ -6,11 +6,16 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { creditsFor } from '../credits.js'
 import { cutVideo, durationOf, extractFrame, muxNarration, normalizeVideo } from './ffmpeg.js'
-import { insertScreenshots } from './prompts.js'
+import { insertScreenshots, narrationPrompt, sopPrompt } from './prompts.js'
 import { cleanSteps, narrationSlots, planEdit } from './steps.js'
 
 const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'
-const step = (timestamp: number, action = 'a') => ({ timestamp, action, screen: '', spoken: null })
+const step = (timestamp: number, action = 'a', spoken: string | null = null) => ({
+  timestamp,
+  action,
+  screen: '',
+  spoken,
+})
 
 describe('creditsFor', () => {
   it('1 crédit par tranche de 10 min commencée', () => {
@@ -29,14 +34,17 @@ describe('cleanSteps', () => {
 })
 
 describe('narrationSlots', () => {
-  it('raconte chaque étape avant sa capture et fusionne les créneaux trop courts', () => {
-    const slots = narrationSlots([step(10, 'A'), step(12, 'B'), step(30, 'C')], 45)
+  it('raconte chaque étape avant sa capture, fusionne les créneaux trop courts, garde ce qui a été dit', () => {
+    const slots = narrationSlots(
+      [step(10, 'A', 'Why A'), step(12, 'B', 'Why B'), step(30, 'C', 'Why C')],
+      45,
+    )
     expect(slots).toEqual([
-      { start: 0, seconds: 10, action: 'A' },
-      { start: 10, seconds: 35, action: 'B Then: C' },
+      { start: 0, seconds: 10, action: 'A', spoken: 'Why A' },
+      { start: 10, seconds: 35, action: 'B Then: C', spoken: 'Why B Why C' },
     ])
-    const merged = narrationSlots([step(2, 'A'), step(20, 'B')], 40)
-    expect(merged).toEqual([{ start: 0, seconds: 40, action: 'A Then: B' }])
+    const merged = narrationSlots([step(2, 'A'), step(20, 'B', 'Why B')], 40)
+    expect(merged).toEqual([{ start: 0, seconds: 40, action: 'A Then: B', spoken: 'Why B' }])
   })
 })
 
@@ -62,6 +70,28 @@ describe('planEdit', () => {
     const plan = planEdit(steps, 6000)
     expect(plan.duration).toBeLessThanOrEqual(240)
     expect(plan.steps.length).toBeGreaterThan(100)
+  })
+})
+
+describe('prompts', () => {
+  it('donnent à la rédaction et à la voix off ce que la personne a dit', () => {
+    const sop = sopPrompt({
+      title: 'Book an invoice',
+      language: 'fr',
+      steps: [step(4, "Open 'Invoices'", 'Always start from Invoices, never Purchases')],
+      transcript: [{ start: 0, text: 'Here is how we book supplier invoices at the firm.' }],
+    })
+    expect(sop).toContain('[0s] Here is how we book supplier invoices at the firm.')
+    expect(sop).toContain('Said while doing it: Always start from Invoices, never Purchases')
+    expect(sop).toContain('written in French')
+
+    const voice = narrationPrompt({
+      language: 'en',
+      sop: '# SOP\n\n![x](https://a/1.jpg)\n',
+      slots: [{ start: 0, seconds: 10, action: 'Open', spoken: 'Never use Purchases' }],
+    })
+    expect(voice).toContain('What the person said here: "Never use Purchases"')
+    expect(voice).not.toContain('https://a/1.jpg')
   })
 })
 

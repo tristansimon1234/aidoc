@@ -35,17 +35,22 @@ function parseJson<T>(text: string, schema: z.ZodType<T>): T {
   return schema.parse(JSON.parse(cleaned))
 }
 
+/** Une vidéo déjà envoyée à Gemini, qu'on peut interroger plusieurs fois (image + son). */
+export interface GeminiVideo {
+  json<T>(prompt: string, schema: z.ZodType<T>): Promise<T>
+  text(prompt: string): Promise<string>
+}
+
 /**
- * Envoie une vidéo locale à Gemini et renvoie une réponse JSON validée par `schema`.
- * En résolution normale une vidéo coûte ~300 tokens/s : au-delà de 40 min on passe
- * en basse résolution pour rester sous la limite de contexte (1M tokens).
+ * Envoie une vidéo locale à Gemini une seule fois, la rend interrogeable dans `fn`, puis la supprime.
+ * Gemini voit l'image ET entend le son. En résolution normale une vidéo coûte ~300 tokens/s :
+ * au-delà de 40 min on passe en basse résolution pour rester sous la limite de contexte (1M tokens).
  */
-export async function askAboutVideo<T>(
+export async function withVideo<R>(
   videoFile: string,
   durationSeconds: number,
-  prompt: string,
-  schema: z.ZodType<T>,
-): Promise<T> {
+  fn: (video: GeminiVideo) => Promise<R>,
+): Promise<R> {
   const mediaResolution =
     durationSeconds > 40 * 60
       ? MediaResolution.MEDIA_RESOLUTION_LOW
@@ -60,13 +65,24 @@ export async function askAboutVideo<T>(
       throw new Error("Gemini n'a pas pu lire la vidéo")
     }
     const uri = file.uri
-    return await withRetry(async () => {
-      const res = await gemini().models.generateContent({
-        model: env.GEMINI_MODEL,
-        contents: createUserContent([createPartFromUri(uri, 'video/mp4'), prompt]),
-        config: { responseMimeType: 'application/json', maxOutputTokens: 32000, mediaResolution },
+    const ask = (prompt: string, json: boolean) =>
+      withRetry(async () => {
+        const res = await gemini().models.generateContent({
+          model: env.GEMINI_MODEL,
+          contents: createUserContent([createPartFromUri(uri, 'video/mp4'), prompt]),
+          config: {
+            ...(json ? { responseMimeType: 'application/json' } : {}),
+            maxOutputTokens: 60000,
+            mediaResolution,
+          },
+        })
+        const text = res.text?.trim()
+        if (!text) throw new Error('Réponse Gemini vide')
+        return text
       })
-      return parseJson(res.text ?? '', schema)
+    return await fn({
+      json: async (prompt, schema) => parseJson(await ask(prompt, true), schema),
+      text: (prompt) => ask(prompt, false),
     })
   } finally {
     if (file.name)
@@ -74,19 +90,6 @@ export async function askAboutVideo<T>(
         .files.delete({ name: file.name })
         .catch(() => {})
   }
-}
-
-export async function askText(prompt: string): Promise<string> {
-  return withRetry(async () => {
-    const res = await gemini().models.generateContent({
-      model: env.GEMINI_MODEL,
-      contents: prompt,
-      config: { maxOutputTokens: 32000 },
-    })
-    const text = res.text?.trim()
-    if (!text) throw new Error('Réponse Gemini vide')
-    return text
-  })
 }
 
 export async function askJson<T>(prompt: string, schema: z.ZodType<T>): Promise<T> {
