@@ -29,23 +29,23 @@ export function Login() {
         <h1 className={styles.logo}>
           <span className={styles.logoMark}>d</span>doclee
         </h1>
-        <p className={styles.tagline}>Vidéo → procédure</p>
+        <p className={styles.tagline}>Video → procedure</p>
         <p className={styles.subtitle}>
-          Filmez votre écran pendant une tâche. Recevez la procédure écrite avec captures et une
-          vidéo commentée.
+          Record your screen while doing a task. Get the written procedure with screenshots and a
+          narrated video.
         </p>
 
         {sent ? (
           <p className={styles.sent}>
-            Lien de connexion envoyé à <strong>{email}</strong>.<br />
-            Ouvrez votre boîte mail (et vos spams).
+            Sign-in link sent to <strong>{email}</strong>.<br />
+            Check your inbox (and your spam folder).
           </p>
         ) : (
           <form className={styles.form} onSubmit={(e) => void submit(e)}>
             <Field
               label="Email"
               type="email"
-              placeholder="vous@entreprise.com"
+              placeholder="you@company.com"
               value={email}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
               required
@@ -53,10 +53,10 @@ export function Login() {
             {error && <p className={styles.error}>{error}</p>}
             <div className={styles.actions}>
               <Button type="submit" disabled={loading}>
-                {loading ? 'Envoi…' : 'Recevoir un lien de connexion'}
+                {loading ? 'Sending…' : 'Email me a sign-in link'}
               </Button>
             </div>
-            <p className={styles.toggle}>Première vidéo offerte.</p>
+            <p className={styles.toggle}>Your first video is free.</p>
           </form>
         )}
       </div>

@@ -37,7 +37,7 @@ export function AvatarMenu({ email }: { email: string }) {
         ref={anchorRef}
         className={styles.avatar}
         onClick={() => setOpen((v) => !v)}
-        aria-label="Mon compte"
+        aria-label="Account menu"
         aria-expanded={open}
       >
         {(email[0] ?? '?').toUpperCase()}
@@ -61,7 +61,7 @@ export function AvatarMenu({ email }: { email: string }) {
               <rect x="2" y="5" width="20" height="14" rx="2" />
               <line x1="2" y1="10" x2="22" y2="10" />
             </svg>
-            <span>Crédits et factures</span>
+            <span>Credits and invoices</span>
           </button>
 
           <div className={styles.divider} />
@@ -85,7 +85,7 @@ export function AvatarMenu({ email }: { email: string }) {
               <polyline points="16 17 21 12 16 7" />
               <line x1="21" y1="12" x2="9" y2="12" />
             </svg>
-            <span>Déconnexion</span>
+            <span>Sign out</span>
           </button>
         </div>
       )}

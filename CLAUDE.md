@@ -23,7 +23,7 @@ Un seul serveur (Docker) sert l'API, l'interface et le traitement vidéo.
 5. Les règles de prix dans `server/credits.ts`. Les mouvements de crédits passent par `db.applyCredits` (atomique, idempotent via `ref`).
 6. Une nouvelle migration par changement de schéma dans `supabase/migrations/` (ne jamais modifier une migration existante).
 7. Pas de logique métier dans les routes : elles valident, appellent, répondent.
-8. Interface : le moins d'écrans et d'options possible, textes en français. Réutiliser le design system repris de l'ancienne plateforme (`web/src/ui/design-system`, CSS Modules + variables de `globals.css`, jamais de couleur en dur).
+8. Interface : le moins d'écrans et d'options possible, textes de l'interface en anglais. Réutiliser le design system repris de l'ancienne plateforme (`web/src/ui/design-system`, CSS Modules + variables de `globals.css`, jamais de couleur en dur).
 9. Mettre à jour `README.md` quand l'architecture, la tarification ou le déploiement changent.
 
 ## Vérifier avant de pousser

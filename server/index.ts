@@ -16,7 +16,7 @@ app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async
     res.json({ received: true })
   } catch (err) {
     console.error('[stripe] webhook refusé', (err as Error).message)
-    res.status(400).json({ error: 'Webhook invalide' })
+    res.status(400).json({ error: 'Invalid webhook' })
   }
 })
 
@@ -35,11 +35,11 @@ if (existsSync(web)) {
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof ZodError) {
-    res.status(400).json({ error: 'Requête invalide', details: err.issues })
+    res.status(400).json({ error: 'Invalid request', details: err.issues })
     return
   }
   console.error(err)
-  res.status(500).json({ error: 'Erreur serveur' })
+  res.status(500).json({ error: 'Server error' })
 })
 
 app.listen(env.PORT, () => {

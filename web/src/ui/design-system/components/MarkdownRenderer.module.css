@@ -200,7 +200,7 @@
 
 .article blockquote[data-callout-type="TIP"] {
   --callout-accent: #10B981;
-  --callout-label: "Astuce";
+  --callout-label: "Tip";
   background: #ECFDF5;
   background: color-mix(in srgb, #10B981 10%, #FFFFFF);
   border-left-color: #10B981;
@@ -208,7 +208,7 @@
 
 .article blockquote[data-callout-type="WARNING"] {
   --callout-accent: #F59E0B;
-  --callout-label: "Attention";
+  --callout-label: "Warning";
   background: #FFFBEB;
   background: color-mix(in srgb, #F59E0B 10%, #FFFFFF);
   border-left-color: #F59E0B;
@@ -252,6 +252,6 @@
   background-color: var(--color-card);
 }
 
-/* Libellés des encadrés en anglais quand la procédure est en anglais. */
-.article:lang(en) blockquote[data-callout-type="TIP"] { --callout-label: "Tip"; }
-.article:lang(en) blockquote[data-callout-type="WARNING"] { --callout-label: "Warning"; }
+/* Callout labels in French when the procedure is written in French. */
+.article:lang(fr) blockquote[data-callout-type="TIP"] { --callout-label: "Astuce"; }
+.article:lang(fr) blockquote[data-callout-type="WARNING"] { --callout-label: "Attention"; }

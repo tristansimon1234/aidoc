@@ -10,15 +10,15 @@ export function AppRail({ email }: { email: string }) {
   return (
     <aside className={`${styles.rail} no-print`}>
       <div className={styles.top}>
-        <Link to="/" className={styles.logo} aria-label="Accueil">
+        <Link to="/" className={styles.logo} aria-label="Home">
           <span className={styles.logoMark}>d</span>
         </Link>
 
         <Link
           to="/"
           className={`${styles.navBtn} ${location.pathname === '/' ? styles.navBtnActive : ''}`}
-          aria-label="Mes procédures"
-          title="Mes procédures"
+          aria-label="My procedures"
+          title="My procedures"
         >
           <svg
             width="18"
@@ -38,8 +38,8 @@ export function AppRail({ email }: { email: string }) {
         <Link
           to="/credits"
           className={`${styles.navBtn} ${location.pathname === '/credits' ? styles.navBtnActive : ''}`}
-          aria-label="Crédits"
-          title="Crédits"
+          aria-label="Credits"
+          title="Credits"
         >
           <svg
             width="18"
@@ -61,8 +61,8 @@ export function AppRail({ email }: { email: string }) {
         <button
           className={styles.navBtn}
           onClick={toggle}
-          aria-label={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
-          title={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+          aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+          title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
         >
           {theme === 'dark' ? (
             <svg

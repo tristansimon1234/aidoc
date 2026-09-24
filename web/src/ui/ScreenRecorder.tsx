@@ -3,7 +3,7 @@ import { Button } from './design-system/components'
 import styles from './ScreenRecorder.module.css'
 
 /**
- * Deux grandes zones, comme sur l'ancienne plateforme : « Enregistrer mon écran » et « Déposer une vidéo ».
+ * Deux grandes zones, comme sur l'ancienne plateforme : « Record my screen » et « Upload a video ».
  * L'enregistrement capture l'écran + le micro (si activé) directement dans le navigateur.
  */
 export function ScreenRecorder({
@@ -54,7 +54,7 @@ export function ScreenRecorder({
         setRecording(false)
         setElapsed(0)
         const ext = rec.mimeType.includes('mp4') ? 'mp4' : 'webm'
-        const name = `enregistrement-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${ext}`
+        const name = `recording-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${ext}`
         onFile(new File(chunks, name, { type: rec.mimeType }))
       }
       // Le bouton « Arrêter le partage » du navigateur arrête aussi l'enregistrement.
@@ -65,7 +65,7 @@ export function ScreenRecorder({
       recorder.current = rec
       setRecording(true)
     } catch {
-      setError("L'enregistrement a été annulé ou n'est pas autorisé par le navigateur.")
+      setError('Recording was cancelled or blocked by the browser.')
     }
   }
 
@@ -79,13 +79,13 @@ export function ScreenRecorder({
       <div className={styles.recording}>
         <div className={styles.recordingLeft}>
           <span className={styles.recDot} />
-          <span className={styles.recLabel}>Enregistrement…</span>
+          <span className={styles.recLabel}>Recording…</span>
           <span className={styles.timer}>
             {fmt(elapsed)} / {fmt(maxMinutes * 60)}
           </span>
         </div>
         <Button variant="secondary" onClick={() => recorder.current?.stop()}>
-          Arrêter
+          Stop
         </Button>
       </div>
     )
@@ -103,7 +103,7 @@ export function ScreenRecorder({
         >
           <circle cx="12" cy="12" r="8" />
         </svg>
-        <span className={styles.zoneTitle}>Enregistrer mon écran</span>
+        <span className={styles.zoneTitle}>Record my screen</span>
         <span
           role="switch"
           aria-checked={micEnabled}
@@ -133,7 +133,7 @@ export function ScreenRecorder({
           >
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
           </svg>
-          {micEnabled ? 'Micro activé' : 'Micro coupé'}
+          {micEnabled ? 'Mic on' : 'Mic off'}
         </span>
       </button>
 
@@ -153,7 +153,7 @@ export function ScreenRecorder({
           <path d="m17 8-5-5-5 5" />
           <path d="M12 3v12" />
         </svg>
-        <span className={styles.zoneTitle}>Déposer une vidéo</span>
+        <span className={styles.zoneTitle}>Upload a video</span>
         <span className={styles.zoneHint}>MP4, MOV, WebM… · {maxMinutes} min max</span>
         <input
           type="file"

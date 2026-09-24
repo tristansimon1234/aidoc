@@ -86,7 +86,7 @@ function stripLeadingMarker(node: ReactNode, remaining: number): ReactNode {
 
 export function MarkdownRenderer({
   content,
-  lang = 'fr',
+  lang = 'en',
 }: MarkdownRendererProps): React.ReactElement {
   const { lightbox, openLightbox } = useImageLightbox()
 

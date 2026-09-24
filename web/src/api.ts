@@ -47,7 +47,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const json = (await res.json().catch(() => ({}))) as { error?: string }
-  if (!res.ok) throw new Error(json.error ?? `Erreur ${res.status}`)
+  if (!res.ok) throw new Error(json.error ?? `Error ${res.status}`)
   return json as T
 }
 
@@ -87,8 +87,8 @@ function uploadWithProgress(url: string, file: File, onProgress: (percent: numbe
     xhr.upload.onprogress = (e) =>
       e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100))
     xhr.onload = () =>
-      xhr.status < 300 ? resolve() : reject(new Error(`Envoi de la vidéo refusé (${xhr.status})`))
-    xhr.onerror = () => reject(new Error('Envoi de la vidéo interrompu'))
+      xhr.status < 300 ? resolve() : reject(new Error(`Video upload rejected (${xhr.status})`))
+    xhr.onerror = () => reject(new Error('Video upload interrupted'))
     xhr.send(form)
   })
 }
@@ -99,7 +99,7 @@ export function videoDuration(file: File): Promise<number> {
     const video = document.createElement('video')
     video.preload = 'metadata'
     video.src = URL.createObjectURL(file)
-    video.onerror = () => reject(new Error('Fichier vidéo illisible'))
+    video.onerror = () => reject(new Error('Unreadable video file'))
     video.onloadedmetadata = () => {
       if (Number.isFinite(video.duration)) return done()
       video.currentTime = 1e7

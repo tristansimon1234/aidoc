@@ -23,7 +23,7 @@ export function Shell({ email, credits, children }: ShellProps) {
           </div>
           <nav className={styles.nav}>
             <Link to="/credits" className={styles.credits}>
-              {credits === null ? '…' : `${credits} crédit${credits > 1 ? 's' : ''}`}
+              {credits === null ? '…' : `${credits} credit${credits > 1 ? 's' : ''}`}
             </Link>
           </nav>
         </header>

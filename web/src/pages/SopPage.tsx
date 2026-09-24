@@ -14,13 +14,13 @@ import styles from './pages.module.css'
 
 /** Étapes affichées pendant la génération (libellés = `progress` envoyé par le serveur). */
 const STEPS = [
-  { label: 'Préparation de la vidéo', estimatedSeconds: 20 },
-  { label: 'Analyse de la vidéo', estimatedSeconds: 60 },
-  { label: 'Captures d’écran', estimatedSeconds: 10 },
-  { label: 'Rédaction de la procédure', estimatedSeconds: 30 },
-  { label: 'Montage de la vidéo', estimatedSeconds: 20 },
-  { label: 'Voix off', estimatedSeconds: 60 },
-  { label: 'Finalisation', estimatedSeconds: 10 },
+  { label: 'Preparing the video', estimatedSeconds: 20 },
+  { label: 'Analyzing the video', estimatedSeconds: 60 },
+  { label: 'Taking screenshots', estimatedSeconds: 10 },
+  { label: 'Writing the procedure', estimatedSeconds: 30 },
+  { label: 'Editing the video', estimatedSeconds: 20 },
+  { label: 'Recording the voice-over', estimatedSeconds: 60 },
+  { label: 'Finishing', estimatedSeconds: 10 },
 ]
 
 export function SopPage() {
@@ -73,9 +73,9 @@ export function SopPage() {
   async function remove() {
     if (!sop) return
     const ok = await confirm({
-      title: 'Supprimer cette procédure ?',
-      message: 'Le texte, les captures et la vidéo seront effacés définitivement.',
-      confirmLabel: 'Supprimer',
+      title: 'Delete this procedure?',
+      message: 'The text, screenshots and video will be permanently deleted.',
+      confirmLabel: 'Delete',
     })
     if (!ok) return
     await api.deleteSop(sop.id)
@@ -86,17 +86,17 @@ export function SopPage() {
     <div className={`${styles.header} no-print`}>
       {/* Une fois prête, le titre est celui de la procédure elle-même (dans le document). */}
       {sop.status === 'ready' ? (
-        <p className={styles.subtitle}>{new Date(sop.createdAt).toLocaleDateString('fr-FR')}</p>
+        <p className={styles.subtitle}>{new Date(sop.createdAt).toLocaleDateString('en-GB')}</p>
       ) : (
         <div>
           <h1 className={styles.title}>{sop.title}</h1>
-          <p className={styles.subtitle}>{new Date(sop.createdAt).toLocaleDateString('fr-FR')}</p>
+          <p className={styles.subtitle}>{new Date(sop.createdAt).toLocaleDateString('en-GB')}</p>
         </div>
       )}
       {sop.status === 'ready' && (
         <div className={styles.actions}>
           <Button onClick={() => void copy()}>
-            {copied ? 'Copié ✓' : 'Copier pour Notion / Docs'}
+            {copied ? 'Copied ✓' : 'Copy for Notion / Docs'}
           </Button>
           <Button variant="secondary" onClick={() => window.print()}>
             PDF
@@ -105,7 +105,7 @@ export function SopPage() {
             Markdown
           </Button>
           <Button variant="ghost" onClick={() => void remove()}>
-            Supprimer
+            Delete
           </Button>
         </div>
       )}
@@ -113,7 +113,9 @@ export function SopPage() {
   )
 
   if (sop.status === 'processing') {
-    const steps = STEPS.filter((s) => sop.voice !== 'none' || s.label !== 'Voix off')
+    const steps = STEPS.filter(
+      (s) => sop.voice !== 'none' || s.label !== 'Recording the voice-over',
+    )
     const active = Math.max(
       0,
       steps.findIndex((s) => s.label === sop.progress),
@@ -123,7 +125,7 @@ export function SopPage() {
         {header}
         <ProgressLoader steps={steps} activeStep={active} statusMessage={sop.progress} />
         <p className={styles.notice} style={{ marginTop: 'var(--space-md)' }}>
-          Vous pouvez fermer cette page : la génération continue.
+          You can close this page: generation keeps running.
         </p>
       </>
     )
@@ -134,12 +136,10 @@ export function SopPage() {
       <>
         {header}
         <Card>
-          <p className={styles.error}>
-            {sop.error ?? "La vidéo n'a pas été envoyée jusqu'au bout."}
-          </p>
+          <p className={styles.error}>{sop.error ?? 'The video upload did not complete.'}</p>
           <div className={styles.actions}>
             <Button variant="secondary" onClick={() => void remove()}>
-              Supprimer
+              Delete
             </Button>
           </div>
         </Card>

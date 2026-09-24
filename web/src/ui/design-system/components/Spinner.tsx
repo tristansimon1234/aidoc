@@ -5,7 +5,5 @@ interface SpinnerProps {
 }
 
 export function Spinner({ size = 'md' }: SpinnerProps): React.ReactElement {
-  return (
-    <div className={`${styles.spinner} ${styles[size]}`} role="status" aria-label="Chargement" />
-  )
+  return <div className={`${styles.spinner} ${styles[size]}`} role="status" aria-label="Loading" />
 }

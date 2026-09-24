@@ -19,7 +19,7 @@ function authed(handler: Handler) {
       const token = req.headers.authorization?.replace(/^Bearer /, '')
       const userId = token ? await db.userIdFromToken(token) : null
       if (!userId) {
-        res.status(401).json({ error: 'Non connecté' })
+        res.status(401).json({ error: 'Not signed in' })
         return
       }
       await handler(req, res, userId)
@@ -83,7 +83,7 @@ api.get(
   authed(async (req, res, userId) => {
     const sop = await ownedSop(String(req.params.id), userId)
     if (!sop) {
-      res.status(404).json({ error: 'SOP introuvable' })
+      res.status(404).json({ error: 'SOP not found' })
       return
     }
     res.json(toView(sop))
@@ -107,12 +107,12 @@ api.post(
   authed(async (req, res, userId) => {
     const input = CreateSchema.parse(req.body)
     if (input.voice === 'premium' && !isElevenLabsEnabled()) {
-      res.status(400).json({ error: 'Voix premium indisponible' })
+      res.status(400).json({ error: 'Premium voice unavailable' })
       return
     }
     const needed = creditsFor(input.durationSeconds)
     if ((await db.getAccount(userId)).credits < needed) {
-      res.status(402).json({ error: `Crédits insuffisants : cette vidéo en demande ${needed}.` })
+      res.status(402).json({ error: `Not enough credits: this video needs ${needed}.` })
       return
     }
     const id = randomUUID()
@@ -138,17 +138,17 @@ api.post(
   authed(async (req, res, userId) => {
     const sop = await ownedSop(String(req.params.id), userId)
     if (!sop || sop.status !== 'uploading') {
-      res.status(404).json({ error: 'SOP introuvable' })
+      res.status(404).json({ error: 'SOP not found' })
       return
     }
     if (!(await db.fileExists(sop.sourcePath))) {
-      res.status(400).json({ error: "La vidéo n'a pas été reçue" })
+      res.status(400).json({ error: 'The video was not received' })
       return
     }
     const { durationSeconds } = z.object({ durationSeconds: z.number().positive() }).parse(req.body)
     const cost = creditsFor(Math.min(durationSeconds, MAX_VIDEO_MINUTES * 60))
     if (!(await db.applyCredits(userId, -cost, 'sop', `sop:${sop.id}`))) {
-      res.status(402).json({ error: `Crédits insuffisants : cette vidéo en demande ${cost}.` })
+      res.status(402).json({ error: `Not enough credits: this video needs ${cost}.` })
       return
     }
     await db.updateSop(sop.id, { status: 'processing', creditsUsed: cost, progress: 'En attente' })
@@ -162,11 +162,11 @@ api.delete(
   authed(async (req, res, userId) => {
     const sop = await ownedSop(String(req.params.id), userId)
     if (!sop) {
-      res.status(404).json({ error: 'SOP introuvable' })
+      res.status(404).json({ error: 'SOP not found' })
       return
     }
     if (sop.status === 'processing') {
-      res.status(409).json({ error: 'Attendez la fin du traitement' })
+      res.status(409).json({ error: 'Wait until processing is finished' })
       return
     }
     await db.deleteFolder(`${userId}/${sop.id}/source`).catch(() => {})

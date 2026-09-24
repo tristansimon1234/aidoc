@@ -81,7 +81,7 @@ export function NarratedPlayer({ videoUrl, narrated }: { videoUrl: string; narra
           </div>
         )}
         {state === 'error' && (
-          <div className={`${styles.overlay} ${styles.failed}`}>Impossible de charger la vidéo</div>
+          <div className={`${styles.overlay} ${styles.failed}`}>Failed to load video</div>
         )}
       </div>
 
@@ -91,7 +91,7 @@ export function NarratedPlayer({ videoUrl, narrated }: { videoUrl: string; narra
           onClick={toggle}
           disabled={state !== 'ready'}
           className={styles.play}
-          aria-label={playing ? 'Pause' : 'Lecture'}
+          aria-label={playing ? 'Pause' : 'Play'}
         >
           {playing ? (
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -112,8 +112,8 @@ export function NarratedPlayer({ videoUrl, narrated }: { videoUrl: string; narra
           />
         </div>
         <span className={styles.time}>{fmt(duration)}</span>
-        {narrated && <span className={styles.badge}>narrée</span>}
-        <a href={videoUrl} download title="Télécharger la vidéo" className={styles.download}>
+        {narrated && <span className={styles.badge}>narrated</span>}
+        <a href={videoUrl} download title="Download video" className={styles.download}>
           <svg
             width="13"
             height="13"

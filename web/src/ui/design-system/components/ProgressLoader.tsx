@@ -102,9 +102,9 @@ export function ProgressLoader({
   )
 
   const fmt = (s: number): string => {
-    if (s <= 0) return 'finalisation…'
-    if (s < 60) return `encore ${s} s`
-    return `encore ${Math.floor(s / 60)} min ${s % 60} s`
+    if (s <= 0) return 'finishing...'
+    if (s < 60) return `${s}s left`
+    return `${Math.floor(s / 60)}m ${s % 60}s left`
   }
 
   return (
@@ -135,7 +135,7 @@ export function ProgressLoader({
         </div>
         <div className={styles.info}>
           <span className={styles.status}>
-            {done ? 'Terminé' : (statusMessage ?? steps[activeStep]?.label ?? 'Traitement…')}
+            {done ? 'Done!' : (statusMessage ?? steps[activeStep]?.label ?? 'Processing...')}
           </span>
           {!done && <span className={styles.time}>{fmt(remaining)}</span>}
         </div>

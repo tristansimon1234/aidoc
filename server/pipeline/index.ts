@@ -46,7 +46,7 @@ export async function recoverInterrupted(): Promise<void> {
   for (const sop of await db.listStuckSops()) {
     await fail(
       sop,
-      'Traitement interrompu (redémarrage du serveur). Crédits remboursés, relancez la vidéo.',
+      'Processing was interrupted (server restart). Your credits were refunded, please try again.',
     )
   }
 }
@@ -68,7 +68,7 @@ async function processSop(id: string): Promise<void> {
 
   try {
     // 1. Vidéo propre (MP4 720p) + durée réelle
-    await step('Préparation de la vidéo')
+    await step('Preparing the video')
     const original = join(dir, 'original')
     const video = join(dir, 'video.mp4')
     await db.downloadToFile(sop.sourcePath, original)
@@ -80,16 +80,14 @@ async function processSop(id: string): Promise<void> {
     const extra = creditsFor(duration) - sop.creditsUsed
     if (extra > 0) {
       if (!(await db.applyCredits(sop.userId, -extra, 'sop', `sop-extra:${id}`))) {
-        throw new UserFacingError(
-          `Crédits insuffisants : cette vidéo en demande ${creditsFor(duration)}.`,
-        )
+        throw new UserFacingError(`Not enough credits: this video needs ${creditsFor(duration)}.`)
       }
       sop.creditsUsed += extra
       await db.updateSop(id, { creditsUsed: sop.creditsUsed })
     }
 
     // 2. Gemini regarde la vidéo et liste les étapes
-    await step('Analyse de la vidéo')
+    await step('Analyzing the video')
     const analysis = await askAboutVideo(
       video,
       duration,
@@ -99,12 +97,12 @@ async function processSop(id: string): Promise<void> {
     const steps = cleanSteps(analysis.steps, duration)
     if (steps.length === 0) {
       throw new UserFacingError(
-        "Aucune action détectée dans la vidéo. Filmez l'écran pendant que vous réalisez la tâche.",
+        'No action detected in the video. Record your screen while you perform the task.',
       )
     }
 
     // 3. Une capture par étape
-    await step('Captures d’écran')
+    await step('Taking screenshots')
     const urls: (string | null)[] = []
     for (const [i, s] of steps.entries()) {
       const jpg = join(dir, `step-${i + 1}.jpg`)
@@ -120,7 +118,7 @@ async function processSop(id: string): Promise<void> {
     }
 
     // 4. Rédaction de la SOP
-    await step('Rédaction de la procédure')
+    await step('Writing the procedure')
     const title = sop.title || analysis.title
     const raw = await askText(sopPrompt({ title, language: sop.language, steps }))
     const markdown = insertScreenshots(stripFence(raw), urls)
@@ -130,14 +128,14 @@ async function processSop(id: string): Promise<void> {
     const edit = planEdit(steps, duration)
     let finalVideo = video
     if (edit.clips.length > 1 || edit.duration < duration) {
-      await step('Montage de la vidéo')
+      await step('Editing the video')
       finalVideo = join(dir, 'edited.mp4')
       await cutVideo(video, edit.clips, finalVideo, sop.voice === 'none')
     }
 
     // 6. Voix off, calée sur la vidéo montée
     if (sop.voice !== 'none') {
-      await step('Voix off')
+      await step('Recording the voice-over')
       const narrated = join(dir, 'narrated.mp4')
       await narrate({
         video: finalVideo,
@@ -151,7 +149,7 @@ async function processSop(id: string): Promise<void> {
       finalVideo = narrated
     }
 
-    await step('Finalisation')
+    await step('Finishing')
     const videoPath = `${folder}/video.mp4`
     await db.uploadFile(videoPath, await readFile(finalVideo), 'video/mp4')
     await db.updateSop(id, { videoPath, status: 'ready', progress: null })
@@ -161,7 +159,7 @@ async function processSop(id: string): Promise<void> {
     const message =
       err instanceof UserFacingError
         ? err.message
-        : 'La génération a échoué. Vos crédits ont été remboursés.'
+        : 'Generation failed. Your credits were refunded.'
     await fail(sop, message)
   } finally {
     await rm(dir, { recursive: true, force: true })

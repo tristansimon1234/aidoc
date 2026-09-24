@@ -7,13 +7,13 @@ import { ScreenRecorder } from '../ui/ScreenRecorder'
 import styles from './pages.module.css'
 
 const LANGUAGE_LABELS: Record<string, string> = {
-  fr: 'Français',
   en: 'English',
-  es: 'Español',
-  de: 'Deutsch',
-  it: 'Italiano',
-  pt: 'Português',
-  nl: 'Nederlands',
+  fr: 'French',
+  es: 'Spanish',
+  de: 'German',
+  it: 'Italian',
+  pt: 'Portuguese',
+  nl: 'Dutch',
 }
 
 export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) {
@@ -22,7 +22,7 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
   const [file, setFile] = useState<File | null>(null)
   const [duration, setDuration] = useState(0)
   const [title, setTitle] = useState('')
-  const [language, setLanguage] = useState('fr')
+  const [language, setLanguage] = useState('en')
   const [voice, setVoice] = useState<Voice>('standard')
   const [uploading, setUploading] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -47,7 +47,7 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
     try {
       const seconds = await videoDuration(f)
       if (me && seconds > me.maxVideoMinutes * 60) {
-        setError(`Vidéo trop longue (maximum ${me.maxVideoMinutes} min).`)
+        setError(`Video too long (${me.maxVideoMinutes} min max).`)
         return
       }
       setFile(f)
@@ -83,10 +83,10 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
     <>
       <div className={styles.header}>
         <div>
-          <h1 className={styles.title}>Nouvelle procédure</h1>
+          <h1 className={styles.title}>New procedure</h1>
           <p className={styles.subtitle}>
-            Réalisez la tâche en filmant votre écran : Doclee rédige la procédure et monte une vidéo
-            commentée de 4 min max.
+            Do the task while recording your screen: Doclee writes the procedure and edits a
+            narrated video of 4 min max.
           </p>
         </div>
       </div>
@@ -100,12 +100,12 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
               <span className={styles.fileName}>{file.name}</span>
               <span className={styles.mono}>{formatDuration(duration)}</span>
               <Button type="button" variant="ghost" size="sm" onClick={() => setFile(null)}>
-                Changer
+                Change
               </Button>
             </div>
 
             <Field
-              label="Titre"
+              label="Title"
               value={title}
               onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
               required
@@ -114,9 +114,9 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
 
             <div className={styles.row}>
               <label className={styles.select}>
-                Langue de la procédure
+                Procedure language
                 <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                  {(me?.languages ?? ['fr']).map((l) => (
+                  {(me?.languages ?? ['en']).map((l) => (
                     <option key={l} value={l}>
                       {LANGUAGE_LABELS[l] ?? l}
                     </option>
@@ -124,26 +124,26 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
                 </select>
               </label>
               <label className={styles.select}>
-                Voix off
+                Voice-over
                 <select value={voice} onChange={(e) => setVoice(e.target.value as Voice)}>
-                  <option value="standard">Oui</option>
-                  {me?.premiumVoice && <option value="premium">Oui, voix premium</option>}
-                  <option value="none">Non, vidéo seule</option>
+                  <option value="standard">Yes</option>
+                  {me?.premiumVoice && <option value="premium">Yes, premium voice</option>}
+                  <option value="none">No, video only</option>
                 </select>
               </label>
             </div>
 
             <div className={styles.actions}>
               {uploading !== null ? (
-                <span className={styles.notice}>Envoi de la vidéo… {uploading} %</span>
+                <span className={styles.notice}>Uploading video… {uploading}%</span>
               ) : notEnough ? (
                 <span className={styles.notice}>
-                  Il faut {cost} crédit{cost > 1 ? 's' : ''}.{' '}
-                  <Link to="/credits">Acheter des crédits</Link>
+                  You need {cost} credit{cost > 1 ? 's' : ''}.{' '}
+                  <Link to="/credits">Buy credits</Link>
                 </span>
               ) : (
                 <Button type="submit">
-                  Générer · {cost} crédit{cost > 1 ? 's' : ''}
+                  Generate · {cost} credit{cost > 1 ? 's' : ''}
                 </Button>
               )}
             </div>
@@ -153,12 +153,12 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
       {error && <p className={styles.error}>{error}</p>}
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Mes procédures</h2>
+        <h2 className={styles.sectionTitle}>My procedures</h2>
         {sops === null ? null : sops.length === 0 ? (
           <Card>
             <EmptyState
-              title="Aucune procédure pour l’instant"
-              description="Enregistrez votre écran ou déposez une vidéo ci-dessus pour créer la première."
+              title="No procedures yet"
+              description="Record your screen or drop a video above to create your first one."
             />
           </Card>
         ) : (
@@ -169,7 +169,7 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
                 <div className={styles.cardMeta}>
                   <StatusIndicator status={statusKey(s)} label={statusLabel(s)} />
                   <span className={styles.mono}>
-                    {new Date(s.createdAt).toLocaleDateString('fr-FR')}
+                    {new Date(s.createdAt).toLocaleDateString('en-GB')}
                   </span>
                 </div>
               </Card>
@@ -189,10 +189,10 @@ function statusKey(s: Sop): StatusKey {
 }
 
 function statusLabel(s: Sop): string {
-  if (s.status === 'ready') return 'Prête'
-  if (s.status === 'processing') return s.progress ?? 'En cours'
-  if (s.status === 'failed') return 'Échec'
-  return 'Envoi interrompu'
+  if (s.status === 'ready') return 'Ready'
+  if (s.status === 'processing') return s.progress ?? 'In progress'
+  if (s.status === 'failed') return 'Failed'
+  return 'Upload interrupted'
 }
 
 function formatDuration(seconds: number): string {

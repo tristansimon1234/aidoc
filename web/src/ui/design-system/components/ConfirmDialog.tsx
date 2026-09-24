@@ -19,8 +19,8 @@ interface ConfirmDialogProps {
 function DialogOverlay({
   title,
   message,
-  confirmLabel = 'Continuer',
-  cancelLabel = 'Annuler',
+  confirmLabel = 'Continue',
+  cancelLabel = 'Cancel',
   variant = 'danger',
   onConfirm,
   onCancel,

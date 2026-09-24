@@ -21,46 +21,46 @@ export function Credits({ me }: { me: Me | null }) {
     <>
       <div className={styles.header}>
         <div>
-          <h1 className={styles.title}>Crédits</h1>
+          <h1 className={styles.title}>Credits</h1>
           <p className={styles.subtitle}>
-            1 crédit = une vidéo de {me.minutesPerCredit} min maximum : procédure, captures et vidéo
-            commentée comprises.
+            1 credit = one video of up to {me.minutesPerCredit} min: procedure, screenshots and
+            narrated video included.
           </p>
         </div>
       </div>
 
       <Card>
-        <p className={styles.subtitle}>Solde</p>
+        <p className={styles.subtitle}>Balance</p>
         <p className={styles.balance}>{me.credits}</p>
         {me.hasBillingAccount && (
           <button className={styles.link} onClick={() => void go(api.billingPortal)}>
-            Factures et abonnement
+            Invoices and subscription
           </button>
         )}
       </Card>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>Recharger</h2>
+        <h2 className={styles.sectionTitle}>Top up</h2>
         {me.offers.length === 0 ? (
-          <p className={styles.notice}>Le paiement n’est pas encore ouvert.</p>
+          <p className={styles.notice}>Payments are not open yet.</p>
         ) : (
           <div className={styles.offers}>
             {me.offers.map((o) => (
               <Card key={o.id} className={styles.offer}>
                 <div>
                   <Badge color={o.recurring ? 'purple' : 'green'}>
-                    {o.recurring ? 'Abonnement' : 'Pack'}
+                    {o.recurring ? 'Subscription' : 'Pack'}
                   </Badge>
                 </div>
                 <p className={styles.price}>
                   {o.price ?? '—'}
-                  {o.recurring && <span className={styles.mono}> / mois</span>}
+                  {o.recurring && <span className={styles.mono}> / month</span>}
                 </p>
                 <p className={styles.notice}>
-                  {o.credits} crédits{o.recurring ? ' chaque mois' : ', sans date limite'}
+                  {o.credits} credits{o.recurring ? ' every month' : ', never expire'}
                 </p>
                 <Button onClick={() => void go(() => api.checkout(o.id))}>
-                  {o.recurring ? 'S’abonner' : 'Acheter'}
+                  {o.recurring ? 'Subscribe' : 'Buy'}
                 </Button>
               </Card>
             ))}

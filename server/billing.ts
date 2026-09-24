@@ -30,7 +30,7 @@ export async function listOffers(): Promise<OfferView[]> {
     const amount =
       price.unit_amount === null
         ? null
-        : new Intl.NumberFormat('fr-FR', { style: 'currency', currency: price.currency }).format(
+        : new Intl.NumberFormat('en-US', { style: 'currency', currency: price.currency }).format(
             price.unit_amount / 100,
           )
     offers.push({
@@ -45,7 +45,7 @@ export async function listOffers(): Promise<OfferView[]> {
 }
 
 async function customerFor(userId: string): Promise<string> {
-  if (!stripe) throw new Error('Stripe non configuré')
+  if (!stripe) throw new Error('Stripe is not configured')
   const account = await db.getAccount(userId)
   if (account.stripeCustomerId) return account.stripeCustomerId
   const customer = await stripe.customers.create({
@@ -58,7 +58,7 @@ async function customerFor(userId: string): Promise<string> {
 
 export async function createCheckout(userId: string, offer: OfferId): Promise<string> {
   const pid = priceId(offer)
-  if (!stripe || !pid) throw new Error('Offre indisponible')
+  if (!stripe || !pid) throw new Error('Offer unavailable')
   const session = await stripe.checkout.sessions.create({
     mode: OFFERS[offer].mode,
     customer: await customerFor(userId),
@@ -68,13 +68,13 @@ export async function createCheckout(userId: string, offer: OfferId): Promise<st
     success_url: `${env.APP_URL}/?paid=1`,
     cancel_url: `${env.APP_URL}/`,
   })
-  if (!session.url) throw new Error('Stripe n’a pas renvoyé d’URL')
+  if (!session.url) throw new Error('Stripe returned no URL')
   return session.url
 }
 
 /** Portail client Stripe : factures, carte, résiliation de l'abonnement. */
 export async function createPortal(userId: string): Promise<string> {
-  if (!stripe) throw new Error('Stripe non configuré')
+  if (!stripe) throw new Error('Stripe is not configured')
   const session = await stripe.billingPortal.sessions.create({
     customer: await customerFor(userId),
     return_url: `${env.APP_URL}/`,
@@ -89,7 +89,7 @@ export async function createPortal(userId: string): Promise<string> {
  * Chaque évènement est crédité une seule fois (ref unique en base).
  */
 export async function handleWebhook(rawBody: Buffer, signature: string): Promise<void> {
-  if (!stripe || !env.STRIPE_WEBHOOK_SECRET) throw new Error('Stripe non configuré')
+  if (!stripe || !env.STRIPE_WEBHOOK_SECRET) throw new Error('Stripe is not configured')
   const event = stripe.webhooks.constructEvent(rawBody, signature, env.STRIPE_WEBHOOK_SECRET)
 
   if (event.type === 'checkout.session.completed') {
