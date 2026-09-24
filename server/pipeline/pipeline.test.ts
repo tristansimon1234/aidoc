@@ -29,8 +29,11 @@ import {
   fitSegment,
   limitWords,
   narrationSlots,
+  misfit,
   planEdit,
+  speakingRate,
   uncoveredRanges,
+  wordsFor,
 } from './steps.js'
 
 const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'
@@ -277,6 +280,28 @@ describe('insertScreenshots : repères déformés par l’IA', () => {
     expect(out).not.toContain('SCREENSHOT')
     // La capture 4 n'était plus utilisée : elle revient sous l'étape 4.
     expect(out).toMatch(/#### 4\. D\n\n!\[\]\(u3\)/)
+  })
+})
+
+describe('niveau de parole de la voix off', () => {
+  it('mesure la vitesse de la voix et vise une fin ~1 s avant la fin du passage', () => {
+    const rate = speakingRate([
+      { text: 'one two three four five six', seconds: 2 },
+      { text: 'a b c d e f g h i', seconds: 3 },
+      null,
+      { text: 'x', seconds: 0.2 },
+    ])
+    expect(rate).toBe(3)
+    expect(speakingRate([{ text: 'a b', seconds: 1 }])).toBe(2.5) // trop peu pour mesurer
+    expect(wordsFor(10, 3)).toBe(26)
+    expect(wordsFor(2, 3)).toBe(3)
+  })
+
+  it('accepte jusqu’à ~2 s de silence, pénalise surtout le débordement', () => {
+    expect(misfit(10, 8)).toBe(0)
+    expect(misfit(10, 7.6)).toBe(0)
+    expect(misfit(10, 5)).toBeCloseTo(2.5)
+    expect(misfit(10, 10.2)).toBeCloseTo(1.8)
   })
 })
 

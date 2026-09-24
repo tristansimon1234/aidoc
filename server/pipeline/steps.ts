@@ -197,6 +197,30 @@ export function fitSegment(
   return { factor, freeze, length: videoLength + freeze, tempo }
 }
 
+/** Vitesse réelle de la voix (mots / seconde), mesurée sur les phrases synthétisées. */
+export function speakingRate(voices: ({ text: string; seconds: number } | null)[]): number {
+  let words = 0
+  let seconds = 0
+  for (const v of voices) {
+    if (!v || v.seconds < 0.5) continue
+    words += v.text.trim().split(/\s+/).length
+    seconds += v.seconds
+  }
+  return seconds >= 5 ? Math.min(4, Math.max(1.5, words / seconds)) : 2.5
+}
+
+/** Mots visés pour un passage : la voix finit ~1 s avant la fin (jusqu'à 2 s de silence, c'est bien). */
+export function wordsFor(slotSeconds: number, rate: number): number {
+  return Math.max(3, Math.round((slotSeconds - 1.2) * rate))
+}
+
+/** Écart entre une voix et son passage : 0 si elle finit entre 0,4 s et 2,5 s avant la fin. */
+export function misfit(slotSeconds: number, audioSeconds: number): number {
+  const silence = slotSeconds - audioSeconds
+  if (silence < 0.4) return (0.4 - silence) * 3 // déborder est pire que se taire
+  return Math.max(0, silence - 2.5)
+}
+
 /** Coupe un texte trop long à la dernière phrase complète sous la limite de mots. */
 export function limitWords(text: string, maxWords: number): string {
   const words = text.trim().split(/\s+/)

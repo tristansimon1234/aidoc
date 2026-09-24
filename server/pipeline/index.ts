@@ -24,7 +24,9 @@ import {
   toTone,
   FramePickSchema,
   framePickPrompt,
+  NarrationFixSchema,
   NarrationSchema,
+  narrationFixPrompt,
   VideoStepsSchema,
   insertScreenshots,
   MissingStepsSchema,
@@ -43,8 +45,11 @@ import {
   limitWords,
   mapLimit,
   narrationSlots,
+  misfit,
   planEdit,
+  speakingRate,
   uncoveredRanges,
+  wordsFor,
 } from './steps.js'
 
 /**
@@ -265,16 +270,62 @@ async function narrate(input: {
     }
   }
 
-  // Synthèse de toutes les phrases, 4 à la fois.
-  const files = await mapLimit(slots, 4, async (_, i) => {
-    // Plafond appliqué par le code : une phrase trop longue décalerait la voix par rapport à l'écran.
-    const text = limitWords(lines[i] ?? '', maxWordsFor(slots[i]!.seconds))
+  // Synthèse de toutes les phrases, 4 à la fois. Plafond appliqué par le code : une phrase trop
+  // longue décalerait la voix par rapport à l'écran.
+  const tone = toTone(input.sop.tone)
+  const synth = async (text: string, i: number, pass: number) => {
     if (!text) return null
-    const { audio, ext } = await speak(input.sop.voice, text, toTone(input.sop.tone))
-    const file = join(input.dir, `voice-${i}.${ext}`)
+    const { audio, ext } = await speak(input.sop.voice, text, tone)
+    const file = join(input.dir, `voice-${i}-${pass}.${ext}`)
     await writeFile(file, audio)
-    return file
-  })
+    return { file, text, seconds: await durationOf(file) }
+  }
+  const texts = slots.map((slot, i) => limitWords(lines[i] ?? '', maxWordsFor(slot.seconds)))
+  const voices = await mapLimit(slots, 4, (_, i) => synth(texts[i]!, i, 0))
+
+  // Le bon niveau de parole : la vidéo n'est jamais accélérée, c'est le texte qui s'adapte. On mesure
+  // la vitesse réelle de la voix, et les textes qui débordent de leur passage ou le laissent muet plus
+  // de ~2 s sont réécrits à la bonne longueur, une fois.
+  const rate = speakingRate(voices)
+  const misfits = slots
+    .map((slot, i) => ({ slot, i, voice: voices[i] ?? null }))
+    .filter(({ slot, voice }) => {
+      const seconds = voice?.seconds ?? 0
+      return seconds + 0.4 > slot.seconds || (slot.seconds >= 4 && slot.seconds - seconds > 2.5)
+    })
+  if (misfits.length > 0) {
+    try {
+      const { lines: rewritten } = await askJson(
+        narrationFixPrompt({
+          language: input.sop.language,
+          tone,
+          items: misfits.map(({ slot, i, voice }) => ({
+            slot: i + 1,
+            action: slot.action,
+            spoken: slot.spoken,
+            current: voice?.text ?? '',
+            words: wordsFor(slot.seconds, rate),
+          })),
+        }),
+        NarrationFixSchema,
+      )
+      await mapLimit(misfits, 4, async ({ slot, i }) => {
+        const text = rewritten.find((r) => r.slot === i + 1)?.text ?? ''
+        const capped = limitWords(text, Math.max(3, Math.floor((slot.seconds - 0.5) * rate)))
+        const again = capped ? await synth(capped, i, 1) : null
+        // On garde la nouvelle version seulement si elle tient mieux dans le passage.
+        if (
+          again &&
+          misfit(slot.seconds, again.seconds) <= misfit(slot.seconds, voices[i]?.seconds ?? 0)
+        ) {
+          voices[i] = again
+        }
+      })
+    } catch (err) {
+      console.warn('[pipeline] réécriture de la voix off impossible', (err as Error).message)
+    }
+  }
+  const files = voices.map((v) => v?.file ?? null)
 
   // La vidéo garde sa vitesse réelle : la voix dit ce qui est à l'écran à ce moment-là.
   const segments = await Promise.all(

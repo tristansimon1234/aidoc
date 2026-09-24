@@ -432,6 +432,32 @@ ${input.sop.replace(/!\[[^\]]*\]\([^)]*\)\n?/g, '').slice(0, 12000)}
 Return ONLY JSON: {"lines": ["text for slot 1", "text for slot 2", ...]} with exactly ${input.slots.length} entries.`
 }
 
+export const NarrationFixSchema = z.object({
+  lines: z.array(z.object({ slot: z.number().int(), text: z.string() })),
+})
+
+/**
+ * Deuxième passe de la voix off : les textes dont la durée lue ne tient pas dans leur passage (trop
+ * longs) ou le laissent trop longtemps muet (trop courts) sont réécrits au nombre de mots mesuré.
+ */
+export function narrationFixPrompt(input: {
+  language: string
+  tone: Tone
+  items: { slot: number; action: string; spoken: string; current: string; words: number }[]
+}): string {
+  const items = input.items
+    .map(
+      (it) =>
+        `Slot ${it.slot}: rewrite in about ${it.words} words (${Math.max(2, it.words - 3)}-${it.words}).\n   On screen: ${it.action}${it.spoken ? `\n   What the person said: "${it.spoken}"` : ''}\n   Current text: "${it.current}"`,
+    )
+    .join('\n\n')
+  return `These voice-over texts of a tutorial video, in ${languageName(input.language)}, do not fit the length of their part of the video once read aloud. Rewrite each one to the given number of words, measured on the real voice: longer texts get shorter, keeping the essential; short ones get the useful explanation (why, what to watch out for) about what is on screen in that part. Talk ONLY about what happens on screen in that slot, never about the next action. Tone: ${TONES[input.tone].direction} No markdown, no URLs, no personal data.
+
+${items}
+
+Return ONLY JSON: {"lines": [{"slot": <slot number>, "text": "..."}]}`
+}
+
 // ── 4. Vidéo marketing animée (Remotion) : storyboard, accroche, code des scènes, relecture ──
 
 const hex = (fallback: string) =>
