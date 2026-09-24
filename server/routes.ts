@@ -4,8 +4,8 @@ import { z } from 'zod'
 import * as db from './db.js'
 import * as billing from './billing.js'
 import { MAX_VIDEO_MINUTES, MINUTES_PER_CREDIT, OFFERS, creditsFor } from './credits.js'
-import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
-import { LANGUAGES } from './pipeline/prompts.js'
+import { isKnownVoice, listVoices, previewVoice } from './voices.js'
+import { DEFAULT_TONE, LANGUAGES, TONES, type Tone } from './pipeline/prompts.js'
 import { dispatchSop } from './dispatch.js'
 import { fail, failIfStale } from './pipeline/index.js'
 
@@ -43,6 +43,7 @@ function toView(sop: db.Sop) {
     title: sop.title,
     language: sop.language,
     voice: sop.voice,
+    tone: sop.tone,
     status: sop.status,
     progress: sop.progress,
     error: sop.error,
@@ -62,12 +63,41 @@ api.get(
     res.json({
       credits: account.credits,
       hasBillingAccount: account.stripeCustomerId !== null,
-      premiumVoice: isElevenLabsEnabled(),
       languages: Object.keys(LANGUAGES),
+      tones: Object.entries(TONES).map(([id, t]) => ({ id, label: t.label })),
       minutesPerCredit: MINUTES_PER_CREDIT,
       maxVideoMinutes: MAX_VIDEO_MINUTES,
       offers: await billing.listOffers(),
     })
+  }),
+)
+
+// Voix disponibles pour la voix off, et extrait d'écoute de chacune.
+api.get(
+  '/voices',
+  authed(async (_req, res) => {
+    res.json(await listVoices())
+  }),
+)
+
+api.get(
+  '/voices/preview',
+  authed(async (req, res) => {
+    const { voice, language, tone } = z
+      .object({
+        voice: z.string().max(100),
+        language: z.string().refine((l) => l in LANGUAGES),
+        tone: z.enum(Object.keys(TONES) as [Tone, ...Tone[]]).default(DEFAULT_TONE),
+      })
+      .parse(req.query)
+    if (voice === 'none' || !(await isKnownVoice(voice))) {
+      res.status(404).json({ error: 'Unknown voice' })
+      return
+    }
+    const { audio, ext } = await previewVoice(voice, language, tone)
+    res.setHeader('Content-Type', ext === 'mp3' ? 'audio/mpeg' : 'audio/wav')
+    res.setHeader('Cache-Control', 'private, max-age=86400')
+    res.send(audio)
   }),
 )
 
@@ -94,7 +124,8 @@ api.get(
 const CreateSchema = z.object({
   title: z.string().trim().min(1).max(200),
   language: z.string().refine((l) => l in LANGUAGES),
-  voice: z.enum(['none', 'standard', 'premium']),
+  voice: z.string().max(100),
+  tone: z.enum(Object.keys(TONES) as [Tone, ...Tone[]]),
   fileName: z.string().max(300),
   durationSeconds: z
     .number()
@@ -107,8 +138,8 @@ api.post(
   '/sops',
   authed(async (req, res, userId) => {
     const input = CreateSchema.parse(req.body)
-    if (input.voice === 'premium' && !isElevenLabsEnabled()) {
-      res.status(400).json({ error: 'Premium voice unavailable' })
+    if (!(await isKnownVoice(input.voice))) {
+      res.status(400).json({ error: 'Unknown voice' })
       return
     }
     const needed = creditsFor(input.durationSeconds)
@@ -126,6 +157,7 @@ api.post(
       title: input.title,
       language: input.language,
       voice: input.voice,
+      tone: input.tone,
       sourcePath,
     })
     const upload = await db.createUploadUrl(sourcePath)

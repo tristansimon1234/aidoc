@@ -97,6 +97,7 @@ export async function createSop(input: {
   title: string
   language: string
   voice: Voice
+  tone: string
   sourcePath: string
 }): Promise<Sop> {
   const now = new Date().toISOString()

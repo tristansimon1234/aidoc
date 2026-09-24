@@ -6,9 +6,11 @@ import { join } from 'node:path'
 import * as db from '../db.js'
 import { creditsFor } from '../credits.js'
 import { cutVideo, durationOf, extractFrame, normalizeVideo, renderNarrated } from './ffmpeg.js'
-import { askJson, askJsonWithImages, speakWithGemini, withVideo } from './gemini.js'
-import { speakWithElevenLabs } from './elevenlabs.js'
+import { askJson, askJsonWithImages, withVideo } from './gemini.js'
+import { speak } from '../voices.js'
 import {
+  addUpdatedDate,
+  toTone,
   FramePickSchema,
   framePickPrompt,
   NarrationSchema,
@@ -116,7 +118,7 @@ export async function processSop(id: string): Promise<void> {
           transcript: analysis.transcript,
         }),
       )
-      const markdown = insertScreenshots(stripFence(raw), urls)
+      const markdown = addUpdatedDate(insertScreenshots(stripFence(raw), urls), sop.language)
       await db.updateSop(id, { markdown })
       return { steps, markdown }
     })
@@ -180,17 +182,21 @@ async function narrate(input: {
 }): Promise<void> {
   const slots = narrationSlots(input.steps, input.duration)
   const { lines } = await askJson(
-    narrationPrompt({ language: input.sop.language, sop: input.markdown, slots }),
+    narrationPrompt({
+      language: input.sop.language,
+      tone: toTone(input.sop.tone),
+      sop: input.markdown,
+      slots,
+    }),
     NarrationSchema,
   )
 
   // Synthèse de toutes les phrases, 4 à la fois.
-  const premium = input.sop.voice === 'premium'
   const files = await mapLimit(slots, 4, async (_, i) => {
     const text = lines[i]?.trim()
     if (!text) return null
-    const audio = premium ? await speakWithElevenLabs(text) : await speakWithGemini(text)
-    const file = join(input.dir, `voice-${i}.${premium ? 'mp3' : 'wav'}`)
+    const { audio, ext } = await speak(input.sop.voice, text, toTone(input.sop.tone))
+    const file = join(input.dir, `voice-${i}.${ext}`)
     await writeFile(file, audio)
     return file
   })

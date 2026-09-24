@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { creditsFor } from '../credits.js'
 import { cutVideo, durationOf, extractFrame, normalizeVideo, renderNarrated } from './ffmpeg.js'
-import { insertScreenshots, narrationPrompt, sopPrompt } from './prompts.js'
+import { addUpdatedDate, insertScreenshots, narrationPrompt, sopPrompt } from './prompts.js'
 import {
   applyPickedTimes,
   candidateTimes,
@@ -92,13 +92,18 @@ describe('prompts', () => {
     expect(sop).toContain('Said while doing it: Always start from Invoices, never Purchases')
     expect(sop).toContain('written in French')
 
+    expect(sop).toContain('Key points')
+    expect(sop).toContain('warning callout comes FIRST')
+
     const voice = narrationPrompt({
       language: 'en',
+      tone: 'calm',
       sop: '# SOP\n\n![x](https://a/1.jpg)\n',
       slots: [{ start: 0, seconds: 10, action: 'Open', spoken: 'Never use Purchases' }],
     })
     expect(voice).toContain('What the person said here: "Never use Purchases"')
     expect(voice).not.toContain('https://a/1.jpg')
+    expect(voice).toContain('Gentle, patient and reassuring')
   })
 })
 
@@ -122,6 +127,13 @@ describe('captures', () => {
     expect(fitSegment(4, 5.6)).toEqual({ factor: 1.5, freeze: 0, length: 6 })
     expect(fitSegment(2, 5.6)).toEqual({ factor: 1.5, freeze: 3, length: 6 })
     expect(fitSegment(5, 0).length).toBeCloseTo(2)
+  })
+})
+
+describe('addUpdatedDate', () => {
+  it('ajoute la date sous le titre, dans la langue de la SOP', () => {
+    const out = addUpdatedDate('# Book an invoice\n\nIntro', 'fr', new Date('2026-09-24'))
+    expect(out).toBe('# Book an invoice\n\n_Mise à jour: 24 septembre 2026_\n\nIntro')
   })
 })
 

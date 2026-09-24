@@ -1,7 +1,15 @@
 // Tous les appels au serveur.
 import { accessToken, apiUrl } from './supabase'
 
-export type Voice = 'none' | 'standard' | 'premium'
+/** « none », « gemini:<nom> » ou « elevenlabs:<id> ». */
+export type Voice = string
+
+export interface VoiceOption {
+  id: string
+  name: string
+  description: string
+  premium: boolean
+}
 export type Status = 'uploading' | 'processing' | 'ready' | 'failed'
 
 export interface Offer {
@@ -14,7 +22,7 @@ export interface Offer {
 export interface Me {
   credits: number
   hasBillingAccount: boolean
-  premiumVoice: boolean
+  tones: { id: string; label: string }[]
   languages: string[]
   minutesPerCredit: number
   maxVideoMinutes: number
@@ -26,6 +34,7 @@ export interface Sop {
   title: string
   language: string
   voice: Voice
+  tone: string
   status: Status
   progress: string | null
   error: string | null
@@ -55,18 +64,37 @@ export const api = {
   listSops: () => call<Sop[]>('GET', '/sops'),
   getSop: (id: string) => call<Sop>('GET', `/sops/${id}`),
   deleteSop: (id: string) => call<{ ok: true }>('DELETE', `/sops/${id}`),
+  voices: () => call<VoiceOption[]>('GET', '/voices'),
+
+  /** Extrait audio d'une voix (avec le ton et la langue choisis), prêt à jouer. */
+  async voicePreview(voice: Voice, language: string, tone: string): Promise<string> {
+    const params = new URLSearchParams({ voice, language, tone })
+    const res = await fetch(`${apiUrl}/api/voices/preview?${params}`, {
+      headers: { Authorization: `Bearer ${await accessToken()}` },
+    })
+    if (!res.ok) throw new Error('Preview unavailable')
+    return URL.createObjectURL(await res.blob())
+  },
   checkout: (offer: Offer['id']) => call<{ url: string }>('POST', '/checkout', { offer }),
   billingPortal: () => call<{ url: string }>('POST', '/billing-portal'),
 
   /** Crée la SOP, envoie la vidéo directement au stockage, puis lance le traitement. */
   async createSop(
-    input: { title: string; language: string; voice: Voice; file: File; durationSeconds: number },
+    input: {
+      title: string
+      language: string
+      voice: Voice
+      tone: string
+      file: File
+      durationSeconds: number
+    },
     onProgress: (percent: number) => void,
   ): Promise<string> {
     const { id, uploadUrl } = await call<{ id: string; uploadUrl: string }>('POST', '/sops', {
       title: input.title,
       language: input.language,
       voice: input.voice,
+      tone: input.tone,
       fileName: input.file.name,
       durationSeconds: input.durationSeconds,
     })

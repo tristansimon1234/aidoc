@@ -127,14 +127,14 @@ export async function askJsonWithImages<T>(
 }
 
 /** Synthèse vocale Gemini → fichier WAV (PCM 16 bits, 24 kHz, mono). */
-export async function speakWithGemini(text: string): Promise<Buffer> {
+export async function speakWithGemini(text: string, voiceName = 'Kore'): Promise<Buffer> {
   return withRetry(async () => {
     const res = await gemini().models.generateContent({
       model: env.GEMINI_TTS_MODEL,
       contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: ['AUDIO'],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
       },
     })
     const data = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data

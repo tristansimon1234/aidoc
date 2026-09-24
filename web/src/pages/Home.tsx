@@ -1,9 +1,10 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, videoDuration, type Me, type Sop, type Voice } from '../api'
+import { api, videoDuration, type Me, type Sop } from '../api'
 import { Button, Card, EmptyState, Field, StatusIndicator } from '../ui/design-system/components'
 import type { StatusKey } from '../ui/design-system/tokens'
 import { ScreenRecorder } from '../ui/ScreenRecorder'
+import { VoicePicker, loadVoiceChoice } from '../ui/VoicePicker'
 import styles from './pages.module.css'
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -23,7 +24,7 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
   const [duration, setDuration] = useState(0)
   const [title, setTitle] = useState('')
   const [language, setLanguage] = useState('en')
-  const [voice, setVoice] = useState<Voice>('standard')
+  const [{ voice, tone }, setVoiceChoice] = useState(loadVoiceChoice)
   const [uploading, setUploading] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -65,7 +66,7 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
     setUploading(0)
     try {
       const id = await api.createSop(
-        { title, language, voice, file, durationSeconds: duration },
+        { title, language, voice, tone, file, durationSeconds: duration },
         setUploading,
       )
       onChange()
@@ -123,15 +124,15 @@ export function Home({ me, onChange }: { me: Me | null; onChange: () => void }) 
                   ))}
                 </select>
               </label>
-              <label className={styles.select}>
-                Voice-over
-                <select value={voice} onChange={(e) => setVoice(e.target.value as Voice)}>
-                  <option value="standard">Yes</option>
-                  {me?.premiumVoice && <option value="premium">Yes, premium voice</option>}
-                  <option value="none">No, video only</option>
-                </select>
-              </label>
             </div>
+
+            <VoicePicker
+              language={language}
+              tones={me?.tones ?? []}
+              voice={voice}
+              tone={tone}
+              onChange={setVoiceChoice}
+            />
 
             <div className={styles.actions}>
               {uploading !== null ? (

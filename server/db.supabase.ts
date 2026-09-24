@@ -19,6 +19,7 @@ interface SopRow {
   title: string
   language: string
   voice: Voice
+  tone: string | null
   status: SopStatus
   progress: string | null
   error: string | null
@@ -38,6 +39,7 @@ function toSop(r: SopRow): Sop {
     title: r.title,
     language: r.language,
     voice: r.voice,
+    tone: r.tone ?? 'friendly',
     status: r.status,
     progress: r.progress,
     error: r.error,
@@ -142,7 +144,7 @@ export async function applyCredits(
 // ── SOPs ─────────────────────────────────────────────────────
 
 const SOP_COLUMNS =
-  'id, user_id, title, language, voice, status, progress, error, credits_used, source_path, duration_seconds, markdown, video_path, created_at, updated_at'
+  'id, user_id, title, language, voice, tone, status, progress, error, credits_used, source_path, duration_seconds, markdown, video_path, created_at, updated_at'
 
 export async function createSop(input: {
   id: string
@@ -150,6 +152,7 @@ export async function createSop(input: {
   title: string
   language: string
   voice: Voice
+  tone: string
   sourcePath: string
 }): Promise<Sop> {
   const res = await sb()
@@ -160,6 +163,7 @@ export async function createSop(input: {
       title: input.title,
       language: input.language,
       voice: input.voice,
+      tone: input.tone,
       source_path: input.sourcePath,
     })
     .select(SOP_COLUMNS)

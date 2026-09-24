@@ -17,6 +17,8 @@ Vidéo (upload ou enregistrement dans le navigateur)
     puis chaque passage de vidéo est accéléré ou ralenti pour durer exactement le temps de sa phrase (aucun blanc)
 ```
 
+**Voix off** : l'utilisateur choisit la voix (8 voix Gemini incluses ; avec `ELEVENLABS_API_KEY`, toutes les voix du compte ElevenLabs, voix clonées comprises) et le ton (amical, professionnel, énergique, calme, joueur), et peut écouter un extrait avant de lancer. Liste des voix : `server/voices.ts` ; tons : `TONES` dans `server/pipeline/prompts.ts`.
+
 La vidéo livrée dure **4 minutes maximum**, quelle que soit la durée de l'enregistrement : au-delà, on garde un extrait autour de chaque étape (surtout ce qui précède l'action) et on coupe le reste. La voix off est calée sur ce montage. Réglage : `MAX_SOP_VIDEO_SECONDS` dans `server/pipeline/steps.ts`.
 
 Deux déploiements, un seul repo :
@@ -60,7 +62,7 @@ web/src/
     layout/         Shell, rail latéral, menu avatar, thème
     ScreenRecorder  enregistrement d'écran + dépôt de vidéo
     NarratedPlayer  lecteur vidéo
-supabase/migrations/  schéma de la base (3 tables)
+supabase/migrations/  schéma de la base (3 tables) + choix de la voix et du ton
 ```
 
 ## Tarification

@@ -90,29 +90,49 @@ WHERE THE CONTENT COMES FROM
 
 The reader has never done this task and will follow the SOP alone, screen by screen.
 
-STRUCTURE (Markdown, every heading and sentence written in ${language})
+STRUCTURE (Markdown). Every heading and sentence is written in ${language}; the <…> below describe what to write, translate the section names.
 # <title of the procedure, starting with a verb>
 
-<2–3 sentences: what this procedure achieves, when and why to use it (from what the person explains).>
+<1–2 sentences: what this procedure achieves and why it matters.>
 
-## <"Prerequisites" in ${language}>
-<bullets: accounts, access rights, files or information needed before starting. Omit the whole section if there is nothing.>
+- **<"When" in ${language}>:** <what triggers it and how often, e.g. "each time a supplier invoice arrives">
+- **<"Who" in ${language}>:** <role that performs it>
+(Only the lines you can support from the video; omit this list if neither is known.)
+
+## <"Key points" in ${language}>
+<3–5 bullets: the most important rules, figures, deadlines and warnings the person stated, kept word for word for facts. Omit the section if nothing important was said.>
+
+## <"Before you start" in ${language}>
+<bullets: accounts, access rights, files, information needed before starting. Omit if nothing.>
 
 ## <"Steps" in ${language}>
-### 1. <short imperative title>
-<What to do and where (on-screen labels in **bold**, exactly as on screen), then the why / the rule / what to pay attention to, as explained by the person. 1–5 sentences.>
+<With 10 steps or fewer:>
+### 1. <short title starting with a verb>
+<Same pattern for every step, in this order:>
+<1. If something can go wrong or must not be done in this step, the warning callout comes FIRST, before the action.>
+<2. The action: one action per step, imperative, short active sentences, on-screen labels in **bold** exactly as on screen, where to find them.>
+<3. Why / the rule to apply, from what the person explained (only when useful).>
+<4. Decisions as "If <situation>, <what to do>." lines when the person mentions alternatives or exceptions.>
+<5. The screenshot:>
 
 ![<short caption>]({{SCREENSHOT_0}})
 
-### 2. …
+<6. On key steps, what the reader should now see, as "<"Expected result" in ${language}>: …" in italics.>
 
-## <"Result" in ${language}>
-<how the reader checks the task is done.>
+<With more than 10 steps: group them into 2–5 phases, each "### <phase name>", and the steps inside as "#### 1. …" with numbering continuing across phases.>
+
+## <"Final check" in ${language}>
+<a checklist "- [ ] …" of what to verify to be sure the task is done correctly.>
+
+## <"Troubleshooting" in ${language}>
+<"**<problem>** → <solution>" lines, ONLY for problems, errors or edge cases the person mentioned. Omit the section otherwise.>
 
 RULES
+- Write for the least experienced person on the team: short sentences, active voice, no jargon unless the tool uses it (then explain it once).
 - Use every screenshot placeholder exactly once, under the step it belongs to, alone on its line with a blank line before and after. Never change the placeholder text.
-- Keep the steps in order. Merge two steps only if they are really the same action (keep both screenshots). Never invent a step, button or field that is not in the video.
-- Turn advice and warnings the person gives into callouts:
+- Keep the steps in order. Merge two steps only if they are really the same action (keep both screenshots). Never invent a step, button, field or rule that is not in the video.
+- Precise facts the person states (amounts, thresholds, deadlines, account numbers, codes, names of tools or teams, business rules) are copied exactly, never rounded or paraphrased.
+- Callouts:
   > [!TIP]
   > <advice>
 
@@ -128,6 +148,26 @@ ${formatTranscript(input.transcript)}
 
 STEPS
 ${steps}`
+}
+
+const UPDATED_LABEL: Record<string, string> = {
+  fr: 'Mise à jour',
+  en: 'Last updated',
+  es: 'Actualizado',
+  de: 'Aktualisiert',
+  it: 'Aggiornato',
+  pt: 'Atualizado',
+  nl: 'Bijgewerkt',
+}
+
+/** Ajoute la date de mise à jour sous le titre (pour savoir si la SOP est encore à jour). */
+export function addUpdatedDate(markdown: string, language: string, date = new Date()): string {
+  const line = `_${UPDATED_LABEL[language] ?? UPDATED_LABEL.en}: ${date.toLocaleDateString(language, { day: 'numeric', month: 'long', year: 'numeric' })}_`
+  const lines = markdown.split('\n')
+  const title = lines.findIndex((l) => l.startsWith('# '))
+  if (title === -1) return `${line}\n\n${markdown}`
+  lines.splice(title + 1, 0, '', line)
+  return lines.join('\n')
 }
 
 /** Remplace {{SCREENSHOT_N}} par les vraies URLs ; ajoute à la fin les captures oubliées. */
@@ -185,11 +225,50 @@ Return ONLY JSON: {"picks": [{"step": <step number>, "image": <chosen image numb
 
 // ── 3. Script de la voix off ─────────────────────────────────
 
+/** Tons proposés pour la voix off : `direction` guide l'écriture, `speech` l'intonation de la synthèse Gemini. */
+export const TONES = {
+  friendly: {
+    label: 'Friendly',
+    direction:
+      'Warm, upbeat and conversational, like a helpful colleague. Contractions and a light touch of humour are welcome.',
+    speech: 'Say this in a warm, friendly, conversational tone',
+  },
+  professional: {
+    label: 'Professional',
+    direction: 'Polished, confident and measured. Clear and precise, no filler, no jokes.',
+    speech: 'Say this in a clear, confident, professional tone',
+  },
+  energetic: {
+    label: 'Energetic',
+    direction:
+      'High energy and enthusiastic, dynamic rhythm, stresses the key words. Still complete sentences, never curt.',
+    speech: 'Say this in an energetic, enthusiastic tone',
+  },
+  calm: {
+    label: 'Calm',
+    direction: 'Gentle, patient and reassuring, as if guiding a beginner. Unhurried sentences.',
+    speech: 'Say this in a calm, gentle, reassuring tone',
+  },
+  playful: {
+    label: 'Playful',
+    direction: 'Witty and light-hearted, with playful asides, while staying clear and accurate.',
+    speech: 'Say this in a playful, lively tone',
+  },
+} as const
+
+export type Tone = keyof typeof TONES
+export const DEFAULT_TONE: Tone = 'friendly'
+
+export function toTone(value: string | null | undefined): Tone {
+  return value && value in TONES ? (value as Tone) : DEFAULT_TONE
+}
+
 export const NarrationSchema = z.object({ lines: z.array(z.string()) })
 
 /** Un texte par créneau ; le budget de mots suit la durée du créneau (~2,6 mots / seconde, au moins 80 %). */
 export function narrationPrompt(input: {
   language: string
+  tone: Tone
   sop: string
   slots: { start: number; seconds: number; action: string; spoken: string }[]
 }): string {
@@ -208,9 +287,10 @@ The video is split into ${input.slots.length} time slots. Write exactly ONE text
 
 - The voice-over replaces the person's own voice. Base each slot on WHAT THEY SAID during it (their explanations, reasons and warnings), rewritten as clean, confident sentences, in ${languageName(input.language)}. Keep their meaning, drop hesitations and repetitions.
 - When they said nothing useful in a slot, explain what is being done and why, using the SOP below. Do not just describe the screen.
+- Repeat the critical points (rules, figures, deadlines, warnings) in the slot where they apply, keeping figures and names exact.
 - Slot 1 starts with one short sentence saying what we are about to do.
 - The last slot ends with one sentence confirming what has been achieved.
-- Friendly, clear, professional; speak to the viewer ("click…", "here you choose… because…").
+- Tone: ${TONES[input.tone].direction} Speak to the viewer ("click…", "here you choose… because…").
 - Say on-screen labels as they appear. No URLs, IDs, passwords or personal data, no markdown, no emojis, no stage directions.
 
 SLOTS

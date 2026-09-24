@@ -1,7 +1,8 @@
 // Types partagés par les deux stockages (Supabase et local).
 
 export type SopStatus = 'uploading' | 'processing' | 'ready' | 'failed'
-export type Voice = 'none' | 'standard' | 'premium'
+/** « none », « gemini:<nom> » ou « elevenlabs:<id> » (voir server/voices.ts). */
+export type Voice = string
 
 export interface Sop {
   id: string
@@ -9,6 +10,8 @@ export interface Sop {
   title: string
   language: string
   voice: Voice
+  /** Ton de la voix off (voir TONES dans prompts.ts). */
+  tone: string
   status: SopStatus
   progress: string | null
   error: string | null
