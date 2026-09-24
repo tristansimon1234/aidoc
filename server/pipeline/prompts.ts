@@ -49,13 +49,45 @@ Do two things.
 - "screen": short description of what is visible at the step's frame.
 - "spoken": everything the person says while doing this step, word for word (it usually explains WHY and what to watch out for), or null if silent.
 - "timestamp": the moment IN SECONDS (1 min 27 s → 87, not 127) of the frame that best illustrates the step: the button or field is visible and the value is filled in, BEFORE the next step starts.
-- Chronological order. All times between 0 and ${Math.ceil(durationSeconds)}.
+- Chronological order. All times between 0 and ${Math.ceil(durationSeconds)}. Cover the WHOLE recording until its very end: the task often continues late in the video, keep listing steps up to the last action.
 - Never copy sensitive values seen on screen or said aloud (passwords, tokens, bank details, personal emails or phone numbers): describe them instead ("the client's email").
 
 "title": short name of the task, e.g. "Create a supplier invoice in Pennylane".
 
 Return ONLY JSON:
 {"title": "...", "transcript": [{"start": 0, "text": "So today I'll show you how we book a supplier invoice..."}], "steps": [{"timestamp": 4, "action": "Open the 'Invoices' menu", "screen": "Sidebar with 'Invoices' highlighted", "spoken": "First go to Invoices, not Purchases, because..."}]}`
+}
+
+export const MissingStepsSchema = VideoStepsSchema.pick({ steps: true })
+
+/** Relance ciblée sur un passage où aucune étape n'a été trouvée. */
+export function missingStepsPrompt(input: {
+  start: number
+  end: number
+  before: string | null
+  after: string | null
+  transcript: Transcript
+}): string {
+  const said = input.transcript.filter((t) => t.start >= input.start - 2 && t.start <= input.end)
+  return `You are watching AND listening to the same screen recording. A list of steps was extracted from it, but NO step was found between ${Math.floor(input.start)}s and ${Math.ceil(input.end)}s.
+${
+  input.before
+    ? `
+Last step before this part: ${input.before}`
+    : ''
+}${
+    input.after
+      ? `
+First step after this part: ${input.after}`
+      : ''
+  }
+
+Watch that part carefully (between ${Math.floor(input.start)}s and ${Math.ceil(input.end)}s) and list every meaningful step of the task done there, with the same rules: one step = one meaningful action or state change, exact on-screen labels in quotes, "timestamp" IN SECONDS of the frame that best illustrates the step (between ${Math.floor(input.start)} and ${Math.ceil(input.end)}), "spoken" = what the person says while doing it (or null). If truly nothing happens there (waiting, talking without acting on screen), return an empty list.
+
+What the person says in this part:
+${formatTranscript(said)}
+
+Return ONLY JSON: {"steps": [{"timestamp": 0, "action": "...", "screen": "...", "spoken": null}]}`
 }
 
 function formatTranscript(transcript: Transcript): string {
@@ -130,7 +162,7 @@ STRUCTURE (Markdown). Every heading and sentence is written in ${language}; the 
 RULES
 - Write for the least experienced person on the team: short sentences, active voice, no jargon unless the tool uses it (then explain it once).
 - Use every screenshot placeholder exactly once, under the step it belongs to, alone on its line with a blank line before and after. Never change the placeholder text.
-- Keep the steps in order. Merge two steps only if they are really the same action (keep both screenshots). Never invent a step, button, field or rule that is not in the video.
+- The steps of the SOP are the STEPS listed below, in order, each with its own screenshot. Merge two steps only if they are really the same action (keep both screenshots). If the video shows an action missing from the list, describe it inside the closest listed step instead of adding a step without screenshot. Never invent a step, button, field or rule that is not in the video.
 - Precise facts the person states (amounts, thresholds, deadlines, account numbers, codes, names of tools or teams, business rules) are copied exactly, never rounded or paraphrased.
 - Callouts:
   > [!TIP]
@@ -170,7 +202,10 @@ export function addUpdatedDate(markdown: string, language: string, date = new Da
   return lines.join('\n')
 }
 
-/** Remplace {{SCREENSHOT_N}} par les vraies URLs ; ajoute à la fin les captures oubliées. */
+/**
+ * Remplace {{SCREENSHOT_N}} par les vraies URLs. Une capture oubliée par l'IA est placée à la fin de
+ * la section de son étape (« ### N. » ou « #### N. »), sinon à la fin du document.
+ */
 export function insertScreenshots(markdown: string, urls: (string | null)[]): string {
   let out = markdown
   const forgotten: string[] = []
@@ -182,7 +217,9 @@ export function insertScreenshots(markdown: string, urls: (string | null)[]): st
       return
     }
     if (!out.includes(placeholder)) {
-      forgotten.push(`![](${url})`)
+      const placed = placeUnderStep(out, i + 1, `![](${url})`)
+      if (placed) out = placed
+      else forgotten.push(`![](${url})`)
       return
     }
     out = out.replace(
@@ -192,6 +229,21 @@ export function insertScreenshots(markdown: string, urls: (string | null)[]): st
     out = out.replaceAll(placeholder, `![](${url})`)
   })
   return forgotten.length > 0 ? `${out.trimEnd()}\n\n${forgotten.join('\n\n')}\n` : out
+}
+
+/** Ajoute `image` à la fin de la section de l'étape `n` ; null si l'étape n'est pas trouvée. */
+function placeUnderStep(markdown: string, n: number, image: string): string | null {
+  const lines = markdown.split('\n')
+  const start = lines.findIndex((l) => new RegExp(`^#{3,4}\\s+${n}[.)]\\s`).test(l))
+  if (start === -1) return null
+  const level = /^#+/.exec(lines[start]!)![0].length
+  let end = lines.findIndex(
+    (l, k) => k > start && /^#+\s/.test(l) && /^#+/.exec(l)![0].length <= level,
+  )
+  if (end === -1) end = lines.length
+  while (end > start + 1 && lines[end - 1]!.trim() === '') end--
+  lines.splice(end, 0, '', image)
+  return lines.join('\n')
 }
 
 // ── 2 bis. Choix de la meilleure capture pour chaque étape ──
@@ -329,7 +381,7 @@ export function narrationPrompt(input: {
   const slots = input.slots
     .map((s, i) => {
       const max = maxWordsFor(s.seconds)
-      const min = Math.max(3, Math.floor(max * 0.5))
+      const min = Math.max(3, Math.floor(max * 0.6))
       const said = s.spoken ? `\n   What the person said here: "${s.spoken}"` : ''
       return `${i + 1}. [${s.start.toFixed(0)}s, ${s.seconds.toFixed(0)}s available → ${min}-${max} words] On screen: ${s.action}${said}`
     })
@@ -337,7 +389,7 @@ export function narrationPrompt(input: {
 
   return `Write the voice-over of a short tutorial video, in ${languageName(input.language)}. A text-to-speech voice will read it over the screen recording.
 
-The video is split into ${input.slots.length} time slots. Write exactly ONE text per slot, in order. The voice must stay in sync with the screen: in each slot, talk ONLY about what happens on screen in that slot. Be concise: one or two short sentences, NEVER more words than the slot's maximum. The video plays at real speed and is never sped up to fit the voice, so a text that is too long ends up talking about the next screen: when in doubt, say less. The written SOP already holds all the details; the voice only guides the eye and gives the key "why".
+The video is split into ${input.slots.length} time slots. Write exactly ONE text per slot, in order. The voice must stay in sync with the screen: in each slot, talk ONLY about what happens on screen in that slot. Aim at the word range given for each slot (a long slot gets several sentences, a short one a few words), NEVER more words than the slot's maximum. Every slot gets a text: when the person said nothing there, explain what is done and why. The video plays at real speed and is never sped up to fit the voice, so a text that is too long ends up talking about the next screen: when in doubt, say less. The written SOP already holds all the details; the voice only guides the eye and gives the key "why".
 
 - The voice-over replaces the person's own voice. Base each slot on the essential of WHAT THEY SAID during it (the main reason or warning), condensed into clean, confident sentences, in ${languageName(input.language)}. Keep their meaning, drop hesitations, repetitions and side remarks.
 - When they said nothing useful in a slot, explain what is being done and why, using the SOP below. Do not just describe the screen.

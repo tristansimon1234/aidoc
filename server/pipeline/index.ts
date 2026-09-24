@@ -27,6 +27,8 @@ import {
   NarrationSchema,
   VideoStepsSchema,
   insertScreenshots,
+  MissingStepsSchema,
+  missingStepsPrompt,
   maxWordsFor,
   narrationPrompt,
   sopPrompt,
@@ -42,6 +44,7 @@ import {
   mapLimit,
   narrationSlots,
   planEdit,
+  uncoveredRanges,
 } from './steps.js'
 
 /**
@@ -49,6 +52,9 @@ import {
  * est passé en échec et remboursé (vérifié à chaque lecture côté API).
  */
 const STALE_AFTER_MS = 30 * 60_000
+
+/** Secondes gardées après la dernière étape d'une SOP. */
+const TAIL_SECONDS = 8
 
 export async function failIfStale(sop: db.Sop): Promise<db.Sop> {
   if (sop.status !== 'processing') return sop
@@ -139,7 +145,30 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
     // 2. Transcription de ce que dit la personne + liste des étapes
     await step('Analyzing the video')
     const analysis = await gemini.json(videoAnalysisPrompt(duration), VideoStepsSchema)
-    const found = cleanSteps(analysis.steps, duration)
+    let found = cleanSteps(analysis.steps, duration)
+    // Gemini s'arrête parfois de lister les étapes avant la fin : on ré-analyse les longs passages vides.
+    for (const gap of found.length > 0 ? uncoveredRanges(found, duration) : []) {
+      try {
+        const before = found.filter((s) => s.timestamp <= gap.start).pop()
+        const after = found.find((s) => s.timestamp >= gap.end)
+        const extra = await gemini.json(
+          missingStepsPrompt({
+            ...gap,
+            before: before?.action ?? null,
+            after: after?.action ?? null,
+            transcript: analysis.transcript,
+          }),
+          MissingStepsSchema,
+        )
+        const inside = extra.steps.filter((s) => s.timestamp > gap.start && s.timestamp < gap.end)
+        if (inside.length > 0) found = cleanSteps([...found, ...inside], duration)
+      } catch (err) {
+        console.warn('[pipeline] ré-analyse d’un passage impossible', (err as Error).message)
+      }
+    }
+    console.log(
+      `[pipeline] ${found.length} étapes, dernière à ${found.at(-1)?.timestamp.toFixed(0)}s / ${duration.toFixed(0)}s`,
+    )
     if (found.length === 0) {
       throw new UserFacingError(
         'No action detected in the video. Record your screen while you perform the task.',
@@ -179,7 +208,10 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
   })
 
   // 5. Montage : la vidéo livrée dure 4 min max (extraits autour de chaque étape).
-  const edit = planEdit(steps, duration)
+  // Après la dernière étape, on garde quelques secondes (le résultat) puis on coupe : sinon la fin de
+  // l'enregistrement défile sans rien à dire.
+  const usable = Math.min(duration, (steps.at(-1)?.timestamp ?? duration) + TAIL_SECONDS)
+  const edit = planEdit(steps, usable)
   let finalVideo = video
   if (edit.clips.length > 1 || edit.duration < duration) {
     await step('Editing the video')
@@ -215,15 +247,23 @@ async function narrate(input: {
   output: string
 }): Promise<void> {
   const slots = narrationSlots(input.steps, input.duration)
-  const { lines } = await askJson(
-    narrationPrompt({
-      language: input.sop.language,
-      tone: toTone(input.sop.tone),
-      sop: input.markdown,
-      slots,
-    }),
-    NarrationSchema,
-  )
+  const prompt = narrationPrompt({
+    language: input.sop.language,
+    tone: toTone(input.sop.tone),
+    sop: input.markdown,
+    slots,
+  })
+  // Une réponse avec moins de textes que de créneaux laisserait la fin de la vidéo sans voix : on redemande.
+  let { lines } = await askJson(prompt, NarrationSchema)
+  for (let retry = 0; retry < 2 && lines.filter((l) => l.trim()).length < slots.length; retry++) {
+    console.warn(
+      `[pipeline] voix off : ${lines.length} textes pour ${slots.length} créneaux, on redemande`,
+    )
+    const again = await askJson(prompt, NarrationSchema)
+    if (again.lines.filter((l) => l.trim()).length > lines.filter((l) => l.trim()).length) {
+      lines = again.lines
+    }
+  }
 
   // Synthèse de toutes les phrases, 4 à la fois.
   const files = await mapLimit(slots, 4, async (_, i) => {

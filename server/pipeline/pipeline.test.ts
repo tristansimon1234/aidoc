@@ -30,6 +30,7 @@ import {
   limitWords,
   narrationSlots,
   planEdit,
+  uncoveredRanges,
 } from './steps.js'
 
 const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'
@@ -233,6 +234,22 @@ describe('insertScreenshots', () => {
     expect(out).toContain('![Ouvrir](https://a/0.jpg)')
     expect(out).not.toContain('SCREENSHOT')
     expect(out.trimEnd().endsWith('![](https://a/2.jpg)')).toBe(true)
+  })
+
+  it('place une capture oubliée à la fin de la section de son étape', () => {
+    const md =
+      '## Steps\n\n### Phase A\n\n#### 1. Open\n\nText 1\n\n#### 2. Save\n\nText 2\n\n## Final check\n\n- [ ] ok\n'
+    const out = insertScreenshots(md, ['https://a/0.jpg', 'https://a/1.jpg'])
+    expect(out).toContain('Text 1\n\n![](https://a/0.jpg)\n\n#### 2. Save')
+    expect(out).toContain('Text 2\n\n![](https://a/1.jpg)\n\n## Final check')
+  })
+})
+
+describe('uncoveredRanges', () => {
+  it('repère les longs passages sans étape, y compris la fin de la vidéo', () => {
+    expect(uncoveredRanges([step(10), step(30)], 200)).toEqual([{ start: 30, end: 200 }])
+    expect(uncoveredRanges([step(100), step(120)], 130)).toEqual([{ start: 0, end: 100 }])
+    expect(uncoveredRanges([step(10), step(40), step(70)], 100)).toEqual([])
   })
 })
 

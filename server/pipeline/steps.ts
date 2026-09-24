@@ -16,6 +16,27 @@ export function cleanSteps(steps: VideoSteps['steps'], duration: number): VideoS
 }
 
 /**
+ * Passages de la vidéo sans aucune étape pendant plus de `minGap` secondes (y compris avant la première
+ * et après la dernière). Sur les longues vidéos, Gemini s'arrête parfois de lister les étapes avant la
+ * fin : ces passages sont ré-analysés. Les 4 plus longs au maximum, dans l'ordre de la vidéo.
+ */
+export function uncoveredRanges(
+  steps: VideoSteps['steps'],
+  duration: number,
+  minGap = 45,
+): { start: number; end: number }[] {
+  const points = [0, ...steps.map((s) => s.timestamp), duration]
+  const gaps: { start: number; end: number }[] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    if (points[i + 1]! - points[i]! > minGap) gaps.push({ start: points[i]!, end: points[i + 1]! })
+  }
+  return gaps
+    .sort((a, b) => b.end - b.start - (a.end - a.start))
+    .slice(0, 4)
+    .sort((a, b) => a.start - b.start)
+}
+
+/**
  * Découpe la vidéo en créneaux de voix off : l'étape i est racontée entre la capture i-1 et la capture i
  * (on annonce l'action juste avant qu'elle se produise). Les créneaux trop courts sont fusionnés.
  * Chaque créneau emporte ce que la personne a dit pendant ces étapes, pour que la voix off le reprenne.
