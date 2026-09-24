@@ -1,5 +1,5 @@
 // Tous les appels au serveur.
-import { supabase } from './supabase'
+import { accessToken } from './supabase'
 
 export type Voice = 'none' | 'standard' | 'premium'
 export type Status = 'uploading' | 'processing' | 'ready' | 'failed'
@@ -37,12 +37,11 @@ export interface Sop {
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const { data } = await supabase.auth.getSession()
   const res = await fetch(`/api${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${data.session?.access_token ?? ''}`,
+      Authorization: `Bearer ${await accessToken()}`,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   })
@@ -79,17 +78,17 @@ export const api = {
 
 function uploadWithProgress(url: string, file: File, onProgress: (percent: number) => void) {
   return new Promise<void>((resolve, reject) => {
-    const form = new FormData()
-    form.append('cacheControl', '3600')
-    form.append('', file)
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url)
+    // Fichier brut (accepté par Supabase Storage comme par le mode local).
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+    xhr.setRequestHeader('x-upsert', 'true')
     xhr.upload.onprogress = (e) =>
       e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100))
     xhr.onload = () =>
       xhr.status < 300 ? resolve() : reject(new Error(`Video upload rejected (${xhr.status})`))
     xhr.onerror = () => reject(new Error('Video upload interrupted'))
-    xhr.send(form)
+    xhr.send(file)
   })
 }
 

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { isLocalMode, loginDisabled } from '../../supabase'
+import { Badge } from '../design-system/components'
 import { AppRail } from './AppRail'
 import styles from './Shell.module.css'
 
@@ -20,6 +22,9 @@ export function Shell({ email, credits, children }: ShellProps) {
             <Link to="/" className={styles.logo}>
               <span>doclee</span>
             </Link>
+            {loginDisabled && (
+              <Badge color="amber">{isLocalMode ? 'Local mode' : 'Test mode'}</Badge>
+            )}
           </div>
           <nav className={styles.nav}>
             <Link to="/credits" className={styles.credits}>

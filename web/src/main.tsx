@@ -2,7 +2,7 @@ import { StrictMode, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import type { Session } from '@supabase/supabase-js'
-import { supabase } from './supabase'
+import { loginDisabled, supabase } from './supabase'
 import { api, type Me } from './api'
 import { Shell } from './ui/layout/Shell'
 import { useTheme } from './ui/layout/useTheme'
@@ -18,6 +18,7 @@ function App() {
   const [me, setMe] = useState<Me | null>(null)
 
   useEffect(() => {
+    if (!supabase || loginDisabled) return
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
     const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
     return () => data.subscription.unsubscribe()
@@ -29,14 +30,19 @@ function App() {
       .then(setMe)
       .catch(() => setMe(null))
   useEffect(() => {
-    if (session) void refreshMe()
+    if (session || loginDisabled) void refreshMe()
   }, [session])
 
-  if (session === undefined) return null
-  if (!session) return <Login />
+  if (!loginDisabled) {
+    if (session === undefined) return null
+    if (!session) return <Login />
+  }
 
   return (
-    <Shell email={session.user.email ?? ''} credits={me?.credits ?? null}>
+    <Shell
+      email={loginDisabled ? 'test@doclee.dev' : (session?.user.email ?? '')}
+      credits={me?.credits ?? null}
+    >
       <Routes>
         <Route path="/" element={<Home me={me} onChange={refreshMe} />} />
         <Route path="/sop/:id" element={<SopPage />} />

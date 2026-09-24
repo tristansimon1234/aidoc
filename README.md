@@ -70,17 +70,22 @@ supabase/migrations/  schéma de la base (3 tables)
 - Les prix se règlent dans Stripe. Le nombre de crédits se règle dans `server/credits.ts`.
 - En cas d'échec, les crédits sont remboursés automatiquement.
 
-## Lancer en local
+## Lancer en local (sans compte, sans connexion)
 
-Prérequis : Node 20+, `ffmpeg` installé.
+Prérequis : Node 20+, `ffmpeg` installé, une clé Gemini.
 
 ```bash
-cp .env.example .env   # remplir les clés
 npm install
-npm run dev            # interface http://localhost:5173, API :3000 ; sans VIDEO_SERVICE_URL,
-                       # les vidéos sont traitées dans le même process (ffmpeg doit être installé)
+echo "GEMINI_API_KEY=ta-cle" > .env
+npm run dev            # http://localhost:5173
 npm test
 ```
+
+Sans `SUPABASE_URL` ni `VITE_SUPABASE_URL`, l'app démarre en **mode local** : pas d'écran de connexion, 100 crédits, base et fichiers dans `.local-data/`, vidéos traitées dans le même process. Pour repartir de zéro : supprimer `.local-data/`.
+
+## Tester un déploiement sans se connecter (mode test)
+
+Sur un déploiement avec Supabase + Railway, mettre `DISABLE_LOGIN=true` et `VITE_DISABLE_LOGIN=true` (Vercel) : plus d'écran de connexion, tout le monde utilise le compte partagé `test@doclee.dev` (1000 crédits, créé automatiquement). **Uniquement sur un déploiement protégé** (preview Vercel avec *Deployment Protection*) : sinon n'importe qui consomme tes crédits Gemini. Retirer les deux variables pour revenir à la connexion normale.
 
 ## Mise en production
 
