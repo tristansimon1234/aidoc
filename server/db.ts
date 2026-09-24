@@ -212,6 +212,16 @@ export async function deleteSop(id: string): Promise<void> {
   check(await supabase.from('sops').delete().eq('id', id), 'deleteSop')
 }
 
+/** SOPs restées « processing » (service vidéo redémarré en plein traitement). */
+export async function listProcessingSops(): Promise<Sop[]> {
+  const res = await supabase
+    .from('sops')
+    .select(SOP_COLUMNS)
+    .eq('status', 'processing')
+    .returns<SopRow[]>()
+  return check(res, 'listProcessingSops').map(toSop)
+}
+
 // ── Stockage ─────────────────────────────────────────────────
 
 export async function createUploadUrl(path: string): Promise<{ signedUrl: string; token: string }> {

@@ -3,13 +3,6 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist/web",
-  "fluid": true,
-  "functions": {
-    "api/index.ts": {
-      "maxDuration": 800,
-      "includeFiles": "node_modules/ffmpeg-static/ffmpeg"
-    }
-  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/(.*)", "destination": "/index.html" }

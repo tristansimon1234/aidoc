@@ -8,7 +8,12 @@ import {
 import type { z } from 'zod'
 import { env } from '../env.js'
 
-const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY })
+let client: GoogleGenAI | null = null
+function gemini(): GoogleGenAI {
+  if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY manquante')
+  client ??= new GoogleGenAI({ apiKey: env.GEMINI_API_KEY })
+  return client
+}
 
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   for (let i = 1; ; i++) {
@@ -45,18 +50,18 @@ export async function askAboutVideo<T>(
     durationSeconds > 40 * 60
       ? MediaResolution.MEDIA_RESOLUTION_LOW
       : MediaResolution.MEDIA_RESOLUTION_MEDIUM
-  let file = await ai.files.upload({ file: videoFile, config: { mimeType: 'video/mp4' } })
+  let file = await gemini().files.upload({ file: videoFile, config: { mimeType: 'video/mp4' } })
   try {
     while (file.state === FileState.PROCESSING) {
       await new Promise((r) => setTimeout(r, 3000))
-      file = await ai.files.get({ name: file.name ?? '' })
+      file = await gemini().files.get({ name: file.name ?? '' })
     }
     if (file.state === FileState.FAILED || !file.uri) {
       throw new Error("Gemini n'a pas pu lire la vidéo")
     }
     const uri = file.uri
     return await withRetry(async () => {
-      const res = await ai.models.generateContent({
+      const res = await gemini().models.generateContent({
         model: env.GEMINI_MODEL,
         contents: createUserContent([createPartFromUri(uri, 'video/mp4'), prompt]),
         config: { responseMimeType: 'application/json', maxOutputTokens: 32000, mediaResolution },
@@ -64,13 +69,16 @@ export async function askAboutVideo<T>(
       return parseJson(res.text ?? '', schema)
     })
   } finally {
-    if (file.name) await ai.files.delete({ name: file.name }).catch(() => {})
+    if (file.name)
+      await gemini()
+        .files.delete({ name: file.name })
+        .catch(() => {})
   }
 }
 
 export async function askText(prompt: string): Promise<string> {
   return withRetry(async () => {
-    const res = await ai.models.generateContent({
+    const res = await gemini().models.generateContent({
       model: env.GEMINI_MODEL,
       contents: prompt,
       config: { maxOutputTokens: 32000 },
@@ -83,7 +91,7 @@ export async function askText(prompt: string): Promise<string> {
 
 export async function askJson<T>(prompt: string, schema: z.ZodType<T>): Promise<T> {
   return withRetry(async () => {
-    const res = await ai.models.generateContent({
+    const res = await gemini().models.generateContent({
       model: env.GEMINI_MODEL,
       contents: prompt,
       config: { responseMimeType: 'application/json', maxOutputTokens: 16000 },
@@ -95,7 +103,7 @@ export async function askJson<T>(prompt: string, schema: z.ZodType<T>): Promise<
 /** Synthèse vocale Gemini → fichier WAV (PCM 16 bits, 24 kHz, mono). */
 export async function speakWithGemini(text: string): Promise<Buffer> {
   return withRetry(async () => {
-    const res = await ai.models.generateContent({
+    const res = await gemini().models.generateContent({
       model: env.GEMINI_TTS_MODEL,
       contents: [{ parts: [{ text }] }],
       config: {

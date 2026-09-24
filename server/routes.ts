@@ -6,8 +6,8 @@ import * as billing from './billing.js'
 import { MAX_VIDEO_MINUTES, MINUTES_PER_CREDIT, OFFERS, creditsFor } from './credits.js'
 import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
 import { LANGUAGES } from './pipeline/prompts.js'
-import { waitUntil } from '@vercel/functions'
-import { failIfStale, processSop } from './pipeline/index.js'
+import { dispatchSop } from './dispatch.js'
+import { fail, failIfStale } from './pipeline/index.js'
 
 export const api = Router()
 
@@ -152,9 +152,20 @@ api.post(
       res.status(402).json({ error: `Not enough credits: this video needs ${cost}.` })
       return
     }
-    await db.updateSop(sop.id, { status: 'processing', creditsUsed: cost, progress: 'En attente' })
-    // La génération continue après la réponse, jusqu'à la durée max de la fonction (vercel.json).
-    waitUntil(processSop(sop.id).catch((err) => console.error(`[pipeline] ${sop.id}`, err)))
+    await db.updateSop(sop.id, { status: 'processing', creditsUsed: cost, progress: 'Queued' })
+    try {
+      await dispatchSop(sop.id)
+    } catch (err) {
+      console.error('[dispatch]', err)
+      await fail(
+        { ...sop, creditsUsed: cost },
+        'The video service is unavailable. Your credits were refunded, please try again.',
+      )
+      res
+        .status(502)
+        .json({ error: 'The video service is unavailable. Please try again in a moment.' })
+      return
+    }
     res.json({ ok: true })
   }),
 )

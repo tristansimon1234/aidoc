@@ -1,10 +1,7 @@
-// Petites fonctions ffmpeg. Le binaire vient du paquet `ffmpeg-static` (embarqué dans la
-// fonction Vercel, cf. vercel.json) ; FFMPEG_PATH permet d'en forcer un autre.
+// Petites fonctions ffmpeg (binaire système, installé dans le Dockerfile du service vidéo).
 import { spawn } from 'node:child_process'
-import { createRequire } from 'node:module'
 
-const require = createRequire(import.meta.url)
-const FFMPEG = process.env.FFMPEG_PATH || (require('ffmpeg-static') as string | null) || 'ffmpeg'
+const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 
 /** Lance ffmpeg ; renvoie la sortie d'erreur (c'est là que ffmpeg écrit ses infos). */
 function run(args: string[], allowFailure = false): Promise<string> {

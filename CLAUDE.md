@@ -12,7 +12,7 @@ Elle reste consultable dans l'historique git (commit `f3fc06a`).
 ## Stack
 
 Node 20+ · TypeScript strict · Express 5 · React 19 + Vite · Supabase (auth, Postgres, stockage) · Gemini (`@google/genai`) · ElevenLabs (optionnel) · Stripe · ffmpeg · Vitest.
-Déployé sur Vercel (Pro) : interface statique + une fonction `api/index.ts` (Express) qui fait aussi le traitement vidéo en tâche de fond (`waitUntil`, 800 s max, ffmpeg via `ffmpeg-static`).
+Deux déploiements : **Vercel** pour l'interface et l'API (`api/index.ts`, Express), **Railway** pour le traitement vidéo (`worker/index.ts`, Dockerfile avec ffmpeg). L'API confie chaque SOP au service vidéo via `POST /process` (secret partagé) ; le service écrit le résultat dans Supabase. Aucun traitement lourd sur Vercel.
 
 ## Règles
 

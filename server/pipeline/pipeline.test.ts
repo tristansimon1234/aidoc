@@ -1,7 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createReadStream, mkdtempSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -10,7 +9,7 @@ import { cutVideo, durationOf, extractFrame, muxNarration, normalizeVideo } from
 import { insertScreenshots } from './prompts.js'
 import { cleanSteps, narrationSlots, planEdit } from './steps.js'
 
-const ffmpeg = createRequire(import.meta.url)('ffmpeg-static') as string
+const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'
 const step = (timestamp: number, action = 'a') => ({ timestamp, action, screen: '', spoken: null })
 
 describe('creditsFor', () => {
@@ -93,7 +92,7 @@ describe('ffmpeg', () => {
     ])
     execFileSync(ffmpeg, ['-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=3', voice])
 
-    // Comme sur Vercel : ffmpeg lit la source par URL, sans la télécharger.
+    // Comme en production : ffmpeg lit la source par URL (stockage Supabase), sans la télécharger.
     const server = createServer((_req, res) => createReadStream(src).pipe(res)).listen(0)
     const port = (server.address() as { port: number }).port
     const video = join(dir, 'video.mp4')

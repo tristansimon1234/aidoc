@@ -1,5 +1,5 @@
 // Vidéo → SOP (markdown + captures) → vidéo narrée.
-// Lancé en tâche de fond après la réponse HTTP (waitUntil sur Vercel), dans la limite de durée de la fonction.
+// Tourne sur le service vidéo (Railway), sans limite de durée ; en local, dans le même process.
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,10 +20,10 @@ import {
 import { cleanSteps, narrationSlots, planEdit } from './steps.js'
 
 /**
- * Au-delà de ce délai sans avancer, un traitement est considéré comme mort
- * (fonction Vercel coupée à 800 s) : on le passe en échec et on rembourse.
+ * Filet de sécurité si le service vidéo tombe : un traitement qui n'avance plus depuis 30 min
+ * est passé en échec et remboursé (vérifié à chaque lecture côté API).
  */
-const STALE_AFTER_MS = 15 * 60_000
+const STALE_AFTER_MS = 30 * 60_000
 
 export async function failIfStale(sop: db.Sop): Promise<db.Sop> {
   if (sop.status !== 'processing') return sop
@@ -34,7 +34,7 @@ export async function failIfStale(sop: db.Sop): Promise<db.Sop> {
   return { ...sop, status: 'failed', progress: null, error }
 }
 
-async function fail(sop: db.Sop, message: string): Promise<void> {
+export async function fail(sop: db.Sop, message: string): Promise<void> {
   await db.updateSop(sop.id, { status: 'failed', error: message, progress: null })
   if (sop.creditsUsed > 0) {
     await db.applyCredits(sop.userId, sop.creditsUsed, 'refund', `refund:${sop.id}`)
