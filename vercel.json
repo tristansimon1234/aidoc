@@ -15,7 +15,7 @@
   ],
   "functions": {
     "api/index.ts": {
-      "excludeFiles": "{node_modules/@remotion/**,node_modules/remotion/**,node_modules/esbuild/**,node_modules/@esbuild/**,node_modules/@anthropic-ai/**,node_modules/lucide-react/**,node_modules/recharts/**,node_modules/@fontsource-variable/**,remotion/**,dist/remotion-bundle/**}"
+      "excludeFiles": "{node_modules/@remotion/**,node_modules/remotion/**,node_modules/@esbuild/**,node_modules/esbuild/**,remotion/**}"
     }
   }
 }
