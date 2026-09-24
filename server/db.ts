@@ -8,8 +8,10 @@ export type { Account, Sop, SopPatch, SopStatus, Voice } from './db.types.js'
 
 export const isLocalMode = !env.SUPABASE_URL
 
-if (isLocalMode && (process.env.VERCEL || process.env.RAILWAY_ENVIRONMENT)) {
-  throw new Error('SUPABASE_URL manquant : le mode local est réservé aux tests sur son poste')
+if (isLocalMode && process.env.VERCEL) {
+  throw new Error(
+    'SUPABASE_URL manquant : sans Supabase, l’API doit tourner sur Railway ou en local',
+  )
 }
 if (isLocalMode)
   console.log('[db] Mode local : données dans .local-data/, pas de connexion requise')
@@ -42,5 +44,6 @@ export const {
   fileExists,
   uploadFile,
   publicUrl,
+  sourceForFfmpeg,
   deleteFolder,
 } = impl

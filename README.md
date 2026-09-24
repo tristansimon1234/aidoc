@@ -83,9 +83,18 @@ npm test
 
 Sans `SUPABASE_URL` ni `VITE_SUPABASE_URL`, l'app démarre en **mode local** : pas d'écran de connexion, 100 crédits, base et fichiers dans `.local-data/`, vidéos traitées dans le même process. Pour repartir de zéro : supprimer `.local-data/`.
 
-## Tester un déploiement sans se connecter (mode test)
+## Tester en ligne sans Supabase (Vercel + Railway)
 
-Sur un déploiement avec Supabase + Railway, mettre `DISABLE_LOGIN=true` et `VITE_DISABLE_LOGIN=true` (Vercel) : plus d'écran de connexion, tout le monde utilise le compte partagé `test@doclee.dev` (1000 crédits, créé automatiquement). **Uniquement sur un déploiement protégé** (preview Vercel avec *Deployment Protection*) : sinon n'importe qui consomme tes crédits Gemini. Retirer les deux variables pour revenir à la connexion normale.
+Le service Railway peut faire tout le travail sans Supabase : API, traitement vidéo, stockage sur son disque, pas de connexion (100 crédits).
+
+- **Railway** : déployer le repo (Dockerfile). Variables : `GEMINI_API_KEY` (+ `ELEVENLABS_API_KEY` en option), **sans** `SUPABASE_URL`. Générer un domaine public. Sans volume, les données sont effacées à chaque déploiement ; pour les garder, monter un volume sur `/app/.local-data`.
+- **Vercel** : `VITE_API_URL` = l'URL Railway, et **retirer** `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`. Redéployer.
+
+⚠️ Sans connexion, quiconque connaît l'URL peut lancer des générations avec ta clé Gemini : à réserver aux tests. Pour revenir à la version normale, remettre les variables Supabase des deux côtés et retirer `VITE_API_URL`.
+
+## Tester un déploiement complet sans se connecter (mode test)
+
+Sur un déploiement avec Supabase + Railway, mettre `DISABLE_LOGIN=true` et `VITE_DISABLE_LOGIN=true` (Vercel) : plus d'écran de connexion, tout le monde utilise le compte partagé `test@doclee.dev` (1000 crédits, créé automatiquement). **Uniquement sur un déploiement protégé.**
 
 ## Mise en production
 

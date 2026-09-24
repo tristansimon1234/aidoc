@@ -53,8 +53,8 @@ export async function processSop(id: string): Promise<void> {
     // 1. Vidéo propre (MP4 720p) + durée réelle
     await step('Preparing the video')
     const video = join(dir, 'video.mp4')
-    // ffmpeg lit la vidéo source directement depuis le stockage : rien de gros sur le disque (/tmp est limité).
-    await normalizeVideo(db.publicUrl(sop.sourcePath), video)
+    // ffmpeg lit la vidéo source directement (URL du stockage, ou fichier en mode local).
+    await normalizeVideo(db.sourceForFfmpeg(sop.sourcePath), video)
     const duration = await durationOf(video)
     await db.updateSop(id, { durationSeconds: duration })
 

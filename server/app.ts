@@ -12,6 +12,23 @@ import { LOCAL_FILES_DIR, localFilePath } from './db.local.js'
 
 export const app = express()
 
+// L'interface (Vercel) peut appeler ce serveur directement depuis une autre adresse (VITE_API_URL).
+// L'authentification passe par l'en-tête Authorization, pas par des cookies.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*')
+  res.setHeader('Vary', 'Origin')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, x-upsert')
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204)
+    return
+  }
+  next()
+})
+app.get('/health', (_req, res) => {
+  res.json({ ok: true })
+})
+
 // Stripe a besoin du corps brut pour vérifier la signature : route déclarée avant express.json().
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   try {

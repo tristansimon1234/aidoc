@@ -36,8 +36,11 @@ export interface Sop {
   createdAt: string
 }
 
+/** Adresse de l'API : vide = même site ; sinon le serveur Railway (mode test sans Supabase). */
+const API_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/$/, '')
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(`${API_URL}/api${path}`, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -70,7 +73,9 @@ export const api = {
       fileName: input.file.name,
       durationSeconds: input.durationSeconds,
     })
-    await uploadWithProgress(uploadUrl, input.file, onProgress)
+    // En mode local, l'URL d'envoi est relative au serveur de l'API.
+    const url = uploadUrl.startsWith('/') ? `${API_URL}${uploadUrl}` : uploadUrl
+    await uploadWithProgress(url, input.file, onProgress)
     await call('POST', `/sops/${id}/start`, { durationSeconds: input.durationSeconds })
     return id
   },

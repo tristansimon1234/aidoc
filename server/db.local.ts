@@ -1,5 +1,6 @@
 // Mode local (sans Supabase) : pour tester sur son poste sans compte ni connexion.
-// Base = un fichier JSON, fichiers = un dossier, un seul utilisateur « local ». Jamais en production.
+// Base = un fichier JSON, fichiers = un dossier, un seul utilisateur « local ».
+// Tourne sur son poste ou sur Railway (sans volume, les données sont perdues à chaque déploiement).
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -169,8 +170,17 @@ export async function uploadFile(path: string, body: Buffer): Promise<void> {
   await writeFile(file, body)
 }
 
+/** Ce que ffmpeg doit lire pour ce fichier : directement le disque. */
+export function sourceForFfmpeg(path: string): string {
+  return localFilePath(path)
+}
+
 export function publicUrl(path: string): string {
-  return `http://localhost:${env.PORT}/api/local-files/${path}`
+  // Sur Railway, l'adresse publique du service ; en local, localhost.
+  const base = process.env.RAILWAY_PUBLIC_DOMAIN
+    ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+    : `http://localhost:${env.PORT}`
+  return `${base}/api/local-files/${path}`
 }
 
 export async function deleteFolder(prefix: string): Promise<void> {

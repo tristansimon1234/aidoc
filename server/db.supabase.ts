@@ -227,6 +227,11 @@ export async function uploadFile(path: string, body: Buffer, contentType: string
   check(res, `uploadFile ${path}`)
 }
 
+/** Ce que ffmpeg doit lire pour ce fichier : son URL (lue en streaming, rien sur le disque). */
+export function sourceForFfmpeg(path: string): string {
+  return publicUrl(path)
+}
+
 export function publicUrl(path: string): string {
   return sb().storage.from(BUCKET).getPublicUrl(path).data.publicUrl
 }
