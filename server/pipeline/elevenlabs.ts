@@ -5,7 +5,7 @@ export function isElevenLabsEnabled(): boolean {
   return Boolean(env.ELEVENLABS_API_KEY)
 }
 
-/** Voix premium ElevenLabs → MP3. */
+/** Voix premium ElevenLabs → MP3 (modèle ELEVENLABS_MODEL, Flash par défaut : 2 fois moins cher). */
 export async function speakWithElevenLabs(text: string, voiceId: string): Promise<Buffer> {
   if (!env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY manquante')
   const res = await fetch(
@@ -13,7 +13,7 @@ export async function speakWithElevenLabs(text: string, voiceId: string): Promis
     {
       method: 'POST',
       headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, model_id: 'eleven_multilingual_v2' }),
+      body: JSON.stringify({ text, model_id: env.ELEVENLABS_MODEL }),
     },
   )
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${(await res.text()).slice(0, 300)}`)
