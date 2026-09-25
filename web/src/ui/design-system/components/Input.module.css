@@ -15,7 +15,7 @@
 .textarea {
   width: 100%;
   padding: 8px 12px;
-  background-color: var(--color-card);
+  background-color: transparent;
   color: var(--color-fg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
@@ -25,12 +25,12 @@
   transition:
     border-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out);
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.04);
 }
 
 .input:hover,
 .textarea:hover {
   border-color: var(--color-border-strong);
+  background-color: oklch(from var(--color-fg) l c h / 0.03);
 }
 
 .input:focus,

@@ -113,9 +113,6 @@ export function VoicePicker({
               <optgroup label="Gemini · included">{standard.map(option)}</optgroup>
             )}
           </select>
-          {premiumError && (
-            <span className={styles.notice}>ElevenLabs voices unavailable: {premiumError}</span>
-          )}
         </label>
         {voice !== 'none' && (
           <label className={styles.select}>
@@ -130,6 +127,9 @@ export function VoicePicker({
           </label>
         )}
       </div>
+      {premiumError && (
+        <p className={styles.notice}>ElevenLabs voices unavailable: {premiumError}</p>
+      )}
       {voice !== 'none' && (
         <div>
           <Button type="button" variant="secondary" size="sm" onClick={() => void listen()}>
