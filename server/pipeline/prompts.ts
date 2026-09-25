@@ -80,7 +80,35 @@ export interface VideoSteps {
 }
 export type Transcript = VideoSteps['transcript']
 
-export function videoAnalysisPrompt(durationSeconds: number): string {
+/** Ce que l'utilisateur demande : ses consignes à la création, sa correction lors d'une régénération. */
+export interface Directions {
+  instructions?: string | null
+  feedback?: string | null
+}
+
+/**
+ * Bloc ajouté aux prompts : les consignes de l'utilisateur, puis sa correction de la version précédente
+ * (qui l'emporte). `previous` : la version précédente, à corriger plutôt qu'à réécrire de zéro.
+ */
+export function directionsBlock(d: Directions | undefined, previous?: string | null): string {
+  const parts: string[] = []
+  if (d?.instructions?.trim()) {
+    parts.push(`INSTRUCTIONS FROM THE USER (follow them):\n${d.instructions.trim()}`)
+  }
+  if (d?.feedback?.trim()) {
+    parts.push(
+      `CORRECTIONS ASKED BY THE USER ON THE PREVIOUS VERSION (they come first: apply every one of them; they override the other rules when they conflict, except those on sensitive data):\n${d.feedback.trim()}`,
+    )
+    if (previous?.trim()) {
+      parts.push(
+        `PREVIOUS VERSION (keep what the user did not ask to change, fix what they asked):\n${previous.trim().slice(0, 30000)}`,
+      )
+    }
+  }
+  return parts.length > 0 ? `\n${parts.join('\n\n')}\n` : ''
+}
+
+export function videoAnalysisPrompt(durationSeconds: number, directions?: Directions): string {
   const minutes = Math.max(1, Math.round(durationSeconds / 60))
   return `You are watching AND listening to a screen recording (about ${minutes} min) of someone doing a task in a software tool while explaining it out loud. It will become a Standard Operating Procedure (SOP) that a new colleague can follow alone, without the video.
 
@@ -105,7 +133,7 @@ Do three things.
 - Never copy sensitive values seen on screen or said aloud (passwords, tokens, bank details, personal emails or phone numbers): describe them instead ("the client's email").
 
 "title": short name of the task, e.g. "Create a supplier invoice in Pennylane".
-
+${directionsBlock(directions)}
 Return ONLY JSON:
 {"title": "...", "transcript": [{"start": "0:00", "text": "So today I'll show you how we book a supplier invoice..."}], "purpose": "...", "keyPoints": ["..."], "steps": [{"timestamp": "0:04", "action": "Open the 'Invoices' menu", "screen": "Sidebar with 'Invoices' highlighted", "spoken": "First go to Invoices, not Purchases, because...", "why": "Invoices, not Purchases: only this menu books them in the right journal"}]}`
 }
@@ -156,6 +184,9 @@ export function sopPrompt(input: {
   transcript: Transcript
   purpose?: string
   keyPoints?: string[]
+  directions?: Directions
+  /** SOP précédente (régénération) : corrigée selon le retour de l'utilisateur. */
+  previous?: string | null
 }): string {
   const language = languageName(input.language)
   const steps = input.steps
@@ -187,7 +218,7 @@ DON'T TAKE THE SCREEN LITERALLY
 - Group clicks that serve one goal into one step; skip obvious micro-actions (closing a tooltip, scrolling).
 - Mention only the on-screen elements the reader needs to find; don't describe the layout, colors or everything visible.
 - Use the person's own reasons, rules and vocabulary (below); when they explain a choice, say which option to take in which case.
-${explained ? `\nWHAT THE PERSON EXPLAINS\n${explained}\n` : ''}
+${explained ? `\nWHAT THE PERSON EXPLAINS\n${explained}\n` : ''}${directionsBlock(input.directions, input.previous?.replace(/!\[[^\]]*\]\([^)]*\)\n?/g, ''))}
 The reader has never done this task and will follow the SOP alone, screen by screen.
 
 STRUCTURE (Markdown). Every heading and sentence is written in ${language}; the <…> below describe what to write, translate the section names.
@@ -432,6 +463,7 @@ export function narrationPrompt(input: {
   tone: Tone
   sop: string
   slots: { start: number; seconds: number; action: string; spoken: string }[]
+  directions?: Directions
 }): string {
   const slots = input.slots
     .map((s, i) => {
@@ -454,6 +486,7 @@ The video is split into ${input.slots.length} time slots. Write exactly ONE text
 - Tone: ${TONES[input.tone].direction} Speak to the viewer ("click…", "here you choose… because…").
 - Say on-screen labels as they appear. No URLs, IDs, passwords or personal data, no markdown, no emojis, no stage directions.
 
+${input.directions?.instructions || input.directions?.feedback ? `${directionsBlock(input.directions)}(The word maximum of each slot still applies.)\n` : ''}
 SLOTS
 ${slots}
 
@@ -535,12 +568,16 @@ export function storyboardPrompt(input: {
   title: string
   brief: string | null
   targetSeconds: number
+  /** Régénération : correction demandée et storyboard précédent (JSON). */
+  feedback?: string | null
+  previous?: string | null
 }): string {
   const language = languageName(input.language)
   const scenes = input.targetSeconds <= 30 ? '4 or 5' : '6 to 8'
   const words = Math.round(input.targetSeconds * 2.3)
   return `You are a creative director at a top SaaS motion-design studio. Write the storyboard of a ${input.targetSeconds}-second animated marketing video (motion design, like the launch videos of Linear, Stripe or Notion) for the product "${input.title}". You get ${input.imageCount} screenshot(s) of the product (Image 1 to Image ${input.imageCount}) and the user's brief. The screenshots are REFERENCE only: they are never shown in the video. Each scene is animated from scratch, with clean, simplified mockups of the product's interface rebuilt from them (same layout, colors, labels and key figures), bigger and focused on what matters. A voice-over in ${language} runs over the whole video, with captions.
 ${input.brief ? `\nBRIEF FROM THE USER (the product, its audience, the message, the call to action: follow it):\n${input.brief}\n` : ''}
+${directionsBlock({ feedback: input.feedback }, input.previous)}
 Understand the product from the brief and the screenshots: what it does, for whom, the real benefits. Never invent features or figures that are neither in the brief nor visible on the screenshots.
 
 Write:

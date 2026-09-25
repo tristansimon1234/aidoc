@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as db from '../db.js'
-import { creditsFor } from '../credits.js'
+import { creditRef, creditsFor } from '../credits.js'
 import {
   cutVideo,
   durationOf,
@@ -18,6 +18,7 @@ import { speak } from '../voices.js'
 import {
   addUpdatedDate,
   toTone,
+  type Directions,
   FramePickSchema,
   framePickPrompt,
   NarrationFixSchema,
@@ -70,9 +71,18 @@ export async function failIfStale(sop: db.Sop): Promise<db.Sop> {
 }
 
 export async function fail(sop: db.Sop, message: string): Promise<void> {
-  await db.updateSop(sop.id, { status: 'failed', error: message, progress: null })
+  // Régénération ratée : la version précédente reste affichée, avec le message.
+  if (sop.revision > 0) {
+    await db.updateSop(sop.id, {
+      status: 'ready',
+      error: `The new version could not be generated: ${message} The previous version is kept.`,
+      progress: null,
+    })
+  } else {
+    await db.updateSop(sop.id, { status: 'failed', error: message, progress: null })
+  }
   if (sop.creditsUsed > 0) {
-    await db.applyCredits(sop.userId, sop.creditsUsed, 'refund', `refund:${sop.id}`)
+    await db.applyCredits(sop.userId, sop.creditsUsed, 'refund', creditRef('refund', sop))
   }
 }
 
@@ -85,16 +95,26 @@ export async function processSop(id: string): Promise<void> {
   const step: Step = (progress) => db.updateSop(id, { progress })
 
   try {
-    const finalVideo =
+    const result =
       sop.kind === 'marketing'
         ? await makeMarketingVideo({ sop, dir, folder, step })
         : await makeSopFromVideo({ sop, dir, folder, step })
 
     await step('Finishing')
-    const videoPath = `${folder}/video.mp4`
-    await db.uploadFile(videoPath, await readFile(finalVideo), 'video/mp4')
-    await db.updateSop(id, { videoPath, status: 'ready', progress: null })
-    await db.deleteFolder(`${folder}/source`).catch(() => {})
+    // Un nom par génération : le navigateur ne ressert pas l'ancienne vidéo depuis son cache.
+    const videoPath = `${folder}/video${revisionSuffix(sop)}.mp4`
+    await db.uploadFile(videoPath, await readFile(result.video), 'video/mp4')
+    // Les fichiers d'origine (dossier source/) sont gardés : ils servent à régénérer.
+    await db.updateSop(id, {
+      videoPath,
+      markdown: result.markdown,
+      status: 'ready',
+      progress: null,
+      error: null,
+    })
+    if (sop.videoPath && sop.videoPath !== videoPath) {
+      await db.deleteFile(sop.videoPath).catch(() => {})
+    }
   } catch (err) {
     console.error(`[pipeline] ${sop.kind} ${id} en échec`, err)
     const message =
@@ -111,6 +131,16 @@ export async function processSop(id: string): Promise<void> {
 
 type Step = (progress: string) => Promise<void>
 
+/** Ce que produit une génération : la vidéo finale et, pour une SOP, le texte. */
+interface Result {
+  video: string
+  markdown?: string
+}
+
+function revisionSuffix(sop: db.Sop): string {
+  return sop.revision === 0 ? '' : `-r${sop.revision}`
+}
+
 /** Une création en cours de traitement : la SOP, un dossier de travail, son dossier de stockage. */
 export interface Task {
   sop: db.Sop
@@ -120,7 +150,7 @@ export interface Task {
 }
 
 /** SOP : prépare la vidéo (MP4 720p, durée réelle, complément de crédits) puis la traite. */
-async function makeSopFromVideo({ sop, dir, folder, step }: Task): Promise<string> {
+async function makeSopFromVideo({ sop, dir, folder, step }: Task): Promise<Result> {
   const id = sop.id
   {
     // 1. Vidéo propre (MP4 720p) + durée réelle
@@ -134,7 +164,7 @@ async function makeSopFromVideo({ sop, dir, folder, step }: Task): Promise<strin
     // La durée annoncée par le navigateur a fixé le prix ; on complète si la vraie durée est plus longue.
     const extra = creditsFor(duration, sop.kind) - sop.creditsUsed
     if (extra > 0) {
-      if (!(await db.applyCredits(sop.userId, -extra, 'sop', `sop-extra:${id}`))) {
+      if (!(await db.applyCredits(sop.userId, -extra, 'sop', creditRef('sop-extra', sop)))) {
         throw new UserFacingError(
           `Not enough credits: this video needs ${creditsFor(duration, sop.kind)}.`,
         )
@@ -163,13 +193,13 @@ function stripFence(text: string): string {
 }
 
 /** SOP : procédure écrite avec captures, puis vidéo commentée de 4 min max. Renvoie la vidéo finale. */
-async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promise<string> {
+async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promise<Result> {
   // 2 à 4 : la vidéo est envoyée une fois à Gemini, qui la regarde ET l'écoute pour chaque étape.
   const { steps, markdown } = await withVideo(video, duration, async (gemini) => {
     // 2. Transcription de ce que dit la personne + liste des étapes
     await step('Analyzing the video')
     const analysis = toVideoSteps(
-      await gemini.json(videoAnalysisPrompt(duration), VideoStepsSchema),
+      await gemini.json(videoAnalysisPrompt(duration, directionsOf(sop)), VideoStepsSchema),
       duration,
     )
     // Diagnostic : la voix de la personne a-t-elle été entendue ? (c'est la meilleure source de la SOP)
@@ -222,7 +252,7 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
       const jpg = join(dir, `step-${i + 1}.jpg`)
       try {
         await extractFrame(video, s.timestamp, jpg)
-        const path = `${folder}/step-${i + 1}.jpg`
+        const path = `${folder}/step-${i + 1}${revisionSuffix(sop)}.jpg`
         await db.uploadFile(path, await readFile(jpg), 'image/jpeg')
         urls.push(db.publicUrl(path))
       } catch (err) {
@@ -241,10 +271,14 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
         transcript: analysis.transcript,
         purpose: analysis.purpose,
         keyPoints: analysis.keyPoints,
+        directions: directionsOf(sop),
+        previous: sop.feedback ? sop.markdown : null,
       }),
     )
     const markdown = addUpdatedDate(insertScreenshots(stripFence(raw), urls), sop.language)
-    await db.updateSop(sop.id, { markdown })
+    // Première génération : le texte s'affiche déjà pendant le montage. Régénération : la version
+    // précédente reste en place jusqu'à la fin (et si la régénération échoue).
+    if (sop.revision === 0) await db.updateSop(sop.id, { markdown })
     return { steps, markdown }
   })
 
@@ -285,7 +319,12 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
       )
     }
   }
-  return finalVideo
+  return { video: finalVideo, markdown }
+}
+
+/** Consignes données à la création et correction demandée lors d'une régénération. */
+function directionsOf(sop: db.Sop): Directions {
+  return { instructions: sop.brief, feedback: sop.feedback }
 }
 
 async function narrate(input: {
@@ -303,6 +342,7 @@ async function narrate(input: {
     tone: toTone(input.sop.tone),
     sop: input.markdown,
     slots,
+    directions: directionsOf(input.sop),
   })
   // Une réponse avec moins de textes que de créneaux laisserait la fin de la vidéo sans voix : on redemande.
   let { lines } = await askJson(prompt, NarrationSchema)
@@ -401,10 +441,10 @@ async function narrate(input: {
  * Vidéo marketing de 30 ou 60 s, animée à partir des captures envoyées (voir marketing.ts). Import à
  * la demande : Remotion n'est chargé que sur le service vidéo, jamais par l'API.
  */
-async function makeMarketingVideo(task: Task): Promise<string> {
+async function makeMarketingVideo(task: Task): Promise<Result> {
   const { makeMotionVideo, MarketingInputError } = await import('./marketing.js')
   try {
-    return await makeMotionVideo(task)
+    return { video: await makeMotionVideo(task) }
   } catch (err) {
     throw err instanceof MarketingInputError ? new UserFacingError(err.message) : err
   }

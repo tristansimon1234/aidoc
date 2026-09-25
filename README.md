@@ -7,6 +7,11 @@ Filmez votre écran → recevez au choix :
 
 L'accueil a deux onglets (SOPs / Marketing videos) ; la création se fait en 4 étapes : type → vidéo (SOP) ou captures (marketing, 8 max) → options → lancement.
 
+Consignes et corrections :
+
+- à la création, un champ facultatif « Instructions for the AI » (SOP) ou le brief (marketing) guide l'IA ;
+- sous le résultat, **« Correct and regenerate »** : l'utilisateur écrit ce qu'il faut changer, et tout est régénéré à partir des fichiers d'origine, en corrigeant la version précédente (texte de la SOP ou storyboard). Payant au même prix qu'une création, remboursé si ça échoue ; la version précédente reste affichée jusqu'à la nouvelle (`server/regenerate.ts`).
+
 L'édition, le partage et la recherche se font dans vos outils habituels : bouton **« Copier pour Notion / Docs »** (colle texte + images), export **PDF**, **Markdown** et **vidéo MP4**.
 
 ## Comment ça marche
@@ -100,7 +105,8 @@ supabase/migrations/  schéma de la base (3 tables) + choix de la voix et du ton
 - 1 crédit offert à l'inscription.
 - Deux offres Stripe : **pack** (paiement unique → 10 crédits) et **abonnement mensuel** (→ 30 crédits / mois).
 - Les prix se règlent dans Stripe. Le nombre de crédits se règle dans `server/credits.ts`.
-- En cas d'échec, les crédits sont remboursés automatiquement.
+- Régénérer avec une correction coûte le même prix que la création.
+- En cas d'échec, les crédits sont remboursés automatiquement (y compris pour une régénération : la version précédente est gardée).
 
 ## Lancer en local (sans compte, sans connexion)
 
@@ -131,12 +137,12 @@ Sur un déploiement avec Supabase + Railway, mettre `DISABLE_LOGIN=true` et `VIT
 ## Mise en production
 
 1. **Supabase** : créer un projet et exécuter `supabase/migrations/20260924000000_init.sql` dans l'éditeur SQL.
-   - Auth → URL Configuration : mettre l'URL de l'app en *Site URL* (pour le lien de connexion par email).
+   - Auth → URL Configuration : mettre l'URL de l'app en _Site URL_ (pour le lien de connexion par email).
    - Storage → Settings : la taille max par fichier est de 50 Mo sur le plan gratuit. Pour des vidéos d'écran de plusieurs minutes, passer au plan Pro et la monter (le bucket accepte jusqu'à 2 Go).
-2. **Railway (service vidéo)** : *New service → GitHub repo* `aidoc`. `railway.json` + `Dockerfile` sont détectés.
+2. **Railway (service vidéo)** : _New service → GitHub repo_ `aidoc`. `railway.json` + `Dockerfile` sont détectés.
    - Variables : `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GEMINI_API_KEY`, `VIDEO_SERVICE_SECRET` (une longue chaîne aléatoire), `ANTHROPIC_API_KEY` (Claude code les scènes des vidéos marketing ; sans elle, Gemini), et `ELEVENLABS_API_KEY` pour la voix premium.
    - Le build Docker installe le navigateur headless de Remotion et construit le bundle des vidéos marketing (`scripts/bundle-remotion.mjs`).
-   - *Settings → Networking → Generate Domain* : c'est le `VIDEO_SERVICE_URL`.
+   - _Settings → Networking → Generate Domain_ : c'est le `VIDEO_SERVICE_URL`.
 3. **Vercel (interface + API)** : importer le repo, `vercel.json` règle le build.
    - Variables : `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `APP_URL`, `VIDEO_SERVICE_URL`, `VIDEO_SERVICE_SECRET` (le même que sur Railway), les variables Stripe, et `ELEVENLABS_API_KEY` si la voix premium doit être proposée.
 4. **Stripe** : créer 2 prix (un paiement unique, un récurrent mensuel) et mettre leurs IDs dans `STRIPE_PRICE_PACK` / `STRIPE_PRICE_MONTHLY`.
@@ -148,4 +154,5 @@ Sur un déploiement avec Supabase + Railway, mettre `DISABLE_LOGIN=true` et `VIT
 
 - Les fichiers sont dans un bucket public, à des adresses impossibles à deviner (nécessaire pour que les images collées dans Notion s'affichent). Ne convient pas à des vidéos très sensibles.
 - La file d'attente du service vidéo est en mémoire (2 vidéos à la fois). S'il redémarre pendant un traitement, la SOP passe en échec et les crédits sont remboursés. Si une SOP n'avance plus pendant 30 min (service tombé), idem.
+- Les fichiers d'origine (vidéo, captures : dossier `source/`) sont gardés pour pouvoir régénérer, jusqu'à la suppression de la création. Les créations faites avant cette version ne peuvent pas être régénérées.
 - Les vidéos sources sont limitées à 60 minutes (`MAX_VIDEO_MINUTES` dans `server/credits.ts`).

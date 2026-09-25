@@ -43,7 +43,9 @@ export const {
   createUploadUrl,
   fileExists,
   uploadFile,
+  downloadFile,
   publicUrl,
   sourceForFfmpeg,
+  deleteFile,
   deleteFolder,
 } = impl

@@ -58,6 +58,10 @@ export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Pr
   // 1. Storyboard à partir des captures et du brief
   await step('Writing the storyboard')
   const images = await loadScreenshots(folder, dir)
+  // Régénération : le storyboard précédent est corrigé selon le retour de l'utilisateur.
+  const previous = sop.feedback
+    ? ((await db.downloadFile(`${folder}/storyboard.json`))?.toString('utf8') ?? null)
+    : null
   const board = await askJsonWithImages(
     storyboardPrompt({
       language: sop.language,
@@ -66,12 +70,18 @@ export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Pr
       title: sop.title,
       brief: sop.brief,
       targetSeconds: sop.targetSeconds,
+      feedback: sop.feedback,
+      previous,
     }),
     images.map((img, i) => ({ label: `Image ${i + 1}`, jpeg: img.jpeg })),
     StoryboardSchema,
   )
-  await pickHook(board, sop.brief)
+  // Correction demandée sur l'accroche : on garde celle du storyboard corrigé.
+  if (!sop.feedback) await pickHook(board, sop.brief)
   const brand = toBrand(board)
+  await db
+    .uploadFile(`${folder}/storyboard.json`, Buffer.from(JSON.stringify(board)), 'application/json')
+    .catch((err: Error) => console.warn('[marketing] storyboard non enregistré', err.message))
 
   // 2. Voix off : une phrase par scène ; chaque scène dure le temps de sa phrase.
   await step('Recording the voice-over')
@@ -110,7 +120,9 @@ export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Pr
         frames: frames[i]!,
         shots: shots[i]!,
         language: sop.language,
-        brief: sop.brief,
+        brief: sop.feedback
+          ? `${sop.brief ?? ''}\n\nCorrections asked by the user on the previous version (apply those about this scene): ${sop.feedback}`
+          : sop.brief,
         dir,
       }).catch((err: unknown) => {
         console.warn(`[marketing] scène ${i + 1} : scène de secours`, (err as Error).message)

@@ -12,6 +12,18 @@ export const MAX_VIDEO_MINUTES = 60
 /** Une vidéo marketing animée (30 ou 60 s) coûte un prix fixe, quelle que soit la durée de l'enregistrement. */
 export const MARKETING_CREDITS = 2
 
+/**
+ * Référence d'un mouvement de crédits d'une création (débit, complément, remboursement), unique par
+ * génération : chaque régénération est payée, et remboursée si elle échoue.
+ */
+export function creditRef(
+  kind: 'sop' | 'sop-extra' | 'refund',
+  sop: { id: string; revision: number },
+): string {
+  return sop.revision === 0 ? `${kind}:${sop.id}` : `${kind}:${sop.id}:r${sop.revision}`
+}
+
+/** Régénérer (avec une correction) coûte le même prix que la création. */
 export function creditsFor(durationSeconds: number, kind: 'sop' | 'marketing' = 'sop'): number {
   if (kind === 'marketing') return MARKETING_CREDITS
   return Math.max(1, Math.ceil(durationSeconds / (MINUTES_PER_CREDIT * 60)))

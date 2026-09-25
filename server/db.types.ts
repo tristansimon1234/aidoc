@@ -16,8 +16,13 @@ export interface Sop {
   tone: string
   /** « sop » (procédure + vidéo commentée) ou « marketing » (vidéo promo courte). */
   kind: SopKind
-  /** Vidéo marketing : ce qu'il faut mettre en avant, durée visée (30 ou 60 s), musique de fond. */
+  /** Consignes de l'utilisateur (SOP) ou brief (vidéo marketing : ce qu'il faut mettre en avant). */
   brief: string | null
+  /** Dernière correction demandée (régénération). */
+  feedback: string | null
+  /** Nombre de régénérations (0 = première génération). */
+  revision: number
+  /** Vidéo marketing : durée visée (30 ou 60 s), musique de fond. */
   targetSeconds: number
   music: boolean
   status: SopStatus
@@ -45,4 +50,6 @@ export type SopPatch = Partial<{
   durationSeconds: number
   markdown: string
   videoPath: string
+  feedback: string | null
+  revision: number
 }>

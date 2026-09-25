@@ -487,9 +487,15 @@
   animation: fadeSlideIn var(--duration-slow) var(--ease-out) both;
 }
 
-.tips li:nth-child(2) { animation-delay: 60ms; }
-.tips li:nth-child(3) { animation-delay: 120ms; }
-.tips li:nth-child(4) { animation-delay: 180ms; }
+.tips li:nth-child(2) {
+  animation-delay: 60ms;
+}
+.tips li:nth-child(3) {
+  animation-delay: 120ms;
+}
+.tips li:nth-child(4) {
+  animation-delay: 180ms;
+}
 
 .tips li::before {
   content: '';
@@ -573,4 +579,17 @@
   border-radius: 50%;
   background: var(--color-primary);
   animation: pulse 1.4s var(--ease-in-out) infinite;
+}
+
+/* Sous le résultat : proposer de corriger et régénérer. */
+.regenerate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  margin-top: var(--space-lg);
+  padding: var(--space-md) var(--space-lg);
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
 }

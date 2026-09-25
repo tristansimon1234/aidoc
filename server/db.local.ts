@@ -2,7 +2,7 @@
 // Base = un fichier JSON, fichiers = un dossier, un seul utilisateur « local ».
 // Tourne sur son poste ou sur Railway (sans volume, les données sont perdues à chaque déploiement).
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { Account, Sop, SopKind, SopPatch, Voice } from './db.types.js'
 
@@ -22,7 +22,10 @@ interface LocalDb {
 
 function load(): LocalDb {
   if (!existsSync(DB_FILE)) return { accounts: {}, sops: [], refs: [] }
-  return JSON.parse(readFileSync(DB_FILE, 'utf8')) as LocalDb
+  const db = JSON.parse(readFileSync(DB_FILE, 'utf8')) as LocalDb
+  // Créations enregistrées avant l'ajout de la régénération.
+  db.sops = db.sops.map((s) => ({ ...s, feedback: s.feedback ?? null, revision: s.revision ?? 0 }))
+  return db
 }
 
 function save(db: LocalDb): void {
@@ -110,6 +113,8 @@ export async function createSop(input: {
     progress: null,
     error: null,
     creditsUsed: 0,
+    feedback: null,
+    revision: 0,
     durationSeconds: null,
     markdown: null,
     videoPath: null,
@@ -174,6 +179,11 @@ export async function uploadFile(path: string, body: Buffer): Promise<void> {
   await writeFile(file, body)
 }
 
+/** Contenu d'un fichier, ou null s'il n'existe pas. */
+export async function downloadFile(path: string): Promise<Buffer | null> {
+  return existsSync(localFilePath(path)) ? readFile(localFilePath(path)) : null
+}
+
 /** Ce que ffmpeg doit lire pour ce fichier : directement le disque. */
 export function sourceForFfmpeg(path: string): string {
   return localFilePath(path)
@@ -185,6 +195,10 @@ export function sourceForFfmpeg(path: string): string {
  */
 export function publicUrl(path: string): string {
   return `/api/local-files/${path}`
+}
+
+export async function deleteFile(path: string): Promise<void> {
+  await rm(localFilePath(path), { force: true })
 }
 
 export async function deleteFolder(prefix: string): Promise<void> {

@@ -9,8 +9,10 @@ import {
   MAX_VIDEO_MINUTES,
   MINUTES_PER_CREDIT,
   OFFERS,
+  creditRef,
   creditsFor,
 } from './credits.js'
+import { regenerate, regenerationCost } from './regenerate.js'
 import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
 import {
   defaultVoice,
@@ -72,6 +74,9 @@ function toView(sop: db.Sop, base: string) {
     videoUrl: sop.videoPath ? withAbsoluteUrls(db.publicUrl(sop.videoPath), base) : null,
     kind: sop.kind,
     brief: sop.brief,
+    feedback: sop.feedback,
+    revision: sop.revision,
+    regenerationCredits: regenerationCost(sop),
     targetSeconds: sop.targetSeconds,
     music: sop.music,
     createdAt: sop.createdAt,
@@ -154,8 +159,9 @@ const CreateSchema = z.object({
   voice: z.string().max(100),
   tone: z.enum(Object.keys(TONES) as [Tone, ...Tone[]]),
   kind: z.enum(['sop', 'marketing']).default('sop'),
-  // Vidéo marketing uniquement
+  // SOP : consignes pour l'IA (facultatives). Vidéo marketing : le brief.
   brief: z.string().trim().max(2000).optional(),
+  // Vidéo marketing uniquement
   targetSeconds: z.union([z.literal(30), z.literal(60)]).default(60),
   music: z.boolean().default(false),
   // SOP : la vidéo. Vidéo marketing : des captures (converties en JPEG par le navigateur).
@@ -209,7 +215,7 @@ api.post(
       voice: input.voice,
       tone: input.tone,
       kind: input.kind,
-      brief: input.kind === 'marketing' ? input.brief || null : null,
+      brief: input.brief || null,
       targetSeconds: input.targetSeconds,
       music: input.kind === 'marketing' && input.music && isElevenLabsEnabled(),
       sourcePath,
@@ -240,7 +246,7 @@ api.post(
       .object({ durationSeconds: z.number().nonnegative().default(0) })
       .parse(req.body)
     const cost = creditsFor(Math.min(durationSeconds, MAX_VIDEO_MINUTES * 60), sop.kind)
-    if (!(await db.applyCredits(userId, -cost, 'sop', `sop:${sop.id}`))) {
+    if (!(await db.applyCredits(userId, -cost, 'sop', creditRef('sop', sop)))) {
       res.status(402).json({ error: `Not enough credits: this video needs ${cost}.` })
       return
     }
@@ -256,6 +262,25 @@ api.post(
       res
         .status(502)
         .json({ error: 'The video service is unavailable. Please try again in a moment.' })
+      return
+    }
+    res.json({ ok: true })
+  }),
+)
+
+// Régénère avec une correction écrite par l'utilisateur (payant, remboursé en cas d'échec).
+api.post(
+  '/sops/:id/regenerate',
+  authed(async (req, res, userId) => {
+    const sop = await ownedSop(String(req.params.id), userId)
+    if (!sop) {
+      res.status(404).json({ error: 'SOP not found' })
+      return
+    }
+    const { feedback } = z.object({ feedback: z.string().trim().min(3).max(2000) }).parse(req.body)
+    const outcome = await regenerate(sop, feedback)
+    if (!outcome.ok) {
+      res.status(outcome.status).json({ error: outcome.error })
       return
     }
     res.json({ ok: true })

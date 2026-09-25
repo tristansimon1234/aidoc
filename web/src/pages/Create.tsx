@@ -197,6 +197,7 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
                   'Title: the name of the task, as your team would search for it (e.g. “Book a supplier invoice”).',
                   'Language: the procedure and the voice-over are written in it, whatever language you spoke.',
                   'Voice: listen with ▶ before choosing. The tone changes how the text is written and read.',
+                  'Instructions (optional): who will read it, what to leave out, a vocabulary to use. You can also correct the result afterwards.',
                 ]
               : [
                   'Brief: the more concrete, the better the script: who it is for, the main benefit, a figure, the call to action.',
@@ -224,6 +225,18 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
                   ))}
                 </select>
               </label>
+
+              {kind === 'sop' && (
+                <Field
+                  label="Instructions for the AI (optional)"
+                  multiline
+                  rows={3}
+                  placeholder="e.g. For new sales reps. Skip the Admin tab. Explain which status to pick for a VIP client."
+                  value={brief}
+                  onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setBrief(e.target.value)}
+                  maxLength={2000}
+                />
+              )}
 
               {kind === 'marketing' && (
                 <>

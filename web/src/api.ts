@@ -50,6 +50,10 @@ export interface Sop {
   videoUrl: string | null
   kind: Kind
   brief: string | null
+  /** Dernière correction demandée, nombre de régénérations et prix d'une régénération. */
+  feedback: string | null
+  revision: number
+  regenerationCredits: number
   targetSeconds: number
   music: boolean
   createdAt: string
@@ -74,6 +78,9 @@ export const api = {
   listSops: () => call<Sop[]>('GET', '/sops'),
   getSop: (id: string) => call<Sop>('GET', `/sops/${id}`),
   deleteSop: (id: string) => call<{ ok: true }>('DELETE', `/sops/${id}`),
+  /** Relance la génération avec une correction (payant, remboursé si elle échoue). */
+  regenerate: (id: string, feedback: string) =>
+    call<{ ok: true }>('POST', `/sops/${id}/regenerate`, { feedback }),
   /** Voix proposées ; `premiumError` = pourquoi ElevenLabs n'a pas donné ses voix (clé configurée). */
   async voices(): Promise<{ voices: VoiceOption[]; premiumError: string | null }> {
     const res = await call<VoiceOption[] | { voices: VoiceOption[]; premiumError: string | null }>(

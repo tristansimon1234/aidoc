@@ -30,6 +30,8 @@ interface SopRow {
   video_path: string | null
   kind: SopKind | null
   brief: string | null
+  feedback: string | null
+  revision: number | null
   target_seconds: number | null
   music: boolean | null
   created_at: string
@@ -54,6 +56,8 @@ function toSop(r: SopRow): Sop {
     videoPath: r.video_path,
     kind: r.kind ?? 'sop',
     brief: r.brief,
+    feedback: r.feedback,
+    revision: r.revision ?? 0,
     targetSeconds: r.target_seconds ?? 60,
     music: r.music ?? false,
     createdAt: r.created_at,
@@ -152,7 +156,7 @@ export async function applyCredits(
 // ── SOPs ─────────────────────────────────────────────────────
 
 const SOP_COLUMNS =
-  'id, user_id, title, language, voice, tone, status, progress, error, credits_used, source_path, duration_seconds, markdown, video_path, kind, brief, target_seconds, music, created_at, updated_at'
+  'id, user_id, title, language, voice, tone, status, progress, error, credits_used, source_path, duration_seconds, markdown, video_path, kind, brief, feedback, revision, target_seconds, music, created_at, updated_at'
 
 export async function createSop(input: {
   id: string
@@ -213,6 +217,8 @@ export async function updateSop(id: string, patch: SopPatch): Promise<void> {
   if (patch.durationSeconds !== undefined) row.duration_seconds = patch.durationSeconds
   if (patch.markdown !== undefined) row.markdown = patch.markdown
   if (patch.videoPath !== undefined) row.video_path = patch.videoPath
+  if (patch.feedback !== undefined) row.feedback = patch.feedback
+  if (patch.revision !== undefined) row.revision = patch.revision
   check(await sb().from('sops').update(row).eq('id', id), 'updateSop')
 }
 
@@ -247,6 +253,12 @@ export async function uploadFile(path: string, body: Buffer, contentType: string
   check(res, `uploadFile ${path}`)
 }
 
+/** Contenu d'un fichier, ou null s'il n'existe pas. */
+export async function downloadFile(path: string): Promise<Buffer | null> {
+  const { data, error } = await sb().storage.from(BUCKET).download(path)
+  return error || !data ? null : Buffer.from(await data.arrayBuffer())
+}
+
 /** Ce que ffmpeg doit lire pour ce fichier : son URL (lue en streaming, rien sur le disque). */
 export function sourceForFfmpeg(path: string): string {
   return publicUrl(path)
@@ -254,6 +266,10 @@ export function sourceForFfmpeg(path: string): string {
 
 export function publicUrl(path: string): string {
   return sb().storage.from(BUCKET).getPublicUrl(path).data.publicUrl
+}
+
+export async function deleteFile(path: string): Promise<void> {
+  check(await sb().storage.from(BUCKET).remove([path]), 'deleteFile')
 }
 
 export async function deleteFolder(prefix: string): Promise<void> {

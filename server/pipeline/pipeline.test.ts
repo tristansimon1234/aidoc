@@ -499,3 +499,29 @@ describe('withoutTrailingCommas', () => {
     expect(withoutTrailingCommas('{"s": "a\\",]"}')).toBe('{"s": "a\\",]"}')
   })
 })
+
+describe('régénération', () => {
+  it('une référence de crédits par génération', async () => {
+    const { creditRef } = await import('../credits.js')
+    expect(creditRef('sop', { id: 'a', revision: 0 })).toBe('sop:a')
+    expect(creditRef('refund', { id: 'a', revision: 2 })).toBe('refund:a:r2')
+  })
+
+  it('les consignes et la correction arrivent dans les prompts', async () => {
+    const { directionsBlock, videoAnalysisPrompt } = await import('./prompts.js')
+    expect(directionsBlock(undefined)).toBe('')
+    expect(directionsBlock({ instructions: '  ' })).toBe('')
+    const block = directionsBlock(
+      { instructions: 'Pour les commerciaux', feedback: "L'étape 4 est fausse" },
+      '# Ancienne SOP',
+    )
+    expect(block).toContain('Pour les commerciaux')
+    expect(block).toContain("L'étape 4 est fausse")
+    expect(block).toContain('# Ancienne SOP')
+    // Sans correction, la version précédente n'est pas envoyée.
+    expect(directionsBlock({ instructions: 'x' }, '# Ancienne SOP')).not.toContain('Ancienne')
+    expect(videoAnalysisPrompt(60, { instructions: 'Ignore l’onglet Admin' })).toContain(
+      'Ignore l’onglet Admin',
+    )
+  })
+})

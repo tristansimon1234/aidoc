@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { api, downloadFile, type Sop } from '../api'
 import {
   Button,
   Card,
+  Field,
   MarkdownRenderer,
   ProgressLoader,
   Spinner,
@@ -83,6 +84,8 @@ export function SopPage() {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [downloading, setDownloading] = useState(false)
+  // Change à chaque régénération lancée : relance le suivi de la génération.
+  const [run, setRun] = useState(0)
   const doc = useRef<HTMLDivElement>(null)
   const { dialog, confirm } = useConfirmDialog()
 
@@ -98,7 +101,7 @@ export function SopPage() {
         .catch((err: Error) => setError(err.message))
     void load()
     return () => clearTimeout(timer)
-  }, [id])
+  }, [id, run])
 
   if (error) return <p className={styles.error}>{error}</p>
   if (!sop) return <Spinner />
@@ -227,6 +230,9 @@ export function SopPage() {
           ))}
         </ol>
         <p className={styles.notice} style={{ marginTop: 'var(--space-md)' }}>
+          {sop.revision > 0
+            ? 'Generating a new version with your corrections. The previous one is kept if it fails. '
+            : ''}
           You can close this page: generation keeps running.
         </p>
       </>
@@ -253,6 +259,7 @@ export function SopPage() {
   return (
     <>
       {header}
+      {sop.error && <p className={`${styles.error} no-print`}>{sop.error}</p>}
       {sop.videoUrl && (
         <div className="no-print">
           <NarratedPlayer videoUrl={sop.videoUrl} narrated={sop.voice !== 'none'} />
@@ -267,7 +274,81 @@ export function SopPage() {
           </Card>
         </div>
       )}
+      <Regenerate sop={sop} onStarted={() => setRun((n) => n + 1)} />
       {dialog}
     </>
+  )
+}
+
+/** « Pas tout à fait ça ? » : l'utilisateur écrit ce qu'il faut corriger et relance (payant). */
+function Regenerate({ sop, onStarted }: { sop: Sop; onStarted: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [feedback, setFeedback] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const credits = `${sop.regenerationCredits} credit${sop.regenerationCredits > 1 ? 's' : ''}`
+
+  async function send() {
+    setSending(true)
+    setError(null)
+    try {
+      await api.regenerate(sop.id, feedback)
+      setFeedback('')
+      setOpen(false)
+      onStarted()
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className={`${styles.regenerate} no-print`}>
+        <p className={styles.notice}>
+          Not quite right? Tell the AI what to change and get a new version.
+        </p>
+        <Button variant="secondary" onClick={() => setOpen(true)}>
+          Correct and regenerate
+        </Button>
+      </div>
+    )
+  }
+  return (
+    <div className="no-print">
+      <Card>
+        <div className={styles.form}>
+          <Field
+            label="What should be changed?"
+            multiline
+            rows={4}
+            autoFocus
+            placeholder={
+              sop.kind === 'marketing'
+                ? 'e.g. Scene 3 is too busy. Use a calmer tone. End with “Start your free trial”.'
+                : 'e.g. Step 4 is wrong: it is the Settings menu. Merge steps 6 and 7. Add a warning about VAT.'
+            }
+            value={feedback}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setFeedback(e.target.value)}
+            maxLength={2000}
+          />
+          <p className={styles.notice}>
+            The {sop.kind === 'marketing' ? 'video' : 'procedure and its video'} are generated again
+            from your original files, following your corrections. Costs {credits}, refunded if it
+            fails; the current version is kept until the new one is ready.
+          </p>
+          {error && <p className={styles.error}>{error}</p>}
+          <div className={styles.actions}>
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={sending}>
+              Cancel
+            </Button>
+            <Button onClick={() => void send()} disabled={sending || feedback.trim().length < 3}>
+              {sending ? 'Starting…' : `Regenerate · ${credits}`}
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
   )
 }
