@@ -1,4 +1,5 @@
 import {
+  ApiError,
   GoogleGenAI,
   type Content,
   FileState,
@@ -17,11 +18,25 @@ function gemini(): GoogleGenAI {
   return client
 }
 
+/**
+ * Quota du jour épuisé (offre gratuite de Gemini : ex. 100 synthèses vocales par jour). Inutile de
+ * réessayer, il revient dans plusieurs heures : on le signale tout de suite.
+ */
+export class QuotaExceededError extends Error {}
+
+function isDailyQuota(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 429 && /per_?day/i.test(err.message)
+}
+
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   for (let i = 1; ; i++) {
     try {
       return await fn()
     } catch (err) {
+      if (isDailyQuota(err)) {
+        const model = /model: ([\w.-]+)/.exec((err as Error).message)?.[1] ?? 'Gemini'
+        throw new QuotaExceededError(`Quota du jour atteint pour ${model}`)
+      }
       if (i >= attempts) throw err
       console.warn(`[gemini] tentative ${i} échouée, nouvel essai…`, (err as Error).message)
       await new Promise((r) => setTimeout(r, 5000 * i))

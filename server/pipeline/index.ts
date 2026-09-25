@@ -14,7 +14,7 @@ import {
   renderNarrated,
 } from './ffmpeg.js'
 import { generateMusic } from './elevenlabs.js'
-import { askJson, askJsonWithImages, withVideo } from './gemini.js'
+import { askJson, askJsonWithImages, QuotaExceededError, withVideo } from './gemini.js'
 import { speak } from '../voices.js'
 import {
   addUpdatedDate,
@@ -121,7 +121,9 @@ export async function processSop(id: string): Promise<void> {
     const message =
       err instanceof UserFacingError
         ? err.message
-        : 'Generation failed. Your credits were refunded.'
+        : err instanceof QuotaExceededError
+          ? 'The AI service has reached its daily limit. Your credits were refunded, please try again later.'
+          : 'Generation failed. Your credits were refunded.'
     await fail(sop, message)
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -234,23 +236,31 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
   if (edit.clips.length > 1 || edit.duration < duration) {
     await step('Editing the video')
     finalVideo = join(dir, 'edited.mp4')
-    await cutVideo(video, edit.clips, finalVideo, sop.voice === 'none')
+    // Le son d'origine est gardé : il sert si la voix off ne peut pas être générée.
+    await cutVideo(video, edit.clips, finalVideo, true)
   }
 
   // 6. Voix off, calée sur la vidéo montée
   if (sop.voice !== 'none') {
     await step('Recording the voice-over')
     const narrated = join(dir, 'narrated.mp4')
-    await narrate({
-      video: finalVideo,
-      duration: edit.duration,
-      steps: edit.steps,
-      markdown,
-      sop,
-      dir,
-      output: narrated,
-    })
-    finalVideo = narrated
+    try {
+      await narrate({
+        video: finalVideo,
+        duration: edit.duration,
+        steps: edit.steps,
+        markdown,
+        sop,
+        dir,
+        output: narrated,
+      })
+      finalVideo = narrated
+    } catch (err) {
+      // Quota de voix épuisé : la SOP (texte + captures) est livrée quand même, avec la vidéo montée
+      // et la voix d'origine de la personne, plutôt que de tout perdre.
+      if (!(err instanceof QuotaExceededError)) throw err
+      console.warn('[pipeline] voix off impossible (quota), vidéo livrée avec le son d’origine')
+    }
   }
   return finalVideo
 }
@@ -374,6 +384,7 @@ async function makeMarketingVideo(job: Job): Promise<string> {
     const { makeMotionVideo } = await import('./marketing.js')
     return await makeMotionVideo(job)
   } catch (err) {
+    if (err instanceof QuotaExceededError) throw err // le montage aurait besoin du même service
     console.error('[pipeline] vidéo animée impossible, montage des moments forts', err)
     return makeHighlightVideo(job)
   }
