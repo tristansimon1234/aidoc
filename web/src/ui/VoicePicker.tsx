@@ -103,9 +103,9 @@ export function VoicePicker({
           <select value={voice} onChange={(e) => change({ voice: e.target.value, tone })}>
             <option value="none">No voice-over (video only)</option>
             {premium.length > 0 && (
-              <optgroup label="Premium voices">{premium.map(option)}</optgroup>
+              <optgroup label="ElevenLabs · premium">{premium.map(option)}</optgroup>
             )}
-            {standard.length > 0 && <optgroup label="Voices">{standard.map(option)}</optgroup>}
+            {standard.length > 0 && <optgroup label="Gemini · included">{standard.map(option)}</optgroup>}
           </select>
         </label>
         {voice !== 'none' && (
