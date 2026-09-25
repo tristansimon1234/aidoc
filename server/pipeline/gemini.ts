@@ -28,8 +28,19 @@ function isDailyQuota(err: unknown): boolean {
   return err instanceof ApiError && err.status === 429 && /per_?day/i.test(err.message)
 }
 
+/**
+ * Limite par minute atteinte (ex. 10 synthèses vocales / min) : Gemini indique quand réessayer
+ * (« retry in 30s »). Renvoie ce délai en millisecondes, ou null si ce n'est pas ce cas.
+ */
+export function rateLimitDelay(err: unknown): number | null {
+  if (!(err instanceof ApiError) || err.status !== 429) return null
+  const m = /retry in ([\d.]+)s|"retryDelay":"(\d+)s"/.exec(err.message)
+  const seconds = Number(m?.[1] ?? m?.[2] ?? 20)
+  return seconds <= 120 ? Math.ceil(seconds * 1000) + 1000 : null
+}
+
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
-  for (let i = 1; ; i++) {
+  for (let i = 1, limited = 0; ; i++) {
     try {
       return await fn()
     } catch (err) {
@@ -37,12 +48,42 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
         const model = /model: ([\w.-]+)/.exec((err as Error).message)?.[1] ?? 'Gemini'
         throw new QuotaExceededError(`Quota du jour atteint pour ${model}`)
       }
+      // Limite par minute : on attend le délai indiqué (sans compter l'essai), 6 fois au plus.
+      const delay = rateLimitDelay(err)
+      if (delay !== null && limited < 6) {
+        limited++
+        i--
+        console.warn(
+          `[gemini] limite par minute atteinte, reprise dans ${Math.round(delay / 1000)} s`,
+        )
+        await new Promise((r) => setTimeout(r, delay))
+        continue
+      }
       if (i >= attempts) throw err
       console.warn(`[gemini] tentative ${i} échouée, nouvel essai…`, (err as Error).message)
       await new Promise((r) => setTimeout(r, 5000 * i))
     }
   }
 }
+
+/** Au plus `limit` appels à la fois (partagé par toutes les créations en cours). */
+function limiter(limit: number) {
+  let active = 0
+  const waiting: (() => void)[] = []
+  return async <T>(fn: () => Promise<T>): Promise<T> => {
+    if (active >= limit) await new Promise<void>((r) => waiting.push(r))
+    active++
+    try {
+      return await fn()
+    } finally {
+      active--
+      waiting.shift()?.()
+    }
+  }
+}
+
+/** Synthèses vocales Gemini simultanées : peu, pour rester sous la limite par minute. */
+const ttsSlot = limiter(2)
 
 function parseJson<T>(text: string, schema: z.ZodType<T>): T {
   const cleaned = text
@@ -146,6 +187,10 @@ export async function askJsonWithImages<T>(
 
 /** Synthèse vocale Gemini → fichier WAV (PCM 16 bits, 24 kHz, mono). */
 export async function speakWithGemini(text: string, voiceName = 'Kore'): Promise<Buffer> {
+  return ttsSlot(() => speakNow(text, voiceName))
+}
+
+async function speakNow(text: string, voiceName: string): Promise<Buffer> {
   return withRetry(async () => {
     const res = await gemini().models.generateContent({
       model: env.GEMINI_TTS_MODEL,

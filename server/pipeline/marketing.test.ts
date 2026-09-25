@@ -1,5 +1,7 @@
+import { ApiError } from '@google/genai'
 import { describe, expect, it } from 'vitest'
 import { creditsFor } from '../credits.js'
+import { rateLimitDelay } from './gemini.js'
 import { StoryboardSchema, reviewApproved, storyboardPrompt } from './prompts.js'
 import { compileScene, extractCode, lintScene } from './scene-code.js'
 import { captionWords, luminance } from './steps.js'
@@ -107,5 +109,18 @@ describe('sous-titres', () => {
   it('luminance des couleurs', () => {
     expect(luminance('#000000')).toBe(0)
     expect(luminance('#FFFFFF')).toBeCloseTo(1)
+  })
+})
+
+describe('limites de Gemini', () => {
+  it('attend le délai indiqué quand la limite par minute est atteinte', () => {
+    const perMinute = new ApiError({
+      status: 429,
+      message:
+        '{"error":{"code":429,"message":"Quota exceeded for metric: generate_requests_per_model, limit: 10, model: gemini-2.5-flash-tts\\nPlease retry in 30.674911047s."}}',
+    })
+    expect(rateLimitDelay(perMinute)).toBe(31675) // 30,67 s + 1 s de marge
+    expect(rateLimitDelay(new ApiError({ status: 500, message: 'boom' }))).toBeNull()
+    expect(rateLimitDelay(new Error('x'))).toBeNull()
   })
 })
