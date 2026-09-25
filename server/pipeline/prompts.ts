@@ -80,7 +80,7 @@ Do two things.
 - "action": what is done, with the exact labels visible on screen (buttons, menus, fields, tabs) in quotes, in their original language.
 - "screen": short description of what is visible at the step's frame.
 - "spoken": everything the person says while doing this step, word for word (it usually explains WHY and what to watch out for), or null if silent.
-- "timestamp": the moment as "MM:SS" (e.g. "1:27" for 1 min 27 s) of the frame that best illustrates the step: the button or field is visible and the value is filled in, BEFORE the next step starts.
+- "timestamp": the moment as "MM:SS" (e.g. "1:27" for 1 min 27 s) of the frame that best illustrates the step: the SCREEN the step is about, once it is displayed (after a click that opens a page, a panel or a dialog, the frame where that page is fully loaded; for a form, the fields filled in), BEFORE the next step starts.
 - Chronological order. All times between 0:00 and ${toTimecode(durationSeconds)} (the length of the video). Cover the WHOLE recording until its very end: the task often continues late in the video, keep listing steps up to the last action.
 - Never copy sensitive values seen on screen or said aloud (passwords, tokens, bank details, personal emails or phone numbers): describe them instead ("the client's email").
 
@@ -326,10 +326,11 @@ export function framePickPrompt(
     .join('\n\n')
   return `These images are frames from a screen recording. For each step of a written procedure, pick the ONE candidate image that best illustrates it as a screenshot in the procedure. The candidates of a step go in time order: first the moment of the action (where to click, what to fill), then what the screen shows after it, until just before the next step.
 
-Judge like a technical writer: which image helps the reader most next to this step?
-- A step whose value is WHERE to act (a button among many, a menu item, a field to fill, an option to pick): the frame where that element is clearly visible, with the value already filled in for a form.
-- A step whose value is WHAT the action opens or produces (a page, a panel, a dialog, a list of results, a status): the frame where that result is fully displayed.
+Rule: show the SCREEN the step talks about, not the button used to reach it. The text already says where to click; the screenshot shows the reader what they will see.
+- A step that opens or produces something (a page, a tab, a panel, a dialog, a list of results, a status): the frame where that screen is fully displayed, after the click.
+- A step that fills a form or picks options: the frame where the fields or options are visible and filled in.
 - A step about checking a result: the frame showing that result.
+- Only when the action leaves no visible result on screen (e.g. a download starting), the frame where the element acted on is visible.
 - Never a frame that already shows the next step's action (another menu opened, another field being filled), a transition, a loading screen, a blurred frame, or a frame hidden by an unrelated popup.
 
 ${list}
