@@ -121,6 +121,16 @@ describe('sous-titres', () => {
     expect(luminance(brandColors('#050505').accent)).toBeGreaterThan(0.06)
   })
 
+  it('fond clair du produit : texte presque noir, couleur trop pâle assombrie', () => {
+    const c = brandColors('#6E56CF', '#FFFFFF')
+    expect(c.background).toBe('#FFFFFF')
+    expect(c.accent).toBe('#6E56CF')
+    expect(luminance(c.text)).toBeLessThan(0.02)
+    expect(luminance(brandColors('#FFE066', '#FAFAFA').accent)).toBeLessThan(0.45)
+    // Produit sombre : texte blanc.
+    expect(brandColors('#6E56CF', '#101014').text).toBe('#FFFFFF')
+  })
+
   it('luminance des couleurs', () => {
     expect(luminance('#000000')).toBe(0)
     expect(luminance('#FFFFFF')).toBeCloseTo(1)

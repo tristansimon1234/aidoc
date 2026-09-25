@@ -204,7 +204,10 @@ async function pickHook(board: Storyboard, brief: string | null): Promise<void> 
 
 /** Couleurs du storyboard, corrigées pour rester lisibles (fond sombre, surlignage clair). */
 function toBrand(board: Storyboard): Brand {
-  return { productName: board.productName, ...brandColors(board.brand.accent) }
+  return {
+    productName: board.productName,
+    ...brandColors(board.brand.accent, board.brand.background),
+  }
 }
 
 /** Captures envoyées (source/shot-0.jpg, shot-1.jpg…), redimensionnées pour Gemini et le rendu. */

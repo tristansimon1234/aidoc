@@ -376,24 +376,36 @@ export function mixHex(a: string, b: string, t: number): string {
 }
 
 /**
- * Palette sobre de la vidéo à partir de la seule couleur principale du produit : fond sombre presque
- * neutre (à peine teinté), texte blanc, couleur secondaire = une teinte plus claire de la principale.
- * Une couleur trop sombre ou trop pâle pour ressortir sur ce fond est ramenée vers le milieu.
+ * Palette sobre de la vidéo : le fond de l'interface du produit (souvent blanc ou gris clair ; sans
+ * fond donné, un fond sombre presque neutre), la couleur principale du produit, une teinte plus claire
+ * de celle-ci pour les petits surlignages, et un texte lisible sur ce fond (blanc ou presque noir).
+ * Une couleur principale qui ne ressortirait pas sur le fond est ramenée vers le milieu.
  */
-export function brandColors(accent: string): {
+export function brandColors(
+  accent: string,
+  background?: string | null,
+): {
   accent: string
   accent2: string
   background: string
   text: string
 } {
+  const light = background ? luminance(background) > 0.4 : false
   const l = luminance(accent)
-  const usable =
-    l < 0.06 ? mixHex(accent, '#FFFFFF', 0.35) : l > 0.7 ? mixHex(accent, '#000000', 0.3) : accent
+  const usable = light
+    ? l > 0.45
+      ? mixHex(accent, '#000000', 0.35)
+      : accent
+    : l < 0.06
+      ? mixHex(accent, '#FFFFFF', 0.35)
+      : l > 0.7
+        ? mixHex(accent, '#000000', 0.3)
+        : accent
   return {
     accent: usable,
-    accent2: mixHex(usable, '#FFFFFF', 0.55),
-    background: mixHex('#0B0B0F', usable, 0.06),
-    text: '#FFFFFF',
+    accent2: mixHex(usable, '#FFFFFF', light ? 0.7 : 0.55),
+    background: background ?? mixHex('#0B0B0F', usable, 0.06),
+    text: light ? '#111114' : '#FFFFFF',
   }
 }
 
