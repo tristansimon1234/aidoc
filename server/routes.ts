@@ -210,7 +210,9 @@ api.post(
     const uploads = await Promise.all(
       (shots.length > 0 ? shots : [sourcePath]).map((path) => db.createUploadUrl(path)),
     )
-    res.status(201).json({ id, uploadUrls: uploads.map((u) => u.signedUrl) })
+    const uploadUrls = uploads.map((u) => u.signedUrl)
+    // `uploadUrl` : pour une interface pas encore mise à jour (une seule adresse d'envoi).
+    res.status(201).json({ id, uploadUrl: uploadUrls[0], uploadUrls })
   }),
 )
 
