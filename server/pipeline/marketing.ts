@@ -34,7 +34,7 @@ import {
 } from './prompts.js'
 import { renderMarketingVideo, renderSceneStills, withBrowser } from './remotion.js'
 import { compileScene, extractCode } from './scene-code.js'
-import { captionWords, luminance, mapLimit } from './steps.js'
+import { brandColors, captionWords, mapLimit } from './steps.js'
 import { defaultVoice, speak } from '../voices.js'
 
 const WIDTH = 1920
@@ -192,14 +192,7 @@ async function pickHook(board: Storyboard, brief: string | null): Promise<void> 
 
 /** Couleurs du storyboard, corrigées pour rester lisibles (fond sombre, surlignage clair). */
 function toBrand(board: Storyboard): Brand {
-  const dark = luminance(board.brand.background) < 0.3
-  return {
-    productName: board.productName,
-    accent: board.brand.accent,
-    accent2: luminance(board.brand.accent2) > 0.35 ? board.brand.accent2 : '#FFD84D',
-    background: board.brand.background,
-    text: dark ? '#FFFFFF' : '#0B0B0F',
-  }
+  return { productName: board.productName, ...brandColors(board.brand.accent) }
 }
 
 /** Captures envoyées (source/shot-0.jpg, shot-1.jpg…), redimensionnées pour Gemini et le rendu. */
@@ -256,8 +249,9 @@ export async function designScene(
 ): Promise<string | null> {
   const scene = input.board.scenes[input.index]!
   const checkpoints = [
-    Math.round(input.frames * 0.12),
-    Math.round(input.frames * 0.5),
+    Math.round(input.frames * 0.1),
+    Math.round(input.frames * 0.35),
+    Math.round(input.frames * 0.65),
     input.frames - 4,
   ]
   let run = 0
@@ -328,13 +322,26 @@ export async function designScene(
 
   // Relecture « directeur artistique » sur les images rendues ; on garde l'ancienne version si la
   // nouvelle ne passe pas.
-  const review = await chat.send([
-    { text: sceneReviewPrompt(checkpoints, input.frames) },
-    ...good.stills.map((png): ChatPart => ({ image: png, mediaType: 'image/png' })),
-  ])
-  if (!reviewApproved(review)) {
+  // Deux relectures au plus : la version corrigée est relue à son tour.
+  let best: Extract<Attempt, { ok: true }> = good
+  for (let round = 1; round <= 2; round++) {
+    const review = await chat.send([
+      { text: sceneReviewPrompt(checkpoints, input.frames) },
+      ...best.stills.map((png): ChatPart => ({ image: png, mediaType: 'image/png' })),
+    ])
+    if (reviewApproved(review)) {
+      console.log(`[marketing] scène ${input.index + 1} : validée à la relecture ${round}`)
+      return best.code
+    }
     const improved = await tryAnswer(review)
-    if (improved.ok) return improved.code
+    if (!improved.ok) {
+      console.warn(
+        `[marketing] scène ${input.index + 1} : correction de relecture refusée`,
+        improved.error.slice(0, 200),
+      )
+      break
+    }
+    best = improved
   }
-  return good.code
+  return best.code
 }

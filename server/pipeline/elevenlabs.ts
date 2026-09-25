@@ -102,7 +102,12 @@ export async function generateMusic(prompt: string, durationMs: number): Promise
       'Content-Type': 'application/json',
       Accept: 'audio/mpeg',
     },
-    body: JSON.stringify({ prompt, music_length_ms: Math.round(durationMs) }),
+    // Musique de fond : toujours instrumentale (aucune voix, aucune parole), discrète sous la voix off.
+    body: JSON.stringify({
+      prompt: `Instrumental background music only, no vocals, no lyrics, no singing. Subtle, sober and modern, stays in the background under a voice-over. ${prompt}`,
+      music_length_ms: Math.round(durationMs),
+      force_instrumental: true,
+    }),
   })
   if (!res.ok)
     throw new Error(`ElevenLabs Music ${res.status}: ${(await res.text()).slice(0, 300)}`)

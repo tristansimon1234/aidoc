@@ -4,7 +4,7 @@ import { creditsFor } from '../credits.js'
 import { rateLimitDelay } from './gemini.js'
 import { StoryboardSchema, reviewApproved, storyboardPrompt } from './prompts.js'
 import { compileScene, extractCode, lintScene } from './scene-code.js'
-import { captionWords, luminance } from './steps.js'
+import { brandColors, captionWords, luminance } from './steps.js'
 
 describe('prix de la vidéo marketing', () => {
   it('2 crédits quelle que soit la durée de l’enregistrement', () => {
@@ -109,6 +109,16 @@ describe('sous-titres', () => {
     expect(words[2]!.endMs).toBe(1500)
     expect(words[1]!.endMs - words[1]!.startMs).toBeLessThan(words[0]!.endMs - words[0]!.startMs)
     expect(words[3]).toEqual({ text: 'Go', startMs: 2000, endMs: 2400 })
+  })
+
+  it('palette sobre tirée de la seule couleur du produit', () => {
+    const c = brandColors('#6E56CF')
+    expect(c.accent).toBe('#6E56CF')
+    expect(luminance(c.background)).toBeLessThan(0.02) // fond presque noir
+    expect(luminance(c.accent2)).toBeGreaterThan(luminance(c.accent)) // teinte plus claire
+    expect(c.text).toBe('#FFFFFF')
+    // Une couleur trop sombre pour ressortir sur le fond est éclaircie.
+    expect(luminance(brandColors('#050505').accent)).toBeGreaterThan(0.06)
   })
 
   it('luminance des couleurs', () => {

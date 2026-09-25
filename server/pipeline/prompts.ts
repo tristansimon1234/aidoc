@@ -545,7 +545,7 @@ Understand the product from the brief and the screenshots: what it does, for who
 
 Write:
 - "productName": the product's name (from the brief, the screenshots, or "${input.title}").
-- "brand": colors taken from the screenshots: "accent" = the product's main brand/UI color, "accent2" = a bright complementary highlight color (readable on a dark background), "background" = a deep, dark, slightly tinted background color that goes with the accent. Hex "#RRGGBB".
+- "brand": "accent" = the product's main brand color as seen on the screenshots (logo, primary buttons), hex "#RRGGBB". The rest of the palette is derived from it (sober dark background, white text): also fill "accent2" and "background" with the same color.
 - "hooks": 3 different opening hooks (first 3 seconds, decides if people keep watching): "line" = the voice-over sentence (6 to 12 words, in ${language}); "onScreen" = the 2-5 words shown big on screen. Vary the angle: a pain point, a bold promise, a surprising question.
 - "scenes": ${scenes} scenes forming a story: scene 1 is the hook (write it with the best of your hooks), then the problem or the promise, then 2-4 key benefits shown in the product, then the call to action (last scene). For each scene:
   - "purpose": one short phrase (e.g. "hook", "benefit: invoices sorted automatically", "cta");
@@ -553,7 +553,7 @@ Write:
   - "onScreen": the few words shown big on screen (2 to 7 words, in ${language}), not a copy of the line: the key idea.
   - "visual": the animation idea, precise and visual (which part of the interface is rebuilt as a mockup and how big, what appears, how it moves, where a cursor clicks, what fills in, what number counts up). Vary the layouts from scene to scene. The hook and the call to action can be pure typography and shapes.
   - "screenshots": 0 to 2 screenshots to rebuild the scene's mockup from: "image" = its number (1 to ${input.imageCount}); "what": the part to rebuild and where it is (e.g. "invoice list, 'Paid' badges in the right column"). Use every screenshot at least once across the video when it shows something useful.
-- "musicPrompt": fitting background music (style, mood, tempo).
+- "musicPrompt": fitting background music, always sober and instrumental (no vocals): style, mood, tempo, e.g. "minimal electronic, soft pulsing synths, light percussion, 100 bpm, confident and calm".
 
 Tone: ${TONES[input.tone].direction} No URLs, no personal data (names, emails, amounts that look private), no stage directions in the lines.
 
@@ -625,6 +625,8 @@ Mockup material (the product's screenshots are attached to the request as REFERE
 - Show the product as MOCKUPS: rebuild the interface from the reference screenshots with divs, never as an image. Faithful to the product (same layout, colors, typography feel, real labels, real figures, icons that look like its icons) but simplified and cleaner: keep only the part that matters for this scene (a card, a table with 3-5 rows, a form, a sidebar, a button, a badge, a chart), make it BIG, and give it depth (shadow, rounded corners, slight 3D tilt via perspective/rotateX/rotateY, glow behind). Then bring it to life: rows appear one by one, a cursor clicks, a value fills in, a badge pops, a number counts up, a panel slides in. Never invent a different interface or features.
 - Motion: the first element is visible by frame 8-12 (no empty start), entrances are staggered and eased (spring or Easing.out), something keeps moving until the end (slow push, drift, glow, parallax) so no frame is frozen. No exit animation needed: the next scene fades in over the last frames. Keep timings proportional to \`durationInFrames\`.
 - Layout: everything inside the frame with at least 80 px margins; nothing overlaps unless on purpose; text never clipped or overflowing (set maxWidth, test long words); strong contrast (text on dark background = light; on a light card = dark).
+- Build mockups with flex and grid, with explicit sizes (e.g. a 1100 × 620 px card, fixed column widths for a table, whiteSpace: 'nowrap' + textOverflow: 'ellipsis' in cells). Absolute positioning only for decorations, glows and the cursor. Keep a mockup to what fits: 3-5 rows, 3-4 columns, short labels.
+- Palette: brand.background for the canvas, white/neutral cards for mockups (like the real product), brand.accent for the key element, brand.accent2 for small highlights. No other colors, no rainbow gradients.
 - CAPTIONS ZONE: the voice-over captions are drawn over the bottom of the video. Keep the bottom 22% of the height free of any text or important element (backgrounds and decorative glows are fine).
 - Colors: brand.background as the base (you may add a subtle gradient or noise of it), brand.accent for the key element, brand.accent2 for small highlights. Stay coherent with the other scenes (same background, same type style).
 - Quality bar: this must look designed by a studio, not like a slide. Depth, hierarchy, rhythm. Avoid clutter: 1 focal point, 1-3 supporting elements.`
@@ -686,7 +688,9 @@ Fix it and reply with the complete corrected code in one \`\`\`tsx block.`
 export function sceneReviewPrompt(frames: number[], total: number): string {
   return `Here is your scene rendered at frames ${frames.join(', ')} of ${total} (half resolution), in that order.
 
-Review it like a demanding art director. Check: text clipped, overflowing or overlapping; anything in the bottom 22% captions zone; empty or unbalanced composition; unreadable text or poor contrast; screenshot too small to read or badly cropped; elements off-screen; a first frame that is still empty; nothing moving between frames; generic "slide" look.
+Review it like a demanding art director. Look at each image for anything BROKEN first, then for quality:
+- Broken: text cut off, overflowing its box or wrapping letter by letter; elements overlapping by accident; parts of the mockup outside the frame or hidden; an empty or almost empty frame; a mockup that looks collapsed (zero height, squashed columns, stacked on top of each other); misaligned rows or columns; icons missing (empty squares).
+- Quality: anything in the bottom 22% captions zone; unbalanced composition; unreadable text or poor contrast; a mockup too small to read; nothing moving between frames; a generic "slide" look; colors outside the brand palette.
 
 If it is good enough to ship, reply exactly: VERDICT: OK
 Otherwise reply "VERDICT: FIX", the list of problems, then the complete improved code in one \`\`\`tsx block.`

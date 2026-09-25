@@ -366,6 +366,37 @@ export function captionWords(
   })
 }
 
+/** Mélange deux couleurs hex : t = 0 → a, t = 1 → b. */
+export function mixHex(a: string, b: string, t: number): string {
+  const channel = (hex: string, i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16)
+  return `#${[0, 1, 2]
+    .map((i) => Math.round(channel(a, i) * (1 - t) + channel(b, i) * t))
+    .map((v) => v.toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
+/**
+ * Palette sobre de la vidéo à partir de la seule couleur principale du produit : fond sombre presque
+ * neutre (à peine teinté), texte blanc, couleur secondaire = une teinte plus claire de la principale.
+ * Une couleur trop sombre ou trop pâle pour ressortir sur ce fond est ramenée vers le milieu.
+ */
+export function brandColors(accent: string): {
+  accent: string
+  accent2: string
+  background: string
+  text: string
+} {
+  const l = luminance(accent)
+  const usable =
+    l < 0.06 ? mixHex(accent, '#FFFFFF', 0.35) : l > 0.7 ? mixHex(accent, '#000000', 0.3) : accent
+  return {
+    accent: usable,
+    accent2: mixHex(usable, '#FFFFFF', 0.55),
+    background: mixHex('#0B0B0F', usable, 0.06),
+    text: '#FFFFFF',
+  }
+}
+
 /** Luminance relative d'une couleur hex (0 = noir, 1 = blanc). */
 export function luminance(hex: string): number {
   const [r, g, b] = [1, 3, 5].map((i) => {
