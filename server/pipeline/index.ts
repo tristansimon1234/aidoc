@@ -280,7 +280,9 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
       // Quota de voix épuisé : la SOP (texte + captures) est livrée quand même, avec la vidéo montée
       // et la voix d'origine de la personne, plutôt que de tout perdre.
       if (!(err instanceof QuotaExceededError)) throw err
-      console.warn('[pipeline] voix off impossible (quota), vidéo livrée avec le son d’origine')
+      console.warn(
+        `[pipeline] voix off impossible (${(err as Error).message}), vidéo livrée avec le son d’origine`,
+      )
     }
   }
   return finalVideo

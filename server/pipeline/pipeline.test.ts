@@ -490,3 +490,12 @@ describe('ffmpeg', () => {
     expect(duration('video')).toBeCloseTo(expected, 1)
   }, 120_000)
 })
+
+describe('withoutTrailingCommas', () => {
+  it('retire les virgules avant } ou ], sans toucher aux chaînes', async () => {
+    const { withoutTrailingCommas } = await import('./gemini.js')
+    const raw = '{"picks": [{"a": 1, "b": "x, }",\n    },\n  ],\n}'
+    expect(JSON.parse(withoutTrailingCommas(raw))).toEqual({ picks: [{ a: 1, b: 'x, }' }] })
+    expect(withoutTrailingCommas('{"s": "a\\",]"}')).toBe('{"s": "a\\",]"}')
+  })
+})

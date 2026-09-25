@@ -92,7 +92,34 @@ function parseJson<T>(text: string, schema: z.ZodType<T>): T {
     .trim()
     .replace(/^```(?:json)?\s*/, '')
     .replace(/\s*```$/, '')
-  return schema.parse(JSON.parse(cleaned))
+  return schema.parse(JSON.parse(withoutTrailingCommas(cleaned)))
+}
+
+/**
+ * Gemini laisse parfois une virgule avant `}` ou `]` (« Expected double-quoted property name ») :
+ * on la retire, hors des chaînes, plutôt que de refaire tout l'appel.
+ */
+export function withoutTrailingCommas(json: string): string {
+  const closing = /\s*[}\]]/y
+  let out = ''
+  let inString = false
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i]!
+    if (inString) {
+      out += c
+      if (c === '\\') out += json[++i] ?? ''
+      else if (c === '"') inString = false
+    } else if (c === '"') {
+      inString = true
+      out += c
+    } else if (c === ',') {
+      closing.lastIndex = i + 1
+      if (!closing.test(json)) out += c
+    } else {
+      out += c
+    }
+  }
+  return out
 }
 
 /** Une vidéo déjà envoyée à Gemini, qu'on peut interroger plusieurs fois (image + son). */
