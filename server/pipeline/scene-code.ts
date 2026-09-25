@@ -44,6 +44,10 @@ const FORBIDDEN: [RegExp, string][] = [
     'No external images or fonts: use the screenshots in `shots`, icons and CSS only.',
   ],
   [
+    /Remotion\.(Screenshot|Img)\b|<Img\b|<img\b|shots\s*\[|\.src\b/,
+    'Do not display the screenshots or any image: rebuild the interface as a mockup with divs, icons and text.',
+  ],
+  [
     /@keyframes|\banimation\s*:|\btransition\s*:/,
     'No CSS animations or transitions: they do not render frame by frame. Use interpolate()/spring() with the frame number.',
   ],

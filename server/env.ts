@@ -17,7 +17,7 @@ const EnvSchema = z.object({
   GEMINI_TTS_MODEL: z.string().default('gemini-2.5-flash-preview-tts'),
   // Vidéos marketing : le modèle qui écrit le code des scènes. Claude si la clé est là, sinon Gemini.
   ANTHROPIC_API_KEY: optional,
-  CLAUDE_MODEL: z.string().default('claude-opus-5'),
+  CLAUDE_MODEL: z.string().default('claude-sonnet-5'),
   GEMINI_CODE_MODEL: z.string().default('gemini-2.5-pro'),
   // Navigateur pour le rendu Remotion (sinon celui téléchargé par Remotion au build).
   REMOTION_BROWSER_EXECUTABLE: optional,

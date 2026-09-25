@@ -30,14 +30,16 @@ function claudeChat(system: string, apiKey: string): CodeChat {
   return {
     async send(parts) {
       messages.push({ role: 'user', content: parts.map(toClaudeBlock) })
+      // Relais automatique en cas de refus : proposé pour les modèles Opus 5 / Fable seulement.
+      const fallback = /^claude-(opus-5|fable)/.test(env.CLAUDE_MODEL)
+        ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
+        : {}
       const stream = anthropic.beta.messages.stream({
         model: env.CLAUDE_MODEL,
         max_tokens: 32000,
         thinking: { type: 'adaptive' },
         output_config: { effort: 'high' },
-        // Si Claude refuse une demande (filtres de sécurité), l'API la relance sur un autre modèle.
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
+        ...fallback,
         // Le long prompt système (la doc de la boîte à outils) est mis en cache : relu à ~10 % du prix
         // par chaque scène et chaque correction.
         system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],

@@ -137,7 +137,8 @@ export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Pr
         scenes: board.scenes.map((scene, i) => ({
           code: codes[i] ?? null,
           durationInFrames: frames[i]!,
-          shots: shots[i]!,
+          // Les captures ne sont que des références pour Claude : jamais affichées dans la vidéo.
+          shots: [],
           headline: scene.onScreen,
         })),
       },
@@ -273,7 +274,7 @@ export async function designScene(
           scene: {
             code: compiled.code,
             durationInFrames: input.frames,
-            shots: input.shots,
+            shots: [],
             headline: scene.onScreen,
           },
         },

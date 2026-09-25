@@ -46,6 +46,11 @@ describe('code des scènes', () => {
       lintScene(`const X = () => <div style={{ transition: 'all 1s' }} />\n${scene}`),
     ).toHaveLength(1)
     expect(lintScene('const App = () => null')).toHaveLength(1)
+    // Les captures servent de référence : elles ne sont jamais affichées, l'interface est redessinée.
+    expect(
+      lintScene(scene.replace('{frame}', '<Remotion.Screenshot shot={shots[0]} />')),
+    ).toHaveLength(1)
+    expect(lintScene(scene.replace('{frame}', '<Remotion.Img src={x} />'))).toHaveLength(1)
     const broken = await compileScene('function Scene() { return <div> }')
     expect(broken.ok).toBe(false)
   })

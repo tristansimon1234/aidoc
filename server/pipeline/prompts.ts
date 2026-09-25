@@ -502,7 +502,7 @@ export function storyboardPrompt(input: {
   const language = languageName(input.language)
   const scenes = input.targetSeconds <= 30 ? '4 or 5' : '6 to 8'
   const words = Math.round(input.targetSeconds * 2.3)
-  return `You are a creative director at a top SaaS motion-design studio. Write the storyboard of a ${input.targetSeconds}-second animated marketing video (motion design, like the launch videos of Linear, Stripe or Notion) for the product "${input.title}". You get ${input.imageCount} screenshot(s) of the product (Image 1 to Image ${input.imageCount}) and the user's brief. Each scene is animated from scratch, using these real screenshots as material (shown, zoomed, or rebuilt big). A voice-over in ${language} runs over the whole video, with captions.
+  return `You are a creative director at a top SaaS motion-design studio. Write the storyboard of a ${input.targetSeconds}-second animated marketing video (motion design, like the launch videos of Linear, Stripe or Notion) for the product "${input.title}". You get ${input.imageCount} screenshot(s) of the product (Image 1 to Image ${input.imageCount}) and the user's brief. The screenshots are REFERENCE only: they are never shown in the video. Each scene is animated from scratch, with clean, simplified mockups of the product's interface rebuilt from them (same layout, colors, labels and key figures), bigger and focused on what matters. A voice-over in ${language} runs over the whole video, with captions.
 ${input.brief ? `\nBRIEF FROM THE USER (the product, its audience, the message, the call to action: follow it):\n${input.brief}\n` : ''}
 Understand the product from the brief and the screenshots: what it does, for whom, the real benefits. Never invent features or figures that are neither in the brief nor visible on the screenshots.
 
@@ -514,8 +514,8 @@ Write:
   - "purpose": one short phrase (e.g. "hook", "benefit: invoices sorted automatically", "cta");
   - "line": the voice-over for that scene, in ${language}, one or two short sentences, 6 to 22 words. The lines follow each other as one fluid text. At most ${words} words in total for all scenes.
   - "onScreen": the few words shown big on screen (2 to 7 words, in ${language}), not a copy of the line: the key idea.
-  - "visual": the animation idea, precise and visual (what appears, how it moves, which part of the screenshot the camera zooms on, which UI element is rebuilt big, where a cursor clicks, what number counts up). Vary the layouts from scene to scene. The hook and the call to action can be pure typography and shapes.
-  - "screenshots": 0 to 2 screenshots to use as material: "image" = its number (1 to ${input.imageCount}); "what": what is visible and where (e.g. "invoice list, 'Paid' badges in the right column"). Use every screenshot at least once across the video when it shows something useful.
+  - "visual": the animation idea, precise and visual (which part of the interface is rebuilt as a mockup and how big, what appears, how it moves, where a cursor clicks, what fills in, what number counts up). Vary the layouts from scene to scene. The hook and the call to action can be pure typography and shapes.
+  - "screenshots": 0 to 2 screenshots to rebuild the scene's mockup from: "image" = its number (1 to ${input.imageCount}); "what": the part to rebuild and where it is (e.g. "invoice list, 'Paid' badges in the right column"). Use every screenshot at least once across the video when it shows something useful.
 - "musicPrompt": fitting background music (style, mood, tempo).
 
 Tone: ${TONES[input.tone].direction} No URLs, no personal data (names, emails, amounts that look private), no stage directions in the lines.
@@ -564,7 +564,7 @@ function Scene({ brand, shots, durationInFrames }) {
 \`\`\`
 
 - \`React\` and \`Remotion\` are in scope. NO imports, NO exports. Helper components and constants may be defined above \`Scene\`, in the same block. TypeScript types are optional.
-- Props: \`brand\` = { productName, accent, accent2, background, text } (hex colors); \`shots\` = the real screenshots of the product for this scene: [{ src, width, height, description }] (may be empty); \`durationInFrames\` = length of the scene.
+- Props: \`brand\` = { productName, accent, accent2, background, text } (hex colors); \`durationInFrames\` = length of the scene. (\`shots\` is always empty: the screenshots are only references attached to the request.)
 - Everything is a pure function of \`frame\`: no useState/useEffect, no timers, no Math.random (use \`Remotion.random('any-seed')\`, deterministic, 0-1), no Date, no CSS animations/transitions/@keyframes, no window/document, no network, no external images or fonts, no <video>/<audio>. Hooks allowed: useCurrentFrame, useVideoConfig, React.useMemo.
 - Use inline styles. The font (Inter) is already set. Sizes in px for the given \`width\`/\`height\` (1920×1080 landscape or 1080×1920 portrait: adapt the layout to both, e.g. \`const vertical = height > width\`).
 - Only use the APIs listed below. Guard every array access (\`shots[0]\` may be undefined).
@@ -573,9 +573,8 @@ function Scene({ brand, shots, durationInFrames }) {
 
 Core: \`useCurrentFrame()\`, \`useVideoConfig()\` → { fps, width, height, durationInFrames }, \`interpolate(frame, [in0, in1], [out0, out1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp', easing })\`, \`spring({ frame, fps, delay?, config?: { damping, stiffness, mass }, durationInFrames? })\` → 0..1 (damping 200 = no bounce; 12 = bouncy), \`Easing.bezier(x1,y1,x2,y2)\` / \`Easing.out(Easing.cubic)\` / \`Easing.inOut(Easing.quad)\`, \`interpolateColors(frame, [a, b], [colorA, colorB])\`, \`random(seed)\`, \`<AbsoluteFill style>\` (full-size absolutely positioned flex column), \`<Sequence from={f} durationInFrames={n}>\` (children see frame reset to 0 at \`from\`), \`<Img src style>\`.
 
-Product material:
-- \`<Remotion.Screenshot shot={shots[0]} focus={{ x: 72, y: 30, zoom: 1.6 }} startFrame={20} zoomFrames={40} radius={16} style={...} />\`: the real screenshot, fully visible (object-fit contain) in its container, with a camera push towards \`focus\` (x/y in % of the screenshot, zoom factor), eased. Without \`focus\`: slow subtle zoom. Give it a sized container (width/height or flex). This is the most convincing material: show the real product, then zoom on what the voice talks about.
-- \`<Remotion.MockFrame url="app.acme.com" tone="light|dark" style>children</Remotion.MockFrame>\`: browser window chrome (traffic lights, URL bar) around children, fills its container. Nice around a Screenshot, optional.
+Mockup material (the product's screenshots are attached to the request as REFERENCE images: never display them, rebuild what you need):
+- \`<Remotion.MockFrame url="app.acme.com" tone="light|dark" style>children</Remotion.MockFrame>\`: browser window chrome (traffic lights, URL bar) around children, fills its container. Nice around a rebuilt page, optional.
 - \`<Remotion.AnimatedCursor leftPct topPct accentColor ripple? rippleRadius? rippleOpacity? />\`: mouse pointer at % of its positioned parent, with optional click ripple you animate yourself.
 - \`<Remotion.Pill tone="success|warning|danger|accent|muted" dot? accentColor style>label</Remotion.Pill>\`: status badge.
 - \`<Remotion.AccentGlow color size? opacity? frame? position="center|top|bottom|left|right" style? />\`: big blurred color glow for depth, behind the focal element (pass \`frame\` for a slow pulse).
@@ -586,7 +585,7 @@ Product material:
 # Craft rules
 
 - One idea per scene. The on-screen text is short (2-7 words), BIG (landscape: 72-140 px, weight 700-900, letter-spacing -0.02em to -0.04em; portrait: 80-150 px), max 2 lines, never a paragraph. Use exactly the on-screen text you are given (same language).
-- Show the product: when there are shots, build the scene around them (big, with depth: shadow, slight 3D tilt via perspective/rotateX/rotateY, glow behind), and move the camera to the part the voice talks about. You can also REBUILD a key UI element from the screenshot big and clean (a card, a button, a row, a badge, a number) with divs, in the product's colors, and animate it (cursor click, value filling, badge appearing, number counting up). Never invent a different interface.
+- Show the product as MOCKUPS: rebuild the interface from the reference screenshots with divs, never as an image. Faithful to the product (same layout, colors, typography feel, real labels, real figures, icons that look like its icons) but simplified and cleaner: keep only the part that matters for this scene (a card, a table with 3-5 rows, a form, a sidebar, a button, a badge, a chart), make it BIG, and give it depth (shadow, rounded corners, slight 3D tilt via perspective/rotateX/rotateY, glow behind). Then bring it to life: rows appear one by one, a cursor clicks, a value fills in, a badge pops, a number counts up, a panel slides in. Never invent a different interface or features.
 - Motion: the first element is visible by frame 8-12 (no empty start), entrances are staggered and eased (spring or Easing.out), something keeps moving until the end (slow push, drift, glow, parallax) so no frame is frozen. No exit animation needed: the next scene fades in over the last frames. Keep timings proportional to \`durationInFrames\`.
 - Layout: everything inside the frame with at least 80 px margins; nothing overlaps unless on purpose; text never clipped or overflowing (set maxWidth, test long words); strong contrast (text on dark background = light; on a light card = dark).
 - CAPTIONS ZONE: the voice-over captions are drawn over the bottom of the video. Keep the bottom 22% of the height free of any text or important element (backgrounds and decorative glows are fine).
@@ -616,7 +615,9 @@ export function scenePrompt(input: {
     .join('\n')
   const shots =
     input.shots.length > 0
-      ? input.shots.map((s, i) => `shots[${i}]: ${s.what} (image ${i + 1} below)`).join('\n')
+      ? input.shots
+          .map((s, i) => `image ${i + 1} below: ${s.what} (reference to rebuild as a mockup)`)
+          .join('\n')
       : 'none: use typography, shapes and icons.'
   return `Video: ${input.productName} — ${input.storyboard.length} scenes, voice-over in ${languageName(input.language)}.${input.brief ? `\nBrief: ${input.brief}` : ''}
 
@@ -630,7 +631,7 @@ THIS SCENE: ${input.index + 1} of ${input.storyboard.length} — ${scene.purpose
 - Duration: ${input.frames} frames (${input.seconds.toFixed(1)} s) at 30 fps
 - Format: ${input.width}×${input.height}
 - brand = ${JSON.stringify({ productName: input.productName, ...input.brand })}
-- Screenshots: ${shots}
+- Reference screenshots (never displayed, rebuild as mockups): ${shots}
 
 Write the scene.`
 }

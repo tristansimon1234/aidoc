@@ -28,8 +28,9 @@ Vidéo (upload ou enregistrement dans le navigateur)
 Captures (converties en JPEG par le navigateur) + brief → Gemini écrit le storyboard (4 à 8 scènes, 3 accroches,
         couleurs du produit tirées des captures, captures à utiliser par scène) → la meilleure accroche est choisie
   → voix off par scène (chaque scène dure le temps de sa phrase)
-  → pour chaque scène, Claude (ou Gemini sans clé Anthropic) écrit le code React/Remotion de l'animation,
-    avec une boîte à outils (captures animées, cadre de navigateur, curseur, icônes, graphiques, effets)
+  → pour chaque scène, Claude Sonnet 5 (ou Gemini sans clé Anthropic) écrit le code React/Remotion de l'animation :
+    l'interface est redessinée en maquettes d'après les captures (jamais affichées telles quelles), avec une boîte
+    à outils (cadre de navigateur, curseur, icônes, graphiques, effets)
     → compilation + rendu de 3 images ; en cas d'erreur, elle est renvoyée au modèle (3 essais)
     → relecture « directeur artistique » : le modèle voit les images de sa scène et peut la corriger
     → si rien ne passe : scène de secours (titre + capture en mouvement)
