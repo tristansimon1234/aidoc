@@ -1,4 +1,4 @@
-import type { VideoSteps } from './prompts.js'
+import { parseTimecode, type VideoSteps, type VideoStepsAnswer } from './prompts.js'
 
 /** « 104 » → 64 (1:04), ou null si le nombre ne peut pas être des minutes-secondes collées. */
 function asMinuteSeconds(seconds: number): number | null {
@@ -9,9 +9,10 @@ function asMinuteSeconds(seconds: number): number | null {
 }
 
 /**
- * Temps au-delà de la fin de la vidéo qui ressemblent à des minutes-secondes collées (« 110 » pour
- * 1:10) : Gemini a écrit toute la liste ainsi après la première minute, donc on la relit en entier
- * (« 104 » = 1:04 aussi, même s'il tient dans la vidéo). Sinon la liste est laissée telle quelle.
+ * Temps donnés en nombres au-delà de la fin de la vidéo qui ressemblent à des minutes-secondes collées
+ * (« 110 » pour 1:10) : Gemini a écrit toute la liste ainsi après la première minute, donc on la relit
+ * en entier (« 104 » = 1:04 aussi, même s'il tient dans la vidéo). Sinon la liste est laissée telle
+ * quelle. Jamais appliqué aux temps écrits « MM:SS », qui sont sans ambiguïté.
  */
 export function repairTimecodes(values: number[], duration: number): number[] {
   const tooLate = values.filter((v) => v > duration + 1)
@@ -26,21 +27,48 @@ export function repairTimecodes(values: number[], duration: number): number[] {
   })
 }
 
-/** Version pour un seul temps (moments du storyboard marketing). */
-export function repairTimecode(seconds: number, duration: number): number {
-  return repairTimecodes([seconds], duration)[0]!
+/**
+ * Convertit les temps de Gemini en secondes : « MM:SS » tel quel (un léger dépassement de la fin est
+ * juste borné ensuite), les nombres avec la réparation des minutes-secondes collées. NaN si illisible.
+ */
+export function resolveTimes(values: (number | string)[], duration: number): number[] {
+  const numbers = values.flatMap((v, i) => (typeof v === 'number' ? [i] : []))
+  const repaired = repairTimecodes(
+    numbers.map((i) => values[i] as number),
+    duration,
+  )
+  const out = values.map((v) => (typeof v === 'string' ? parseTimecode(v) : v))
+  numbers.forEach((i, k) => (out[i] = repaired[k]!))
+  return out
+}
+
+/** Réponse de Gemini → analyse en secondes ; les entrées au temps illisible sont écartées. */
+export function toVideoSteps(answer: VideoStepsAnswer, duration: number): VideoSteps {
+  const starts = resolveTimes(
+    answer.transcript.map((t) => t.start),
+    duration,
+  )
+  const times = resolveTimes(
+    answer.steps.map((s) => s.timestamp),
+    duration,
+  )
+  return {
+    title: answer.title,
+    transcript: answer.transcript
+      .map((t, i) => ({ start: starts[i]!, text: t.text }))
+      .filter((t) => Number.isFinite(t.start)),
+    steps: answer.steps
+      .map((s, i) => ({ ...s, timestamp: times[i]! }))
+      .filter((s) => Number.isFinite(s.timestamp)),
+  }
 }
 
 /** Trie, borne les horodatages à la vidéo, et évite qu'une capture montre déjà l'étape suivante. */
 export function cleanSteps(steps: VideoSteps['steps'], duration: number): VideoSteps['steps'] {
-  const times = repairTimecodes(
-    steps.map((s) => s.timestamp),
-    duration,
-  )
   const sorted = steps
-    .map((s, i) => ({
+    .map((s) => ({
       ...s,
-      timestamp: Math.min(Math.max(0, times[i]!), Math.max(0, duration - 0.2)),
+      timestamp: Math.min(Math.max(0, s.timestamp), Math.max(0, duration - 0.2)),
     }))
     .sort((a, b) => a.timestamp - b.timestamp)
   for (let i = 0; i < sorted.length - 1; i++) {

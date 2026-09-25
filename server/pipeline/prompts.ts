@@ -27,10 +27,11 @@ export function parseTimecode(value: number | string): number {
   return m ? Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : NaN
 }
 
-const timecode = z
-  .union([z.number(), z.string()])
-  .transform(parseTimecode)
-  .pipe(z.number().nonnegative())
+/**
+ * Un temps tel que Gemini l'écrit : « MM:SS » (demandé) ou un nombre. Il est converti en secondes
+ * par `resolveTimes` (steps.ts), qui ne répare que les nombres (voir `repairTimecodes`).
+ */
+const rawTime = z.union([z.number().nonnegative(), z.string()])
 
 /** 87.4 → « 1:27 » */
 export function toTimecode(seconds: number): string {
@@ -40,20 +41,28 @@ export function toTimecode(seconds: number): string {
 
 // ── 1. Analyse de la vidéo → transcription + étapes horodatées ──
 
+/** Réponse de Gemini à l'analyse : temps encore bruts (voir `toVideoSteps` dans steps.ts). */
 export const VideoStepsSchema = z.object({
   title: z.string().default(''),
   // Tout ce que dit la personne, mot pour mot : c'est la meilleure source d'explications.
-  transcript: z.array(z.object({ start: timecode, text: z.string() })).default([]),
+  transcript: z.array(z.object({ start: rawTime, text: z.string() })).default([]),
   steps: z.array(
     z.object({
-      timestamp: timecode,
+      timestamp: rawTime,
       action: z.string(),
       screen: z.string(),
       spoken: z.string().nullable().default(null),
     }),
   ),
 })
-export type VideoSteps = z.infer<typeof VideoStepsSchema>
+export type VideoStepsAnswer = z.infer<typeof VideoStepsSchema>
+
+/** Analyse avec les temps en secondes. */
+export interface VideoSteps {
+  title: string
+  transcript: { start: number; text: string }[]
+  steps: { timestamp: number; action: string; screen: string; spoken: string | null }[]
+}
 export type Transcript = VideoSteps['transcript']
 
 export function videoAnalysisPrompt(durationSeconds: number): string {

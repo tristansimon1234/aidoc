@@ -37,7 +37,7 @@ import {
   narrationSlots,
   misfit,
   planEdit,
-  repairTimecodes,
+  toVideoSteps,
   speakingRate,
   uncoveredRanges,
   wordsFor,
@@ -160,15 +160,10 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
   const { steps, markdown } = await withVideo(video, duration, async (gemini) => {
     // 2. Transcription de ce que dit la personne + liste des étapes
     await step('Analyzing the video')
-    const answer = await gemini.json(videoAnalysisPrompt(duration), VideoStepsSchema)
-    const starts = repairTimecodes(
-      answer.transcript.map((t) => t.start),
+    const analysis = toVideoSteps(
+      await gemini.json(videoAnalysisPrompt(duration), VideoStepsSchema),
       duration,
     )
-    const analysis = {
-      ...answer,
-      transcript: answer.transcript.map((t, i) => ({ ...t, start: starts[i]! })),
-    }
     let found = cleanSteps(analysis.steps, duration)
     // Gemini s'arrête parfois de lister les étapes avant la fin : on ré-analyse les longs passages vides.
     for (const gap of found.length > 0 ? uncoveredRanges(found, duration) : []) {
@@ -184,7 +179,9 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
           }),
           MissingStepsSchema,
         )
-        const inside = extra.steps.filter((s) => s.timestamp > gap.start && s.timestamp < gap.end)
+        const inside = toVideoSteps({ title: '', transcript: [], ...extra }, duration).steps.filter(
+          (s) => s.timestamp > gap.start && s.timestamp < gap.end,
+        )
         if (inside.length > 0) found = cleanSteps([...found, ...inside], duration)
       } catch (err) {
         console.warn('[pipeline] ré-analyse d’un passage impossible', (err as Error).message)

@@ -33,6 +33,8 @@ import {
   misfit,
   planEdit,
   repairTimecodes,
+  resolveTimes,
+  toVideoSteps,
   speakingRate,
   uncoveredRanges,
   wordsFor,
@@ -299,20 +301,36 @@ describe('temps renvoyés par Gemini', () => {
     expect(parseTimecode('42')).toBe(42)
     expect(parseTimecode(12.5)).toBe(12.5)
     expect(parseTimecode('soon')).toBeNaN()
-    const parsed = VideoStepsSchema.parse({
-      transcript: [{ start: '1:10', text: 'x' }],
-      steps: [{ timestamp: '1:04', action: 'a', screen: 's' }],
-    })
-    expect(parsed.steps[0]!.timestamp).toBe(64)
+    const parsed = toVideoSteps(
+      VideoStepsSchema.parse({
+        transcript: [{ start: '1:10', text: 'x' }],
+        steps: [
+          { timestamp: '1:04', action: 'a', screen: 's' },
+          { timestamp: 'later', action: 'b', screen: 's' },
+        ],
+      }),
+      107,
+    )
+    expect(parsed.steps.map((s) => s.timestamp)).toEqual([64]) // temps illisible : étape écartée
     expect(parsed.transcript[0]!.start).toBe(70)
-    // Vidéo de 107 s : « 110 » est impossible, c'était 1:10 ; toute la liste est donc relue
-    // (« 104 » = 1:04). Une liste sans temps impossible n'est pas touchée.
+    // Vidéo de 107 s donnée en nombres : « 110 » est impossible, c'était 1:10 ; toute la liste est
+    // donc relue (« 104 » = 1:04). Une liste sans temps impossible n'est pas touchée.
     expect(repairTimecodes([49, 104, 110], 107)).toEqual([49, 64, 70])
     expect(repairTimecodes([49, 104], 107)).toEqual([49, 104])
     expect(repairTimecodes([49, 175], 107)).toEqual([49, 175]) // 1:75 n'existe pas
-    expect(cleanSteps([step(49), step(104), step(110)], 107).map((s) => s.timestamp)).toEqual([
-      49, 64, 70,
-    ])
+    expect(resolveTimes([49, 104, 110], 107)).toEqual([49, 64, 70])
+  })
+
+  it('ne relit jamais des temps « MM:SS », même s’ils dépassent un peu la fin', () => {
+    // Le bug d'avant : « 1:50 » dans une vidéo de 1:47 faisait relire « 1:44 » (104 s) comme 1:04.
+    expect(resolveTimes(['0:49', '1:44', '1:50'], 107)).toEqual([49, 104, 110])
+    const steps = toVideoSteps(
+      VideoStepsSchema.parse({
+        steps: ['0:49', '1:44', '1:50'].map((t) => ({ timestamp: t, action: t, screen: '' })),
+      }),
+      107,
+    ).steps
+    expect(cleanSteps(steps, 107).map((s) => s.action)).toEqual(['0:49', '1:44', '1:50'])
   })
 })
 
