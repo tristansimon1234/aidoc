@@ -36,6 +36,7 @@ export function VoicePicker({
   onChange: (choice: { voice: string; tone: string }) => void
 }) {
   const [voices, setVoices] = useState<VoiceOption[]>([])
+  const [premiumError, setPremiumError] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const audio = useRef<HTMLAudioElement | null>(null)
@@ -43,7 +44,10 @@ export function VoicePicker({
   useEffect(() => {
     api
       .voices()
-      .then(setVoices)
+      .then((r) => {
+        setVoices(r.voices)
+        setPremiumError(r.premiumError)
+      })
       .catch(() => setVoices([]))
     return () => audio.current?.pause()
   }, [])
@@ -105,8 +109,13 @@ export function VoicePicker({
             {premium.length > 0 && (
               <optgroup label="ElevenLabs · premium">{premium.map(option)}</optgroup>
             )}
-            {standard.length > 0 && <optgroup label="Gemini · included">{standard.map(option)}</optgroup>}
+            {standard.length > 0 && (
+              <optgroup label="Gemini · included">{standard.map(option)}</optgroup>
+            )}
           </select>
+          {premiumError && (
+            <span className={styles.notice}>ElevenLabs voices unavailable: {premiumError}</span>
+          )}
         </label>
         {voice !== 'none' && (
           <label className={styles.select}>

@@ -74,7 +74,15 @@ export const api = {
   listSops: () => call<Sop[]>('GET', '/sops'),
   getSop: (id: string) => call<Sop>('GET', `/sops/${id}`),
   deleteSop: (id: string) => call<{ ok: true }>('DELETE', `/sops/${id}`),
-  voices: () => call<VoiceOption[]>('GET', '/voices'),
+  /** Voix proposées ; `premiumError` = pourquoi ElevenLabs n'a pas donné ses voix (clé configurée). */
+  async voices(): Promise<{ voices: VoiceOption[]; premiumError: string | null }> {
+    const res = await call<VoiceOption[] | { voices: VoiceOption[]; premiumError: string | null }>(
+      'GET',
+      '/voices',
+    )
+    // Ancien serveur : une simple liste.
+    return Array.isArray(res) ? { voices: res, premiumError: null } : res
+  },
 
   /** Extrait audio d'une voix (avec le ton et la langue choisis), prêt à jouer. */
   async voicePreview(voice: Voice, language: string, tone: string): Promise<string> {

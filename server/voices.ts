@@ -58,11 +58,23 @@ export async function defaultVoice(): Promise<string> {
   return voices.find((v) => v.premium)?.id ?? DEFAULT_VOICE
 }
 
+/** Dernière raison pour laquelle ElevenLabs a refusé la liste des voix (affichée dans le formulaire). */
+let premiumError: string | null = null
+export function premiumVoicesError(): string | null {
+  return premiumError
+}
+
 export async function listVoices(): Promise<VoiceOption[]> {
-  const premium = await listElevenLabsVoices().catch((err: Error) => {
-    console.warn('[voices] ElevenLabs indisponible', err.message)
-    return []
-  })
+  const premium = await listElevenLabsVoices()
+    .then((list) => {
+      premiumError = null
+      return list
+    })
+    .catch((err: Error) => {
+      console.warn('[voices] ElevenLabs indisponible', err.message)
+      premiumError = err.message
+      return []
+    })
   return [
     ...GEMINI_VOICES,
     ...premium.map((v) => ({

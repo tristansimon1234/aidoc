@@ -12,7 +12,13 @@ import {
   creditsFor,
 } from './credits.js'
 import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
-import { defaultVoice, isKnownVoice, listVoices, previewVoice } from './voices.js'
+import {
+  defaultVoice,
+  isKnownVoice,
+  listVoices,
+  premiumVoicesError,
+  previewVoice,
+} from './voices.js'
 import { DEFAULT_TONE, LANGUAGES, TONES, type Tone } from './pipeline/prompts.js'
 import { dispatchSop } from './dispatch.js'
 import { withAbsoluteUrls } from './urls.js'
@@ -96,7 +102,8 @@ api.get(
 api.get(
   '/voices',
   authed(async (_req, res) => {
-    res.json(await listVoices())
+    const voices = await listVoices()
+    res.json({ voices, premiumError: premiumVoicesError() })
   }),
 )
 
