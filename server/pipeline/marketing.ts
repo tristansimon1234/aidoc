@@ -80,7 +80,7 @@ export async function makeMotionVideo({
   await step('Recording the voice-over')
   const voice = sop.voice === 'none' ? await defaultVoice() : sop.voice
   const voiceFiles = await mapLimit(board.scenes, 4, async (scene, i) => {
-    const { audio, ext } = await speak(voice, scene.line, tone)
+    const { audio, ext } = await speak(voice, scene.line, tone, 'marketing')
     const file = join(dir, `line-${i}.${ext}`)
     await writeFile(file, audio)
     return { file, seconds: await durationOf(file) }

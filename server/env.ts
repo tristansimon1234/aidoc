@@ -26,6 +26,8 @@ const EnvSchema = z.object({
   // Modèle de voix ElevenLabs : Flash (0,05 $ / 1 000 caractères, 32 langues) par défaut ;
   // eleven_multilingual_v2 ou eleven_v3 pour plus d'expressivité (2 fois plus cher).
   ELEVENLABS_MODEL: z.string().default('eleven_flash_v2_5'),
+  // Vidéos marketing : v3, le plus expressif (la voix doit vendre, la vidéo est courte).
+  ELEVENLABS_MARKETING_MODEL: z.string().default('eleven_v3'),
   // Force le mode local (données sur le disque, pas de connexion) même si SUPABASE_URL est défini.
   // Pour tester sur Railway sans Supabase tout en gardant ses variables.
   LOCAL_MODE: z

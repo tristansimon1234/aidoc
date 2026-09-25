@@ -86,11 +86,15 @@ export async function speak(
   voice: string,
   text: string,
   tone: Tone,
+  use: 'sop' | 'marketing' = 'sop',
 ): Promise<{ audio: Buffer; ext: 'wav' | 'mp3' }> {
   if (voice === 'premium') voice = `elevenlabs:${env.ELEVENLABS_VOICE_ID}`
   if (voice === 'standard' || !voice.includes(':')) voice = DEFAULT_VOICE
   const [provider, id = ''] = voice.split(/:(.*)/s)
-  if (provider === 'elevenlabs') return { audio: await speakWithElevenLabs(text, id), ext: 'mp3' }
+  if (provider === 'elevenlabs') {
+    const model = use === 'marketing' ? env.ELEVENLABS_MARKETING_MODEL : env.ELEVENLABS_MODEL
+    return { audio: await speakWithElevenLabs(text, id, model), ext: 'mp3' }
+  }
   // Gemini suit une consigne d'intonation placée avant le texte (elle n'est pas lue à voix haute).
   return { audio: await speakWithGemini(`${TONES[tone].speech}: ${text}`, id), ext: 'wav' }
 }

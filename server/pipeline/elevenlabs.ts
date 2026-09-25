@@ -5,15 +5,36 @@ export function isElevenLabsEnabled(): boolean {
   return Boolean(env.ELEVENLABS_API_KEY)
 }
 
-/** Voix premium ElevenLabs → MP3 (modèle ELEVENLABS_MODEL, Flash par défaut : 2 fois moins cher). */
-export async function speakWithElevenLabs(text: string, voiceId: string): Promise<Buffer> {
+/**
+ * Voix premium ElevenLabs → MP3. Modèle ELEVENLABS_MODEL par défaut (Flash : 2 fois moins cher) ; un
+ * autre modèle peut être demandé (v3 pour le marketing) : s'il refuse, on revient au modèle par défaut.
+ */
+export async function speakWithElevenLabs(
+  text: string,
+  voiceId: string,
+  model = env.ELEVENLABS_MODEL,
+): Promise<Buffer> {
+  if (model !== env.ELEVENLABS_MODEL) {
+    try {
+      return await elevenLabsTts(text, voiceId, model)
+    } catch (err) {
+      console.warn(
+        `[elevenlabs] ${model} impossible, ${env.ELEVENLABS_MODEL} à la place`,
+        (err as Error).message,
+      )
+    }
+  }
+  return elevenLabsTts(text, voiceId, env.ELEVENLABS_MODEL)
+}
+
+async function elevenLabsTts(text: string, voiceId: string, model: string): Promise<Buffer> {
   if (!env.ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY manquante')
   const res = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`,
     {
       method: 'POST',
       headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, model_id: env.ELEVENLABS_MODEL }),
+      body: JSON.stringify({ text, model_id: model }),
     },
   )
   if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${(await res.text()).slice(0, 300)}`)

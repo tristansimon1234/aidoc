@@ -38,7 +38,7 @@ Vidéo → Gemini regarde et écoute l'enregistrement → storyboard (4 à 8 sc�
 
 Si la vidéo animée échoue entièrement, on livre un montage des moments forts de l'enregistrement (ancienne méthode). Le code des scènes est contrôlé avant rendu (pas d'import, de réseau, d'aléatoire ni d'animation CSS : `server/pipeline/scene-code.ts`). Remotion est gratuit pour les structures de 3 personnes max ; au-delà, licence entreprise (remotion.pro).
 
-**Voix off** : l'utilisateur choisit la voix (30 voix Gemini incluses ; avec `ELEVENLABS_API_KEY`, toutes les voix du compte ElevenLabs, voix clonées comprises, proposées en premier et par défaut) et le ton (amical, professionnel, énergique, calme, joueur), et peut écouter un extrait avant de lancer. Liste des voix : `server/voices.ts` ; tons : `TONES` dans `server/pipeline/prompts.ts`.
+**Voix off** : l'utilisateur choisit la voix (30 voix Gemini incluses ; avec `ELEVENLABS_API_KEY`, toutes les voix du compte ElevenLabs, voix clonées comprises, proposées en premier et par défaut ; modèle Flash pour les SOP, v3 pour les vidéos marketing : `ELEVENLABS_MODEL`, `ELEVENLABS_MARKETING_MODEL`) et le ton (amical, professionnel, énergique, calme, joueur), et peut écouter un extrait avant de lancer. Liste des voix : `server/voices.ts` ; tons : `TONES` dans `server/pipeline/prompts.ts`.
 
 La vidéo livrée dure **4 minutes maximum**, quelle que soit la durée de l'enregistrement : au-delà, on garde un extrait autour de chaque étape (surtout ce qui précède l'action) et on coupe le reste. La voix off est calée sur ce montage. Réglage : `MAX_SOP_VIDEO_SECONDS` dans `server/pipeline/steps.ts`.
 

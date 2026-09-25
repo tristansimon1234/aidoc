@@ -421,7 +421,7 @@ async function makeHighlightVideo({ video, duration, sop, dir, step }: Job): Pro
   await step('Recording the voice-over')
   const voice = sop.voice === 'none' ? await defaultVoice() : sop.voice
   const files = await mapLimit(moments, 4, async (m, i) => {
-    const { audio, ext } = await speak(voice, m.line, tone)
+    const { audio, ext } = await speak(voice, m.line, tone, 'marketing')
     const file = join(dir, `line-${i}.${ext}`)
     await writeFile(file, audio)
     return file
