@@ -26,6 +26,7 @@ import {
   applyPickedTimes,
   attachTranscript,
   candidateTimes,
+  defaultShotTime,
   cleanSteps,
   fitSegment,
   limitWords,
@@ -177,15 +178,20 @@ describe('adresses des fichiers', () => {
 })
 
 describe('captures', () => {
-  it('propose le moment de l’action puis ce qu’elle affiche, sans déborder sur les étapes voisines', () => {
+  it('propose l’écran affiché APRÈS l’action, jusqu’à juste avant l’étape suivante', () => {
     const steps = [step(10), step(12), step(30)]
-    // Étape 2 : avant / pendant le clic, puis le résultat jusqu'à juste avant l'étape 3.
+    // Étape 2 (clic à 12 s) : l'écran qu'elle ouvre, de 12,8 s à 29,7 s (juste avant l'étape 3).
     const second = candidateTimes(steps, 1, 40)
-    expect(second.slice(0, 5)).toEqual([10.3, 11, 12, 13, 14.5])
-    expect(second[5]).toBeCloseTo(20.85, 0)
-    expect(second[6]).toBe(29.7)
-    expect(candidateTimes(steps, 0, 40)).toEqual([8, 9, 10, 11, 11.7])
-    expect(candidateTimes(steps, 2, 31)).toEqual([28, 29, 30, 30.8])
+    expect(second[0]).toBe(12.8)
+    expect(second.at(-1)).toBe(29.7)
+    expect(second.every((t) => t > 12 && t < 30)).toBe(true)
+    // Étape 1 : entre 10,8 s et 11,7 s (l'étape 2 arrive vite).
+    expect(candidateTimes(steps, 0, 40).every((t) => t >= 10.8 && t <= 11.7)).toBe(true)
+    // Étape suivante immédiate / fin de vidéo : on garde aussi l'instant de l'action.
+    expect(candidateTimes(steps, 2, 31)).toEqual([30, 30.8])
+    // Sans choix de Gemini : un peu après l'action.
+    expect(defaultShotTime(steps, 1, 40)).toBe(13.8)
+    expect(defaultShotTime(steps, 2, 31)).toBe(30)
   })
 
   it('garde les étapes dans l’ordre même si un choix recule', () => {

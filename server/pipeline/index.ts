@@ -37,6 +37,7 @@ import {
   applyPickedTimes,
   attachTranscript,
   candidateTimes,
+  defaultShotTime,
   cleanSteps,
   fitSegment,
   limitWords,
@@ -423,7 +424,8 @@ async function pickScreenshotTimes(
     for (let i = 0; i < steps.length; i += 5)
       batches.push(steps.slice(i, i + 5).map((_, k) => i + k))
 
-    const picked: (number | null)[] = steps.map(() => null)
+    // Par défaut, un peu après l'action ; remplacé par le choix de Gemini quand il y en a un.
+    const picked: (number | null)[] = steps.map((_, i) => defaultShotTime(steps, i, duration))
     const shows: (string | null)[] = steps.map(() => null)
     await mapLimit(batches, 3, async (batch) => {
       const images: { label: string; jpeg: Buffer }[] = []
@@ -453,6 +455,9 @@ async function pickScreenshotTimes(
         }
       }
     })
+    console.log(
+      `[pipeline] captures : ${shows.filter(Boolean).length}/${steps.length} choisies par Gemini`,
+    )
     // L'image retenue peut montrer le résultat de l'action : sa description remplace celle de
     // l'analyse, pour que le texte de la SOP parle de ce que montre la capture.
     return applyPickedTimes(steps, picked).map((s, i) =>
@@ -460,9 +465,12 @@ async function pickScreenshotTimes(
     )
   } catch (err) {
     console.warn(
-      '[pipeline] choix des captures impossible, horodatages d’origine',
+      '[pipeline] choix des captures impossible, capture juste après chaque action',
       (err as Error).message,
     )
-    return steps
+    return applyPickedTimes(
+      steps,
+      steps.map((_, i) => defaultShotTime(steps, i, duration)),
+    )
   }
 }

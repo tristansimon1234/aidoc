@@ -221,23 +221,41 @@ export function planEdit(
 }
 
 /**
- * Moments candidats pour la capture d'une étape : juste avant et pendant l'action (où cliquer), puis
- * après, jusqu'à juste avant l'étape suivante (ce que l'action affiche). Gemini choisit ensuite la plus
- * utile au lecteur. Sans déborder sur les étapes voisines.
+ * Fenêtre où l'écran de l'étape est affiché : APRÈS l'action (le temps que la page s'ouvre), jusqu'à
+ * juste avant l'étape suivante. La capture montre l'écran dont parle l'étape, pas le bouton qui y mène.
  */
-export function candidateTimes(steps: VideoSteps['steps'], i: number, duration: number): number[] {
+function resultWindow(
+  steps: VideoSteps['steps'],
+  i: number,
+  duration: number,
+): { t: number; from: number; to: number } {
   const t = steps[i]!.timestamp
   const lo = i > 0 ? steps[i - 1]!.timestamp + 0.3 : 0
-  const hi = Math.max(
+  const to = Math.max(
     lo,
     i < steps.length - 1 ? steps[i + 1]!.timestamp - 0.3 : Math.max(0, duration - 0.2),
   )
-  const after = hi > t + 3 ? [(t + hi) / 2, hi] : []
-  const times = [t - 2, t - 1, t, t + 1, t + 2.5, ...after].map((v) => {
-    const clamped = Math.min(Math.max(v, lo), hi)
-    return Math.round(clamped * 10) / 10
-  })
-  return [...new Set(times)].sort((a, b) => a - b)
+  return { t, from: Math.min(Math.max(t + 0.8, lo), to), to }
+}
+
+const round = (v: number) => Math.round(v * 10) / 10
+
+/**
+ * Moments candidats pour la capture d'une étape, tous pris après l'action et avant l'étape suivante ;
+ * Gemini choisit celui où l'écran est le mieux affiché. Si l'étape suivante arrive presque aussitôt,
+ * l'instant de l'action est gardé en plus.
+ */
+export function candidateTimes(steps: VideoSteps['steps'], i: number, duration: number): number[] {
+  const { t, from, to } = resultWindow(steps, i, duration)
+  const span = to - from
+  const times = span < 0.8 ? [t, from, to] : [0, 0.25, 0.5, 0.75, 1].map((k) => from + span * k)
+  return [...new Set(times.map(round))].sort((a, b) => a - b)
+}
+
+/** Capture par défaut (si Gemini n'a pas choisi) : un peu après l'action, l'écran s'étant affiché. */
+export function defaultShotTime(steps: VideoSteps['steps'], i: number, duration: number): number {
+  const { t, from, to } = resultWindow(steps, i, duration)
+  return to - from < 0.8 ? t : round(Math.min(from + 1, to))
 }
 
 /**

@@ -360,7 +360,7 @@ export function framePickPrompt(
         `STEP ${s.step}: ${s.action}\n  Expected on screen: ${s.screen}\n  Candidate images: ${s.images.join(', ')}`,
     )
     .join('\n\n')
-  return `These images are frames from a screen recording. For each step of a written procedure, pick the ONE candidate image that best illustrates it as a screenshot in the procedure. The candidates of a step go in time order: first the moment of the action (where to click, what to fill), then what the screen shows after it, until just before the next step.
+  return `These images are frames from a screen recording. For each step of a written procedure, pick the ONE candidate image that best illustrates it as a screenshot in the procedure. The candidates of a step go in time order, all taken AFTER its action, until just before the next step: pick the one where the screen the step leads to is fully displayed (not loading, not already changed by the next action).
 
 Rule: show the SCREEN the step talks about, not the button used to reach it. The text already says where to click; the screenshot shows the reader what they will see.
 - A step that opens or produces something (a page, a tab, a panel, a dialog, a list of results, a status): the frame where that screen is fully displayed, after the click.
