@@ -14,22 +14,66 @@ import styles from './pages.module.css'
 
 /** Étapes affichées pendant la génération (libellés = `progress` envoyé par le serveur). */
 const SOP_STEPS = [
-  { label: 'Preparing the video', estimatedSeconds: 20 },
-  { label: 'Analyzing the video', estimatedSeconds: 60 },
-  { label: 'Taking screenshots', estimatedSeconds: 10 },
-  { label: 'Writing the procedure', estimatedSeconds: 30 },
-  { label: 'Editing the video', estimatedSeconds: 20 },
-  { label: 'Recording the voice-over', estimatedSeconds: 60 },
-  { label: 'Finishing', estimatedSeconds: 10 },
+  {
+    label: 'Preparing the video',
+    text: 'Converted to a light format that is quick to analyze.',
+    estimatedSeconds: 20,
+  },
+  {
+    label: 'Analyzing the video',
+    text: 'The AI watches and listens: it transcribes what you say and lists every step.',
+    estimatedSeconds: 60,
+  },
+  {
+    label: 'Taking screenshots',
+    text: 'For each step, the clearest frame is picked among several.',
+    estimatedSeconds: 10,
+  },
+  {
+    label: 'Writing the procedure',
+    text: 'Step-by-step instructions, with your explanations, warnings and checks.',
+    estimatedSeconds: 30,
+  },
+  {
+    label: 'Editing the video',
+    text: 'Dead time is cut out to keep a video of 4 min max.',
+    estimatedSeconds: 20,
+  },
+  {
+    label: 'Recording the voice-over',
+    text: 'A short commentary for each passage, in sync with the screen.',
+    estimatedSeconds: 60,
+  },
+  { label: 'Finishing', text: 'Saving the procedure and the video.', estimatedSeconds: 10 },
 ]
 
 const MARKETING_STEPS = [
-  { label: 'Writing the storyboard', estimatedSeconds: 40 },
-  { label: 'Recording the voice-over', estimatedSeconds: 20 },
-  { label: 'Designing the scenes', estimatedSeconds: 300 },
-  { label: 'Rendering the video', estimatedSeconds: 120 },
-  { label: 'Mixing the sound', estimatedSeconds: 30 },
-  { label: 'Finishing', estimatedSeconds: 5 },
+  {
+    label: 'Writing the storyboard',
+    text: 'From your screenshots and brief: the story, the hook, the colors of your product.',
+    estimatedSeconds: 40,
+  },
+  {
+    label: 'Recording the voice-over',
+    text: 'One line per scene; each scene lasts as long as its line.',
+    estimatedSeconds: 20,
+  },
+  {
+    label: 'Designing the scenes',
+    text: 'Each scene is coded as an animated mockup, tested, then reviewed on its images.',
+    estimatedSeconds: 300,
+  },
+  {
+    label: 'Rendering the video',
+    text: 'The scenes are assembled in 1080p, with word-by-word captions.',
+    estimatedSeconds: 120,
+  },
+  {
+    label: 'Mixing the sound',
+    text: 'Voice-over and background music are mixed together.',
+    estimatedSeconds: 30,
+  },
+  { label: 'Finishing', text: 'Saving the video.', estimatedSeconds: 5 },
 ]
 
 export function SopPage() {
@@ -168,6 +212,20 @@ export function SopPage() {
       <>
         {header}
         <ProgressLoader steps={steps} activeStep={active} statusMessage={sop.progress} />
+        <ol className={styles.stages}>
+          {steps.map((s, i) => (
+            <li
+              key={s.label}
+              className={`${styles.stage} ${i < active ? styles.stageDone : ''} ${i === active ? styles.stageActive : ''}`}
+            >
+              <span className={styles.stageMark}>{i < active ? '✓' : ''}</span>
+              <span>
+                <span className={styles.stageName}>{s.label}</span>
+                <span className={styles.stageText}>{s.text}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
         <p className={styles.notice} style={{ marginTop: 'var(--space-md)' }}>
           You can close this page: generation keeps running.
         </p>

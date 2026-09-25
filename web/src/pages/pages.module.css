@@ -430,3 +430,110 @@
 .panel .actions {
   margin-top: var(--space-md);
 }
+
+/* Conseils sous le titre d'une étape : courts, discrets, puce violette. */
+.tips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: var(--space-md);
+  list-style: none;
+  max-width: 680px;
+}
+
+.tips li {
+  position: relative;
+  padding-left: 18px;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--color-muted-fg);
+  animation: fadeSlideIn var(--duration-slow) var(--ease-out) both;
+}
+
+.tips li:nth-child(2) { animation-delay: 60ms; }
+.tips li:nth-child(3) { animation-delay: 120ms; }
+.tips li:nth-child(4) { animation-delay: 180ms; }
+
+.tips li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 0.62em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  opacity: 0.7;
+}
+
+/* Étapes de la génération, expliquées sous la barre de progression */
+.stages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+  list-style: none;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: var(--space-sm);
+  align-items: start;
+  font-size: var(--text-sm);
+  color: var(--color-muted-fg);
+  transition: color var(--duration) var(--ease-out);
+}
+
+.stageMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  font-size: 11px;
+  transition:
+    background-color var(--duration) var(--ease-out),
+    border-color var(--duration) var(--ease-out),
+    color var(--duration) var(--ease-out);
+}
+
+.stageName {
+  font-weight: 500;
+  color: inherit;
+}
+
+.stageText {
+  display: block;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.stageDone .stageMark {
+  background: var(--color-primary-soft);
+  border-color: transparent;
+  color: var(--color-primary);
+}
+
+.stageActive {
+  color: var(--color-fg);
+}
+
+.stageActive .stageMark {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+
+.stageActive .stageMark::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  animation: pulse 1.4s var(--ease-in-out) infinite;
+}

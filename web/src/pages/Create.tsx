@@ -121,7 +121,10 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
       <Stepper labels={STEPS(kind)} current={step} onGo={(i) => i < step && setStep(i)} />
 
       {step === 0 && (
-        <Panel title="What do you want to create?" subtitle="Pick one, the next steps adapt.">
+        <Panel
+          title="What do you want to create?"
+          subtitle="Pick one: the next steps adapt to it, and everything is generated for you in a few minutes."
+        >
           <div className={styles.choices}>
             {KINDS.map((k) => (
               <Card
@@ -146,7 +149,12 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
       {step === 1 && kind === 'sop' && (
         <Panel
           title="Your video"
-          subtitle="Do the task while recording your screen, and explain what you do out loud."
+          subtitle="Do the task once, from start to finish, while recording your screen."
+          tips={[
+            'Talk as you go: say why you click, the rules to follow and the pitfalls. The procedure and the voice-over are written from what you say.',
+            'Go at your normal pace: hesitations and dead time are cut out.',
+            `Up to ${me?.maxVideoMinutes ?? 60} min. The narrated video is edited down to 4 min max.`,
+          ]}
         >
           <ScreenRecorder onFile={pick} maxMinutes={me?.maxVideoMinutes ?? 60} />
         </Panel>
@@ -155,7 +163,12 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
       {step === 1 && kind === 'marketing' && (
         <Panel
           title="Your screenshots"
-          subtitle="The screens that show your product best: they are animated in the video, and give it your colors."
+          subtitle="The screens that show your product at its best. They are not shown as is: the AI redraws them as clean, animated mockups."
+          tips={[
+            'Pick 3 to 8 key screens: the main page, the key feature, a result or a dashboard.',
+            'Use clean screens without personal data. Their colors become the colors of the video.',
+            'Fastest: take a screenshot, then paste it here with ⌘V / Ctrl+V.',
+          ]}
         >
           <ScreenshotPicker
             files={screenshots}
@@ -177,6 +190,19 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
             kind === 'sop' && file
               ? `${kindLabel} · ${file.name}`
               : `${kindLabel} · ${screenshots.length} screenshot${screenshots.length > 1 ? 's' : ''}`
+          }
+          tips={
+            kind === 'sop'
+              ? [
+                  'Title: the name of the task, as your team would search for it (e.g. “Book a supplier invoice”).',
+                  'Language: the procedure and the voice-over are written in it, whatever language you spoke.',
+                  'Voice: listen with ▶ before choosing. The tone changes how the text is written and read.',
+                ]
+              : [
+                  'Brief: the more concrete, the better the script: who it is for, the main benefit, a figure, the call to action.',
+                  'Length: 30 s for social media, 60 s for a landing page or a demo.',
+                  'Voice: listen with ▶ before choosing. Music is composed for your video.',
+                ]
           }
         >
           <Card>
@@ -258,7 +284,25 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
       )}
 
       {step === 3 && hasSource && (
-        <Panel title="Ready to generate" subtitle="It takes a few minutes. You can close the page.">
+        <Panel
+          title="Ready to generate"
+          subtitle="It takes a few minutes. You can close the page: the result appears in your library."
+          tips={
+            kind === 'sop'
+              ? [
+                  'The AI watches and listens to your video, and lists every step.',
+                  'It writes the procedure, with the best screenshot for each step.',
+                  'It edits a narrated video of 4 min max, in sync with the screen.',
+                  'If anything fails, your credits are refunded automatically.',
+                ]
+              : [
+                  'The AI writes a storyboard from your screenshots and your brief.',
+                  'Each scene is designed as an animated mockup of your product.',
+                  'Voice-over, captions and music are added, in a 1080p video.',
+                  'If anything fails, your credits are refunded automatically.',
+                ]
+          }
+        >
           <Card>
             <dl className={styles.summary}>
               <dt>Type</dt>
@@ -318,10 +362,13 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
 function Panel({
   title,
   subtitle,
+  tips,
   children,
 }: {
   title: string
   subtitle: string
+  /** Conseils courts affichés sous le titre. */
+  tips?: string[]
   children: ReactNode
 }) {
   return (
@@ -330,6 +377,13 @@ function Panel({
         <div>
           <h1 className={styles.title}>{title}</h1>
           <p className={styles.subtitle}>{subtitle}</p>
+          {tips && tips.length > 0 && (
+            <ul className={styles.tips}>
+              {tips.map((tip) => (
+                <li key={tip}>{tip}</li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
       {children}
