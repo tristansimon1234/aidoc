@@ -64,10 +64,17 @@ let cache: { at: number; voices: ElevenLabsVoice[] } | null = null
 export async function listElevenLabsVoices(): Promise<ElevenLabsVoice[]> {
   if (!env.ELEVENLABS_API_KEY) return []
   if (cache && Date.now() - cache.at < 10 * 60_000) return cache.voices
-  const res = await fetch('https://api.elevenlabs.io/v1/voices', {
-    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY },
-  })
-  if (!res.ok) throw new Error(`ElevenLabs ${res.status}`)
+  const key = env.ELEVENLABS_API_KEY
+  const get = (url: string) => fetch(url, { headers: { 'xi-api-key': key } })
+  // /v1/voices d'abord ; si ElevenLabs le refuse, la version paginée /v2/voices.
+  let res = await get('https://api.elevenlabs.io/v1/voices')
+  if (!res.ok) {
+    console.warn(
+      `[voices] ElevenLabs /v1/voices ${res.status}: ${(await res.text()).slice(0, 300)}`,
+    )
+    res = await get('https://api.elevenlabs.io/v2/voices?page_size=100')
+  }
+  if (!res.ok) throw new Error(`ElevenLabs ${res.status}: ${(await res.text()).slice(0, 300)}`)
   const { voices } = VoicesSchema.parse(await res.json())
   const list = voices.map((v) => {
     const cloned = v.category === 'cloned' || v.category === 'professional'

@@ -93,7 +93,7 @@ export async function processSop(id: string): Promise<void> {
       err instanceof UserFacingError
         ? err.message
         : err instanceof QuotaExceededError
-          ? 'The AI service has reached its daily limit. Your credits were refunded, please try again later.'
+          ? 'The AI service has reached its usage limit (quota or prepaid credits). Your credits were refunded, please try again later.'
           : 'Generation failed. Your credits were refunded.'
     await fail(sop, message)
   } finally {

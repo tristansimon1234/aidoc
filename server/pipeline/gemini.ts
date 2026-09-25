@@ -25,7 +25,9 @@ function gemini(): GoogleGenAI {
 export class QuotaExceededError extends Error {}
 
 function isDailyQuota(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 429 && /per_?day/i.test(err.message)
+  if (!(err instanceof ApiError)) return false
+  // 402 : crédits prépayés du projet Google épuisés (à recharger dans AI Studio).
+  return (err.status === 429 && /per_?day/i.test(err.message)) || err.status === 402
 }
 
 /**
