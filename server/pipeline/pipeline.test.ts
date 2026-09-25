@@ -159,11 +159,15 @@ describe('adresses des fichiers', () => {
 })
 
 describe('captures', () => {
-  it('cherche autour de l’horodatage sans déborder sur les étapes voisines', () => {
+  it('propose le moment de l’action puis ce qu’elle affiche, sans déborder sur les étapes voisines', () => {
     const steps = [step(10), step(12), step(30)]
-    expect(candidateTimes(steps, 1, 40)).toEqual([10.3, 11, 12, 13, 14])
-    expect(candidateTimes(steps, 0, 40)).toEqual([7, 8, 9, 10, 11, 11.7])
-    expect(candidateTimes(steps, 2, 31)).toEqual([27, 28, 29, 30, 30.8])
+    // Étape 2 : avant / pendant le clic, puis le résultat jusqu'à juste avant l'étape 3.
+    const second = candidateTimes(steps, 1, 40)
+    expect(second.slice(0, 5)).toEqual([10.3, 11, 12, 13, 14.5])
+    expect(second[5]).toBeCloseTo(20.85, 0)
+    expect(second[6]).toBe(29.7)
+    expect(candidateTimes(steps, 0, 40)).toEqual([8, 9, 10, 11, 11.7])
+    expect(candidateTimes(steps, 2, 31)).toEqual([28, 29, 30, 30.8])
   })
 
   it('garde les étapes dans l’ordre même si un choix recule', () => {

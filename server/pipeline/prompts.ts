@@ -305,7 +305,13 @@ function placeUnderStep(markdown: string, n: number, image: string): string | nu
 // ── 2 bis. Choix de la meilleure capture pour chaque étape ──
 
 export const FramePickSchema = z.object({
-  picks: z.array(z.object({ step: z.number().int(), image: z.number().int() })),
+  picks: z.array(
+    z.object({
+      step: z.number().int(),
+      image: z.number().int(),
+      shows: z.string().optional(),
+    }),
+  ),
 })
 
 /** `steps[].images` = numéros des images candidates de l'étape (dans l'ordre chronologique). */
@@ -318,17 +324,19 @@ export function framePickPrompt(
         `STEP ${s.step}: ${s.action}\n  Expected on screen: ${s.screen}\n  Candidate images: ${s.images.join(', ')}`,
     )
     .join('\n\n')
-  return `These images are frames from a screen recording. For each step of a written procedure, pick the ONE candidate image that best illustrates it as a screenshot in the procedure.
+  return `These images are frames from a screen recording. For each step of a written procedure, pick the ONE candidate image that best illustrates it as a screenshot in the procedure. The candidates of a step go in time order: first the moment of the action (where to click, what to fill), then what the screen shows after it, until just before the next step.
 
-The best frame:
-- shows the element the reader must act on (button, menu, field) and, for a form, the value already filled in;
-- shows the screen BEFORE the next action changes it (not the result of the next step);
-- for a step about checking a result, shows that result;
-- is not a transition, a loading screen, a blurred frame, or a frame hidden by an unrelated popup.
+Judge like a technical writer: which image helps the reader most next to this step?
+- A step whose value is WHERE to act (a button among many, a menu item, a field to fill, an option to pick): the frame where that element is clearly visible, with the value already filled in for a form.
+- A step whose value is WHAT the action opens or produces (a page, a panel, a dialog, a list of results, a status): the frame where that result is fully displayed.
+- A step about checking a result: the frame showing that result.
+- Never a frame that already shows the next step's action (another menu opened, another field being filled), a transition, a loading screen, a blurred frame, or a frame hidden by an unrelated popup.
 
 ${list}
 
-Return ONLY JSON: {"picks": [{"step": <step number>, "image": <chosen image number>}, ...]} with one entry per step.`
+For each step also write "shows": one short sentence saying what the chosen image shows (it becomes the screenshot's description).
+
+Return ONLY JSON: {"picks": [{"step": <step number>, "image": <chosen image number>, "shows": "..."}, ...]} with one entry per step.`
 }
 
 // ── 3. Script de la voix off ─────────────────────────────────

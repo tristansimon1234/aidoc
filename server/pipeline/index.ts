@@ -404,10 +404,11 @@ async function pickScreenshotTimes(
   try {
     const candidates = steps.map((_, i) => candidateTimes(steps, i, duration))
     const batches: number[][] = []
-    for (let i = 0; i < steps.length; i += 6)
-      batches.push(steps.slice(i, i + 6).map((_, k) => i + k))
+    for (let i = 0; i < steps.length; i += 5)
+      batches.push(steps.slice(i, i + 5).map((_, k) => i + k))
 
     const picked: (number | null)[] = steps.map(() => null)
+    const shows: (string | null)[] = steps.map(() => null)
     await mapLimit(batches, 3, async (batch) => {
       const images: { label: string; jpeg: Buffer }[] = []
       const items = []
@@ -430,10 +431,17 @@ async function pickScreenshotTimes(
       for (const p of picks) {
         const item = items.find((it) => it.step === p.step)
         const k = item?.images.indexOf(p.image) ?? -1
-        if (item && k >= 0) picked[item.step - 1] = candidates[item.step - 1]![k] ?? null
+        if (item && k >= 0) {
+          picked[item.step - 1] = candidates[item.step - 1]![k] ?? null
+          shows[item.step - 1] = p.shows?.trim() || null
+        }
       }
     })
-    return applyPickedTimes(steps, picked)
+    // L'image retenue peut montrer le résultat de l'action : sa description remplace celle de
+    // l'analyse, pour que le texte de la SOP parle de ce que montre la capture.
+    return applyPickedTimes(steps, picked).map((s, i) =>
+      s.timestamp === picked[i] && shows[i] ? { ...s, screen: shows[i] } : s,
+    )
   } catch (err) {
     console.warn(
       '[pipeline] choix des captures impossible, horodatages d’origine',
