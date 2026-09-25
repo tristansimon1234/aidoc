@@ -127,6 +127,24 @@ describe('prompts', () => {
     expect(sop).toContain('Key points')
     expect(sop).toContain('warning callout comes FIRST')
 
+    // Ce que la personne explique (but, points clés, pourquoi de chaque étape) est donné à la rédaction.
+    const explained = sopPrompt({
+      title: 'Book an invoice',
+      language: 'en',
+      steps: [{ ...step(4, "Open 'Invoices'"), why: 'Only this menu books in the right journal' }],
+      transcript: [],
+      purpose: 'Book every supplier invoice the day it arrives.',
+      keyPoints: ['Invoices above 5,000 € need a second approval.'],
+    })
+    expect(explained).toContain(
+      'Why (as the person explains it): Only this menu books in the right journal',
+    )
+    expect(explained).toContain(
+      'Purpose of the task (as the person explains it): Book every supplier invoice',
+    )
+    expect(explained).toContain('- Invoices above 5,000 € need a second approval.')
+    expect(explained).toContain("DON'T TAKE THE SCREEN LITERALLY")
+
     const voice = narrationPrompt({
       language: 'en',
       tone: 'calm',

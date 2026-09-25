@@ -46,12 +46,16 @@ export const VideoStepsSchema = z.object({
   title: z.string().default(''),
   // Tout ce que dit la personne, mot pour mot : c'est la meilleure source d'explications.
   transcript: z.array(z.object({ start: rawTime, text: z.string() })).default([]),
+  // Ce que la personne explique, extrait de sa parole : le but de la tâche et les points clés.
+  purpose: z.string().default(''),
+  keyPoints: z.array(z.string()).default([]),
   steps: z.array(
     z.object({
       timestamp: rawTime,
       action: z.string(),
       screen: z.string(),
       spoken: z.string().nullable().default(null),
+      why: z.string().nullable().default(null),
     }),
   ),
 })
@@ -61,7 +65,18 @@ export type VideoStepsAnswer = z.infer<typeof VideoStepsSchema>
 export interface VideoSteps {
   title: string
   transcript: { start: number; text: string }[]
-  steps: { timestamp: number; action: string; screen: string; spoken: string | null }[]
+  /** Pourquoi on fait cette tâche, d'après ce que dit la personne. */
+  purpose?: string
+  /** Règles, chiffres, avertissements et astuces dits par la personne. */
+  keyPoints?: string[]
+  steps: {
+    timestamp: number
+    action: string
+    screen: string
+    spoken: string | null
+    /** La raison ou la règle de cette étape, telle que la personne l'explique. */
+    why?: string | null
+  }[]
 }
 export type Transcript = VideoSteps['transcript']
 
@@ -69,17 +84,22 @@ export function videoAnalysisPrompt(durationSeconds: number): string {
   const minutes = Math.max(1, Math.round(durationSeconds / 60))
   return `You are watching AND listening to a screen recording (about ${minutes} min) of someone doing a task in a software tool while explaining it out loud. It will become a Standard Operating Procedure (SOP) that a new colleague can follow alone, without the video.
 
-Do two things.
+Do three things.
 
 1. "transcript": transcribe EVERYTHING the person says, word for word, in the language spoken, as consecutive segments of one or a few sentences, each with its start time as "MM:SS" (e.g. "1:27"). Do not summarize, do not skip anything: the explanations, reasons, rules, exceptions and warnings they give are the most valuable part. Remove only filler sounds ("euh", "um"). If nobody speaks, return an empty list.
 
-2. "steps": every step needed to reproduce the task, from the first screen to the final result.
+2. What the person EXPLAINS (only from what they say, never invented):
+- "purpose": in one or two sentences, why this task is done and when, as they explain it (empty if they do not say).
+- "keyPoints": every rule, figure, threshold, deadline, exception, warning, tip or common mistake they state, one short sentence each, facts kept exact.
+
+3. "steps": every step needed to reproduce the task, from the first screen to the final result.
 - One step = one meaningful action or state change: open a page, fill a form, click a button, choose an option, check a result. Merge micro-actions that form one operation ("typed email + password + clicked Sign in" = one step).
 - Ignore noise: aimless mouse moves, hesitations, loading screens, mistakes that were undone, webcam / meeting framing, small talk.
 - If the same action is repeated (e.g. filling 5 similar rows), keep ONE step and say it is repeated.
 - "action": what is done, with the exact labels visible on screen (buttons, menus, fields, tabs) in quotes, in their original language.
 - "screen": short description of what is visible at the step's frame.
 - "spoken": everything the person says while doing this step, word for word (it usually explains WHY and what to watch out for), or null if silent.
+- "why": the reason, rule or goal of this step as the person explains it, in one short sentence (e.g. "Use the Radarly source, otherwise the columns are not recognised"), or null if they give none.
 - "timestamp": the moment as "MM:SS" (e.g. "1:27" for 1 min 27 s) of the frame that best illustrates the step: the SCREEN the step is about, once it is displayed (after a click that opens a page, a panel or a dialog, the frame where that page is fully loaded; for a form, the fields filled in), BEFORE the next step starts.
 - Chronological order. All times between 0:00 and ${toTimecode(durationSeconds)} (the length of the video). Cover the WHOLE recording until its very end: the task often continues late in the video, keep listing steps up to the last action.
 - Never copy sensitive values seen on screen or said aloud (passwords, tokens, bank details, personal emails or phone numbers): describe them instead ("the client's email").
@@ -87,7 +107,7 @@ Do two things.
 "title": short name of the task, e.g. "Create a supplier invoice in Pennylane".
 
 Return ONLY JSON:
-{"title": "...", "transcript": [{"start": "0:00", "text": "So today I'll show you how we book a supplier invoice..."}], "steps": [{"timestamp": "0:04", "action": "Open the 'Invoices' menu", "screen": "Sidebar with 'Invoices' highlighted", "spoken": "First go to Invoices, not Purchases, because..."}]}`
+{"title": "...", "transcript": [{"start": "0:00", "text": "So today I'll show you how we book a supplier invoice..."}], "purpose": "...", "keyPoints": ["..."], "steps": [{"timestamp": "0:04", "action": "Open the 'Invoices' menu", "screen": "Sidebar with 'Invoices' highlighted", "spoken": "First go to Invoices, not Purchases, because...", "why": "Invoices, not Purchases: only this menu books them in the right journal"}]}`
 }
 
 export const MissingStepsSchema = VideoStepsSchema.pick({ steps: true })
@@ -134,13 +154,23 @@ export function sopPrompt(input: {
   language: string
   steps: VideoSteps['steps']
   transcript: Transcript
+  purpose?: string
+  keyPoints?: string[]
 }): string {
   const language = languageName(input.language)
   const steps = input.steps
     .map(
       (s, i) =>
-        `STEP ${i + 1} (at ${toTimecode(s.timestamp)})\n- Action: ${s.action}\n- Screen: ${s.screen}${s.spoken ? `\n- Said while doing it: ${s.spoken}` : ''}\n- Screenshot placeholder: {{SCREENSHOT_${i}}}`,
+        `STEP ${i + 1} (at ${toTimecode(s.timestamp)})\n- Action: ${s.action}${s.why ? `\n- Why (as the person explains it): ${s.why}` : ''}${s.spoken ? `\n- Said while doing it: ${s.spoken}` : ''}\n- Screenshot shows: ${s.screen}\n- Screenshot placeholder: {{SCREENSHOT_${i}}}`,
     )
+    .join('\n\n')
+  const explained = [
+    input.purpose ? `Purpose of the task (as the person explains it): ${input.purpose}` : '',
+    input.keyPoints?.length
+      ? `Key points the person states (every one must appear in the SOP, facts exact):\n${input.keyPoints.map((k) => `- ${k}`).join('\n')}`
+      : '',
+  ]
+    .filter(Boolean)
     .join('\n\n')
 
   return `You write Standard Operating Procedures (SOPs). Write one in ${language} for the task shown in this screen recording. You can watch AND hear the video; below are its full transcript and the list of steps already extracted from it.
@@ -152,6 +182,12 @@ WHERE THE CONTENT COMES FROM
 - The SCREEN gives the exact labels and where things are. Use it for precision, not as the content itself: do not just describe what is visible.
 - If the person says something that contradicts the screen, follow what they say and mention the point in a warning.
 
+DON'T TAKE THE SCREEN LITERALLY
+- Write each step around its INTENT, the way an expert colleague would explain it: what we are doing and why, then how ("To use the Radarly export, pick **Radarly** as the source: its columns are recognised automatically."). Not a mechanical click log ("Click the button. Click the tab.").
+- Group clicks that serve one goal into one step; skip obvious micro-actions (closing a tooltip, scrolling).
+- Mention only the on-screen elements the reader needs to find; don't describe the layout, colors or everything visible.
+- Use the person's own reasons, rules and vocabulary (below); when they explain a choice, say which option to take in which case.
+${explained ? `\nWHAT THE PERSON EXPLAINS\n${explained}\n` : ''}
 The reader has never done this task and will follow the SOP alone, screen by screen.
 
 STRUCTURE (Markdown). Every heading and sentence is written in ${language}; the <…> below describe what to write, translate the section names.

@@ -54,6 +54,8 @@ export function toVideoSteps(answer: VideoStepsAnswer, duration: number): VideoS
   )
   return {
     title: answer.title,
+    purpose: answer.purpose,
+    keyPoints: answer.keyPoints,
     transcript: answer.transcript
       .map((t, i) => ({ start: starts[i]!, text: t.text }))
       .filter((t) => Number.isFinite(t.start)),
