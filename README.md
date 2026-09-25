@@ -23,14 +23,14 @@ Vidéo (upload ou enregistrement dans le navigateur)
   → ffmpeg extrait quelques images autour de chaque étape, Gemini choisit la meilleure capture
   → Gemini rédige la SOP (markdown)
   → ffmpeg monte une vidéo de 4 min max (un extrait autour de chaque étape)
-  → Gemini écrit la voix off (à partir de ce que la personne a dit), synthèse vocale (Gemini ou ElevenLabs),
+  → Claude Sonnet 5 écrit la voix off (à partir de ce que la personne a dit ; Gemini sans clé Anthropic ou si Claude échoue), synthèse vocale (Gemini ou ElevenLabs),
     puis chaque passage de vidéo est accéléré ou ralenti pour durer exactement le temps de sa phrase (aucun blanc)
 ```
 
 **Vidéo marketing animée** (`server/pipeline/marketing.ts`, projet Remotion dans `remotion/`) :
 
 ```
-Captures (converties en JPEG par le navigateur) + brief → Gemini écrit le storyboard (4 à 8 scènes, 3 accroches,
+Captures (converties en JPEG par le navigateur) + brief → Claude Sonnet 5 (ou Gemini) écrit le storyboard et la voix off (4 à 8 scènes, 3 accroches,
         couleurs du produit tirées des captures, captures à utiliser par scène) → la meilleure accroche est choisie
   → voix off par scène (chaque scène dure le temps de sa phrase)
   → pour chaque scène, Claude Sonnet 5 (ou Gemini sans clé Anthropic) écrit le code React/Remotion de l'animation :
@@ -78,7 +78,7 @@ server/
     gemini.ts       analyse vidéo, texte, synthèse vocale
     elevenlabs.ts   voix premium
     marketing.ts    vidéo marketing animée : storyboard, code des scènes, rendu
-    claude.ts       Claude (code des scènes), ou Gemini à défaut
+    claude.ts       Claude (voix off, storyboard, code des scènes), ou Gemini à défaut
     scene-code.ts   contrôle et compilation du code des scènes (esbuild)
     remotion.ts     rendu Remotion (images de test, vidéo complète)
     ffmpeg.ts       conversion, captures, montage audio
@@ -125,7 +125,7 @@ Sans `SUPABASE_URL` ni `VITE_SUPABASE_URL`, l'app démarre en **mode local** : p
 
 Le service Railway peut faire tout le travail sans Supabase : API, traitement vidéo, stockage sur son disque, pas de connexion (100 crédits).
 
-- **Railway** : déployer le repo (Dockerfile). Variables : `GEMINI_API_KEY` (+ `ANTHROPIC_API_KEY` pour que Claude code les scènes des vidéos marketing, `ELEVENLABS_API_KEY` en option) et `LOCAL_MODE=true` (force le mode sans Supabase, même si ses variables sont là). Générer un domaine public. Sans volume, les données sont effacées à chaque déploiement ; pour les garder, monter un volume sur `/app/.local-data`.
+- **Railway** : déployer le repo (Dockerfile). Variables : `GEMINI_API_KEY` (+ `ANTHROPIC_API_KEY` pour que Claude écrive les voix off et le storyboard et code les scènes des vidéos marketing, `ELEVENLABS_API_KEY` en option) et `LOCAL_MODE=true` (force le mode sans Supabase, même si ses variables sont là). Générer un domaine public. Sans volume, les données sont effacées à chaque déploiement ; pour les garder, monter un volume sur `/app/.local-data`.
 - **Vercel** : `VITE_API_URL` = l'URL Railway (`https://` ajouté si besoin). Les variables Supabase peuvent rester : `VITE_API_URL` a la priorité. Redéployer.
 
 ⚠️ Sans connexion, quiconque connaît l'URL peut lancer des générations avec ta clé Gemini : à réserver aux tests. Pour revenir à la version normale : retirer `VITE_API_URL` (Vercel) et `LOCAL_MODE` (Railway).
@@ -140,7 +140,7 @@ Sur un déploiement avec Supabase + Railway, mettre `DISABLE_LOGIN=true` et `VIT
    - Auth → URL Configuration : mettre l'URL de l'app en _Site URL_ (pour le lien de connexion par email).
    - Storage → Settings : la taille max par fichier est de 50 Mo sur le plan gratuit. Pour des vidéos d'écran de plusieurs minutes, passer au plan Pro et la monter (le bucket accepte jusqu'à 2 Go).
 2. **Railway (service vidéo)** : _New service → GitHub repo_ `aidoc`. `railway.json` + `Dockerfile` sont détectés.
-   - Variables : `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GEMINI_API_KEY`, `VIDEO_SERVICE_SECRET` (une longue chaîne aléatoire), `ANTHROPIC_API_KEY` (Claude code les scènes des vidéos marketing ; sans elle, Gemini), et `ELEVENLABS_API_KEY` pour la voix premium.
+   - Variables : `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GEMINI_API_KEY`, `VIDEO_SERVICE_SECRET` (une longue chaîne aléatoire), `ANTHROPIC_API_KEY` (Claude écrit les voix off et le storyboard, et code les scènes des vidéos marketing ; sans elle, Gemini), et `ELEVENLABS_API_KEY` pour la voix premium.
    - Le build Docker installe le navigateur headless de Remotion et construit le bundle des vidéos marketing (`scripts/bundle-remotion.mjs`).
    - _Settings → Networking → Generate Domain_ : c'est le `VIDEO_SERVICE_URL`.
 3. **Vercel (interface + API)** : importer le repo, `vercel.json` règle le build.

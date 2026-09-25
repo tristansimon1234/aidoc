@@ -525,3 +525,13 @@ describe('régénération', () => {
     )
   })
 })
+
+describe('parseJson', () => {
+  it('garde l’objet JSON même entouré de texte', async () => {
+    const { parseJson } = await import('./gemini.js')
+    const { z } = await import('zod')
+    const schema = z.object({ lines: z.array(z.string()) })
+    expect(parseJson('Here it is:\n{"lines": ["a",]}\nDone.', schema)).toEqual({ lines: ['a'] })
+    expect(parseJson('```json\n{"lines": []}\n```', schema)).toEqual({ lines: [] })
+  })
+})

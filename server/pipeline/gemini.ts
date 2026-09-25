@@ -87,12 +87,16 @@ function limiter(limit: number) {
 /** Synthèses vocales Gemini simultanées : peu, pour rester sous la limite par minute. */
 const ttsSlot = limiter(2)
 
-function parseJson<T>(text: string, schema: z.ZodType<T>): T {
+export function parseJson<T>(text: string, schema: z.ZodType<T>): T {
   const cleaned = text
     .trim()
     .replace(/^```(?:json)?\s*/, '')
     .replace(/\s*```$/, '')
-  return schema.parse(JSON.parse(withoutTrailingCommas(cleaned)))
+  // Texte autour de l'objet JSON (« Here is the storyboard: {…} ») : on garde l'objet.
+  const start = cleaned.indexOf('{')
+  const end = cleaned.lastIndexOf('}')
+  const json = start > 0 && end > start ? cleaned.slice(start, end + 1) : cleaned
+  return schema.parse(JSON.parse(withoutTrailingCommas(json)))
 }
 
 /**

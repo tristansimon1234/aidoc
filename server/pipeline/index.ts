@@ -13,7 +13,8 @@ import {
   probe,
   renderNarrated,
 } from './ffmpeg.js'
-import { askJson, askJsonWithImages, QuotaExceededError, withVideo } from './gemini.js'
+import { askJsonWithImages, QuotaExceededError, withVideo } from './gemini.js'
+import { writeJson } from './claude.js'
 import { speak } from '../voices.js'
 import {
   addUpdatedDate,
@@ -345,12 +346,12 @@ async function narrate(input: {
     directions: directionsOf(input.sop),
   })
   // Une réponse avec moins de textes que de créneaux laisserait la fin de la vidéo sans voix : on redemande.
-  let { lines } = await askJson(prompt, NarrationSchema)
+  let { lines } = await writeJson(prompt, NarrationSchema)
   for (let retry = 0; retry < 2 && lines.filter((l) => l.trim()).length < slots.length; retry++) {
     console.warn(
       `[pipeline] voix off : ${lines.length} textes pour ${slots.length} créneaux, on redemande`,
     )
-    const again = await askJson(prompt, NarrationSchema)
+    const again = await writeJson(prompt, NarrationSchema)
     if (again.lines.filter((l) => l.trim()).length > lines.filter((l) => l.trim()).length) {
       lines = again.lines
     }
@@ -381,7 +382,7 @@ async function narrate(input: {
     })
   if (misfits.length > 0) {
     try {
-      const { lines: rewritten } = await askJson(
+      const { lines: rewritten } = await writeJson(
         narrationFixPrompt({
           language: input.sop.language,
           tone,

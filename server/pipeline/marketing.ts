@@ -1,4 +1,4 @@
-// Vidéo marketing animée : Gemini écrit le storyboard à partir des captures du produit et du brief,
+// Vidéo marketing animée : Claude (ou Gemini) écrit le storyboard à partir des captures du produit et du brief,
 // Claude (ou Gemini) code chaque scène en React/Remotion à partir de ces captures, chaque scène est testée
 // (compilation + rendu de quelques images, 3 essais) puis relue en images par le modèle ;
 // Remotion rend la vidéo, ffmpeg ajoute la voix off et la musique.
@@ -8,7 +8,7 @@ import type { HeadlessBrowser } from '@remotion/renderer'
 import * as db from '../db.js'
 import { MAX_SCREENSHOTS } from '../credits.js'
 import { VIDEO_FPS, type Brand, type Shot } from '../../remotion/props.js'
-import { codeChat, codeModelName, type ChatPart } from './claude.js'
+import { codeChat, codeModelName, writeJson, type ChatPart } from './claude.js'
 import { generateMusic, isElevenLabsEnabled } from './elevenlabs.js'
 import {
   addMusic,
@@ -18,7 +18,6 @@ import {
   muxAudio,
   normalizeImage,
 } from './ffmpeg.js'
-import { askJson, askJsonWithImages } from './gemini.js'
 import {
   HookPickSchema,
   SCENE_SYSTEM_PROMPT,
@@ -62,7 +61,7 @@ export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Pr
   const previous = sop.feedback
     ? ((await db.downloadFile(`${folder}/storyboard.json`))?.toString('utf8') ?? null)
     : null
-  const board = await askJsonWithImages(
+  const board = await writeJson(
     storyboardPrompt({
       language: sop.language,
       tone,
@@ -73,8 +72,8 @@ export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Pr
       feedback: sop.feedback,
       previous,
     }),
-    images.map((img, i) => ({ label: `Image ${i + 1}`, jpeg: img.jpeg })),
     StoryboardSchema,
+    images.map((img, i) => ({ label: `Image ${i + 1}`, jpeg: img.jpeg })),
   )
   // Correction demandée sur l'accroche : on garde celle du storyboard corrigé.
   if (!sop.feedback) await pickHook(board, sop.brief)
@@ -190,7 +189,7 @@ export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Pr
 async function pickHook(board: Storyboard, brief: string | null): Promise<void> {
   if (board.hooks.length < 2) return
   try {
-    const { best } = await askJson(
+    const { best } = await writeJson(
       hookPickPrompt({ productName: board.productName, brief, hooks: board.hooks }),
       HookPickSchema,
     )
