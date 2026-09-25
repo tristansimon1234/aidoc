@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import styles from './ScreenshotPicker.module.css'
 
-/** Dépôt des captures du produit (vidéo marketing) : glisser-déposer ou sélection, aperçus, retrait. */
+/**
+ * Dépôt des captures du produit (vidéo marketing) : coller (Cmd/Ctrl+V), glisser-déposer ou sélection,
+ * aperçus, retrait.
+ */
 export function ScreenshotPicker({
   files,
   max,
@@ -15,10 +18,31 @@ export function ScreenshotPicker({
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files])
   useEffect(() => () => previews.forEach((url) => URL.revokeObjectURL(url)), [previews])
 
-  function add(list: FileList | null) {
+  function add(list: FileList | File[] | null) {
     const images = Array.from(list ?? []).filter((f) => f.type.startsWith('image/'))
     if (images.length > 0) onChange([...files, ...images].slice(0, max))
   }
+
+  // Coller une capture (Cmd/Ctrl+V) n'importe où sur la page, par exemple juste après une capture
+  // d'écran copiée dans le presse-papiers.
+  useEffect(() => {
+    function paste(e: ClipboardEvent) {
+      const pasted = Array.from(e.clipboardData?.items ?? [])
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item, i) => {
+          const blob = item.getAsFile()
+          if (!blob) return null
+          const ext = blob.type.split('/')[1] ?? 'png'
+          return new File([blob], `pasted-${Date.now()}-${i}.${ext}`, { type: blob.type })
+        })
+        .filter((f): f is File => f !== null)
+      if (pasted.length === 0) return
+      e.preventDefault()
+      add(pasted)
+    }
+    window.addEventListener('paste', paste)
+    return () => window.removeEventListener('paste', paste)
+  })
 
   function drop(e: DragEvent) {
     e.preventDefault()
@@ -54,7 +78,7 @@ export function ScreenshotPicker({
           </svg>
           <span className={styles.zoneTitle}>Add screenshots of your product</span>
           <span className={styles.zoneHint}>
-            PNG, JPG, WebP · up to {max} · drop them here or click
+            Paste (⌘V / Ctrl+V), drop or click · PNG, JPG, WebP · up to {max}
           </span>
           <input
             type="file"
