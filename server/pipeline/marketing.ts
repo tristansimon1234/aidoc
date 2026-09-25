@@ -9,7 +9,7 @@ import * as db from '../db.js'
 import { MAX_SCREENSHOTS } from '../credits.js'
 import { VIDEO_FPS, type Brand, type Shot } from '../../remotion/props.js'
 import { codeChat, codeModelName, type ChatPart } from './claude.js'
-import { generateMusic } from './elevenlabs.js'
+import { generateMusic, isElevenLabsEnabled } from './elevenlabs.js'
 import {
   addMusic,
   buildVoiceTrack,
@@ -76,6 +76,9 @@ export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Pr
   // 2. Voix off : une phrase par scène ; chaque scène dure le temps de sa phrase.
   await step('Recording the voice-over')
   const voice = sop.voice === 'none' ? await defaultVoice() : sop.voice
+  console.log(
+    `[marketing] voix ${voice} · musique ${sop.music ? 'oui' : 'non'} · ElevenLabs ${isElevenLabsEnabled() ? 'configuré' : 'non configuré (ELEVENLABS_API_KEY absente)'}`,
+  )
   const voiceFiles = await mapLimit(board.scenes, 4, async (scene, i) => {
     const { audio, ext } = await speak(voice, scene.line, tone, 'marketing')
     const file = join(dir, `line-${i}.${ext}`)
