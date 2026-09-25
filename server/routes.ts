@@ -5,6 +5,7 @@ import * as db from './db.js'
 import * as billing from './billing.js'
 import {
   MARKETING_CREDITS,
+  MAX_SCREENSHOTS,
   MAX_VIDEO_MINUTES,
   MINUTES_PER_CREDIT,
   OFFERS,
@@ -85,6 +86,7 @@ api.get(
       minutesPerCredit: MINUTES_PER_CREDIT,
       marketingCredits: MARKETING_CREDITS,
       maxVideoMinutes: MAX_VIDEO_MINUTES,
+      maxScreenshots: MAX_SCREENSHOTS,
       offers: await billing.listOffers(),
     })
   }),
@@ -149,11 +151,14 @@ const CreateSchema = z.object({
   brief: z.string().trim().max(2000).optional(),
   targetSeconds: z.union([z.literal(30), z.literal(60)]).default(60),
   music: z.boolean().default(false),
-  fileName: z.string().max(300),
+  // SOP : la vidéo. Vidéo marketing : des captures (converties en JPEG par le navigateur).
+  fileName: z.string().max(300).default('video.mp4'),
   durationSeconds: z
     .number()
-    .positive()
-    .max(MAX_VIDEO_MINUTES * 60),
+    .nonnegative()
+    .max(MAX_VIDEO_MINUTES * 60)
+    .default(0),
+  imageCount: z.number().int().min(1).max(MAX_SCREENSHOTS).optional(),
 })
 
 // Étape 1 : crée la SOP et renvoie une URL d'upload direct vers le stockage.
@@ -172,10 +177,23 @@ api.post(
       res.status(402).json({ error: `Not enough credits: this video needs ${needed}.` })
       return
     }
+    if (input.kind === 'sop' && input.durationSeconds <= 0) {
+      res.status(400).json({ error: 'Invalid video' })
+      return
+    }
+    if (input.kind === 'marketing' && !input.imageCount) {
+      res.status(400).json({ error: 'Add at least one screenshot' })
+      return
+    }
     const id = randomUUID()
     const ext =
       (input.fileName.split('.').pop() ?? 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4'
-    const sourcePath = `${userId}/${id}/source/video.${ext}`
+    const shots = Array.from(
+      { length: input.kind === 'marketing' ? (input.imageCount ?? 0) : 0 },
+      (_, i) => `${userId}/${id}/source/shot-${i}.jpg`,
+    )
+    // Pour une vidéo marketing, la « source » vérifiée au lancement est la première capture.
+    const sourcePath = shots[0] ?? `${userId}/${id}/source/video.${ext}`
     await db.createSop({
       id,
       userId,
@@ -189,8 +207,10 @@ api.post(
       music: input.kind === 'marketing' && input.music && isElevenLabsEnabled(),
       sourcePath,
     })
-    const upload = await db.createUploadUrl(sourcePath)
-    res.status(201).json({ id, uploadUrl: upload.signedUrl })
+    const uploads = await Promise.all(
+      (shots.length > 0 ? shots : [sourcePath]).map((path) => db.createUploadUrl(path)),
+    )
+    res.status(201).json({ id, uploadUrls: uploads.map((u) => u.signedUrl) })
   }),
 )
 
@@ -207,7 +227,9 @@ api.post(
       res.status(400).json({ error: 'The video was not received' })
       return
     }
-    const { durationSeconds } = z.object({ durationSeconds: z.number().positive() }).parse(req.body)
+    const { durationSeconds } = z
+      .object({ durationSeconds: z.number().nonnegative().default(0) })
+      .parse(req.body)
     const cost = creditsFor(Math.min(durationSeconds, MAX_VIDEO_MINUTES * 60), sop.kind)
     if (!(await db.applyCredits(userId, -cost, 'sop', `sop:${sop.id}`))) {
       res.status(402).json({ error: `Not enough credits: this video needs ${cost}.` })

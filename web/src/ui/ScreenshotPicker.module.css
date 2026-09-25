@@ -1,0 +1,88 @@
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Grande zone en pointillés, comme le dépôt de vidéo (ScreenRecorder) */
+.zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  min-height: 180px;
+  padding: var(--space-xl) var(--space-lg);
+  background: var(--color-card);
+  color: var(--color-fg);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.zone:hover,
+.dragging {
+  border-color: var(--color-fg);
+  background: var(--color-secondary);
+}
+
+.zoneTitle {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-fg);
+}
+
+.zoneHint {
+  font-size: var(--text-xs);
+  color: var(--color-muted-fg);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.thumb {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--color-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.remove {
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-fg);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.remove:hover {
+  color: var(--color-destructive);
+  border-color: var(--color-destructive);
+}

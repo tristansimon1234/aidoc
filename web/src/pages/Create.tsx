@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, videoDuration, type Kind, type Me } from '../api'
 import { Button, Card, Field } from '../ui/design-system/components'
 import { ScreenRecorder } from '../ui/ScreenRecorder'
+import { ScreenshotPicker } from '../ui/ScreenshotPicker'
 import { VoicePicker, loadVoiceChoice } from '../ui/VoicePicker'
 import styles from './pages.module.css'
 
@@ -16,22 +17,27 @@ const LANGUAGE_LABELS: Record<string, string> = {
   nl: 'Dutch',
 }
 
-const STEPS = ['Type', 'Video', 'Options', 'Generate']
+const STEPS = (kind: Kind) => [
+  'Type',
+  kind === 'sop' ? 'Video' : 'Screenshots',
+  'Options',
+  'Generate',
+]
 
 const KINDS: { id: Kind; title: string; text: string }[] = [
   {
     id: 'sop',
     title: 'SOP',
-    text: 'A step-by-step procedure with screenshots, plus a narrated video of 4 min max.',
+    text: 'From a screen recording: a step-by-step procedure with screenshots, plus a narrated video of 4 min max.',
   },
   {
     id: 'marketing',
     title: 'Marketing video',
-    text: 'A 30 or 60-second animated video that shows off your product, with voice-over, captions and music.',
+    text: 'From a few screenshots: a 30 or 60-second animated video that shows off your product, with voice-over, captions and music.',
   },
 ]
 
-/** Création en 4 étapes : type → vidéo → options → lancement. */
+/** Création en 4 étapes : type → vidéo (SOP) ou captures (marketing) → options → lancement. */
 export function Create({ me, onChange }: { me: Me | null; onChange: () => void }) {
   const navigate = useNavigate()
   const [params] = useSearchParams()
@@ -40,6 +46,7 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
   const [kind, setKind] = useState<Kind>(initialKind === 'marketing' ? 'marketing' : 'sop')
 
   const [file, setFile] = useState<File | null>(null)
+  const [screenshots, setScreenshots] = useState<File[]>([])
   const [duration, setDuration] = useState(0)
   const [title, setTitle] = useState('')
   const [language, setLanguage] = useState('en')
@@ -68,8 +75,11 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
     }
   }
 
+  // Ce qui a été fourni pour le type choisi : la vidéo (SOP) ou au moins une capture (marketing).
+  const hasSource = kind === 'sop' ? file !== null : screenshots.length > 0
+
   async function generate() {
-    if (!file) return
+    if (!hasSource) return
     setError(null)
     setUploading(0)
     try {
@@ -84,8 +94,8 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
           brief,
           targetSeconds,
           music: kind === 'marketing' && music,
-          file,
-          durationSeconds: duration,
+          video: kind === 'sop' && file ? { file, durationSeconds: duration } : undefined,
+          screenshots: kind === 'marketing' ? screenshots : undefined,
         },
         setUploading,
       )
@@ -107,17 +117,17 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
 
   return (
     <>
-      <Stepper current={step} onGo={(i) => i < step && setStep(i)} />
+      <Stepper labels={STEPS(kind)} current={step} onGo={(i) => i < step && setStep(i)} />
 
       {step === 0 && (
-        <Panel title="What do you want to create?" subtitle="Both start from a screen recording.">
+        <Panel title="What do you want to create?" subtitle="Pick one, the next steps adapt.">
           <div className={styles.choices}>
             {KINDS.map((k) => (
               <Card
                 key={k.id}
                 onClick={() => {
                   setKind(k.id)
-                  setStep(file ? 2 : 1)
+                  setStep((k.id === 'sop' ? file : screenshots.length > 0) ? 2 : 1)
                 }}
               >
                 <p className={styles.choiceTitle}>{k.title}</p>
@@ -128,25 +138,46 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
         </Panel>
       )}
 
-      {step === 1 && (
+      {step === 1 && kind === 'sop' && (
         <Panel
           title="Your video"
-          subtitle={
-            kind === 'sop'
-              ? 'Do the task while recording your screen, and explain what you do out loud.'
-              : 'Show your product in action. Talking about its benefits helps the script.'
-          }
+          subtitle="Do the task while recording your screen, and explain what you do out loud."
         >
           <ScreenRecorder onFile={pick} maxMinutes={me?.maxVideoMinutes ?? 60} />
         </Panel>
       )}
 
-      {step === 2 && file && (
-        <Panel title="Options" subtitle={`${kindLabel} · ${file.name}`}>
+      {step === 1 && kind === 'marketing' && (
+        <Panel
+          title="Your screenshots"
+          subtitle="The screens that show your product best: they are animated in the video, and give it your colors."
+        >
+          <ScreenshotPicker
+            files={screenshots}
+            max={me?.maxScreenshots ?? 8}
+            onChange={setScreenshots}
+          />
+          <div className={styles.actions}>
+            <Button type="button" onClick={() => setStep(2)} disabled={screenshots.length === 0}>
+              Continue
+            </Button>
+          </div>
+        </Panel>
+      )}
+
+      {step === 2 && hasSource && (
+        <Panel
+          title="Options"
+          subtitle={
+            kind === 'sop' && file
+              ? `${kindLabel} · ${file.name}`
+              : `${kindLabel} · ${screenshots.length} screenshot${screenshots.length > 1 ? 's' : ''}`
+          }
+        >
           <Card>
             <div className={styles.form}>
               <Field
-                label="Title"
+                label={kind === 'sop' ? 'Title' : 'Product name'}
                 value={title}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
                 required
@@ -166,10 +197,11 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
               {kind === 'marketing' && (
                 <>
                   <Field
-                    label="Brief (optional): what to highlight, for whom, the message"
+                    label="Your product: what it does, for whom, the message and the call to action"
                     multiline
-                    rows={3}
-                    placeholder="e.g. For accounting firms: show how fast invoices are booked, end with “Book a demo”."
+                    rows={4}
+                    placeholder="e.g. Invoice tool for accounting firms: invoices are booked in one click instead of 10 minutes. End with “Book a demo”."
+                    required
                     value={brief}
                     onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setBrief(e.target.value)}
                     maxLength={2000}
@@ -207,7 +239,11 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
               )}
 
               <div className={styles.actions}>
-                <Button type="button" onClick={() => setStep(3)} disabled={!title.trim()}>
+                <Button
+                  type="button"
+                  onClick={() => setStep(3)}
+                  disabled={!title.trim() || (kind === 'marketing' && !brief.trim())}
+                >
                   Continue
                 </Button>
               </div>
@@ -216,7 +252,7 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
         </Panel>
       )}
 
-      {step === 3 && file && (
+      {step === 3 && hasSource && (
         <Panel title="Ready to generate" subtitle="It takes a few minutes. You can close the page.">
           <Card>
             <dl className={styles.summary}>
@@ -224,11 +260,20 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
               <dd>{kindLabel}</dd>
               <dt>Title</dt>
               <dd>{title}</dd>
-              <dt>Video</dt>
-              <dd>
-                {file.name} · {Math.floor(duration / 60)}:
-                {String(Math.round(duration % 60)).padStart(2, '0')}
-              </dd>
+              {kind === 'sop' && file ? (
+                <>
+                  <dt>Video</dt>
+                  <dd>
+                    {file.name} · {Math.floor(duration / 60)}:
+                    {String(Math.round(duration % 60)).padStart(2, '0')}
+                  </dd>
+                </>
+              ) : (
+                <>
+                  <dt>Screenshots</dt>
+                  <dd>{screenshots.length}</dd>
+                </>
+              )}
               <dt>Language</dt>
               <dd>{LANGUAGE_LABELS[language] ?? language}</dd>
               {kind === 'marketing' && (
@@ -244,7 +289,7 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
             </dl>
             <div className={styles.actions}>
               {uploading !== null ? (
-                <span className={styles.notice}>Uploading video… {uploading}%</span>
+                <span className={styles.notice}>Uploading… {uploading}%</span>
               ) : notEnough ? (
                 <span className={styles.notice}>
                   You need {cost} credit{cost > 1 ? 's' : ''}.{' '}
@@ -288,10 +333,18 @@ function Panel({
 }
 
 /** Étapes numérotées ; on peut revenir en arrière en cliquant sur une étape passée. */
-function Stepper({ current, onGo }: { current: number; onGo: (step: number) => void }) {
+function Stepper({
+  labels,
+  current,
+  onGo,
+}: {
+  labels: string[]
+  current: number
+  onGo: (step: number) => void
+}) {
   return (
     <ol className={styles.stepper}>
-      {STEPS.map((label, i) => (
+      {labels.map((label, i) => (
         <li
           key={label}
           className={i === current ? styles.stepActive : i < current ? styles.stepDone : ''}

@@ -138,7 +138,7 @@ export async function askJsonWithImages<T>(
     const res = await gemini().models.generateContent({
       model: env.GEMINI_MODEL,
       contents: [{ role: 'user', parts }],
-      config: { responseMimeType: 'application/json', maxOutputTokens: 4000 },
+      config: { responseMimeType: 'application/json', maxOutputTokens: 30000 },
     })
     return parseJson(res.text ?? '', schema)
   })

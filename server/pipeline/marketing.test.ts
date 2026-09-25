@@ -55,11 +55,11 @@ describe('code des scènes', () => {
 })
 
 describe('storyboard', () => {
-  it('demande une vidéo animée qui suit le brief et la durée', () => {
+  it('part des captures et du brief, suit la durée', () => {
     const prompt = storyboardPrompt({
       language: 'fr',
       tone: 'energetic',
-      durationSeconds: 300,
+      imageCount: 3,
       title: 'Pennylane',
       brief: 'Pour les cabinets comptables',
       targetSeconds: 30,
@@ -67,6 +67,7 @@ describe('storyboard', () => {
     expect(prompt).toContain('Pour les cabinets comptables')
     expect(prompt).toContain('30-second')
     expect(prompt).toContain('4 or 5')
+    expect(prompt).toContain('Image 1 to Image 3')
   })
 
   it('remplace les couleurs invalides', () => {
@@ -81,7 +82,7 @@ describe('storyboard', () => {
           line: 'a',
           onScreen: 'b',
           visual: 'c',
-          screenshots: [{ time: 3, what: 'x' }],
+          screenshots: [{ image: 1, what: 'x' }],
         },
       ],
     })

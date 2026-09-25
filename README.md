@@ -3,9 +3,9 @@
 Filmez votre écran → recevez au choix :
 
 - **une SOP** : la procédure écrite avec captures + une vidéo commentée de 4 min max ;
-- **une vidéo marketing** animée de 30 ou 60 s (motion design, à partir des vraies captures du produit) : une voix off qui vend (accroche → bénéfices → appel à l'action), sous-titres mot à mot, musique de fond en option, guidée par un brief.
+- **une vidéo marketing** animée de 30 ou 60 s (motion design), à partir de **quelques captures du produit** et d'un brief (pas de vidéo à envoyer) : une voix off qui vend (accroche → bénéfices → appel à l'action), sous-titres mot à mot, musique de fond en option, guidée par un brief.
 
-L'accueil a deux onglets (SOPs / Marketing videos) ; la création se fait en 4 étapes : type → vidéo → options → lancement.
+L'accueil a deux onglets (SOPs / Marketing videos) ; la création se fait en 4 étapes : type → vidéo (SOP) ou captures (marketing, 8 max) → options → lancement.
 
 L'édition, le partage et la recherche se font dans vos outils habituels : bouton **« Copier pour Notion / Docs »** (colle texte + images), export **PDF**, **Markdown** et **vidéo MP4**.
 
@@ -25,8 +25,8 @@ Vidéo (upload ou enregistrement dans le navigateur)
 **Vidéo marketing animée** (`server/pipeline/marketing.ts`, projet Remotion dans `remotion/`) :
 
 ```
-Vidéo → Gemini regarde et écoute l'enregistrement → storyboard (4 à 8 scènes, 3 accroches, couleurs du produit,
-        moments de l'enregistrement à capturer) → la meilleure accroche est choisie
+Captures (converties en JPEG par le navigateur) + brief → Gemini écrit le storyboard (4 à 8 scènes, 3 accroches,
+        couleurs du produit tirées des captures, captures à utiliser par scène) → la meilleure accroche est choisie
   → voix off par scène (chaque scène dure le temps de sa phrase)
   → pour chaque scène, Claude (ou Gemini sans clé Anthropic) écrit le code React/Remotion de l'animation,
     avec une boîte à outils (captures animées, cadre de navigateur, curseur, icônes, graphiques, effets)
@@ -36,7 +36,7 @@ Vidéo → Gemini regarde et écoute l'enregistrement → storyboard (4 à 8 sc�
   → Remotion rend la vidéo (1920×1080, 30 i/s, sous-titres), ffmpeg ajoute la voix et la musique
 ```
 
-Si la vidéo animée échoue entièrement, on livre un montage des moments forts de l'enregistrement (ancienne méthode). Le code des scènes est contrôlé avant rendu (pas d'import, de réseau, d'aléatoire ni d'animation CSS : `server/pipeline/scene-code.ts`). Remotion est gratuit pour les structures de 3 personnes max ; au-delà, licence entreprise (remotion.pro).
+Si la vidéo animée échoue entièrement, la création passe en échec et les crédits sont remboursés. Le code des scènes est contrôlé avant rendu (pas d'import, de réseau, d'aléatoire ni d'animation CSS : `server/pipeline/scene-code.ts`). Remotion est gratuit pour les structures de 3 personnes max ; au-delà, licence entreprise (remotion.pro).
 
 **Voix off** : l'utilisateur choisit la voix (30 voix Gemini incluses ; avec `ELEVENLABS_API_KEY`, toutes les voix du compte ElevenLabs, voix clonées comprises, proposées en premier et par défaut ; modèle Flash pour les SOP, v3 pour les vidéos marketing : `ELEVENLABS_MODEL`, `ELEVENLABS_MARKETING_MODEL`) et le ton (amical, professionnel, énergique, calme, joueur), et peut écouter un extrait avant de lancer. Liste des voix : `server/voices.ts` ; tons : `TONES` dans `server/pipeline/prompts.ts`.
 

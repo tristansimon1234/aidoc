@@ -5,22 +5,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as db from '../db.js'
 import { creditsFor } from '../credits.js'
-import {
-  addMusic,
-  cutVideo,
-  durationOf,
-  extractFrame,
-  normalizeVideo,
-  renderNarrated,
-} from './ffmpeg.js'
-import { generateMusic } from './elevenlabs.js'
+import { cutVideo, durationOf, extractFrame, normalizeVideo, renderNarrated } from './ffmpeg.js'
 import { askJson, askJsonWithImages, QuotaExceededError, withVideo } from './gemini.js'
-import { defaultVoice, speak } from '../voices.js'
+import { speak } from '../voices.js'
 import {
   addUpdatedDate,
-  cleanMarketingSegments,
-  MarketingPlanSchema,
-  marketingPrompt,
   toTone,
   FramePickSchema,
   framePickPrompt,
@@ -88,28 +77,10 @@ export async function processSop(id: string): Promise<void> {
   const step: Step = (progress) => db.updateSop(id, { progress })
 
   try {
-    // 1. Vidéo propre (MP4 720p) + durée réelle
-    await step('Preparing the video')
-    const video = join(dir, 'video.mp4')
-    // ffmpeg lit la vidéo source directement (URL du stockage, ou fichier en mode local).
-    await normalizeVideo(db.sourceForFfmpeg(sop.sourcePath), video)
-    const duration = await durationOf(video)
-    await db.updateSop(id, { durationSeconds: duration })
-
-    // La durée annoncée par le navigateur a fixé le prix ; on complète si la vraie durée est plus longue.
-    const extra = creditsFor(duration, sop.kind) - sop.creditsUsed
-    if (extra > 0) {
-      if (!(await db.applyCredits(sop.userId, -extra, 'sop', `sop-extra:${id}`))) {
-        throw new UserFacingError(
-          `Not enough credits: this video needs ${creditsFor(duration, sop.kind)}.`,
-        )
-      }
-      sop.creditsUsed += extra
-      await db.updateSop(id, { creditsUsed: sop.creditsUsed })
-    }
-
-    const job = { video, duration, sop, dir, folder, step }
-    const finalVideo = sop.kind === 'marketing' ? await makeMarketingVideo(job) : await makeSop(job)
+    const finalVideo =
+      sop.kind === 'marketing'
+        ? await makeMarketingVideo({ sop, dir, folder, step })
+        : await makeSopFromVideo({ sop, dir, folder, step })
 
     await step('Finishing')
     const videoPath = `${folder}/video.mp4`
@@ -131,6 +102,42 @@ export async function processSop(id: string): Promise<void> {
 }
 
 type Step = (progress: string) => Promise<void>
+
+/** Une création en cours de traitement : la SOP, un dossier de travail, son dossier de stockage. */
+export interface Task {
+  sop: db.Sop
+  dir: string
+  folder: string
+  step: Step
+}
+
+/** SOP : prépare la vidéo (MP4 720p, durée réelle, complément de crédits) puis la traite. */
+async function makeSopFromVideo({ sop, dir, folder, step }: Task): Promise<string> {
+  const id = sop.id
+  {
+    // 1. Vidéo propre (MP4 720p) + durée réelle
+    await step('Preparing the video')
+    const video = join(dir, 'video.mp4')
+    // ffmpeg lit la vidéo source directement (URL du stockage, ou fichier en mode local).
+    await normalizeVideo(db.sourceForFfmpeg(sop.sourcePath), video)
+    const duration = await durationOf(video)
+    await db.updateSop(id, { durationSeconds: duration })
+
+    // La durée annoncée par le navigateur a fixé le prix ; on complète si la vraie durée est plus longue.
+    const extra = creditsFor(duration, sop.kind) - sop.creditsUsed
+    if (extra > 0) {
+      if (!(await db.applyCredits(sop.userId, -extra, 'sop', `sop-extra:${id}`))) {
+        throw new UserFacingError(
+          `Not enough credits: this video needs ${creditsFor(duration, sop.kind)}.`,
+        )
+      }
+      sop.creditsUsed += extra
+      await db.updateSop(id, { creditsUsed: sop.creditsUsed })
+    }
+
+    return makeSop({ video, duration, sop, dir, folder, step })
+  }
+}
 
 interface Job {
   video: string
@@ -375,84 +382,16 @@ async function narrate(input: {
 }
 
 /**
- * Vidéo marketing de 30 ou 60 s : vidéo animée (motion design Remotion, voir marketing.ts). Si elle
- * échoue (navigateur de rendu absent, IA indisponible…), on livre un montage des moments forts.
+ * Vidéo marketing de 30 ou 60 s, animée à partir des captures envoyées (voir marketing.ts). Import à
+ * la demande : Remotion n'est chargé que sur le service vidéo, jamais par l'API.
  */
-async function makeMarketingVideo(job: Job): Promise<string> {
+async function makeMarketingVideo(task: Task): Promise<string> {
+  const { makeMotionVideo, MarketingInputError } = await import('./marketing.js')
   try {
-    // Import à la demande : Remotion n'est chargé que sur le service vidéo, jamais par l'API.
-    const { makeMotionVideo } = await import('./marketing.js')
-    return await makeMotionVideo(job)
+    return await makeMotionVideo(task)
   } catch (err) {
-    if (err instanceof QuotaExceededError) throw err // le montage aurait besoin du même service
-    console.error('[pipeline] vidéo animée impossible, montage des moments forts', err)
-    return makeHighlightVideo(job)
+    throw err instanceof MarketingInputError ? new UserFacingError(err.message) : err
   }
-}
-
-/**
- * Montage des moments forts : Gemini choisit les moments selon le brief et écrit la voix off,
- * chaque moment est calé sur sa phrase (aucun blanc), musique de fond en option.
- */
-async function makeHighlightVideo({ video, duration, sop, dir, step }: Job): Promise<string> {
-  await step('Analyzing the video')
-  const tone = toTone(sop.tone)
-  const plan = await withVideo(video, duration, (gemini) =>
-    gemini.json(
-      marketingPrompt({
-        language: sop.language,
-        tone,
-        durationSeconds: duration,
-        title: sop.title,
-        brief: sop.brief,
-        targetSeconds: sop.targetSeconds,
-      }),
-      MarketingPlanSchema,
-    ),
-  )
-  const moments = cleanMarketingSegments(plan.segments, duration)
-  if (moments.length === 0) {
-    throw new UserFacingError(
-      'No highlight found in the video. Try a recording that shows the product in action.',
-    )
-  }
-
-  // Une vidéo marketing a toujours une voix off (une vidéo muette ne vend rien).
-  await step('Recording the voice-over')
-  const voice = sop.voice === 'none' ? await defaultVoice() : sop.voice
-  const files = await mapLimit(moments, 4, async (m, i) => {
-    const { audio, ext } = await speak(voice, m.line, tone, 'marketing')
-    const file = join(dir, `line-${i}.${ext}`)
-    await writeFile(file, audio)
-    return file
-  })
-
-  await step('Editing the video')
-  const segments = await Promise.all(
-    moments.map(async (m, i) => ({
-      start: m.start,
-      end: m.end,
-      audio: files[i]!,
-      ...fitSegment(m.end - m.start, await durationOf(files[i]!), 'stretch'),
-    })),
-  )
-  let clip = join(dir, 'marketing.mp4')
-  await renderNarrated(video, segments, clip)
-
-  if (sop.music) {
-    await step('Adding music')
-    try {
-      const music = join(dir, 'music.mp3')
-      const length = await durationOf(clip)
-      await writeFile(music, await generateMusic(plan.musicPrompt, (length + 1) * 1000))
-      const withMusic = join(dir, 'marketing-music.mp4')
-      await addMusic(clip, music, withMusic)
-      clip = withMusic
-    } catch (err) {
-      console.warn('[pipeline] musique impossible, vidéo sans musique', (err as Error).message)
-    }
-  }
-  return clip
 }
 
 /**

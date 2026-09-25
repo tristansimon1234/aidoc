@@ -220,3 +220,12 @@ export async function muxAudio(video: string, audio: string, output: string): Pr
     output,
   ])
 }
+
+/** Capture envoyée (PNG, JPEG, WebP…) → JPEG de 1600 px de large au plus. `input` peut être une URL. */
+export async function normalizeImage(input: string, output: string): Promise<void> {
+  await run([
+    '-y', '-i', input, '-frames:v', '1',
+    '-vf', "scale='min(1600,iw)':-2",
+    '-q:v', '3', output,
+  ])
+}

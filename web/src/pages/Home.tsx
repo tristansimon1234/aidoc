@@ -41,7 +41,7 @@ export function Home() {
         <div>
           <h1 className={styles.title}>Your library</h1>
           <p className={styles.subtitle}>
-            Turn a screen recording into an SOP or a marketing video.
+            Turn a screen recording into an SOP, or a few screenshots into a marketing video.
           </p>
         </div>
         <Button onClick={() => navigate(`/new?kind=${tab}`)}>
@@ -70,7 +70,11 @@ export function Home() {
         <Card>
           <EmptyState
             title={current.empty}
-            description="Record your screen or upload a video to create one."
+            description={
+              tab === 'sop'
+                ? 'Record your screen or upload a video to create one.'
+                : 'Upload a few screenshots of your product to create one.'
+            }
             action={
               <Link to={`/new?kind=${tab}`}>
                 <Button variant="secondary">Create one</Button>

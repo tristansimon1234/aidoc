@@ -1,11 +1,12 @@
-// Vidéo marketing animée : Gemini écrit le storyboard à partir de l'enregistrement, Claude (ou Gemini)
-// code chaque scène en React/Remotion à partir des vraies captures, chaque scène est testée
+// Vidéo marketing animée : Gemini écrit le storyboard à partir des captures du produit et du brief,
+// Claude (ou Gemini) code chaque scène en React/Remotion à partir de ces captures, chaque scène est testée
 // (compilation + rendu de quelques images, 3 essais) puis relue en images par le modèle ;
 // Remotion rend la vidéo, ffmpeg ajoute la voix off et la musique.
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { HeadlessBrowser } from '@remotion/renderer'
-import type * as db from '../db.js'
+import * as db from '../db.js'
+import { MAX_SCREENSHOTS } from '../credits.js'
 import { VIDEO_FPS, type Brand, type Shot } from '../../remotion/props.js'
 import { codeChat, codeModelName, type ChatPart } from './claude.js'
 import { generateMusic } from './elevenlabs.js'
@@ -13,11 +14,11 @@ import {
   addMusic,
   buildVoiceTrack,
   durationOf,
-  extractFrame,
   frameSize,
   muxAudio,
+  normalizeImage,
 } from './ffmpeg.js'
-import { askJson, withVideo } from './gemini.js'
+import { askJson, askJsonWithImages } from './gemini.js'
 import {
   HookPickSchema,
   SCENE_SYSTEM_PROMPT,
@@ -33,7 +34,7 @@ import {
 } from './prompts.js'
 import { renderMarketingVideo, renderSceneStills, withBrowser } from './remotion.js'
 import { compileScene, extractCode } from './scene-code.js'
-import { captionWords, luminance, mapLimit, repairTimecode } from './steps.js'
+import { captionWords, luminance, mapLimit } from './steps.js'
 import { defaultVoice, speak } from '../voices.js'
 
 const WIDTH = 1920
@@ -41,37 +42,33 @@ const HEIGHT = 1080
 /** Essais de compilation + rendu par scène avant la scène de secours. */
 const MAX_ATTEMPTS = 3
 
+/** Problème dans ce que la personne a envoyé : message affiché tel quel. */
+export class MarketingInputError extends Error {}
+
 interface MotionJob {
-  video: string
-  duration: number
   sop: db.Sop
   dir: string
+  folder: string
   step: (progress: string) => Promise<void>
 }
 
-export async function makeMotionVideo({
-  video,
-  duration,
-  sop,
-  dir,
-  step,
-}: MotionJob): Promise<string> {
+export async function makeMotionVideo({ sop, dir, folder, step }: MotionJob): Promise<string> {
   const tone = toTone(sop.tone)
 
-  // 1. Storyboard (Gemini regarde et écoute l'enregistrement)
+  // 1. Storyboard à partir des captures et du brief
   await step('Writing the storyboard')
-  const board = await withVideo(video, duration, (gemini) =>
-    gemini.json(
-      storyboardPrompt({
-        language: sop.language,
-        tone,
-        durationSeconds: duration,
-        title: sop.title,
-        brief: sop.brief,
-        targetSeconds: sop.targetSeconds,
-      }),
-      StoryboardSchema,
-    ),
+  const images = await loadScreenshots(folder, dir)
+  const board = await askJsonWithImages(
+    storyboardPrompt({
+      language: sop.language,
+      tone,
+      imageCount: images.length,
+      title: sop.title,
+      brief: sop.brief,
+      targetSeconds: sop.targetSeconds,
+    }),
+    images.map((img, i) => ({ label: `Image ${i + 1}`, jpeg: img.jpeg })),
+    StoryboardSchema,
   )
   await pickHook(board, sop.brief)
   const brand = toBrand(board)
@@ -87,20 +84,14 @@ export async function makeMotionVideo({
   })
   const frames = voiceFiles.map((v) => Math.round(Math.max(2.5, v.seconds + 0.6) * VIDEO_FPS))
 
-  // 3. Captures de l'enregistrement choisies par le storyboard
-  const shots = await Promise.all(
-    board.scenes.map((scene, i) =>
-      Promise.all(
-        scene.screenshots.map((s, k) =>
-          screenshot(
-            video,
-            Math.min(Math.max(0, repairTimecode(s.time, duration)), duration - 0.2),
-            s.what,
-            join(dir, `shot-${i}-${k}.jpg`),
-          ),
-        ),
-      ).then((list) => list.filter((s): s is Shot => s !== null)),
-    ),
+  // 3. Captures utilisées par chaque scène (choisies par le storyboard)
+  const shots = board.scenes.map((scene) =>
+    scene.screenshots
+      .map((s) => {
+        const img = images[s.image - 1]
+        return img ? { ...img.shot, description: s.what || img.shot.description } : null
+      })
+      .filter((s): s is Shot => s !== null),
   )
 
   // 4 et 5. Code des scènes, puis rendu de la vidéo, dans un même navigateur headless
@@ -207,26 +198,35 @@ function toBrand(board: Storyboard): Brand {
   }
 }
 
-async function screenshot(
-  video: string,
-  time: number,
-  what: string,
-  file: string,
-): Promise<Shot | null> {
-  try {
-    await extractFrame(video, time, file)
+/** Captures envoyées (source/shot-0.jpg, shot-1.jpg…), redimensionnées pour Gemini et le rendu. */
+async function loadScreenshots(
+  folder: string,
+  dir: string,
+): Promise<{ shot: Shot; jpeg: Buffer }[]> {
+  const out: { shot: Shot; jpeg: Buffer }[] = []
+  for (let i = 0; i < MAX_SCREENSHOTS; i++) {
+    const path = `${folder}/source/shot-${i}.jpg`
+    if (!(await db.fileExists(path))) break
+    const file = join(dir, `shot-${i}.jpg`)
+    await normalizeImage(db.sourceForFfmpeg(path), file)
     const { width, height } = await frameSize(file)
     const jpeg = await readFile(file)
-    return {
-      src: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
-      width,
-      height,
-      description: what,
-    }
-  } catch (err) {
-    console.warn('[marketing] capture impossible', (err as Error).message)
-    return null
+    out.push({
+      shot: {
+        src: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
+        width,
+        height,
+        description: `Screenshot ${i + 1}`,
+      },
+      jpeg,
+    })
   }
+  if (out.length === 0) {
+    throw new MarketingInputError(
+      'No screenshot received. Add at least one screenshot of your product.',
+    )
+  }
+  return out
 }
 
 type Attempt = { ok: true; code: string; stills: Buffer[] } | { ok: false; error: string }

@@ -31,6 +31,7 @@ export interface Me {
   minutesPerCredit: number
   marketingCredits: number
   maxVideoMinutes: number
+  maxScreenshots: number
   offers: Offer[]
 }
 
@@ -87,7 +88,10 @@ export const api = {
   checkout: (offer: Offer['id']) => call<{ url: string }>('POST', '/checkout', { offer }),
   billingPortal: () => call<{ url: string }>('POST', '/billing-portal'),
 
-  /** Crée la SOP, envoie la vidéo directement au stockage, puis lance le traitement. */
+  /**
+   * Crée la SOP ou la vidéo marketing, envoie les fichiers directement au stockage (la vidéo, ou les
+   * captures converties en JPEG), puis lance le traitement.
+   */
   async createSop(
     input: {
       title: string
@@ -98,12 +102,16 @@ export const api = {
       brief: string
       targetSeconds: 30 | 60
       music: boolean
-      file: File
-      durationSeconds: number
+      /** SOP : la vidéo et sa durée. Vidéo marketing : les captures. */
+      video?: { file: File; durationSeconds: number }
+      screenshots?: File[]
     },
     onProgress: (percent: number) => void,
   ): Promise<string> {
-    const { id, uploadUrl } = await call<{ id: string; uploadUrl: string }>('POST', '/sops', {
+    const files: Blob[] = input.video
+      ? [input.video.file]
+      : await Promise.all((input.screenshots ?? []).map(toJpeg))
+    const { id, uploadUrls } = await call<{ id: string; uploadUrls: string[] }>('POST', '/sops', {
       title: input.title,
       language: input.language,
       voice: input.voice,
@@ -112,18 +120,30 @@ export const api = {
       brief: input.brief,
       targetSeconds: input.targetSeconds,
       music: input.music,
-      fileName: input.file.name,
-      durationSeconds: input.durationSeconds,
+      fileName: input.video?.file.name,
+      durationSeconds: input.video?.durationSeconds ?? 0,
+      imageCount: input.video ? undefined : files.length,
     })
-    // En mode local, l'URL d'envoi est relative au serveur de l'API.
-    const url = uploadUrl.startsWith('/') ? `${apiUrl}${uploadUrl}` : uploadUrl
-    await uploadWithProgress(url, input.file, onProgress)
-    await call('POST', `/sops/${id}/start`, { durationSeconds: input.durationSeconds })
+    const total = files.reduce((sum, f) => sum + f.size, 0) || 1
+    let sent = 0
+    for (const [i, file] of files.entries()) {
+      const uploadUrl = uploadUrls[i]
+      if (!uploadUrl) throw new Error('Upload not ready, please try again')
+      // En mode local, l'URL d'envoi est relative au serveur de l'API.
+      const url = uploadUrl.startsWith('/') ? `${apiUrl}${uploadUrl}` : uploadUrl
+      await uploadWithProgress(url, file, (percent) =>
+        onProgress(Math.round(((sent + (file.size * percent) / 100) / total) * 100)),
+      )
+      sent += file.size
+    }
+    await call('POST', `/sops/${id}/start`, {
+      durationSeconds: input.video?.durationSeconds ?? 0,
+    })
     return id
   },
 }
 
-function uploadWithProgress(url: string, file: File, onProgress: (percent: number) => void) {
+function uploadWithProgress(url: string, file: Blob, onProgress: (percent: number) => void) {
   return new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', url)
@@ -133,10 +153,30 @@ function uploadWithProgress(url: string, file: File, onProgress: (percent: numbe
     xhr.upload.onprogress = (e) =>
       e.lengthComputable && onProgress(Math.round((e.loaded / e.total) * 100))
     xhr.onload = () =>
-      xhr.status < 300 ? resolve() : reject(new Error(`Video upload rejected (${xhr.status})`))
-    xhr.onerror = () => reject(new Error('Video upload interrupted'))
+      xhr.status < 300 ? resolve() : reject(new Error(`Upload rejected (${xhr.status})`))
+    xhr.onerror = () => reject(new Error('Upload interrupted'))
     xhr.send(file)
   })
+}
+
+/** Capture (PNG, JPEG, WebP…) → JPEG de 1920 px de large au plus, pour un envoi léger et un seul format. */
+export async function toJpeg(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file).catch(() => {
+    throw new Error(`Unreadable image: ${file.name}`)
+  })
+  const scale = Math.min(1, 1920 / bitmap.width)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+  canvas.getContext('2d')?.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  return new Promise((resolve, reject) =>
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error(`Unreadable image: ${file.name}`))),
+      'image/jpeg',
+      0.9,
+    ),
+  )
 }
 
 /** Durée d'un fichier vidéo lue par le navigateur (les .webm enregistrés n'en ont parfois pas : on force). */

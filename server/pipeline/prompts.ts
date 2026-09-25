@@ -322,52 +322,6 @@ ${list}
 Return ONLY JSON: {"picks": [{"step": <step number>, "image": <chosen image number>}, ...]} with one entry per step.`
 }
 
-// ── 2 ter. Vidéo marketing (30 ou 60 s) ───────────────────
-
-export const MarketingPlanSchema = z.object({
-  segments: z.array(z.object({ start: timecode, end: timecode, line: z.string() })),
-  musicPrompt: z.string().default('modern upbeat corporate background music, light and positive'),
-})
-export type MarketingPlan = z.infer<typeof MarketingPlanSchema>
-
-export function marketingPrompt(input: {
-  language: string
-  tone: Tone
-  durationSeconds: number
-  title: string
-  brief: string | null
-  targetSeconds: number
-}): string {
-  const language = languageName(input.language)
-  const moments = input.targetSeconds <= 30 ? '3 to 5' : '4 to 7'
-  const words = Math.round(input.targetSeconds * 2.2)
-  return `From this screen recording, plan a punchy marketing video of at most ${input.targetSeconds} seconds for "${input.title}". It will be cut from the recording and narrated by a voice-over in ${language}.
-${input.brief ? `\nBRIEF FROM THE USER (follow it: what to highlight, for whom, which message):\n${input.brief}\n` : ''}
-Pick ${moments} moments of the recording that show the VALUE best (results, key features, "wow" moments), not every click. For each moment give:
-- "start" and "end" as "MM:SS" (between 0:00 and ${toTimecode(input.durationSeconds)}), 3 to 12 seconds long, in chronological order, not overlapping;
-- "line": the voice-over sentence for that moment, in ${language}, 8 to 25 words.
-
-The lines together tell a story: the first opens with a hook (the problem or the promise), the middle shows the benefits, the last ends with a clear call to action. At most ${words} words in total. Use what the person says in the recording for the real benefits and vocabulary. Tone: ${TONES[input.tone].direction} No URLs, no personal data, no stage directions.
-
-"musicPrompt": one short description of fitting background music (style, mood, tempo), e.g. "upbeat electronic, driving rhythm, positive".
-
-Return ONLY JSON: {"segments": [{"start": "0:12", "end": "0:18", "line": "..."}], "musicPrompt": "..."}`
-}
-
-/** Garde les moments valides du plan marketing : dans la vidéo, dans l'ordre, sans chevauchement. */
-export function cleanMarketingSegments(
-  segments: MarketingPlan['segments'],
-  durationSeconds: number,
-): MarketingPlan['segments'] {
-  const out: MarketingPlan['segments'] = []
-  for (const s of [...segments].sort((a, b) => a.start - b.start)) {
-    const start = Math.max(0, s.start, out[out.length - 1]?.end ?? 0)
-    const end = Math.min(durationSeconds, s.end)
-    if (end - start >= 1.5 && s.line.trim()) out.push({ start, end, line: s.line.trim() })
-  }
-  return out.slice(0, 7)
-}
-
 // ── 3. Script de la voix off ─────────────────────────────────
 
 /** Tons proposés pour la voix off : `direction` guide l'écriture, `speech` l'intonation de la synthèse Gemini. */
@@ -508,7 +462,7 @@ export const StoryboardSchema = z.object({
         onScreen: z.string(),
         visual: z.string(),
         screenshots: z
-          .array(z.object({ time: timecode, what: z.string() }))
+          .array(z.object({ image: z.number().int(), what: z.string() }))
           .max(3)
           .default([]),
       }),
@@ -519,11 +473,11 @@ export const StoryboardSchema = z.object({
 })
 export type Storyboard = z.infer<typeof StoryboardSchema>
 
-/** Gemini regarde et écoute l'enregistrement, puis écrit le storyboard d'une vidéo animée. */
+/** Storyboard d'une vidéo animée, écrit à partir des captures du produit (jointes) et du brief. */
 export function storyboardPrompt(input: {
   language: string
   tone: Tone
-  durationSeconds: number
+  imageCount: number
   title: string
   brief: string | null
   targetSeconds: number
@@ -531,26 +485,26 @@ export function storyboardPrompt(input: {
   const language = languageName(input.language)
   const scenes = input.targetSeconds <= 30 ? '4 or 5' : '6 to 8'
   const words = Math.round(input.targetSeconds * 2.3)
-  return `You are a creative director at a top SaaS motion-design studio. From this screen recording of "${input.title}", write the storyboard of a ${input.targetSeconds}-second animated marketing video (motion design, like the launch videos of Linear, Stripe or Notion). It is NOT a cut of the recording: each scene is animated from scratch, using the real screenshots of the product as material. A voice-over in ${language} runs over the whole video, with captions.
-${input.brief ? `\nBRIEF FROM THE USER (follow it: what to highlight, for whom, which message, which call to action):\n${input.brief}\n` : ''}
-Understand the product first: what it does, for whom, the real benefits. Use what the person says in the recording (their vocabulary, figures, promises); never invent features or figures.
+  return `You are a creative director at a top SaaS motion-design studio. Write the storyboard of a ${input.targetSeconds}-second animated marketing video (motion design, like the launch videos of Linear, Stripe or Notion) for the product "${input.title}". You get ${input.imageCount} screenshot(s) of the product (Image 1 to Image ${input.imageCount}) and the user's brief. Each scene is animated from scratch, using these real screenshots as material (shown, zoomed, or rebuilt big). A voice-over in ${language} runs over the whole video, with captions.
+${input.brief ? `\nBRIEF FROM THE USER (the product, its audience, the message, the call to action: follow it):\n${input.brief}\n` : ''}
+Understand the product from the brief and the screenshots: what it does, for whom, the real benefits. Never invent features or figures that are neither in the brief nor visible on the screenshots.
 
 Write:
-- "productName": the product's name as seen or heard (or a short descriptive name).
-- "brand": colors taken from the product's interface: "accent" = its main brand/UI color, "accent2" = a bright complementary highlight color (readable on a dark background), "background" = a deep, dark, slightly tinted background color that goes with the accent. Hex "#RRGGBB".
+- "productName": the product's name (from the brief, the screenshots, or "${input.title}").
+- "brand": colors taken from the screenshots: "accent" = the product's main brand/UI color, "accent2" = a bright complementary highlight color (readable on a dark background), "background" = a deep, dark, slightly tinted background color that goes with the accent. Hex "#RRGGBB".
 - "hooks": 3 different opening hooks (first 3 seconds, decides if people keep watching): "line" = the voice-over sentence (6 to 12 words, in ${language}); "onScreen" = the 2-5 words shown big on screen. Vary the angle: a pain point, a bold promise, a surprising question.
 - "scenes": ${scenes} scenes forming a story: scene 1 is the hook (write it with the best of your hooks), then the problem or the promise, then 2-4 key benefits shown in the product, then the call to action (last scene). For each scene:
   - "purpose": one short phrase (e.g. "hook", "benefit: invoices sorted automatically", "cta");
   - "line": the voice-over for that scene, in ${language}, one or two short sentences, 6 to 22 words. The lines follow each other as one fluid text. At most ${words} words in total for all scenes.
   - "onScreen": the few words shown big on screen (2 to 7 words, in ${language}), not a copy of the line: the key idea.
-  - "visual": the animation idea, precise and visual (what appears, how it moves, what the camera zooms on, which UI element is rebuilt big, where a cursor clicks, what number counts up). Vary the layouts from scene to scene. The hook and the call to action can be pure typography and shapes.
-  - "screenshots": 0 to 2 moments of the recording to use as material: "time" as "MM:SS" (between 0:00 and ${toTimecode(input.durationSeconds)}), at a frame where the interface is clean and shows the thing (no loading, no open menu unless it is the point); "what": what is visible and where on the screen (e.g. "invoice list, 'Paid' badges in the right column").
+  - "visual": the animation idea, precise and visual (what appears, how it moves, which part of the screenshot the camera zooms on, which UI element is rebuilt big, where a cursor clicks, what number counts up). Vary the layouts from scene to scene. The hook and the call to action can be pure typography and shapes.
+  - "screenshots": 0 to 2 screenshots to use as material: "image" = its number (1 to ${input.imageCount}); "what": what is visible and where (e.g. "invoice list, 'Paid' badges in the right column"). Use every screenshot at least once across the video when it shows something useful.
 - "musicPrompt": fitting background music (style, mood, tempo).
 
 Tone: ${TONES[input.tone].direction} No URLs, no personal data (names, emails, amounts that look private), no stage directions in the lines.
 
 Return ONLY JSON:
-{"productName": "...", "brand": {"accent": "#...", "accent2": "#...", "background": "#..."}, "hooks": [{"line": "...", "onScreen": "..."}], "scenes": [{"purpose": "hook", "line": "...", "onScreen": "...", "visual": "...", "screenshots": [{"time": "0:12", "what": "..."}]}], "musicPrompt": "..."}`
+{"productName": "...", "brand": {"accent": "#...", "accent2": "#...", "background": "#..."}, "hooks": [{"line": "...", "onScreen": "..."}], "scenes": [{"purpose": "hook", "line": "...", "onScreen": "...", "visual": "...", "screenshots": [{"image": 1, "what": "..."}]}], "musicPrompt": "..."}`
 }
 
 export const HookPickSchema = z.object({ best: z.number().int(), reason: z.string().default('') })

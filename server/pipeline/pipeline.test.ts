@@ -16,9 +16,7 @@ import {
 } from './ffmpeg.js'
 import {
   addUpdatedDate,
-  cleanMarketingSegments,
   insertScreenshots,
-  marketingPrompt,
   narrationPrompt,
   parseTimecode,
   sopPrompt,
@@ -41,6 +39,14 @@ import {
 } from './steps.js'
 
 const ffmpeg = process.env.FFMPEG_PATH || 'ffmpeg'
+
+/** Passage accéléré / ralenti pour durer le temps de sa phrase (le rendu sait le faire). */
+function stretch(slot: number, audio: number) {
+  const target = audio + 0.4
+  const factor = Math.min(1.5, Math.max(0.4, target / slot))
+  const freeze = Math.max(0, target - slot * factor)
+  return { factor, freeze, length: slot * factor + freeze, tempo: 1 }
+}
 const step = (timestamp: number, action = 'a', spoken: string | null = null) => ({
   timestamp,
   action,
@@ -174,46 +180,6 @@ describe('captures', () => {
     expect(long.factor).toBe(1)
     expect(long.tempo).toBe(1.1)
     expect(long.freeze).toBeCloseTo(5.6 / 1.1 + 0.4 - 2)
-    // Vidéo marketing : aucun blanc, la vidéo s'adapte à la phrase.
-    expect(fitSegment(10, 3.6, 'stretch')).toEqual({ factor: 0.4, freeze: 0, length: 4, tempo: 1 })
-    expect(fitSegment(4, 5.6, 'stretch')).toEqual({ factor: 1.5, freeze: 0, length: 6, tempo: 1 })
-    expect(fitSegment(5, 0, 'stretch').length).toBeCloseTo(2)
-  })
-})
-
-describe('vidéo marketing', () => {
-  it('suit le brief et la durée demandée', () => {
-    const prompt = marketingPrompt({
-      language: 'fr',
-      tone: 'energetic',
-      durationSeconds: 300,
-      title: 'Pennylane',
-      brief: 'Pour les cabinets comptables, finir sur « Réservez une démo »',
-      targetSeconds: 30,
-    })
-    expect(prompt).toContain('at most 30 seconds')
-    expect(prompt).toContain('3 to 5 moments')
-    expect(prompt).toContain('Pour les cabinets comptables')
-    expect(prompt).toContain('narrated by a voice-over in French')
-  })
-
-  it('garde des moments valides, dans l’ordre et sans chevauchement', () => {
-    const out = cleanMarketingSegments(
-      [
-        { start: 30, end: 38, line: 'Then the result.' },
-        { start: 2, end: 9, line: 'The hook.' },
-        { start: 7, end: 12, line: 'Overlaps the hook.' },
-        { start: 50, end: 70, line: 'Runs past the end.' },
-        { start: 40, end: 40.5, line: 'Too short.' },
-      ],
-      60,
-    )
-    expect(out).toEqual([
-      { start: 2, end: 9, line: 'The hook.' },
-      { start: 9, end: 12, line: 'Overlaps the hook.' },
-      { start: 30, end: 38, line: 'Then the result.' },
-      { start: 50, end: 60, line: 'Runs past the end.' },
-    ])
   })
 })
 
@@ -408,8 +374,8 @@ describe('ffmpeg', () => {
     await renderNarrated(
       video,
       [
-        { start: 0, end: 3, audio: shortVoice, ...fitSegment(3, 1, 'stretch') },
-        { start: 3, end: 4, audio: voice, ...fitSegment(1, 3, 'stretch') },
+        { start: 0, end: 3, audio: shortVoice, ...stretch(3, 1) },
+        { start: 3, end: 4, audio: voice, ...stretch(1, 3) },
       ],
       out,
     )
@@ -456,7 +422,7 @@ describe('ffmpeg', () => {
       start: i * 0.69,
       end: i * 0.69 + 0.69,
       audio: voice,
-      ...fitSegment(0.69, 0.53, 'stretch'),
+      ...stretch(0.69, 0.53),
     }))
     const out = join(dir, 'out.mp4')
     await renderNarrated(cut, segments, out)

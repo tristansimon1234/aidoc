@@ -3,6 +3,9 @@
 /** SOP : 1 crédit par tranche de 10 minutes de vidéo commencée. */
 export const MINUTES_PER_CREDIT = 10
 
+/** Vidéo marketing : nombre maximum de captures envoyées. */
+export const MAX_SCREENSHOTS = 8
+
 /** Au-delà, la vidéo est refusée (temps de traitement + limites Gemini). */
 export const MAX_VIDEO_MINUTES = 60
 

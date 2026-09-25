@@ -24,8 +24,7 @@ const SOP_STEPS = [
 ]
 
 const MARKETING_STEPS = [
-  { label: 'Preparing the video', estimatedSeconds: 20 },
-  { label: 'Writing the storyboard', estimatedSeconds: 60 },
+  { label: 'Writing the storyboard', estimatedSeconds: 40 },
   { label: 'Recording the voice-over', estimatedSeconds: 20 },
   { label: 'Designing the scenes', estimatedSeconds: 300 },
   { label: 'Rendering the video', estimatedSeconds: 120 },
