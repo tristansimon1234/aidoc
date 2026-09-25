@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Spinner } from './design-system/components'
+import { downloadFile } from '../api'
 import styles from './NarratedPlayer.module.css'
 
 type PlayerState = 'loading' | 'ready' | 'error'
@@ -113,7 +114,17 @@ export function NarratedPlayer({ videoUrl, narrated }: { videoUrl: string; narra
         </div>
         <span className={styles.time}>{fmt(duration)}</span>
         {narrated && <span className={styles.badge}>narrated</span>}
-        <a href={videoUrl} download title="Download video" className={styles.download}>
+        <a
+          href={videoUrl}
+          download
+          title="Download video"
+          className={styles.download}
+          onClick={(e) => {
+            // Lien vers une autre adresse : le navigateur ouvrirait la vidéo au lieu de l'enregistrer.
+            e.preventDefault()
+            downloadFile(videoUrl, 'video.mp4').catch(() => window.open(videoUrl, '_blank'))
+          }}
+        >
           <svg
             width="13"
             height="13"

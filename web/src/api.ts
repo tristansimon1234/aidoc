@@ -159,6 +159,24 @@ function uploadWithProgress(url: string, file: Blob, onProgress: (percent: numbe
   })
 }
 
+/**
+ * Télécharge un fichier sous le nom voulu. Un simple lien « download » ne marche pas quand le fichier
+ * est sur une autre adresse que le site (stockage, service vidéo) : le navigateur l'ouvrirait dans un
+ * onglet. On récupère donc le fichier, puis on l'enregistre.
+ */
+export async function downloadFile(url: string, fileName: string): Promise<void> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Download failed (${res.status})`)
+  const href = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = href
+  a.download = fileName.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'video.mp4'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(href), 60_000)
+}
+
 /** Capture (PNG, JPEG, WebP…) → JPEG de 1920 px de large au plus, pour un envoi léger et un seul format. */
 export async function toJpeg(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file).catch(() => {

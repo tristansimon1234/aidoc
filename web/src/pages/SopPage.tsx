@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { api, type Sop } from '../api'
+import { api, downloadFile, type Sop } from '../api'
 import {
   Button,
   Card,
@@ -38,6 +38,7 @@ export function SopPage() {
   const [sop, setSop] = useState<Sop | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const doc = useRef<HTMLDivElement>(null)
   const { dialog, confirm } = useConfirmDialog()
 
@@ -80,6 +81,19 @@ export function SopPage() {
     a.click()
   }
 
+  async function downloadVideo() {
+    if (!sop?.videoUrl) return
+    setDownloading(true)
+    try {
+      await downloadFile(sop.videoUrl, `${sop.title}.mp4`)
+    } catch {
+      // Dernier recours : ouvrir la vidéo, le navigateur propose de l'enregistrer.
+      window.open(sop.videoUrl, '_blank')
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   async function remove() {
     if (!sop) return
     const ok = await confirm({
@@ -108,9 +122,9 @@ export function SopPage() {
       {sop.status === 'ready' && marketing && (
         <div className={styles.actions}>
           {sop.videoUrl && (
-            <a href={sop.videoUrl} download={`${sop.title}.mp4`}>
-              <Button>Download video</Button>
-            </a>
+            <Button onClick={() => void downloadVideo()} disabled={downloading}>
+              {downloading ? 'Downloading…' : 'Download video'}
+            </Button>
           )}
           <Button variant="ghost" onClick={() => void remove()}>
             Delete
@@ -128,6 +142,11 @@ export function SopPage() {
           <Button variant="secondary" onClick={downloadMarkdown}>
             Markdown
           </Button>
+          {sop.videoUrl && (
+            <Button variant="secondary" onClick={() => void downloadVideo()} disabled={downloading}>
+              {downloading ? 'Downloading…' : 'Video'}
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => void remove()}>
             Delete
           </Button>
