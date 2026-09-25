@@ -11,7 +11,7 @@ import {
   creditsFor,
 } from './credits.js'
 import { isElevenLabsEnabled } from './pipeline/elevenlabs.js'
-import { isKnownVoice, listVoices, previewVoice } from './voices.js'
+import { defaultVoice, isKnownVoice, listVoices, previewVoice } from './voices.js'
 import { DEFAULT_TONE, LANGUAGES, TONES, type Tone } from './pipeline/prompts.js'
 import { dispatchSop } from './dispatch.js'
 import { withAbsoluteUrls } from './urls.js'
@@ -160,7 +160,9 @@ const CreateSchema = z.object({
 api.post(
   '/sops',
   authed(async (req, res, userId) => {
-    const input = CreateSchema.parse(req.body)
+    const parsed = CreateSchema.parse(req.body)
+    // Voix non choisie (liste pas encore chargée) : voix par défaut, ElevenLabs si configuré.
+    const input = { ...parsed, voice: parsed.voice || (await defaultVoice()) }
     if (!(await isKnownVoice(input.voice))) {
       res.status(400).json({ error: 'Unknown voice' })
       return

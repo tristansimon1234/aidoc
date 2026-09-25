@@ -79,7 +79,7 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
           title,
           language,
           // Une vidéo marketing a toujours une voix off.
-          voice: kind === 'marketing' && voice === 'none' ? 'gemini:Puck' : voice,
+          voice: kind === 'marketing' && voice === 'none' ? '' : voice,
           tone,
           brief,
           targetSeconds,

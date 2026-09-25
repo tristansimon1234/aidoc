@@ -15,7 +15,7 @@ import {
 } from './ffmpeg.js'
 import { generateMusic } from './elevenlabs.js'
 import { askJson, askJsonWithImages, QuotaExceededError, withVideo } from './gemini.js'
-import { speak } from '../voices.js'
+import { defaultVoice, speak } from '../voices.js'
 import {
   addUpdatedDate,
   cleanMarketingSegments,
@@ -419,7 +419,7 @@ async function makeHighlightVideo({ video, duration, sop, dir, step }: Job): Pro
 
   // Une vidéo marketing a toujours une voix off (une vidéo muette ne vend rien).
   await step('Recording the voice-over')
-  const voice = sop.voice === 'none' ? 'gemini:Puck' : sop.voice
+  const voice = sop.voice === 'none' ? await defaultVoice() : sop.voice
   const files = await mapLimit(moments, 4, async (m, i) => {
     const { audio, ext } = await speak(voice, m.line, tone)
     const file = join(dir, `line-${i}.${ext}`)

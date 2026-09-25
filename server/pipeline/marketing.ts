@@ -34,7 +34,7 @@ import {
 import { renderMarketingVideo, renderSceneStills, withBrowser } from './remotion.js'
 import { compileScene, extractCode } from './scene-code.js'
 import { captionWords, luminance, mapLimit, repairTimecode } from './steps.js'
-import { speak } from '../voices.js'
+import { defaultVoice, speak } from '../voices.js'
 
 const WIDTH = 1920
 const HEIGHT = 1080
@@ -78,7 +78,7 @@ export async function makeMotionVideo({
 
   // 2. Voix off : une phrase par scène ; chaque scène dure le temps de sa phrase.
   await step('Recording the voice-over')
-  const voice = sop.voice === 'none' ? 'gemini:Puck' : sop.voice
+  const voice = sop.voice === 'none' ? await defaultVoice() : sop.voice
   const voiceFiles = await mapLimit(board.scenes, 4, async (scene, i) => {
     const { audio, ext } = await speak(voice, scene.line, tone)
     const file = join(dir, `line-${i}.${ext}`)

@@ -49,6 +49,15 @@ const GEMINI_VOICES: VoiceOption[] = [
 
 export const DEFAULT_VOICE = 'gemini:Kore'
 
+/**
+ * Voix utilisée quand aucune n'a été choisie : la première voix ElevenLabs si une clé est configurée
+ * (voix clonées en tête), sinon une voix Gemini.
+ */
+export async function defaultVoice(): Promise<string> {
+  const voices = await listVoices()
+  return voices.find((v) => v.premium)?.id ?? DEFAULT_VOICE
+}
+
 export async function listVoices(): Promise<VoiceOption[]> {
   const premium = await listElevenLabsVoices().catch((err: Error) => {
     console.warn('[voices] ElevenLabs indisponible', err.message)

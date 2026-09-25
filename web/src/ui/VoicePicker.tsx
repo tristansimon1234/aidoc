@@ -5,16 +5,19 @@ import styles from '../pages/pages.module.css'
 
 const STORAGE_KEY = 'doclee-voice'
 
-/** Voix et ton mémorisés d'une vidéo à l'autre (dans ce navigateur). */
+/**
+ * Voix et ton mémorisés d'une vidéo à l'autre (dans ce navigateur). Sans choix mémorisé, la voix est
+ * vide : le sélecteur prend la voix par défaut quand la liste arrive (ElevenLabs si configuré).
+ */
 export function loadVoiceChoice(): { voice: string; tone: string } {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as {
       voice?: string
       tone?: string
     }
-    return { voice: saved.voice ?? 'gemini:Kore', tone: saved.tone ?? 'friendly' }
+    return { voice: saved.voice ?? '', tone: saved.tone ?? 'friendly' }
   } catch {
-    return { voice: 'gemini:Kore', tone: 'friendly' }
+    return { voice: '', tone: 'friendly' }
   }
 }
 
@@ -44,6 +47,13 @@ export function VoicePicker({
       .catch(() => setVoices([]))
     return () => audio.current?.pause()
   }, [])
+
+  // Pas de voix choisie, ou une voix qui n'existe plus : la première voix premium (ElevenLabs), sinon Gemini.
+  useEffect(() => {
+    if (voices.length === 0 || voice === 'none' || voices.some((v) => v.id === voice)) return
+    const fallback = voices.find((v) => v.premium) ?? voices[0]
+    if (fallback) onChange({ voice: fallback.id, tone })
+  }, [voices, voice, tone, onChange])
 
   function change(next: { voice: string; tone: string }) {
     audio.current?.pause()
@@ -92,10 +102,10 @@ export function VoicePicker({
           Voice-over
           <select value={voice} onChange={(e) => change({ voice: e.target.value, tone })}>
             <option value="none">No voice-over (video only)</option>
-            {standard.length > 0 && <optgroup label="Voices">{standard.map(option)}</optgroup>}
             {premium.length > 0 && (
               <optgroup label="Premium voices">{premium.map(option)}</optgroup>
             )}
+            {standard.length > 0 && <optgroup label="Voices">{standard.map(option)}</optgroup>}
           </select>
         </label>
         {voice !== 'none' && (
