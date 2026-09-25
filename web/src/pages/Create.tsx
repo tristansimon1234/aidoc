@@ -5,6 +5,7 @@ import { Button, Card, Field } from '../ui/design-system/components'
 import { ScreenRecorder } from '../ui/ScreenRecorder'
 import { ScreenshotPicker } from '../ui/ScreenshotPicker'
 import { VoicePicker, loadVoiceChoice } from '../ui/VoicePicker'
+import { DocIcon, FilmIcon } from './Home'
 import styles from './pages.module.css'
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -125,11 +126,15 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
             {KINDS.map((k) => (
               <Card
                 key={k.id}
+                className={styles.choice}
                 onClick={() => {
                   setKind(k.id)
                   setStep((k.id === 'sop' ? file : screenshots.length > 0) ? 2 : 1)
                 }}
               >
+                <span className={styles.choiceIcon}>
+                  {k.id === 'sop' ? <DocIcon /> : <FilmIcon />}
+                </span>
                 <p className={styles.choiceTitle}>{k.title}</p>
                 <p className={styles.notice}>{k.text}</p>
               </Card>
@@ -320,7 +325,7 @@ function Panel({
   children: ReactNode
 }) {
   return (
-    <section>
+    <section className={styles.panel}>
       <div className={styles.header}>
         <div>
           <h1 className={styles.title}>{title}</h1>

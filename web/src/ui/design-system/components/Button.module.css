@@ -8,9 +8,20 @@
   font-family: var(--font-sans);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
   white-space: nowrap;
   letter-spacing: -0.01em;
+  user-select: none;
+}
+
+/* Micro-animation : le bouton s'enfonce légèrement au clic. */
+.button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .button:disabled {
@@ -21,21 +32,19 @@
 
 .button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px var(--color-card), 0 0 0 4px var(--color-border);
+  box-shadow: var(--focus-ring);
 }
 
 /* Primary — clean black (ElevenLabs style) */
 .primary {
   background-color: var(--color-primary);
-  color: white;
+  color: var(--color-primary-fg);
   font-weight: 500;
+  box-shadow: var(--shadow-sm);
 }
 .primary:hover:not(:disabled) {
   background-color: var(--color-primary-hover);
-  transform: translateY(-0.5px);
-}
-.primary:active:not(:disabled) {
-  transform: translateY(0);
+  box-shadow: var(--shadow-md);
 }
 
 /* Secondary — subtle, clean border */
@@ -46,6 +55,7 @@
 }
 .secondary:hover:not(:disabled) {
   background-color: var(--color-secondary);
+  border-color: var(--color-border-strong);
 }
 .secondary:active:not(:disabled) {
   background-color: var(--color-secondary);
@@ -54,11 +64,10 @@
 /* Danger */
 .danger {
   background-color: var(--color-destructive);
-  color: white;
+  color: var(--color-primary-fg);
 }
 .danger:hover:not(:disabled) {
   opacity: 0.9;
-  transform: translateY(-0.5px);
 }
 
 /* Ghost — minimal */

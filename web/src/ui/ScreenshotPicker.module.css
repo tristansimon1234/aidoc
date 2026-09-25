@@ -19,13 +19,28 @@
   border-radius: var(--radius-xl);
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.2s;
+  transition:
+    border-color var(--duration) var(--ease-out),
+    background-color var(--duration) var(--ease-out);
 }
 
 .zone:hover,
 .dragging {
-  border-color: var(--color-fg);
-  background: var(--color-secondary);
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.zone svg {
+  color: var(--color-muted-fg);
+  transition:
+    color var(--duration) var(--ease-out),
+    transform var(--duration) var(--ease-out);
+}
+
+.zone:hover svg,
+.dragging svg {
+  color: var(--color-primary);
+  transform: translateY(-3px);
 }
 
 .zoneTitle {
@@ -49,6 +64,7 @@
 }
 
 .thumb {
+  animation: popIn var(--duration) var(--ease-out) both;
   position: relative;
   aspect-ratio: 16 / 10;
   overflow: hidden;
@@ -65,6 +81,12 @@
 }
 
 .remove {
+  opacity: 0;
+  transform: scale(0.9);
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
   position: absolute;
   top: var(--space-xs);
   right: var(--space-xs);
@@ -80,6 +102,12 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
   cursor: pointer;
+}
+
+.thumb:hover .remove,
+.remove:focus-visible {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .remove:hover {

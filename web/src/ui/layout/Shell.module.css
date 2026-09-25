@@ -18,7 +18,10 @@
   padding: 0 var(--space-lg);
   gap: var(--space-md);
   border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-card);
+  /* Barre translucide : le contenu défile dessous, flouté. */
+  background-color: color-mix(in oklch, var(--color-bg) 80%, transparent);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
   height: 56px;
   flex-shrink: 0;
   position: sticky;
@@ -47,7 +50,7 @@
 
 .logo:hover {
   text-decoration: none;
-  color: var(--color-primary);
+  opacity: 0.7;
 }
 
 /* Solde de crédits, en haut à droite. */
@@ -59,12 +62,16 @@
   padding: 4px 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-full);
-  background: var(--color-secondary);
+  background: var(--color-card);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
 }
 
 .credits:hover {
   text-decoration: none;
-  border-color: var(--color-fg);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
 }
 
 .nav {
@@ -77,9 +84,13 @@
 .main {
   flex: 1;
   padding: var(--space-xl) var(--space-xl) var(--space-2xl);
-  max-width: 960px;
+  max-width: 1000px;
   width: 100%;
   margin: 0 auto;
+}
+
+.page {
+  animation: fadeSlideIn var(--duration-slow) var(--ease-out) both;
 }
 
 @media (max-width: 768px) {

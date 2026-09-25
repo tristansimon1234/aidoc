@@ -3,18 +3,21 @@
 
 /* ===== LIGHT MODE (default) ===== */
 :root {
-  /* background — clean white, like ElevenLabs */
-  --color-bg: #FFFFFF;
+  /* background — off-white page, white cards (sobre, contrasté juste ce qu'il faut) */
+  --color-bg: #FAFAFA;
   --color-card: #FFFFFF;
-  --color-secondary: #F7F7F8;                     /* very subtle warm gray */
+  --color-secondary: #F4F4F5;
 
   /* foreground */
-  --color-fg: #1A1A1A;
-  --color-muted-fg: #6B7280;
+  --color-fg: #18181B;
+  --color-muted-fg: #71717A;
 
-  /* primary — warm black (ElevenLabs style) */
-  --color-primary: #1A1A1A;
-  --color-primary-hover: #333333;
+  /* primary — le violet est la SEULE couleur de l'interface : boutons, éléments actifs, focus, liens.
+     Tout le reste est en noir, blanc et gris. */
+  --color-primary: #6E56CF;
+  --color-primary-hover: #5B45B8;
+  --color-primary-fg: #FFFFFF;
+  --color-primary-soft: #F3F0FF;
 
   /* semantic */
   --color-destructive: #EF4444;
@@ -22,7 +25,8 @@
   --color-warning: #F59E0B;
 
   /* border — very subtle */
-  --color-border: #E5E7EB;
+  --color-border: #E4E4E7;
+  --color-border-strong: #D4D4D8;
 
   /* accent bg */
   --color-accent: #F3F4F6;
@@ -78,36 +82,48 @@
 
   /* shadows — soft and subtle */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(0, 0, 0, 0.08);
+  --focus-ring: 0 0 0 2px var(--color-card), 0 0 0 4px rgba(110, 86, 207, 0.35);
+
+  /* motion — courtes et douces, jamais tape-à-l'œil */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 150ms;
+  --duration: 250ms;
+  --duration-slow: 400ms;
 }
 
 /* ===== DARK MODE ===== */
 [data-theme="dark"] {
-  --color-bg: oklch(0.095 0.012 255);             /* #0D1117 */
-  --color-card: oklch(0.13 0.015 255);             /* #161B22 */
-  --color-secondary: oklch(0.17 0.015 255);        /* #1C2128 */
+  --color-bg: oklch(0.155 0.008 270);
+  --color-card: oklch(0.195 0.009 270);
+  --color-secondary: oklch(0.235 0.01 270);
 
   --color-fg: oklch(0.926 0.008 245);              /* #E6EDF3 */
   --color-muted-fg: oklch(0.568 0.02 255);         /* #8B949E */
 
-  --color-primary: oklch(0.65 0.20 277);            /* #7C74FF */
-  --color-primary-hover: oklch(0.58 0.22 277);
+  /* primary — le même violet, un peu plus lumineux sur fond sombre */
+  --color-primary: #7C66DC;
+  --color-primary-hover: #8E7AE6;
+  --color-primary-fg: #FFFFFF;
+  --color-primary-soft: oklch(0.22 0.05 290);
 
   --color-destructive: oklch(0.60 0.19 358);
   --color-success: oklch(0.60 0.13 162);
   --color-warning: oklch(0.75 0.15 47.6);
 
-  --color-border: oklch(0.245 0.015 255);           /* #30363D */
-  --color-accent: oklch(0.20 0.03 277);
+  --color-border: oklch(0.275 0.01 270);
+  --color-border-strong: oklch(0.36 0.012 270);
+  --color-accent: oklch(0.20 0.01 255);
 
   /* status (dark mode) */
   --color-status-pending-bg: #1A1A20;
   --color-status-pending-text: #8B949E;
   --color-status-pending-border: #30363D;
   --color-status-running-bg: #0D1A35;
-  --color-status-running-text: #7C74FF;
-  --color-status-running-border: #2A2560;
+  --color-status-running-text: #7AA2F7;
+  --color-status-running-border: #1E3A6B;
   --color-status-blocked-bg: #2D1A0A;
   --color-status-blocked-text: #F5A623;
   --color-status-blocked-border: #4A2D10;
@@ -121,6 +137,7 @@
   --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.3);
   --shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);
   --shadow-lg: 0 12px 40px oklch(0 0 0 / 0.5);
+  --focus-ring: 0 0 0 2px var(--color-card), 0 0 0 4px rgba(124, 102, 220, 0.45);
 }
 
 /* ===== BASE RESETS ===== */
@@ -164,7 +181,12 @@ code, pre {
 }
 
 ::selection {
-  background: rgba(26, 26, 26, 0.12);
+  background: oklch(from var(--color-fg) l c h / 0.12);
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* Thin scrollbars */
@@ -193,8 +215,24 @@ code, pre {
 }
 
 @keyframes fadeSlideIn {
-  0% { opacity: 0; transform: translateY(12px); }
+  0% { opacity: 0; transform: translateY(8px); }
   100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(0.96); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Reflet qui passe (chargement, création en cours) */
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

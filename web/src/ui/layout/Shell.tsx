@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { isLocalMode, loginDisabled } from '../../supabase'
 import { Badge } from '../design-system/components'
 import { AppRail } from './AppRail'
@@ -13,6 +13,8 @@ interface ShellProps {
 
 /** Structure de toutes les pages connectées : rail à gauche, barre du haut, contenu centré. */
 export function Shell({ email, credits, children }: ShellProps) {
+  // Changement de page : le contenu apparaît en fondu (clé = adresse).
+  const { pathname } = useLocation()
   return (
     <div className={styles.shell}>
       <AppRail email={email} />
@@ -32,7 +34,11 @@ export function Shell({ email, credits, children }: ShellProps) {
             </Link>
           </nav>
         </header>
-        <main className={styles.main}>{children}</main>
+        <main className={styles.main}>
+          <div key={pathname} className={styles.page}>
+            {children}
+          </div>
+        </main>
       </div>
     </div>
   )

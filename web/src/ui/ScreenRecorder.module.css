@@ -28,9 +28,9 @@
 }
 
 .zone:hover {
-  border-color: var(--color-fg);
-  background: var(--color-secondary);
-  transform: translateY(-1px);
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+  transform: translateY(-2px);
 }
 
 .recordZone:hover {
@@ -49,7 +49,15 @@
 }
 
 .uploadIcon {
-  color: var(--color-fg);
+  color: var(--color-muted-fg);
+  transition:
+    color var(--duration) var(--ease-out),
+    transform var(--duration) var(--ease-out);
+}
+
+.zone:hover .uploadIcon {
+  color: var(--color-primary);
+  transform: translateY(-3px);
 }
 
 .mic {

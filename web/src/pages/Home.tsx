@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, type Kind, type Sop } from '../api'
 import { Button, Card, EmptyState, StatusIndicator } from '../ui/design-system/components'
@@ -84,8 +84,16 @@ export function Home() {
         </Card>
       ) : (
         <div className={styles.grid}>
-          {shown.map((s) => (
-            <Card key={s.id} onClick={() => navigate(`/sop/${s.id}`)}>
+          {shown.map((s, i) => (
+            <Card
+              key={s.id}
+              className={styles.gridItem}
+              style={{ '--i': i } as CSSProperties}
+              onClick={() => navigate(`/sop/${s.id}`)}
+            >
+              <span className={styles.cardKind}>
+                {s.kind === 'marketing' ? <FilmIcon /> : <DocIcon />}
+              </span>
               <p className={styles.cardTitle}>{s.title}</p>
               <div className={styles.cardMeta}>
                 <StatusIndicator status={statusKey(s)} label={statusLabel(s)} />
@@ -98,6 +106,44 @@ export function Home() {
         </div>
       )}
     </>
+  )
+}
+
+export function DocIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="13" y2="17" />
+    </svg>
+  )
+}
+
+export function FilmIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="2" y="4" width="20" height="16" rx="3" />
+      <path d="m10 9 5 3-5 3z" />
+    </svg>
   )
 }
 

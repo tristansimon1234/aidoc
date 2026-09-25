@@ -46,6 +46,10 @@
   background: var(--color-secondary);
 }
 
+.logo:hover .logoMark {
+  transform: rotate(-8deg) scale(1.05);
+}
+
 .navBtn {
   display: flex;
   align-items: center;
@@ -57,8 +61,16 @@
   background: none;
   color: var(--color-muted-fg);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
   text-decoration: none;
+  position: relative;
+}
+
+.navBtn:active {
+  transform: scale(0.94);
 }
 
 .navBtn:hover {
@@ -67,8 +79,21 @@
 }
 
 .navBtnActive {
-  background: var(--color-secondary);
-  color: var(--color-fg);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+}
+
+/* Repère violet sur la page active */
+.navBtnActive::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--color-primary);
+  animation: fadeIn var(--duration) var(--ease-out);
 }
 
 /* Logo : pastille de la couleur principale avec l'initiale. */
@@ -80,8 +105,9 @@
   height: 28px;
   border-radius: 8px;
   background: var(--color-primary);
-  color: var(--color-bg);
+  color: var(--color-primary-fg);
   font-weight: 700;
+  transition: transform var(--duration) var(--ease-out);
   font-size: 15px;
   letter-spacing: -0.04em;
 }
@@ -107,5 +133,8 @@
     margin-top: 0;
     padding-top: 0;
     border-top: none;
+  }
+  .navBtnActive::before {
+    display: none;
   }
 }

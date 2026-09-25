@@ -1,10 +1,10 @@
-/* Water-fill loader — bold blue gradient */
+/* Chargement qui se remplit — dans le violet de l'interface (seule couleur) */
 .container {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-xl);
   border: 1px solid var(--color-border);
-  background: linear-gradient(180deg, #eef4ff 0%, #dbeafe 100%);
+  background: var(--color-primary-soft);
   height: 80px;
   animation: loaderEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -25,7 +25,7 @@
   100% { opacity: 0; transform: scale(0.95) translateY(-8px); height: 0; margin: 0; padding: 0; border-width: 0; }
 }
 
-/* Water — bold blue with lighter top */
+/* Remplissage violet, un peu plus clair en haut */
 .water {
   position: absolute;
   bottom: 0;
@@ -34,10 +34,9 @@
   transition: height 1.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   background: linear-gradient(
     180deg,
-    #3b82f6 0%,
-    #2563eb 30%,
-    #1d4ed8 60%,
-    #1e40af 100%
+    color-mix(in oklch, var(--color-primary) 80%, white) 0%,
+    var(--color-primary) 45%,
+    var(--color-primary-hover) 100%
   );
 }
 
@@ -62,9 +61,9 @@
   opacity: 0.5;
 }
 
-.wavePath1 { fill: #3b82f6; }
-.wavePath2 { fill: #60a5fa; }
-.wavePath3 { fill: rgba(96, 165, 250, 0.3); }
+.wavePath1 { fill: color-mix(in oklch, var(--color-primary) 80%, white); }
+.wavePath2 { fill: color-mix(in oklch, var(--color-primary) 55%, white); }
+.wavePath3 { fill: color-mix(in oklch, var(--color-primary) 30%, transparent); }
 
 @keyframes drift {
   0% { transform: translateX(0); }
@@ -94,7 +93,7 @@
   font-size: 22px;
   font-weight: 600;
   font-family: var(--font-mono);
-  color: #1e40af;
+  color: var(--color-primary);
   letter-spacing: -0.03em;
   line-height: 1;
   transition: color 0.8s ease;
@@ -104,7 +103,7 @@
   font-size: 11px;
   font-weight: 500;
   font-family: var(--font-mono);
-  color: #3b82f6;
+  color: var(--color-primary);
   transition: color 0.8s ease;
 }
 
@@ -119,7 +118,7 @@
 .status {
   font-size: var(--text-sm);
   font-weight: 500;
-  color: #1e3a5f;
+  color: var(--color-fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -129,26 +128,26 @@
 .time {
   font-size: var(--text-xs);
   font-family: var(--font-mono);
-  color: #6b9bd2;
+  color: var(--color-muted-fg);
   transition: color 0.8s ease;
 }
 
-/* When water rises past text — white on blue */
+/* Quand le remplissage passe sous le texte : texte blanc */
 .contentLight .percent {
-  color: #fff;
+  color: var(--color-primary-fg);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .contentLight .percentSign {
-  color: rgba(219, 234, 254, 0.8);
+  color: color-mix(in oklch, var(--color-primary-fg) 80%, transparent);
 }
 
 .contentLight .status {
-  color: #eff6ff;
+  color: var(--color-primary-fg);
 }
 
 .contentLight .time {
-  color: rgba(191, 219, 254, 0.7);
+  color: color-mix(in oklch, var(--color-primary-fg) 70%, transparent);
 }
 
 .contentLight .dotDone {
@@ -156,7 +155,7 @@
 }
 
 .contentLight .dotActive {
-  background: #fff;
+  background: var(--color-primary-fg);
 }
 
 .contentLight .dotPending {
@@ -178,16 +177,16 @@
   transition: all 0.5s ease;
 }
 
-.dotDone { background: #1e40af; }
+.dotDone { background: var(--color-primary); }
 
 .dotActive {
-  background: #2563eb;
+  background: var(--color-primary);
   width: 16px;
   border-radius: var(--radius-full);
   animation: pulse-bar 2s ease-in-out infinite;
 }
 
-.dotPending { background: #bfdbfe; }
+.dotPending { background: color-mix(in oklch, var(--color-primary) 25%, transparent); }
 
 @keyframes pulse-bar {
   0%, 100% { opacity: 1; }
