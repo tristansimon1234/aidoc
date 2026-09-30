@@ -194,8 +194,13 @@ export function sopPrompt(input: {
   directions?: Directions
   /** SOP précédente (régénération) : corrigée selon le retour de l'utilisateur. */
   previous?: string | null
+  /** Le modèle voit la vidéo (Gemini) ; sinon il n'a que la transcription et les étapes (Claude). */
+  watching?: boolean
 }): string {
   const language = languageName(input.language)
+  const source = input.watching
+    ? 'You can watch AND hear the video; below are its full transcript and the list of steps already extracted from it.'
+    : 'You get the full transcript of what the person says in the recording, and the list of steps extracted from it (with what is on screen at each step).'
   const steps = input.steps
     .map(
       (s, i) =>
@@ -211,7 +216,7 @@ export function sopPrompt(input: {
     .filter(Boolean)
     .join('\n\n')
 
-  return `You write Standard Operating Procedures (SOPs). Write one in ${language} for the task shown in this screen recording. You can watch AND hear the video; below are its full transcript and the list of steps already extracted from it.
+  return `You write Standard Operating Procedures (SOPs). Write one in ${language} for the task shown in this screen recording. ${source}
 
 Task (as named by the user): "${input.title}"
 
@@ -219,6 +224,8 @@ WHERE THE CONTENT COMES FROM
 - What the person SAYS is the main source. Their explanations are why this SOP is worth more than a screenshot tour: the purpose of each step, the business rules, which option to pick and why, exceptions, common mistakes, what to check. Every useful piece of information they say must end up in the SOP, rewritten clearly (not as a transcript).
 - The SCREEN gives the exact labels and where things are. Use it for precision, not as the content itself: do not just describe what is visible.
 - If the person says something that contradicts the screen, follow what they say and mention the point in a warning.
+- Before writing, read the TRANSCRIPT sentence by sentence and note every explanation: purpose, reason, rule, choice between options, exception, tip, mistake to avoid, check to do. Each one must end up in the SOP, in the step where it applies (or in the key points, troubleshooting or final check), with the person's own facts and vocabulary. A step whose text only repeats what is visible on screen, when the person explained something there, is wrong.
+- Keep the SOP as specific as the person's explanations: prefer their concrete rule ("always pick the monthly view, the weekly one misses late invoices") over a generic sentence ("select the appropriate view").
 
 DON'T TAKE THE SCREEN LITERALLY
 - Write each step around its INTENT, the way an expert colleague would explain it: what we are doing and why, then how ("To use the Radarly export, pick **Radarly** as the source: its columns are recognised automatically."). Not a mechanical click log ("Click the button. Click the tab.").

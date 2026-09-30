@@ -14,7 +14,7 @@ import {
   renderNarrated,
 } from './ffmpeg.js'
 import { askJsonWithImages, QuotaExceededError, withVideo } from './gemini.js'
-import { writeJson } from './claude.js'
+import { writeJson, writeText } from './claude.js'
 import { speak } from '../voices.js'
 import {
   addUpdatedDate,
@@ -262,19 +262,21 @@ async function makeSop({ video, duration, sop, dir, folder, step }: Job): Promis
       }
     }
 
-    // 4. Rédaction de la SOP, vidéo + transcription sous les yeux
+    // 4. Rédaction de la SOP à partir de ce que dit la personne : Claude (transcription + étapes),
+    // ou Gemini qui voit aussi la vidéo à défaut.
     await step('Writing the procedure')
-    const raw = await gemini.text(
-      sopPrompt({
-        title: sop.title || analysis.title,
-        language: sop.language,
-        steps,
-        transcript: analysis.transcript,
-        purpose: analysis.purpose,
-        keyPoints: analysis.keyPoints,
-        directions: directionsOf(sop),
-        previous: sop.feedback ? sop.markdown : null,
-      }),
+    const sopInput = {
+      title: sop.title || analysis.title,
+      language: sop.language,
+      steps,
+      transcript: analysis.transcript,
+      purpose: analysis.purpose,
+      keyPoints: analysis.keyPoints,
+      directions: directionsOf(sop),
+      previous: sop.feedback ? sop.markdown : null,
+    }
+    const raw = await writeText(sopPrompt(sopInput), () =>
+      gemini.text(sopPrompt({ ...sopInput, watching: true })),
     )
     const markdown = addUpdatedDate(insertScreenshots(stripFence(raw), urls), sop.language)
     // Première génération : le texte s'affiche déjà pendant le montage. Régénération : la version

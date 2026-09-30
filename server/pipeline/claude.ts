@@ -56,6 +56,27 @@ export async function writeJson<T>(
   return viaGemini()
 }
 
+/**
+ * Texte libre rédigé par Claude (la SOP en Markdown) ; `fallback` (Gemini) sans clé Anthropic ou si
+ * Claude échoue deux fois.
+ */
+export async function writeText(prompt: string, fallback: () => Promise<string>): Promise<string> {
+  if (!env.ANTHROPIC_API_KEY) return fallback()
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const chat = claudeChat(DOC_WRITER_SYSTEM, env.ANTHROPIC_API_KEY, 'high')
+      return await chat.send([{ text: prompt }])
+    } catch (err) {
+      console.warn(`[claude] rédaction, essai ${attempt} échoué`, (err as Error).message)
+    }
+  }
+  console.warn('[claude] rédaction confiée à Gemini')
+  return fallback()
+}
+
+const DOC_WRITER_SYSTEM =
+  'You are an expert technical writer who turns recorded walkthroughs into clear procedures. Follow the instructions exactly and output only the requested document.'
+
 const WRITER_SYSTEM =
   'You are an expert scriptwriter for product videos and tutorials. Follow the instructions exactly and answer with the JSON object only: no code fence, no comment before or after.'
 

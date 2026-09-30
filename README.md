@@ -21,7 +21,7 @@ Vidéo (upload ou enregistrement dans le navigateur)
   → ffmpeg : MP4 720p
   → Gemini regarde la vidéo et liste les étapes horodatées
   → ffmpeg extrait quelques images autour de chaque étape, Gemini choisit la meilleure capture
-  → Gemini rédige la SOP (markdown)
+  → Claude Sonnet 5 rédige la SOP (markdown) à partir de la transcription de ce que dit la personne et des étapes (Gemini, qui voit la vidéo, sans clé Anthropic ou si Claude échoue)
   → ffmpeg monte une vidéo de 4 min max (un extrait autour de chaque étape)
   → Claude Sonnet 5 écrit la voix off (à partir de ce que la personne a dit ; Gemini sans clé Anthropic ou si Claude échoue), synthèse vocale (Gemini ou ElevenLabs),
     puis chaque passage de vidéo est accéléré ou ralenti pour durer exactement le temps de sa phrase (aucun blanc)
