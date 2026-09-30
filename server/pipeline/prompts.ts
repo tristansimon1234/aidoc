@@ -108,6 +108,12 @@ export function directionsBlock(d: Directions | undefined, previous?: string | n
   return parts.length > 0 ? `\n${parts.join('\n\n')}\n` : ''
 }
 
+/**
+ * Les données de la démo (fichier de test, client fictif, valeurs saisies pour l'exemple) ne sont pas la
+ * procédure : on nomme le type de chose, jamais la valeur vue à l'écran.
+ */
+const DEMO_DATA_RULE = `The recording is a DEMO: the file names, records, clients, amounts, dates and text typed or opened in it are example data that will differ for every reader (e.g. "test_invoices_v2.csv", "Client ACME", "John Test"). Never quote them: name the kind of thing instead ("your CSV export", "the client", "the invoice amount"). Quote only the interface itself: buttons, menus, tabs, field names, options. Keep a specific value only when the person says it must always be that value (a fixed account, a required code, a threshold).`
+
 export function videoAnalysisPrompt(durationSeconds: number, directions?: Directions): string {
   const minutes = Math.max(1, Math.round(durationSeconds / 60))
   return `You are watching AND listening to a screen recording (about ${minutes} min) of someone doing a task in a software tool while explaining it out loud. It will become a Standard Operating Procedure (SOP) that a new colleague can follow alone, without the video.
@@ -124,7 +130,8 @@ Do three things.
 - One step = one meaningful action or state change: open a page, fill a form, click a button, choose an option, check a result. Merge micro-actions that form one operation ("typed email + password + clicked Sign in" = one step).
 - Ignore noise: aimless mouse moves, hesitations, loading screens, mistakes that were undone, webcam / meeting framing, small talk.
 - If the same action is repeated (e.g. filling 5 similar rows), keep ONE step and say it is repeated.
-- "action": what is done, with the exact labels visible on screen (buttons, menus, fields, tabs) in quotes, in their original language.
+- "action": what is done, with the exact labels of the interface (buttons, menus, fields, tabs) in quotes, in their original language.
+- ${DEMO_DATA_RULE}
 - "screen": short description of what is visible at the step's frame.
 - "spoken": everything the person says while doing this step, word for word (it usually explains WHY and what to watch out for), or null if silent.
 - "why": the reason, rule or goal of this step as the person explains it, in one short sentence (e.g. "Use the Radarly source, otherwise the columns are not recognised"), or null if they give none.
@@ -217,6 +224,7 @@ DON'T TAKE THE SCREEN LITERALLY
 - Write each step around its INTENT, the way an expert colleague would explain it: what we are doing and why, then how ("To use the Radarly export, pick **Radarly** as the source: its columns are recognised automatically."). Not a mechanical click log ("Click the button. Click the tab.").
 - Group clicks that serve one goal into one step; skip obvious micro-actions (closing a tooltip, scrolling).
 - Mention only the on-screen elements the reader needs to find; don't describe the layout, colors or everything visible.
+- ${DEMO_DATA_RULE}
 - Use the person's own reasons, rules and vocabulary (below); when they explain a choice, say which option to take in which case.
 ${explained ? `\nWHAT THE PERSON EXPLAINS\n${explained}\n` : ''}${directionsBlock(input.directions, input.previous?.replace(/!\[[^\]]*\]\([^)]*\)\n?/g, ''))}
 The reader has never done this task and will follow the SOP alone, screen by screen.
@@ -484,7 +492,7 @@ The video is split into ${input.slots.length} time slots. Write exactly ONE text
 - Slot 1 starts with one short sentence saying what we are about to do.
 - The last slot ends with one sentence confirming what has been achieved.
 - Tone: ${TONES[input.tone].direction} Speak to the viewer ("click…", "here you choose… because…").
-- Say on-screen labels as they appear. No URLs, IDs, passwords or personal data, no markdown, no emojis, no stage directions.
+- Say interface labels (buttons, menus, fields) as they appear, but never read the demo's data aloud: ${DEMO_DATA_RULE} No URLs, IDs, passwords or personal data, no markdown, no emojis, no stage directions.
 
 ${input.directions?.instructions || input.directions?.feedback ? `${directionsBlock(input.directions)}(The word maximum of each slot still applies.)\n` : ''}
 SLOTS

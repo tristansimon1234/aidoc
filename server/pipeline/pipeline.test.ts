@@ -535,3 +535,10 @@ describe('parseJson', () => {
     expect(parseJson('```json\n{"lines": []}\n```', schema)).toEqual({ lines: [] })
   })
 })
+
+describe('données de démo', () => {
+  it('les prompts demandent de ne pas citer les noms de fichiers et données de test', async () => {
+    const { videoAnalysisPrompt } = await import('./prompts.js')
+    expect(videoAnalysisPrompt(60)).toContain('example data')
+  })
+})
