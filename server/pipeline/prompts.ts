@@ -93,7 +93,9 @@ export interface Directions {
 export function directionsBlock(d: Directions | undefined, previous?: string | null): string {
   const parts: string[] = []
   if (d?.instructions?.trim()) {
-    parts.push(`INSTRUCTIONS FROM THE USER (follow them):\n${d.instructions.trim()}`)
+    parts.push(
+      `CONTEXT AND INSTRUCTIONS FROM THE USER (what this procedure is for, who it is for; follow them):\n${d.instructions.trim()}`,
+    )
   }
   if (d?.feedback?.trim()) {
     parts.push(
@@ -462,7 +464,11 @@ export function toTone(value: string | null | undefined): Tone {
   return value && value in TONES ? (value as Tone) : DEFAULT_TONE
 }
 
-export const NarrationSchema = z.object({ lines: z.array(z.string()) })
+export const NarrationSchema = z.object({
+  /** Accueil + contexte, dit sur la première image figée avant la démonstration. */
+  intro: z.string().default(''),
+  lines: z.array(z.string()),
+})
 
 /**
  * Mots maximum pour un créneau de voix off : ~2 mots / seconde (une voix lit ~2,5 mots / s), pour que
@@ -496,7 +502,8 @@ The video is split into ${input.slots.length} time slots. Write exactly ONE text
 - The voice-over replaces the person's own voice. Base each slot on the essential of WHAT THEY SAID during it (the main reason or warning), condensed into clean, confident sentences, in ${languageName(input.language)}. Keep their meaning, drop hesitations, repetitions and side remarks.
 - When they said nothing useful in a slot, explain what is being done and why, using the SOP below. Do not just describe the screen.
 - A critical point (rule, figure, deadline, warning) is said in the slot where it applies, with exact figures and names; nothing else from other slots.
-- Slot 1 starts with one short sentence saying what we are about to do.
+- "intro": said BEFORE the demonstration starts, over the first frame held still (it has no time limit, but keep it to 2 or 3 short sentences, 20 to 45 words). Always open with a friendly greeting (e.g. "Hello!" / "Bonjour !"), then set the context: what task we are going to do, in which tool, for whom and why it matters (from the user's context, the person's explanations and the SOP). No step details yet.
+- Slot 1 then goes straight into the first action (no greeting again).
 - The last slot ends with one sentence confirming what has been achieved.
 - Tone: ${TONES[input.tone].direction} Speak to the viewer ("click…", "here you choose… because…").
 - Say interface labels (buttons, menus, fields) as they appear, but never read the demo's data aloud: ${DEMO_DATA_RULE} No URLs, IDs, passwords or personal data, no markdown, no emojis, no stage directions.
@@ -508,7 +515,7 @@ ${slots}
 SOP
 ${input.sop.replace(/!\[[^\]]*\]\([^)]*\)\n?/g, '').slice(0, 60000)}
 
-Return ONLY JSON: {"lines": ["text for slot 1", "text for slot 2", ...]} with exactly ${input.slots.length} entries.`
+Return ONLY JSON: {"intro": "Hello! ...", "lines": ["text for slot 1", "text for slot 2", ...]} with exactly ${input.slots.length} entries in "lines".`
 }
 
 export const NarrationFixSchema = z.object({

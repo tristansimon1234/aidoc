@@ -348,7 +348,7 @@ async function narrate(input: {
     directions: directionsOf(input.sop),
   })
   // Une réponse avec moins de textes que de créneaux laisserait la fin de la vidéo sans voix : on redemande.
-  let { lines } = await writeJson(prompt, NarrationSchema)
+  let { lines, intro: introText } = await writeJson(prompt, NarrationSchema)
   for (let retry = 0; retry < 2 && lines.filter((l) => l.trim()).length < slots.length; retry++) {
     console.warn(
       `[pipeline] voix off : ${lines.length} textes pour ${slots.length} créneaux, on redemande`,
@@ -356,6 +356,7 @@ async function narrate(input: {
     const again = await writeJson(prompt, NarrationSchema)
     if (again.lines.filter((l) => l.trim()).length > lines.filter((l) => l.trim()).length) {
       lines = again.lines
+      introText ||= again.intro
     }
   }
 
@@ -370,7 +371,14 @@ async function narrate(input: {
     return { file, text, seconds: await durationOf(file) }
   }
   const texts = slots.map((slot, i) => limitWords(lines[i] ?? '', maxWordsFor(slot.seconds)))
-  const voices = await mapLimit(slots, 4, (_, i) => synth(texts[i]!, i, 0))
+  const [voices, intro] = await Promise.all([
+    mapLimit(slots, 4, (_, i) => synth(texts[i]!, i, 0)),
+    // Accueil + contexte, dit sur la première image figée avant la démonstration.
+    synth(limitWords(introText, 60), -1, 0).catch((err: Error) => {
+      console.warn('[pipeline] intro de la voix off impossible', err.message)
+      return null
+    }),
+  ])
 
   // Le bon niveau de parole : la vidéo n'est jamais accélérée, c'est le texte qui s'adapte. On mesure
   // la vitesse réelle de la voix, et les textes qui débordent de leur passage ou le laissent muet plus
@@ -437,6 +445,20 @@ async function narrate(input: {
     }),
   )
   if (!segments.some((s) => s.audio)) throw new Error('Voix off vide')
+  if (intro) {
+    // Première image figée le temps de l'accueil (la vidéo ne bouge pas pendant l'intro).
+    const length = intro.seconds + 0.6
+    segments.unshift({
+      start: 0,
+      end: 0,
+      audio: intro.file,
+      factor: 1,
+      freeze: length,
+      length,
+      tempo: 1,
+    })
+    console.log(`[pipeline] intro ${intro.seconds.toFixed(1)}s : "${intro.text.slice(0, 120)}"`)
+  }
   await renderNarrated(input.video, segments, input.output)
 }
 

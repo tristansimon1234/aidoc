@@ -197,7 +197,7 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
                   'Title: the name of the task, as your team would search for it (e.g. “Book a supplier invoice”).',
                   'Language: the procedure and the voice-over are written in it, whatever language you spoke.',
                   'Voice: listen with ▶ before choosing. The tone changes how the text is written and read.',
-                  'Instructions (optional): who will read it, what to leave out, a vocabulary to use. You can also correct the result afterwards.',
+                  'Context: what the procedure is for and who it is for. The voice-over opens with it, and the procedure is written for that reader. You can add instructions too (what to leave out, a vocabulary to use).',
                 ]
               : [
                   'Brief: the more concrete, the better the script: who it is for, the main benefit, a figure, the call to action.',
@@ -228,10 +228,11 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
 
               {kind === 'sop' && (
                 <Field
-                  label="Instructions for the AI (optional)"
+                  label="Context: what is this procedure for, and who is it for?"
                   multiline
                   rows={3}
-                  placeholder="e.g. For new sales reps. Skip the Admin tab. Explain which status to pick for a VIP client."
+                  required
+                  placeholder="e.g. For new accountants: how we book a supplier invoice in Pennylane as soon as it arrives, so it is paid on time. Skip the Admin tab."
                   value={brief}
                   onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setBrief(e.target.value)}
                   maxLength={2000}
@@ -286,7 +287,7 @@ export function Create({ me, onChange }: { me: Me | null; onChange: () => void }
                 <Button
                   type="button"
                   onClick={() => setStep(3)}
-                  disabled={!title.trim() || (kind === 'marketing' && !brief.trim())}
+                  disabled={!title.trim() || !brief.trim()}
                 >
                   Continue
                 </Button>

@@ -542,3 +542,19 @@ describe('données de démo', () => {
     expect(videoAnalysisPrompt(60)).toContain('example data')
   })
 })
+
+describe('intro de la voix off', () => {
+  it('demande un accueil et le contexte avant la démonstration', async () => {
+    const { narrationPrompt, NarrationSchema } = await import('./prompts.js')
+    const prompt = narrationPrompt({
+      language: 'fr',
+      tone: 'friendly',
+      sop: '# SOP',
+      slots: [{ start: 0, seconds: 6, action: 'Open', spoken: '' }],
+      directions: { instructions: 'Pour les nouveaux comptables' },
+    })
+    expect(prompt).toContain('"intro"')
+    expect(prompt).toContain('Pour les nouveaux comptables')
+    expect(NarrationSchema.parse({ lines: ['a'] }).intro).toBe('')
+  })
+})
